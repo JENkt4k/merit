@@ -9,11 +9,13 @@ from lark import Lark, Transformer
 GRAMMAR=r'''
 start: module_decl declaration*
 module_decl: "module" CNAME
-?declaration: enum_decl | trait_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | function_decl
+?declaration: enum_decl | trait_decl | impl_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | function_decl
 enum_decl: "enum" CNAME "{" enum_variant ("," enum_variant)* [","] "}"
 enum_variant: CNAME ["(" type_ref ")"]
 trait_decl: "trait" CNAME "{" trait_method* "}"
 trait_method: "fn" CNAME "(" [params] ")" "->" type_ref ";"
+impl_decl: "impl" CNAME "for" type_ref "{" impl_method* "}"
+impl_method: function_decl
 decimal_decl: "decimal" CNAME "(" INT "," INT "," CNAME ")" ";"
 bounded_decl: "bounded" CNAME "(" BASE_INT "," SIGNED_NUMBER "," SIGNED_NUMBER ")" ";"
 capability_decl: "capability" CNAME ";"
@@ -86,12 +88,14 @@ class TraitMethod: name:str; params:tuple[tuple[str,str,str],...]; return_type:s
 @dataclasses.dataclass(frozen=True)
 class TraitType: name:str; methods:tuple[TraitMethod,...]
 @dataclasses.dataclass(frozen=True)
+class TraitImpl: trait_name:str; target_type:str; methods:tuple[dict[str,Any],...]
+@dataclasses.dataclass(frozen=True)
 class Field: name:str; type_name:str
 @dataclasses.dataclass(frozen=True)
 class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list)
 
 class ASTBuilder(Transformer):
     def module_decl(self,x): return str(x[0])
@@ -103,6 +107,8 @@ class ASTBuilder(Transformer):
         elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
         return TraitMethod(name, tuple(params), x[i])
     def trait_decl(self,x): return ('trait', TraitType(str(x[0]), tuple(x[1:])))
+    def impl_method(self,x): return x[0][1]
+    def impl_decl(self,x): return ('impl', TraitImpl(str(x[0]), x[1], tuple(x[2:])))
     def decimal_decl(self,x): return ('decimal',DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])))
     def bounded_decl(self,x): return ('bounded',BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))))
     def capability_decl(self,x): return ('capability',str(x[0]))
@@ -171,7 +177,7 @@ class ASTBuilder(Transformer):
             i+=1
         return ('function',{'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]})
     def start(self,x):
-        ds={};bs={};cs=set();ss={};es={};ts={};fs=[];symbols={}
+        ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
         def add_symbol(kind,name):
             if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}')
             symbols[name]=kind
@@ -180,8 +186,8 @@ class ASTBuilder(Transformer):
                 add_symbol(k,v.name)
             elif k=='function':
                 add_symbol(k,v['name'])
-            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'function':lambda:fs.append(v)}[k]()
-        return Program(x[0],ds,bs,cs,ss,fs,es,ts)
+            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0
@@ -314,26 +320,51 @@ class Checker:
                 seen_methods.add(method.name)
                 self.ensure_trait_signature_type(method.return_type)
                 for _, type_name, _ in method.params: self.ensure_trait_signature_type(type_name)
+        seen_impls=set()
+        for impl in self.p.impls:
+            trait=self.p.traits.get(impl.trait_name)
+            if not trait: raise CompileError(f'M7200: unknown trait {impl.trait_name}')
+            if impl.target_type=='void': raise CompileError('M7201: cannot implement trait for void')
+            self.ensure_type(impl.target_type)
+            key=(impl.trait_name,impl.target_type)
+            if key in seen_impls: raise CompileError(f'M7202: duplicate impl {impl.trait_name} for {impl.target_type}')
+            seen_impls.add(key)
+            self.check_impl_signature(impl,trait)
         for s in self.p.structs.values():
             seen=set()
             for fld in s.fields:
                 self.ensure_type(fld.type_name)
                 if fld.name in seen:raise CompileError(f'M4001: duplicate field {fld.name} in {s.name}')
                 seen.add(fld.name)
-        for f in self.p.functions:
-            self.ensure_type(f['return'])
-            missing=set(f['requires_caps'])-self.p.capabilities
-            if missing:raise CompileError(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}")
-            env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f['params']}
-            for e in f['pre']:self.expr_type(e,env,set(f['requires_caps']),f)
-            self.block(f['body'],env,set(f['requires_caps']),f)
-            post_env=dict(env); post_env['result']=VarState(f['return'],False)
-            for e in f['post']:self.expr_type(e,post_env,set(f['requires_caps']),f)
+        for f in self.p.functions: self.check_function_body(f)
+        for impl in self.p.impls:
+            for f in impl.methods: self.check_function_body(f)
         return self
     def ensure_type(self,t):
         if t not in INT_RANGES and t not in self.p.decimals and t not in self.p.bounded and t not in self.p.structs and t not in self.p.enums and t not in BUILTIN_TYPES and t!='void':raise CompileError(f'M3000: unknown type {t}')
     def ensure_trait_signature_type(self,t):
         if t!='Self': self.ensure_type(t)
+    def check_function_body(self,f):
+        self.ensure_type(f['return'])
+        missing=set(f['requires_caps'])-self.p.capabilities
+        if missing:raise CompileError(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}")
+        env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f['params']}
+        for e in f['pre']:self.expr_type(e,env,set(f['requires_caps']),f)
+        self.block(f['body'],env,set(f['requires_caps']),f)
+        post_env=dict(env); post_env['result']=VarState(f['return'],False)
+        for e in f['post']:self.expr_type(e,post_env,set(f['requires_caps']),f)
+    def check_impl_signature(self,impl,trait):
+        expected={m.name:m for m in trait.methods}
+        actual={m['name']:m for m in impl.methods}
+        if len(actual)!=len(impl.methods): raise CompileError(f'M7203: duplicate method in impl {impl.trait_name} for {impl.target_type}')
+        if set(actual)!=set(expected): raise CompileError(f'M7204: impl {impl.trait_name} for {impl.target_type} does not match trait methods')
+        def subst(type_name): return impl.target_type if type_name=='Self' else type_name
+        for name,method in expected.items():
+            candidate=actual[name]
+            expected_params=[(subst(t),mode) for _,t,mode in method.params]
+            actual_params=[(t,mode) for _,t,mode in candidate['params']]
+            if actual_params!=expected_params or candidate['return']!=subst(method.return_type):
+                raise CompileError(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}')
     def block(self,body,env,caps,fn):
         for st in body:
             tag=st[0]
@@ -976,7 +1007,7 @@ class CGenerator:
             return f'({self.expr(e[2],env,t)} {e[1]} {self.expr(e[3],env,t)})'
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'functions':p.functions}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'impls':[dataclasses.asdict(x) for x in p.impls],'functions':p.functions}
 def mir(p):
     def lower_function(f):
         blocks=[]

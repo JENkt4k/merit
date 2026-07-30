@@ -163,6 +163,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     structs = {}
     enums = {}
     traits = {}
+    impls = []
     functions = []
     seen_functions: dict[str, Path] = {}
     for unit in units:
@@ -178,6 +179,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                     raise ProjectError(f"duplicate {kind} symbol {name} in {unit.path}")
                 collection[name] = value
         capabilities.update(unit.program.capabilities)
+        impls.extend(unit.program.impls)
         for function in unit.program.functions:
             name = function["name"]
             if name == "main" and unit.module != entry_module:
@@ -186,7 +188,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 raise ProjectError(f"duplicate function {name}: {seen_functions[name]} and {unit.path}")
             seen_functions[name] = unit.path
             functions.append(function)
-    return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums, traits)
+    return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums, traits, impls)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:
