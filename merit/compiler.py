@@ -993,7 +993,7 @@ class CGenerator:
             o.append(f'{self.ctype(f["return"])} merit_{f["name"]}({params});')
         return '\n'.join(o)
     def generate(self):
-        o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','']
+        o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
         o.append(self.header().replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
@@ -1037,7 +1037,7 @@ class CGenerator:
         for t,d in self.p.decimals.items():
             m=10**d.precision-1;o.append(f'static int64_t merit_check_{t}(int64_t x){{if(x < -{m}LL || x > {m}LL) merit_fail("decimal range violation: {t}",70);return x;}}')
         for f in self.p.functions:o.append(self.fn_c(f))
-        return '\n'.join(o)
+        return re.sub(r'\bstatic (?!inline\b)', 'static MERIT_UNUSED ', '\n'.join(o))
     def vec_runtime(self,vt):
         elem=vec_elem_type(vt); ct=self.ctype(elem); vct=self.ctype(vt); suffix=vec_elem_type(vt)
         elem_drop=self.drop_field_stmt('v->data[i]',elem)
@@ -1209,7 +1209,7 @@ class CGenerator:
                 variant=next(v for v in enum.variants if v.name==arm[0]);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
                 local=dict(env)
                 if arm[1] is not None:
-                    local[arm[1]]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm[1]} = {temp}.data.{variant.name};')
+                    local[arm[1]]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm[1]} = {temp}.data.{variant.name};');o.append(f'{p}    (void){arm[1]};')
                 for z in arm[2]:o+=self.stmt(z,local,i+1)
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
