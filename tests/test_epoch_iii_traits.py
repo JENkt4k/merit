@@ -1,6 +1,10 @@
+import contextlib
+import io
+import subprocess
+
 import pytest
 
-from merit.compiler import Checker, CompileError, parse
+from merit.compiler import Checker, CompileError, Interpreter, compile_file, parse
 from merit.project.loader import load_project
 from merit.project.build import check
 
@@ -36,6 +40,35 @@ impl Summarized for Point {
 }
 
 fn main() -> i32 {
+    return 0;
+}
+'''
+
+GENERIC_BOUND_PROGRAM = r'''
+module user_trait_bound_acceptance
+
+stable("v1") struct Point {
+    x: i32;
+}
+
+trait Summarized {
+    fn score(value: Self) -> i32;
+}
+
+impl Summarized for Point {
+    fn score(value: Point) -> i32 {
+        return value.x;
+    }
+}
+
+fn preserve<T: Summarized>(value: T) -> T {
+    return value;
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 9 };
+    let q: Point = preserve<Point>(p);
+    print(q.x);
     return 0;
 }
 '''
@@ -154,3 +187,33 @@ def test_duplicate_impl_across_project_modules_is_rejected(tmp_path):
     loaded = load_project(project / 'Merit.toml')
     with pytest.raises(CompileError, match='duplicate impl Summarized for Point'):
         check(loaded)
+
+
+def test_generic_bound_uses_user_defined_impl_registry():
+    program = parse(GENERIC_BOUND_PROGRAM)
+    Checker(program).check()
+    assert any(function['name'] == 'preserve__Point' for function in program.functions)
+
+
+def test_generic_bound_rejects_missing_user_defined_impl():
+    bad = GENERIC_BOUND_PROGRAM.replace(
+        'impl Summarized for Point {\n'
+        '    fn score(value: Point) -> i32 {\n'
+        '        return value.x;\n'
+        '    }\n'
+        '}\n\n',
+        '',
+    )
+    with pytest.raises(CompileError, match='type Point does not satisfy generic bound Summarized'):
+        parse(bad)
+
+
+def test_user_trait_bound_interpreter_and_native_agree(tmp_path):
+    source = tmp_path / 'user_trait_bound.mrt'
+    source.write_text(GENERIC_BOUND_PROGRAM)
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted):
+        Interpreter(parse(GENERIC_BOUND_PROGRAM)).run()
+    _, _, _, executable = compile_file(source, tmp_path / 'user_trait_bound')
+    native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
+    assert interpreted.getvalue() == native == '9\n'

@@ -250,16 +250,20 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
             text=pat.sub(repl,text)
     return text
 
-def _generic_trait_satisfied(type_name: str, trait: str) -> bool:
+def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
+    return {(m.group(1),m.group(2)) for m in re.finditer(r'\bimpl\s+([A-Za-z_]\w*)\s+for\s+([A-Za-z_]\w*)\s*\{', source)}
+
+def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,str]]) -> bool:
     scalar=set(INT_RANGES)|{'String'}
     if trait in ('Copy','Eq','Ord','Display'): return type_name in scalar
-    return False
+    return (trait,type_name) in impls
 
 def expand_generics(source: str) -> str:
     source,templates=_extract_generic_templates(source)
     if not templates: return source
     requested=set()
     source=_replace_applications(source,templates,requested)
+    trait_impls=_extract_trait_impl_registry(source)
     generated=[]; done=set()
     while True:
         pending=[x for x in requested if x not in done]
@@ -268,7 +272,7 @@ def expand_generics(source: str) -> str:
         if len(args)!=len(t['params']): raise CompileError(f'M7001: {name} expects {len(t["params"])} type arguments')
         for param,arg in zip(t['params'],args):
             for trait in t['bounds'].get(param,[]):
-                if not _generic_trait_satisfied(arg,trait): raise CompileError(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}')
+                if not _generic_trait_satisfied(arg,trait,trait_impls): raise CompileError(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}')
         text=t['text']
         # Rewrite declaration header and substitute type parameters token-wise.
         text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
