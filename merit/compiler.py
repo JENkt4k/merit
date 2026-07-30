@@ -9,9 +9,11 @@ from lark import Lark, Transformer
 GRAMMAR=r'''
 start: module_decl declaration*
 module_decl: "module" CNAME
-?declaration: enum_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | function_decl
+?declaration: enum_decl | trait_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | function_decl
 enum_decl: "enum" CNAME "{" enum_variant ("," enum_variant)* [","] "}"
 enum_variant: CNAME ["(" type_ref ")"]
+trait_decl: "trait" CNAME "{" trait_method* "}"
+trait_method: "fn" CNAME "(" [params] ")" "->" type_ref ";"
 decimal_decl: "decimal" CNAME "(" INT "," INT "," CNAME ")" ";"
 bounded_decl: "bounded" CNAME "(" BASE_INT "," SIGNED_NUMBER "," SIGNED_NUMBER ")" ";"
 capability_decl: "capability" CNAME ";"
@@ -80,17 +82,27 @@ class EnumVariant: name:str; payload_type:str|None=None
 @dataclasses.dataclass(frozen=True)
 class EnumType: name:str; variants:tuple[EnumVariant,...]
 @dataclasses.dataclass(frozen=True)
+class TraitMethod: name:str; params:tuple[tuple[str,str,str],...]; return_type:str
+@dataclasses.dataclass(frozen=True)
+class TraitType: name:str; methods:tuple[TraitMethod,...]
+@dataclasses.dataclass(frozen=True)
 class Field: name:str; type_name:str
 @dataclasses.dataclass(frozen=True)
 class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict)
 
 class ASTBuilder(Transformer):
     def module_decl(self,x): return str(x[0])
     def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
     def enum_decl(self,x): return ('enum', EnumType(str(x[0]), tuple(x[1:])))
+    def trait_method(self,x):
+        name=str(x[0]); i=1; params=[]
+        if i<len(x) and x[i] is None:i+=1
+        elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
+        return TraitMethod(name, tuple(params), x[i])
+    def trait_decl(self,x): return ('trait', TraitType(str(x[0]), tuple(x[1:])))
     def decimal_decl(self,x): return ('decimal',DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])))
     def bounded_decl(self,x): return ('bounded',BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))))
     def capability_decl(self,x): return ('capability',str(x[0]))
@@ -159,10 +171,17 @@ class ASTBuilder(Transformer):
             i+=1
         return ('function',{'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]})
     def start(self,x):
-        ds={};bs={};cs=set();ss={};es={};fs=[]
+        ds={};bs={};cs=set();ss={};es={};ts={};fs=[];symbols={}
+        def add_symbol(kind,name):
+            if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}')
+            symbols[name]=kind
         for k,v in x[1:]:
-            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'function':lambda:fs.append(v)}[k]()
-        return Program(x[0],ds,bs,cs,ss,fs,es)
+            if k in ('decimal','bounded','struct','enum','trait'):
+                add_symbol(k,v.name)
+            elif k=='function':
+                add_symbol(k,v['name'])
+            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'function':lambda:fs.append(v)}[k]()
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts)
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0
@@ -287,6 +306,14 @@ class Checker:
                 if variant.name in seen_variants: raise CompileError(f'M6001: duplicate variant {variant.name} in {e.name}')
                 seen_variants.add(variant.name)
                 if variant.payload_type is not None: self.ensure_type(variant.payload_type)
+        for t in self.p.traits.values():
+            if not t.methods: raise CompileError(f'M7100: trait {t.name} requires at least one method')
+            seen_methods=set()
+            for method in t.methods:
+                if method.name in seen_methods: raise CompileError(f'M7101: duplicate method {method.name} in trait {t.name}')
+                seen_methods.add(method.name)
+                self.ensure_trait_signature_type(method.return_type)
+                for _, type_name, _ in method.params: self.ensure_trait_signature_type(type_name)
         for s in self.p.structs.values():
             seen=set()
             for fld in s.fields:
@@ -305,6 +332,8 @@ class Checker:
         return self
     def ensure_type(self,t):
         if t not in INT_RANGES and t not in self.p.decimals and t not in self.p.bounded and t not in self.p.structs and t not in self.p.enums and t not in BUILTIN_TYPES and t!='void':raise CompileError(f'M3000: unknown type {t}')
+    def ensure_trait_signature_type(self,t):
+        if t!='Self': self.ensure_type(t)
     def block(self,body,env,caps,fn):
         for st in body:
             tag=st[0]
@@ -947,7 +976,7 @@ class CGenerator:
             return f'({self.expr(e[2],env,t)} {e[1]} {self.expr(e[3],env,t)})'
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'functions':p.functions}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'functions':p.functions}
 def mir(p):
     def lower_function(f):
         blocks=[]

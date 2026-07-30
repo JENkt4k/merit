@@ -10,7 +10,7 @@ from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
 IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$", re.MULTILINE)
-PUB_RE = re.compile(r"^(\s*)pub\s+(?=(?:stable\([^\n]+\)\s+)?(?:enum|decimal|bounded|capability|struct|fn)\s+([A-Za-z_][A-Za-z0-9_]*))", re.MULTILINE)
+PUB_RE = re.compile(r"^(\s*)pub\s+(?=(?:stable\([^\n]+\)\s+)?(?:enum|trait|decimal|bounded|capability|struct|fn)\s+([A-Za-z_][A-Za-z0-9_]*))", re.MULTILINE)
 
 
 class ProjectError(Exception):
@@ -116,7 +116,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     owner: dict[str, SourceUnit] = {}
     variants: dict[str, SourceUnit] = {}
     for unit in units:
-        symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | set(unit.program.enums)
+        symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | set(unit.program.enums) | set(unit.program.traits)
         symbols |= {f["name"] for f in unit.program.functions}
         for symbol in symbols: owner[symbol] = unit
         for enum in unit.program.enums.values():
@@ -162,6 +162,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     capabilities = set()
     structs = {}
     enums = {}
+    traits = {}
     functions = []
     seen_functions: dict[str, Path] = {}
     for unit in units:
@@ -170,9 +171,10 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             (bounded, unit.program.bounded, "type"),
             (structs, unit.program.structs, "type"),
             (enums, unit.program.enums, "type"),
+            (traits, unit.program.traits, "trait"),
         ):
             for name, value in incoming.items():
-                if name in decimals or name in bounded or name in structs or name in enums:
+                if name in decimals or name in bounded or name in structs or name in enums or name in traits:
                     raise ProjectError(f"duplicate {kind} symbol {name} in {unit.path}")
                 collection[name] = value
         capabilities.update(unit.program.capabilities)
@@ -184,7 +186,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 raise ProjectError(f"duplicate function {name}: {seen_functions[name]} and {unit.path}")
             seen_functions[name] = unit.path
             functions.append(function)
-    return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums)
+    return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums, traits)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:
