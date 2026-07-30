@@ -1,0 +1,43 @@
+module generic_collections
+capability allocate;
+
+struct Pair<T, U> {
+    first: T;
+    second: U;
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let a: Allocator = system_allocator();
+
+        var values: Vec<i64> = vec_new__i64(a, 2);
+        vec_push__i64(values, 7);
+        vec_push__i64(values, 11);
+        vec_set__i64(values, 1, 13);
+        print(vec_len__i64(values));
+        print(vec_get__i64(values, 0));
+        print(vec_pop__i64(values));
+
+        var pairs: Vec<Pair<i64, i32>> = vec_new__Pair__i64__i32(a, 1);
+        let p: Pair<i64, i32> = Pair<i64, i32> { first: 21, second: 5 };
+        vec_push__Pair__i64__i32(pairs, p);
+        let got: Pair<i64, i32> = vec_get__Pair__i64__i32(pairs, 0);
+        print(got.first);
+        print(got.second);
+
+        var buffers: Vec<Buffer> = vec_new__Buffer(a, 2);
+        let first: Buffer = buffer_from_string(a, "ab");
+        let second: Buffer = buffer_from_string(a, "wxyz");
+        vec_push__Buffer(buffers, first);
+        vec_push__Buffer(buffers, second);
+        print(vec_len__Buffer(buffers));
+        let last: Buffer = vec_pop__Buffer(buffers);
+        print(buffer_len(last));
+
+        drop(last);
+        drop(buffers);
+        drop(pairs);
+        drop(values);
+    }
+    return 0;
+}

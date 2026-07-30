@@ -212,6 +212,17 @@ def _mangle_generic(name: str, args: list[str]) -> str:
         return re.sub(r'[^A-Za-z0-9_]', '_', x)
     return name + '__' + '__'.join(clean(a) for a in args)
 
+def _replace_builtin_vec_types(source: str) -> str:
+    changed=True
+    while changed:
+        changed=False
+        def repl(m):
+            nonlocal changed
+            changed=True
+            return _mangle_generic('Vec',[m.group(1).strip()])
+        source=re.sub(r'\bVec<([^<>]+)>', repl, source)
+    return source
+
 def _extract_generic_templates(source: str):
     templates={}; spans=[]
     header=re.compile(r'\b(enum|struct|fn)\s+([A-Za-z_]\w*)\s*<([^>{}]+)>')
@@ -285,7 +296,7 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
 
 def expand_generics(source: str) -> str:
     source,templates=_extract_generic_templates(source)
-    if not templates: return source
+    if not templates: return _replace_builtin_vec_types(source)
     requested=set()
     source=_replace_applications(source,templates,requested)
     trait_impls=_extract_trait_impl_registry(source)
@@ -323,7 +334,7 @@ def expand_generics(source: str) -> str:
                 text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
         text=_replace_applications(text,templates,requested)
         generated.append(text)
-    return source+'\n'+'\n'.join(generated)+'\n'
+    return _replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
 
 def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
@@ -336,6 +347,28 @@ class CompileError(Exception):pass
 class TypedValue: type_name:str; value:Any
 @dataclasses.dataclass
 class VarState: type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"
+
+def is_vec_type(t: str) -> bool:
+    return t.startswith('Vec__')
+
+def vec_elem_type(t: str) -> str:
+    return t[5:]
+
+def is_owned_type(t: str, p=None) -> bool:
+    return t in OWNED_BUILTINS or is_vec_type(t) or (p is not None and t in p.structs)
+
+def vec_elem_needs_drop(t: str, p) -> bool:
+    if t in OWNED_BUILTINS or is_vec_type(t):
+        return True
+    if p is not None and t in p.structs:
+        return any(vec_elem_needs_drop(field.type_name,p) for field in p.structs[t].fields)
+    return False
+
+def vec_builtin(name: str):
+    for op in ('new','push','len','get','set','pop','drop'):
+        prefix=f'vec_{op}__'
+        if name.startswith(prefix): return op,name[len(prefix):]
+    return None
 
 class Checker:
     def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[]
@@ -383,6 +416,8 @@ class Checker:
             for f in impl.methods: self.check_function_body(f)
         return self
     def ensure_type(self,t):
+        if is_vec_type(t):
+            self.ensure_type(vec_elem_type(t)); return
         if t not in INT_RANGES and t not in self.p.decimals and t not in self.p.bounded and t not in self.p.structs and t not in self.p.enums and t not in BUILTIN_TYPES and t!='void':raise CompileError(f'M3000: unknown type {t}')
     def ensure_trait_signature_type(self,t):
         if t!='Self': self.ensure_type(t)
@@ -416,7 +451,7 @@ class Checker:
                 _,n,t,e,mut=st;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):raise CompileError(f'M3001: cannot assign {et} to {t} in {n}')
                 if e[0]=='number':self.validate_literal(t,e[1])
-                if e[0]=='var' and e[1] in env and (env[e[1]].type_name in self.p.structs or env[e[1]].type_name in OWNED_BUILTINS):
+                if e[0]=='var' and e[1] in env and is_owned_type(env[e[1]].type_name,self.p):
                     if env[e[1]].moved:raise CompileError(f'M5001: use of moved value {e[1]}')
                     env[e[1]].moved=True
                 env[n]=VarState(t,mut)
@@ -540,6 +575,52 @@ class Checker:
                 if a!=b:raise CompileError(f'M3101: {name} operands differ: {a} and {b}')
                 if name=='decimal_div' and a not in self.p.decimals:raise CompileError('M1302: decimal_div requires decimal operands')
                 return a
+            vec=vec_builtin(name)
+            if vec:
+                op,elem=vec; vec_t='Vec__'+elem; self.ensure_type(vec_t)
+                if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
+                if elem in self.p.structs and vec_elem_needs_drop(elem,self.p):
+                    raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
+                if op=='new':
+                    if 'allocate' not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [allocate]')
+                    if len(args)!=2: raise CompileError(f'M3005: {name} expects 2 arguments')
+                    if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
+                    cap_t=self.expr_type(args[1],env,caps,fn)
+                    if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
+                    return vec_t
+                if op in ('len','drop'):
+                    if len(args)!=1: raise CompileError(f'M3005: {name} expects 1 arguments')
+                    mode='borrow_mut' if op=='drop' else 'borrow'
+                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,mode)
+                    if op=='drop':
+                        root=self.root_var(args[0])
+                        if root: env[root].dropped=True
+                    return 'void' if op=='drop' else 'i64'
+                if op=='get':
+                    if vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
+                    if len(args)!=2: raise CompileError(f'M3005: {name} expects 2 arguments')
+                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow')
+                    it=self.expr_type(args[1],env,caps,fn)
+                    if it not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {it}')
+                    return elem
+                if op=='pop':
+                    if len(args)!=1: raise CompileError(f'M3005: {name} expects 1 arguments')
+                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow_mut')
+                    return elem
+                if op in ('push','set'):
+                    if op=='set' and vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
+                    expected=2 if op=='push' else 3
+                    if len(args)!=expected: raise CompileError(f'M3005: {name} expects {expected} arguments')
+                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow_mut')
+                    value_arg=args[1] if op=='push' else args[2]
+                    if op=='set':
+                        it=self.expr_type(args[1],env,caps,fn)
+                        if it not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {it}')
+                    at=self.expr_type(value_arg,env,caps,fn)
+                    if at not in (elem,'number'): raise CompileError(f'M3008: vector value expects {elem}, got {at}')
+                    root=self.root_var(value_arg)
+                    if root and is_owned_type(at,self.p): env[root].moved=True
+                    return 'void'
             builtin_sigs={
                 'system_allocator':([], 'Allocator', None),
                 'string_len':([('value','String')], 'i64', None),
@@ -573,7 +654,7 @@ class Checker:
                         for pr,pm in loans:
                             if pr==root and ('borrow_mut' in (mode,pm)): raise CompileError(f'M5003: conflicting loans of {root}')
                         loans.append((root,mode))
-                    if mode=='value' and root and at in OWNED_BUILTINS: env[root].moved=True
+                    if mode=='value' and root and is_owned_type(at,self.p): env[root].moved=True
                 return ret
             if name not in self.fn:raise CompileError(f'M3004: unknown function {name}')
             callee=self.fn[name];missing=set(callee['requires_caps'])-caps
@@ -593,7 +674,7 @@ class Checker:
                 if mode=='borrow_mut':
                     if not root: raise CompileError(f'M5004: borrow_mut argument {pn} must be an addressable binding')
                     if not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
-                if mode=='value' and root and (at in self.p.structs or at in OWNED_BUILTINS):env[root].moved=True
+                if mode=='value' and root and is_owned_type(at,self.p):env[root].moved=True
             return callee['return']
         if tag=='binop':
             a=self.expr_type(e[2],env,caps,fn);b=self.expr_type(e[3],env,caps,fn)
@@ -603,6 +684,12 @@ class Checker:
             if a!=b:raise CompileError(f'M3102: arithmetic operands differ: {a} and {b}')
             return a
         raise CompileError(f'M3999: unsupported expression {e}')
+    def check_vec_receiver(self,arg,env,caps,fn,vec_t,mode):
+        at=self.expr_type(arg,env,caps,fn)
+        if at!=vec_t: raise CompileError(f'M3008: vector argument expects {vec_t}, got {at}')
+        root=self.root_var(arg)
+        if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
+        if mode=='borrow_mut' and not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
     def root_var(self,e):
         while e and e[0]=='field': e=e[1]
         return e[1] if e and e[0]=='var' else None
@@ -752,6 +839,27 @@ class Interpreter:
                 vec=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
                 if idx<0 or idx>=len(vec): raise RuntimeError('vector index out of bounds')
                 return TypedValue('i64',vec[idx])
+            vec=vec_builtin(n)
+            if vec:
+                op,elem=vec; vec_t='Vec__'+elem
+                if op=='new': return TypedValue(vec_t,[])
+                if op=='push':
+                    self.eval(e[2][0],env).value.append(self.clone(self.eval(e[2][1],env,elem))); return TypedValue('void',None)
+                if op=='len': return TypedValue('i64',len(self.eval(e[2][0],env).value))
+                if op=='get':
+                    data=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                    if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
+                    return self.clone(data[idx])
+                if op=='set':
+                    data=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                    if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
+                    data[idx]=self.clone(self.eval(e[2][2],env,elem)); return TypedValue('void',None)
+                if op=='pop':
+                    data=self.eval(e[2][0],env).value
+                    if not data: raise RuntimeError('vector pop from empty')
+                    return self.clone(data.pop())
+                if op=='drop':
+                    self.eval(e[2][0],env).value.clear(); return TypedValue('void',None)
             if n=='file_read':
                 path=self.eval(e[2][1],env).value
                 return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
@@ -797,6 +905,22 @@ class Interpreter:
 
 class CGenerator:
     def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
+    def vec_types(self):
+        found=set()
+        def add(t):
+            if is_vec_type(t):
+                found.add(t); add(vec_elem_type(t))
+        for s in self.p.structs.values():
+            for f in s.fields: add(f.type_name)
+        for e in self.p.enums.values():
+            for v in e.variants:
+                if v.payload_type: add(v.payload_type)
+        for f in self.p.functions:
+            add(f['return'])
+            for _,t,_ in f['params']: add(t)
+            for st in self.walk_statements(f['body']):
+                if st[0] in ('let','try_let'): add(st[2])
+        return sorted(found)
     def ctype(self,t):
         if t in self.p.decimals:return 'int64_t'
         if t in self.p.bounded:return self.ctype(self.p.bounded[t].base)
@@ -807,6 +931,7 @@ class CGenerator:
         if t=='Allocator': return 'merit_Allocator'
         if t=='ByteSlice': return 'merit_ByteSlice'
         if t=='I64Vec': return 'merit_I64Vec'
+        if is_vec_type(t): return 'merit_'+t
         return {'i8':'int8_t','i16':'int16_t','i32':'int32_t','i64':'int64_t','u8':'uint8_t','u16':'uint16_t','u32':'uint32_t','u64':'uint64_t','void':'void'}[t]
     def header(self):
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { uint8_t *data; size_t len; size_t cap; } merit_Buffer;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; } merit_I64Vec;', '']
@@ -838,6 +963,13 @@ class CGenerator:
                 layout=le.layout(s);o.append(f'_Static_assert(sizeof(merit_{s.name}) == {layout["size"]}, "Merit ABI size mismatch: {s.name}");')
                 for fld in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{s.name}, {fld["name"]}) == {fld["offset"]}, "Merit ABI offset mismatch: {s.name}.{fld["name"]}");')
             o.append('')
+        for vt in self.vec_types():
+            o.append(f'typedef struct merit_{vt} {{')
+            o.append(f'    {self.ctype(vec_elem_type(vt))} *data;')
+            o.append('    size_t len;')
+            o.append('    size_t cap;')
+            o.append(f'}} merit_{vt};')
+            o.append('')
         for f in self.p.functions:
             if f['name']=='main':continue
             params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void'
@@ -868,12 +1000,27 @@ class CGenerator:
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
+        for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
         for t,b in self.p.bounded.items():
             o.append(f'static {self.ctype(t)} merit_check_{t}({self.ctype(t)} x){{if(x < {b.minimum} || x > {b.maximum}) merit_fail("bounded range violation: {t}",70);return x;}}')
         for t,d in self.p.decimals.items():
             m=10**d.precision-1;o.append(f'static int64_t merit_check_{t}(int64_t x){{if(x < -{m}LL || x > {m}LL) merit_fail("decimal range violation: {t}",70);return x;}}')
         for f in self.p.functions:o.append(self.fn_c(f))
         return '\n'.join(o)
+    def vec_runtime(self,vt):
+        elem=vec_elem_type(vt); ct=self.ctype(elem); vct=self.ctype(vt); suffix=vec_elem_type(vt)
+        drop_live='for(size_t i=0;i<v->len;i++)merit_buffer_drop(&v->data[i]);' if elem=='Buffer' else ''
+        return [
+            f'static void merit_vec_reserve__{suffix}({vct} *v,size_t need){{if(need<=v->cap)return;size_t c=v->cap?v->cap:8;while(c<need)c*=2;void *p=realloc(v->data,c*sizeof({ct}));if(!p)merit_fail("allocation failed",80);v->data=({ct}*)p;v->cap=c;}}',
+            f'static {vct} merit_vec_new__{suffix}(merit_Allocator a,int64_t cap){{(void)a;{vct} v={{0}};if(cap<0)merit_fail("negative capacity",81);merit_vec_reserve__{suffix}(&v,(size_t)cap);return v;}}',
+            f'static void merit_vec_push__{suffix}({vct} *v,{ct} x){{merit_vec_reserve__{suffix}(v,v->len+1);v->data[v->len++]=x;}}',
+            f'static int64_t merit_vec_len__{suffix}(const {vct} *v){{return (int64_t)v->len;}}',
+            f'static {ct} merit_vec_get__{suffix}(const {vct} *v,int64_t i){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}}',
+            f'static void merit_vec_set__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);v->data[i]=x;}}',
+            f'static {ct} merit_vec_pop__{suffix}({vct} *v){{if(!v->len)merit_fail("vector pop from empty",86);return v->data[--v->len];}}',
+            f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}free(v->data);v->data=NULL;v->len=0;v->cap=0;}}',
+            ''
+        ]
     def walk_old(self,e,out):
         if not isinstance(e,tuple):return
         if e[0]=='call' and e[1]=='old':
@@ -891,13 +1038,32 @@ class CGenerator:
                 yield from self.walk_statements(st[2]); yield from self.walk_statements(st[3])
             elif st[0]=='match':
                 for arm in st[2]: yield from self.walk_statements(arm[2])
+    def expr_root(self,e):
+        return e[1] if isinstance(e,tuple) and e[0]=='var' else None
+    def moved_roots(self,e):
+        moved=set()
+        if not isinstance(e,tuple): return moved
+        if e[0]=='call':
+            vec=vec_builtin(e[1])
+            if vec and vec[0]=='push':
+                root=self.expr_root(e[2][1])
+                if root: moved.add(root)
+            elif e[1] in self.fn:
+                callee=self.fn[e[1]]
+                for arg,(_,t,mode) in zip(e[2],callee['params']):
+                    if mode=='value' and (t in OWNED_BUILTINS or is_vec_type(t)):
+                        root=self.expr_root(arg)
+                        if root: moved.add(root)
+        return moved
     def owned_buffer_cleanup(self, f):
-        locals_order=[]; explicit=set(); returned=set()
+        locals_order=[]; explicit=set(); returned=set(); moved=set()
         for st in self.walk_statements(f['body']):
-            if st[0]=='let' and st[2] in OWNED_BUILTINS: locals_order.append((st[1],st[2]))
+            if st[0]=='let' and (st[2] in OWNED_BUILTINS or is_vec_type(st[2])): locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
-        return [(n,t) for n,t in reversed(locals_order) if n not in explicit and n not in returned]
+            for part in st[1:]:
+                if isinstance(part,tuple): moved |= self.moved_roots(part)
+        return [(n,t) for n,t in reversed(locals_order) if n not in explicit and n not in returned and n not in moved]
     def fn_c(self,f):
         name='main' if f['name']=='main' else 'merit_'+f['name'];params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void';env={n:(t,m) for n,t,m in f['params']};o=[f'{self.ctype(f["return"])} {name}({params}) {{']
         old={}
@@ -912,7 +1078,10 @@ class CGenerator:
         o.append('    _merit_epilogue: ;')
         postenv=dict(env);postenv['result']=(f['return'],'__result__')
         for c in f['post']:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f["name"]}",73);')
-        for name,t in self.owned_buffer_cleanup(f): o.append(f'    merit_buffer_drop(&{name});' if t=='Buffer' else f'    merit_i64vec_drop(&{name});')
+        for name,t in self.owned_buffer_cleanup(f):
+            if t=='Buffer': o.append(f'    merit_buffer_drop(&{name});')
+            elif t=='I64Vec': o.append(f'    merit_i64vec_drop(&{name});')
+            elif is_vec_type(t): o.append(f'    merit_vec_drop__{vec_elem_type(t)}(&{name});')
         if f['return']!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
     def checked(self,t,x):
@@ -947,7 +1116,11 @@ class CGenerator:
             return lines
         if s[0]=='expr':return [f'{p}(void)({self.expr(s[1],env)});']
         if s[0]=='drop':
-            t=self.env_type(env,s[1]); return [f'{p}merit_buffer_drop(&{s[1]});'] if t=='Buffer' else ([f'{p}merit_i64vec_drop(&{s[1]});'] if t=='I64Vec' else [f'{p}/* deterministic drop {s[1]} */'])
+            t=self.env_type(env,s[1])
+            if t=='Buffer': return [f'{p}merit_buffer_drop(&{s[1]});']
+            if t=='I64Vec': return [f'{p}merit_i64vec_drop(&{s[1]});']
+            if is_vec_type(t): return [f'{p}merit_vec_drop__{vec_elem_type(t)}(&{s[1]});']
+            return [f'{p}/* deterministic drop {s[1]} */']
         if s[0]=='match':
             enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
             o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[1],env)};',f'{p}switch ({temp}.tag) {{']
@@ -992,6 +1165,10 @@ class CGenerator:
             if e[1]=='old':return self.etype(e[2][0],env)
             builtin_returns={'system_allocator':'Allocator','string_len':'i64','string_byte':'u8','buffer_new':'Buffer','buffer_from_string':'Buffer','buffer_push':'void','buffer_len':'i64','buffer_get':'i64','buffer_slice':'ByteSlice','slice_len':'i64','slice_get':'i64','i64vec_new':'I64Vec','i64vec_push':'void','i64vec_len':'i64','i64vec_get':'i64','file_read':'Buffer'}
             if e[1] in builtin_returns:return builtin_returns[e[1]]
+            vec=vec_builtin(e[1])
+            if vec:
+                op,elem=vec
+                return {'new':'Vec__'+elem,'push':'void','len':'i64','get':elem,'set':'void','pop':elem,'drop':'void'}[op]
             return self.etype(e[2][0],env) if e[1].startswith('checked_') or e[1]=='decimal_div' else self.fn[e[1]]['return']
         if e[0]=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
     def address_expr(self,e,env):
@@ -1034,6 +1211,16 @@ class CGenerator:
             if n=='i64vec_len': return f'merit_i64vec_len({self.address_expr(a[0],env)})'
             if n=='i64vec_get': return f'merit_i64vec_get({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='file_read': return f'merit_file_read({self.expr(a[0],env)}, {self.expr(a[1],env)})'
+            vec=vec_builtin(n)
+            if vec:
+                op,elem=vec
+                if op=='new': return f'merit_vec_new__{elem}({self.expr(a[0],env)}, {self.expr(a[1],env)})'
+                if op=='push': return f'(merit_vec_push__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env,elem)}), 0)'
+                if op=='len': return f'merit_vec_len__{elem}({self.address_expr(a[0],env)})'
+                if op=='get': return f'merit_vec_get__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
+                if op=='set': return f'(merit_vec_set__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
+                if op=='pop': return f'merit_vec_pop__{elem}({self.address_expr(a[0],env)})'
+                if op=='drop': return f'(merit_vec_drop__{elem}({self.address_expr(a[0],env)}), 0)'
             if n in ('checked_add','checked_sub','checked_mul','decimal_div'):
                 t=self.etype(a[0],env);left=self.expr(a[0],env,t);right=self.expr(a[1],env,t)
                 if n=='checked_add':return f'merit_add({left}, {right})'
@@ -1092,7 +1279,7 @@ def mir(p):
             return current
         tail=lower_seq(f['body'],entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
-        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and (st[2] in p.structs or st[2] in OWNED_BUILTINS)]
+        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and (st[2] in p.structs or st[2] in OWNED_BUILTINS or is_vec_type(st[2]))]
         explicit={st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='drop'}
         entry['statements'].extend(('drop_implicit',name) for name in reversed(locals_order) if name not in explicit)
         return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'blocks':blocks}

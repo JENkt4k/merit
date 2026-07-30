@@ -1,7 +1,7 @@
 # Next Work - Generic Collections
 
 ## Goal
-Build allocator-backed `Vec<T>` on top of the now-usable user-visible trait checkpoint.
+Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait checkpoint.
 
 ## Trait checkpoint now available
 - User-declared traits with method signatures.
@@ -18,9 +18,20 @@ Build allocator-backed `Vec<T>` on top of the now-usable user-visible trait chec
 - Generic templates and their trait impl evidence are still best kept in the same source unit until the compiler has a real project-wide generic expansion pass.
 
 ## Required collection features
-1. Generic `Vec<T>` instantiated through the existing monomorphization pipeline.
-2. Element move/drop behavior integrated into vector growth, indexing, removal, and destruction.
-3. Generic `Option<T>` and `Result<T,E>` retained as normal library-style declarations.
+1. Owned element drop behavior for future owned element types beyond `Buffer`.
+2. Generic `Option<Vec<i64>>` and `Result<Vec<i64>, Error>` retained as normal library-style declarations once enum ownership/drop rules are explicit.
+3. Cleaner user-facing generic vector API names once function-name resolution can carry type arguments.
+
+## Collection checkpoint now available
+- `Vec<i64>` type syntax expands through the existing monomorphization path.
+- `Vec<Pair<i64,i32>>` stores generic structs by value.
+- `Vec<Buffer>` moves owned buffers into the vector and destroys live elements on vector drop.
+- `vec_new__T`, `vec_push__T`, `vec_len__T`, `vec_get__T`, `vec_set__T`, `vec_pop__T`, and `vec_drop__T` are available for concrete `T`.
+- `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
+- Vectors are owned values: copying/move-after-use is rejected.
+- Allocation requires the `allocate` capability.
+- Mutation requires a mutable vector binding.
+- Interpreter/native verification through `examples/projects/generic_collections`.
 
 ## Deliberately deferred
 - specialization
@@ -32,11 +43,10 @@ Build allocator-backed `Vec<T>` on top of the now-usable user-visible trait chec
 - concurrency
 
 ## Suggested implementation order
-1. Keep built-in operations available through compiler-supplied prelude implementations.
-2. Generalize owned-vector runtime metadata for monomorphized element type, size, and drop behavior.
-3. Lower each used `Vec<T>` to a concrete generated runtime representation.
-4. Add vector APIs: `new`, `len`, `push`, `get`, `set`, `pop`, `drop`.
-5. Add acceptance applications and C-header checks.
+1. Add enum ownership/drop rules, then add generic `Option<Vec<i64>>` and `Result<Vec<i64>, Error>` acceptance coverage.
+2. Add owned-field drop glue for vector element structs.
+3. Keep built-in operations available through compiler-supplied prelude implementations.
+4. Add C-header checks for generated vector layouts.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -44,7 +54,7 @@ The checkpoint is complete only when all of these pass:
 ### Positive
 - `Vec<i64>` grows and preserves values.
 - `Vec<Pair<i64,i32>>` stores generic structs.
-- `Vec<Buffer>` moves owned buffers into the vector and destroys each exactly once.
+- `Vec<Buffer>` moves owned buffers into the vector and destroys each live element exactly once.
 - trait-bounds acceptance project remains green.
 - generic `Option<Vec<i64>>` and `Result<Vec<i64>, Error>` compile and execute.
 - interpreter and native output match for all acceptance programs.
@@ -53,6 +63,7 @@ The checkpoint is complete only when all of these pass:
 - duplicate trait impl remains rejected.
 - missing trait impl remains rejected at generic instantiation.
 - pushing an owned value and then using the moved source rejected.
+- copying an owned vector element with `vec_get__Buffer` rejected.
 - copying `Vec<T>` rejected.
 - use-after-drop rejected.
 - immutable vector mutation rejected.
@@ -60,7 +71,7 @@ The checkpoint is complete only when all of these pass:
 
 ### Regression
 - all existing tests remain green.
-- simple examples, text pipeline, binary packet, generic result, and trait bounds projects still verify natively.
+- simple examples, text pipeline, binary packet, generic result, trait bounds, and generic collections projects still verify natively.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:
@@ -72,7 +83,6 @@ Create `examples/projects/generic_collections/` with modules for:
 Expected demonstration:
 - allocate a `Vec<Buffer>`
 - insert multiple owned strings
-- iterate or index them
-- compute a deterministic checksum
-- return a typed result
+- pop an owned string back out
+- inspect owned data before explicit drop
 - destroy all resources exactly once
