@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import Program, parse
+from merit.compiler import Program, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -182,12 +182,21 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         impls.extend(unit.program.impls)
         for function in unit.program.functions:
             name = function["name"]
+            if name.startswith("impl__"):
+                continue
             if name == "main" and unit.module != entry_module:
                 raise ProjectError(f"only entry module may define main; found in {unit.path}")
             if name in seen_functions:
                 raise ProjectError(f"duplicate function {name}: {seen_functions[name]} and {unit.path}")
             seen_functions[name] = unit.path
             functions.append(function)
+    for impl in impls:
+        for method in impl.methods:
+            generated = dict(method)
+            generated["name"] = _impl_function_name(impl.trait_name, impl.target_type, method["name"])
+            if generated["name"] not in seen_functions:
+                seen_functions[generated["name"]] = manifest.root
+                functions.append(generated)
     return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums, traits, impls)
 
 

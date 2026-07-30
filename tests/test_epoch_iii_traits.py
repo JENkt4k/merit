@@ -73,6 +73,35 @@ fn main() -> i32 {
 }
 '''
 
+GENERIC_TRAIT_CALL_PROGRAM = r'''
+module user_trait_dispatch_acceptance
+
+stable("v1") struct Point {
+    x: i32;
+}
+
+trait Summarized {
+    fn score(value: Self) -> i32;
+}
+
+impl Summarized for Point {
+    fn score(value: Point) -> i32 {
+        return value.x;
+    }
+}
+
+fn summarize<T: Summarized>(value: T) -> i32 {
+    return score(value);
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 17 };
+    let total: i32 = summarize<Point>(p);
+    print(total);
+    return 0;
+}
+'''
+
 
 def test_trait_declaration_check_accepts_self_signatures():
     program = parse(TRAIT_PROGRAM)
@@ -217,3 +246,19 @@ def test_user_trait_bound_interpreter_and_native_agree(tmp_path):
     _, _, _, executable = compile_file(source, tmp_path / 'user_trait_bound')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
     assert interpreted.getvalue() == native == '9\n'
+
+
+def test_generic_user_trait_method_call_interpreter_and_native_agree(tmp_path):
+    program = parse(GENERIC_TRAIT_CALL_PROGRAM)
+    Checker(program).check()
+    assert any(function['name'] == 'impl__Summarized__Point__score' for function in program.functions)
+    assert any(function['name'] == 'summarize__Point' for function in program.functions)
+
+    source = tmp_path / 'user_trait_call.mrt'
+    source.write_text(GENERIC_TRAIT_CALL_PROGRAM)
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted):
+        Interpreter(parse(GENERIC_TRAIT_CALL_PROGRAM)).run()
+    _, _, _, executable = compile_file(source, tmp_path / 'user_trait_call')
+    native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
+    assert interpreted.getvalue() == native == '17\n'

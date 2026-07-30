@@ -97,6 +97,9 @@ class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list)
 
+def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> str:
+    return 'impl__' + trait_name + '__' + target_type + '__' + method_name
+
 class ASTBuilder(Transformer):
     def module_decl(self,x): return str(x[0])
     def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
@@ -187,6 +190,11 @@ class ASTBuilder(Transformer):
             elif k=='function':
                 add_symbol(k,v['name'])
             {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
+        for impl in ims:
+            for method in impl.methods:
+                generated=dict(method); generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
+                if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
+                fs.append(generated)
         return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
 
 def _split_generic_args(text: str) -> list[str]:
@@ -253,6 +261,23 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
 def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
     return {(m.group(1),m.group(2)) for m in re.finditer(r'\bimpl\s+([A-Za-z_]\w*)\s+for\s+([A-Za-z_]\w*)\s*\{', source)}
 
+def _extract_trait_methods(source: str) -> dict[str,set[str]]:
+    methods={}; header=re.compile(r'\btrait\s+([A-Za-z_]\w*)\s*\{'); pos=0
+    while True:
+        m=header.search(source,pos)
+        if not m: break
+        depth=0; end=None
+        for i in range(m.end()-1,len(source)):
+            if source[i]=='{': depth+=1
+            elif source[i]=='}':
+                depth-=1
+                if depth==0: end=i+1; break
+        if end is None: raise CompileError(f'M7102: unterminated trait {m.group(1)}')
+        body=source[m.end():end-1]
+        methods[m.group(1)]={x.group(1) for x in re.finditer(r'\bfn\s+([A-Za-z_]\w*)\s*\(', body)}
+        pos=end
+    return methods
+
 def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,str]]) -> bool:
     scalar=set(INT_RANGES)|{'String'}
     if trait in ('Copy','Eq','Ord','Display'): return type_name in scalar
@@ -264,6 +289,7 @@ def expand_generics(source: str) -> str:
     requested=set()
     source=_replace_applications(source,templates,requested)
     trait_impls=_extract_trait_impl_registry(source)
+    trait_methods=_extract_trait_methods(source)
     generated=[]; done=set()
     while True:
         pending=[x for x in requested if x not in done]
@@ -277,6 +303,12 @@ def expand_generics(source: str) -> str:
         # Rewrite declaration header and substitute type parameters token-wise.
         text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
         for param,arg in zip(t['params'],args): text=re.sub(r'\b'+re.escape(param)+r'\b',arg,text)
+        if t['kind']=='fn':
+            for param,arg in zip(t['params'],args):
+                for trait in t['bounds'].get(param,[]):
+                    if trait in ('Copy','Eq','Ord','Display'): continue
+                    for method in sorted(trait_methods.get(trait,set()),key=len,reverse=True):
+                        text=re.sub(r'\b'+re.escape(method)+r'\s*\(', _impl_function_name(trait,arg,method)+'(', text)
         if t['kind']=='enum':
             # Constructor names are nominally scoped by the instantiated enum.
             head_end=text.find('{'); body=text[head_end+1:text.rfind('}')]
