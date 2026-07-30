@@ -1,5 +1,9 @@
 # Merit — Epoch III Generic Type Engine
 
+<p align="center">
+  <img src="images/MeritLogoText.png" alt="Merit language logo" width="760">
+</p>
+
 Merit is a native compiled language experiment centered on deterministic semantics, exact numerics, ownership, explicit allocation, contracts, stable layouts, capability-specific hazardous operations, and C interoperability.
 
 This export is prepared for continued development in Codex. Start with:
