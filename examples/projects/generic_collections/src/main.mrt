@@ -10,6 +10,20 @@ struct OwnedText {
     data: Buffer;
 }
 
+enum Error {
+    Bad
+}
+
+enum Option<T> {
+    Some(T),
+    None
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
@@ -41,6 +55,34 @@ fn main() -> i32 {
         let text: Buffer = buffer_from_string(a, "owned");
         let wrapped: OwnedText = OwnedText { data: text };
         print(buffer_len(wrapped.data));
+
+        var option_values: Vec<i64> = vec_new__i64(a, 2);
+        vec_push__i64(option_values, 31);
+        vec_push__i64(option_values, 32);
+        let maybe: Option<Vec<i64>> = Option<Vec<i64>>::Some(option_values);
+        match (maybe) {
+            Option<Vec<i64>>::Some(inner) => {
+                print(vec_len__i64(inner));
+                print(vec_get__i64(inner, 1));
+                drop(inner);
+            }
+            Option<Vec<i64>>::None => {
+                print(0);
+            }
+        }
+
+        var result_values: Vec<i64> = vec_new__i64(a, 1);
+        vec_push__i64(result_values, 44);
+        let outcome: Result<Vec<i64>, Error> = Result<Vec<i64>, Error>::Ok(result_values);
+        match (outcome) {
+            Result<Vec<i64>, Error>::Ok(ok_values) => {
+                print(vec_get__i64(ok_values, 0));
+                drop(ok_values);
+            }
+            Result<Vec<i64>, Error>::Err(error) => {
+                print(0);
+            }
+        }
 
         drop(wrapped);
         drop(last);

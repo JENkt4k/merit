@@ -296,6 +296,7 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
 
 def expand_generics(source: str) -> str:
     source,templates=_extract_generic_templates(source)
+    source=_replace_builtin_vec_types(source)
     if not templates: return _replace_builtin_vec_types(source)
     requested=set()
     source=_replace_applications(source,templates,requested)
@@ -355,13 +356,15 @@ def vec_elem_type(t: str) -> str:
     return t[5:]
 
 def is_owned_type(t: str, p=None) -> bool:
-    return t in OWNED_BUILTINS or is_vec_type(t) or (p is not None and t in p.structs)
+    return t in OWNED_BUILTINS or is_vec_type(t) or (p is not None and t in p.structs) or (p is not None and t in p.enums and vec_elem_needs_drop(t,p))
 
 def vec_elem_needs_drop(t: str, p) -> bool:
     if t in OWNED_BUILTINS or is_vec_type(t):
         return True
     if p is not None and t in p.structs:
         return any(vec_elem_needs_drop(field.type_name,p) for field in p.structs[t].fields)
+    if p is not None and t in p.enums:
+        return any(variant.payload_type is not None and vec_elem_needs_drop(variant.payload_type,p) for variant in p.enums[t].variants)
     return False
 
 def vec_builtin(name: str):
@@ -499,6 +502,8 @@ class Checker:
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
+                root=self.root_var(st[1])
+                if root and vec_elem_needs_drop(subject_t,self.p): env[root].moved=True
             elif tag=='with_cap':
                 cap=st[1]
                 if cap not in self.p.capabilities:raise CompileError(f'M2002: undeclared capability {cap}')
@@ -564,6 +569,8 @@ class Checker:
                     at=self.expr_type(args[0],env,caps,fn)
                     if at not in (variant.payload_type,'number'): raise CompileError(f'M6004: {name} expects {variant.payload_type}, got {at}')
                     if args[0][0]=='number': self.validate_literal(variant.payload_type,args[0][1])
+                    root=self.root_var(args[0])
+                    if root and is_owned_type(at,self.p): env[root].moved=True
                 return enum.name
             if name=='old':
                 if len(args)!=1: raise CompileError('M3200: old expects one argument')
@@ -935,8 +942,22 @@ class CGenerator:
         if t=='I64Vec': return 'merit_I64Vec'
         if is_vec_type(t): return 'merit_'+t
         return {'i8':'int8_t','i16':'int16_t','i32':'int32_t','i64':'int64_t','u8':'uint8_t','u16':'uint16_t','u32':'uint32_t','u64':'uint64_t','void':'void'}[t]
+    def vec_typedef_lines(self,vt):
+        return [
+            f'typedef struct merit_{vt} {{',
+            f'    {self.ctype(vec_elem_type(vt))} *data;',
+            '    size_t len;',
+            '    size_t cap;',
+            f'}} merit_{vt};',
+            ''
+        ]
+    def vec_can_define_before_composites(self,vt):
+        elem=vec_elem_type(vt)
+        return not is_vec_type(elem) and elem not in self.p.structs and elem not in self.p.enums
     def header(self):
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { uint8_t *data; size_t len; size_t cap; } merit_Buffer;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; } merit_I64Vec;', '']
+        early_vecs=[vt for vt in self.vec_types() if self.vec_can_define_before_composites(vt)]
+        for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
         for enum in self.p.enums.values():
             o.append(f'typedef enum merit_{enum.name}_tag {{')
@@ -966,12 +987,8 @@ class CGenerator:
                 for fld in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{s.name}, {fld["name"]}) == {fld["offset"]}, "Merit ABI offset mismatch: {s.name}.{fld["name"]}");')
             o.append('')
         for vt in self.vec_types():
-            o.append(f'typedef struct merit_{vt} {{')
-            o.append(f'    {self.ctype(vec_elem_type(vt))} *data;')
-            o.append('    size_t len;')
-            o.append('    size_t cap;')
-            o.append(f'}} merit_{vt};')
-            o.append('')
+            if vt not in early_vecs:
+                o.extend(self.vec_typedef_lines(vt))
         for f in self.p.functions:
             if f['name']=='main':continue
             params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void'
@@ -1003,11 +1020,17 @@ class CGenerator:
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
         for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
+        for e in self.p.enums.values():
+            if vec_elem_needs_drop(e.name,self.p):
+                o.append(f'static void merit_drop_{e.name}({self.ctype(e.name)} *v);')
         for s in self.p.structs.values():
             if vec_elem_needs_drop(s.name,self.p):
                 o.append(f'static void merit_drop_{s.name}({self.ctype(s.name)} *v);')
-        if any(vec_elem_needs_drop(s.name,self.p) for s in self.p.structs.values()):
+        if any(vec_elem_needs_drop(e.name,self.p) for e in self.p.enums.values()) or any(vec_elem_needs_drop(s.name,self.p) for s in self.p.structs.values()):
             o.append('')
+        for e in self.p.enums.values():
+            if vec_elem_needs_drop(e.name,self.p):
+                o.extend(self.enum_drop_runtime(e))
         for s in self.p.structs.values():
             if vec_elem_needs_drop(s.name,self.p):
                 o.extend(self.struct_drop_runtime(s))
@@ -1035,8 +1058,19 @@ class CGenerator:
         if t=='Buffer': return f'merit_buffer_drop(&{base});'
         if t=='I64Vec': return f'merit_i64vec_drop(&{base});'
         if is_vec_type(t): return f'merit_vec_drop__{vec_elem_type(t)}(&{base});'
+        if t in self.p.enums and vec_elem_needs_drop(t,self.p): return f'merit_drop_{t}(&{base});'
         if t in self.p.structs and vec_elem_needs_drop(t,self.p): return f'merit_drop_{t}(&{base});'
         return ''
+    def enum_drop_runtime(self,e):
+        lines=[f'static void merit_drop_{e.name}({self.ctype(e.name)} *v){{','    switch (v->tag) {']
+        for variant in e.variants:
+            lines.append(f'    case merit_{e.name}_{variant.name}:')
+            if variant.payload_type is not None:
+                stmt=self.drop_field_stmt(f'v->data.{variant.name}',variant.payload_type)
+                if stmt: lines.append(f'        {stmt}')
+            lines.append('        break;')
+        lines.extend(['    }','}',''])
+        return lines
     def struct_drop_runtime(self,s):
         lines=[f'static void merit_drop_{s.name}({self.ctype(s.name)} *v){{']
         for field in s.fields:
@@ -1079,19 +1113,31 @@ class CGenerator:
             if vec and vec[0]=='push':
                 root=self.expr_root(e[2][1])
                 if root: moved.add(root)
-            elif e[1] in self.fn:
+            else:
+                variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==e[1]]
+                if variants and variants[0].payload_type is not None and e[2]:
+                    root=self.expr_root(e[2][0])
+                    if root and is_owned_type(variants[0].payload_type,self.p): moved.add(root)
+            if e[1] in self.fn:
                 callee=self.fn[e[1]]
                 for arg,(_,t,mode) in zip(e[2],callee['params']):
-                    if mode=='value' and (t in OWNED_BUILTINS or is_vec_type(t)):
+                    if mode=='value' and is_owned_type(t,self.p):
                         root=self.expr_root(arg)
                         if root: moved.add(root)
         return moved
     def owned_buffer_cleanup(self, f):
-        locals_order=[]; explicit=set(); returned=set(); moved=set()
+        locals_order=[]; explicit=set(); returned=set(); moved=set(); local_types={}
         for st in self.walk_statements(f['body']):
-            if st[0]=='let' and (st[2] in OWNED_BUILTINS or is_vec_type(st[2]) or (st[2] in self.p.structs and vec_elem_needs_drop(st[2],self.p))): locals_order.append((st[1],st[2]))
+            if st[0]=='let':
+                local_types[st[1]]=st[2]
+                if st[2] in OWNED_BUILTINS or is_vec_type(st[2]) or ((st[2] in self.p.structs or st[2] in self.p.enums) and vec_elem_needs_drop(st[2],self.p)):
+                    locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
+            elif st[0]=='match':
+                root=self.expr_root(st[1])
+                if root and root in local_types and local_types[root] in self.p.enums and vec_elem_needs_drop(local_types[root],self.p):
+                    moved.add(root)
             for part in st[1:]:
                 if isinstance(part,tuple): moved |= self.moved_roots(part)
         return [(n,t) for n,t in reversed(locals_order) if n not in explicit and n not in returned and n not in moved]
@@ -1113,6 +1159,7 @@ class CGenerator:
             if t=='Buffer': o.append(f'    merit_buffer_drop(&{name});')
             elif t=='I64Vec': o.append(f'    merit_i64vec_drop(&{name});')
             elif is_vec_type(t): o.append(f'    merit_vec_drop__{vec_elem_type(t)}(&{name});')
+            elif t in self.p.enums and vec_elem_needs_drop(t,self.p): o.append(f'    merit_drop_{t}(&{name});')
             elif t in self.p.structs and vec_elem_needs_drop(t,self.p): o.append(f'    merit_drop_{t}(&{name});')
         if f['return']!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
@@ -1152,6 +1199,7 @@ class CGenerator:
             if t=='Buffer': return [f'{p}merit_buffer_drop(&{s[1]});']
             if t=='I64Vec': return [f'{p}merit_i64vec_drop(&{s[1]});']
             if is_vec_type(t): return [f'{p}merit_vec_drop__{vec_elem_type(t)}(&{s[1]});']
+            if t in self.p.enums and vec_elem_needs_drop(t,self.p): return [f'{p}merit_drop_{t}(&{s[1]});']
             if t in self.p.structs and vec_elem_needs_drop(t,self.p): return [f'{p}merit_drop_{t}(&{s[1]});']
             return [f'{p}/* deterministic drop {s[1]} */']
         if s[0]=='match':

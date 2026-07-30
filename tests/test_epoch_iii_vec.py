@@ -100,6 +100,61 @@ fn main() -> i32 {
 '''
 
 
+ENUM_VEC_PROGRAM = r'''
+module enum_vec_acceptance
+capability allocate;
+
+enum Error {
+    Bad
+}
+
+enum Option<T> {
+    Some(T),
+    None
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let a: Allocator = system_allocator();
+
+        var values: Vec<i64> = vec_new__i64(a, 2);
+        vec_push__i64(values, 31);
+        vec_push__i64(values, 32);
+        let maybe: Option<Vec<i64>> = Option<Vec<i64>>::Some(values);
+        match (maybe) {
+            Option<Vec<i64>>::Some(inner) => {
+                print(vec_len__i64(inner));
+                print(vec_get__i64(inner, 1));
+                drop(inner);
+            }
+            Option<Vec<i64>>::None => {
+                print(0);
+            }
+        }
+
+        var result_values: Vec<i64> = vec_new__i64(a, 1);
+        vec_push__i64(result_values, 44);
+        let outcome: Result<Vec<i64>, Error> = Result<Vec<i64>, Error>::Ok(result_values);
+        match (outcome) {
+            Result<Vec<i64>, Error>::Ok(ok_values) => {
+                print(vec_get__i64(ok_values, 0));
+                drop(ok_values);
+            }
+            Result<Vec<i64>, Error>::Err(error) => {
+                print(0);
+            }
+        }
+    }
+    return 0;
+}
+'''
+
+
 def run_interpreter_and_native(source_text: str, tmp_path: Path, name: str) -> str:
     interpreted = io.StringIO()
     with contextlib.redirect_stdout(interpreted):
@@ -126,6 +181,10 @@ def test_vec_buffer_interpreter_and_native_agree(tmp_path):
 
 def test_struct_owned_field_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(STRUCT_OWNED_FIELD_PROGRAM, tmp_path, 'struct_owned') == '5\n'
+
+
+def test_enum_vec_interpreter_and_native_agree(tmp_path):
+    assert run_interpreter_and_native(ENUM_VEC_PROGRAM, tmp_path, 'enum_vec') == '2\n32\n44\n'
 
 
 def test_vec_allocation_requires_capability():
@@ -176,10 +235,28 @@ def test_struct_init_moves_owned_field_source():
         Checker(parse(bad)).check()
 
 
+def test_enum_constructor_moves_owned_payload_source():
+    bad = ENUM_VEC_PROGRAM.replace(
+        'match (maybe) {',
+        'print(vec_len__i64(values));\n        match (maybe) {',
+    )
+    with pytest.raises(CompileError, match='moved value values'):
+        Checker(parse(bad)).check()
+
+
+def test_match_consumes_owned_enum_subject():
+    bad = ENUM_VEC_PROGRAM.replace(
+        'var result_values: Vec<i64> = vec_new__i64(a, 1);',
+        'print(maybe);\n\n        var result_values: Vec<i64> = vec_new__i64(a, 1);',
+    )
+    with pytest.raises(CompileError, match='moved value maybe'):
+        Checker(parse(bad)).check()
+
+
 def test_generic_collections_project_interpreter_and_native(tmp_path):
     project = load_project(Path('examples/projects/generic_collections/Merit.toml'))
     check(project)
     output = interpret(project)
     _, _, executable = build(project, tmp_path / 'generic_collections')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
-    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n'
+    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n32\n44\n'
