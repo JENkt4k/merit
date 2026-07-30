@@ -100,6 +100,35 @@ fn main() -> i32 {
 '''
 
 
+VEC_OWNED_STRUCT_PROGRAM = r'''
+module vec_owned_struct_acceptance
+capability allocate;
+
+struct OwnedText {
+    data: Buffer;
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let a: Allocator = system_allocator();
+        var texts: Vec<OwnedText> = vec_new__OwnedText(a, 2);
+        let first_buffer: Buffer = buffer_from_string(a, "first");
+        let second_buffer: Buffer = buffer_from_string(a, "second");
+        let first: OwnedText = OwnedText { data: first_buffer };
+        let second: OwnedText = OwnedText { data: second_buffer };
+        vec_push__OwnedText(texts, first);
+        vec_push__OwnedText(texts, second);
+        print(vec_len__OwnedText(texts));
+        let last: OwnedText = vec_pop__OwnedText(texts);
+        print(buffer_len(last.data));
+        drop(last);
+        drop(texts);
+    }
+    return 0;
+}
+'''
+
+
 ENUM_VEC_PROGRAM = r'''
 module enum_vec_acceptance
 capability allocate;
@@ -183,6 +212,10 @@ def test_struct_owned_field_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(STRUCT_OWNED_FIELD_PROGRAM, tmp_path, 'struct_owned') == '5\n'
 
 
+def test_vec_owned_struct_interpreter_and_native_agree(tmp_path):
+    assert run_interpreter_and_native(VEC_OWNED_STRUCT_PROGRAM, tmp_path, 'vec_owned_struct') == '2\n6\n'
+
+
 def test_enum_vec_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(ENUM_VEC_PROGRAM, tmp_path, 'enum_vec') == '2\n32\n44\n'
 
@@ -235,6 +268,15 @@ def test_struct_init_moves_owned_field_source():
         Checker(parse(bad)).check()
 
 
+def test_vec_get_rejects_owned_struct_copy():
+    bad = VEC_OWNED_STRUCT_PROGRAM.replace(
+        'let last: OwnedText = vec_pop__OwnedText(texts);',
+        'let last: OwnedText = vec_get__OwnedText(texts, 0);',
+    )
+    with pytest.raises(CompileError, match='cannot copy owned element OwnedText'):
+        Checker(parse(bad)).check()
+
+
 def test_enum_constructor_moves_owned_payload_source():
     bad = ENUM_VEC_PROGRAM.replace(
         'match (maybe) {',
@@ -259,4 +301,4 @@ def test_generic_collections_project_interpreter_and_native(tmp_path):
     output = interpret(project)
     _, _, executable = build(project, tmp_path / 'generic_collections')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
-    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n32\n44\n'
+    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n6\n2\n32\n44\n'

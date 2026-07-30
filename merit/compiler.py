@@ -588,8 +588,6 @@ class Checker:
             if vec:
                 op,elem=vec; vec_t='Vec__'+elem; self.ensure_type(vec_t)
                 if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
-                if elem in self.p.structs and vec_elem_needs_drop(elem,self.p):
-                    raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
                 if op=='new':
                     if 'allocate' not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [allocate]')
                     if len(args)!=2: raise CompileError(f'M3005: {name} expects 2 arguments')
@@ -1019,7 +1017,6 @@ class CGenerator:
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
-        for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
         for e in self.p.enums.values():
             if vec_elem_needs_drop(e.name,self.p):
                 o.append(f'static void merit_drop_{e.name}({self.ctype(e.name)} *v);')
@@ -1028,6 +1025,7 @@ class CGenerator:
                 o.append(f'static void merit_drop_{s.name}({self.ctype(s.name)} *v);')
         if any(vec_elem_needs_drop(e.name,self.p) for e in self.p.enums.values()) or any(vec_elem_needs_drop(s.name,self.p) for s in self.p.structs.values()):
             o.append('')
+        for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
         for e in self.p.enums.values():
             if vec_elem_needs_drop(e.name,self.p):
                 o.extend(self.enum_drop_runtime(e))
@@ -1042,7 +1040,8 @@ class CGenerator:
         return '\n'.join(o)
     def vec_runtime(self,vt):
         elem=vec_elem_type(vt); ct=self.ctype(elem); vct=self.ctype(vt); suffix=vec_elem_type(vt)
-        drop_live='for(size_t i=0;i<v->len;i++)merit_buffer_drop(&v->data[i]);' if elem=='Buffer' else ''
+        elem_drop=self.drop_field_stmt('v->data[i]',elem)
+        drop_live=f'for(size_t i=0;i<v->len;i++){elem_drop}' if elem_drop else ''
         return [
             f'static void merit_vec_reserve__{suffix}({vct} *v,size_t need){{if(need<=v->cap)return;size_t c=v->cap?v->cap:8;while(c<need)c*=2;void *p=realloc(v->data,c*sizeof({ct}));if(!p)merit_fail("allocation failed",80);v->data=({ct}*)p;v->cap=c;}}',
             f'static {vct} merit_vec_new__{suffix}(merit_Allocator a,int64_t cap){{(void)a;{vct} v={{0}};if(cap<0)merit_fail("negative capacity",81);merit_vec_reserve__{suffix}(&v,(size_t)cap);return v;}}',

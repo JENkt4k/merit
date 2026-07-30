@@ -55,7 +55,7 @@ merit-project verify PATH
 merit-project run PATH
 ```
 
-The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
+The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
 
 ---
 
