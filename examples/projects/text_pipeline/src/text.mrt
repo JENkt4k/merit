@@ -1,0 +1,12 @@
+module text
+
+pub fn checksum(borrow data: Buffer) -> i64 {
+    var i: i64 = 0;
+    var total: i64 = 0;
+    while i < buffer_len(data) {
+        let byte: i64 = buffer_get(data, i);
+        total = checked_add(total, byte);
+        i = checked_add(i, 1);
+    }
+    return total;
+}

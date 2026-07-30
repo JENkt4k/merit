@@ -1,0 +1,37 @@
+module control_flow
+
+decimal USD(18, 2, half_even);
+bounded Count(i32, 0, 1000);
+
+fn compound(start: USD, rate: USD, periods: Count) -> USD
+requires start >= 0.00;
+requires rate >= 0.00;
+ensures result >= start;
+{
+    var value: USD = start;
+    var i: Count = 0;
+    while (i < periods) {
+        value = checked_add(value, checked_mul(value, rate));
+        i = checked_add(i, 1);
+    }
+    return value;
+}
+
+fn classify(value: USD) -> i32 {
+    if (value >= 100.00) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+fn main() -> i32 {
+    let result: USD = compound(100.00, 0.05, 3);
+    print(result);
+    print(classify(result));
+    let ten: USD = 10.00;
+    let three: USD = 3.00;
+    let third: USD = decimal_div(ten, three);
+    print(third);
+    return 0;
+}

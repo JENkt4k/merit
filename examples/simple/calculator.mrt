@@ -1,0 +1,11 @@
+module calculator
+
+fn square(value: i32) -> i32 {
+    return checked_mul(value, value);
+}
+
+fn main() -> i32 {
+    print(checked_add(20, 22));
+    print(square(9));
+    return 0;
+}

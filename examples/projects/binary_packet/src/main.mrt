@@ -1,0 +1,30 @@
+module packet_main
+import packet;
+
+capability allocate;
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        var packet: Buffer = buffer_new(allocator, 8);
+        buffer_push(packet, 1);
+        buffer_push(packet, 2);
+        buffer_push(packet, 10);
+        buffer_push(packet, 20);
+        buffer_push(packet, 30);
+        let header: ByteSlice = buffer_slice(packet, 0, 2);
+        let payload: ByteSlice = buffer_slice(packet, 2, 3);
+        print(decode_u16_be(header));
+        print(checksum(payload));
+
+        var values: I64Vec = i64vec_new(allocator, 2);
+        i64vec_push(values, decode_u16_be(header));
+        i64vec_push(values, checksum(payload));
+        print(i64vec_len(values));
+        print(i64vec_get(values, 0));
+        print(i64vec_get(values, 1));
+        drop(values);
+        drop(packet);
+    }
+    return 0;
+}

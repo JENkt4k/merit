@@ -1,0 +1,7 @@
+[package]
+name = "binary_packet"
+entry = "src/main.mrt"
+sources = ["src/**/*.mrt"]
+
+[build]
+c_flags = ["-O2"]

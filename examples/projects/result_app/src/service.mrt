@@ -1,0 +1,7 @@
+module service
+import outcomes;
+
+pub fn increment_checked(value: i32) -> IntResult {
+    let checked: i32 = try validate(value);
+    return Ok(checked_add(checked, 1));
+}

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "merit-lang-prototype"
+version = "0.3.0b2"
+description = "Epoch III systems and generic type compiler for the Merit language"
+requires-python = ">=3.11"
+dependencies = ["lark>=1.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+merit = "merit.compiler:main"
+merit-project = "merit.project.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["merit*"]

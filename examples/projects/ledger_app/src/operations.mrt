@@ -1,0 +1,19 @@
+module ledger_operations
+import ledger_types;
+
+pub fn deposit(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+ensures result == old(account.balance) + amount;
+{
+    account.balance = checked_add(account.balance, amount);
+    return account.balance;
+}
+
+pub fn withdraw(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+requires account.balance >= amount;
+ensures result == old(account.balance) - amount;
+{
+    account.balance = checked_sub(account.balance, amount);
+    return account.balance;
+}

@@ -1,0 +1,18 @@
+module text_main
+import text;
+
+capability allocate;
+
+fn main() -> i32 {
+    print("Merit Epoch II");
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        var data: Buffer = buffer_from_string(allocator, "abc");
+        buffer_push(data, 33);
+        print(data);
+        print(buffer_len(data));
+        print(checksum(data));
+        drop(data);
+    }
+    return 0;
+}

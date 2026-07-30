@@ -1,0 +1,31 @@
+module account_component
+
+decimal USD(18, 2, half_even);
+bounded AccountId(u64, 1, 9999999999);
+capability foreign_call;
+
+stable("merit-v1") struct Account {
+    id: AccountId;
+    balance: USD;
+}
+
+fn withdraw(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+{
+    account.balance = checked_sub(account.balance, amount);
+    return account.balance;
+}
+
+fn native_notice() -> i32 requires_caps [foreign_call] {
+    return 1;
+}
+
+fn main() -> i32 {
+    var account: Account = Account { id: 1001, balance: 1000.00 };
+    let remaining: USD = withdraw(account, 125.75);
+    print(remaining);
+    with capability foreign_call {
+        print(native_notice());
+    }
+    return 0;
+}

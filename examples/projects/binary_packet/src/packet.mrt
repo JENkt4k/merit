@@ -1,0 +1,19 @@
+module packet
+
+pub fn checksum(view: ByteSlice) -> i64 {
+    var i: i64 = 0;
+    var total: i64 = 0;
+    while i < slice_len(view) {
+        total = checked_add(total, slice_get(view, i));
+        i = checked_add(i, 1);
+    }
+    return total;
+}
+
+pub fn decode_u16_be(view: ByteSlice) -> i64
+requires slice_len(view) >= 2;
+{
+    let high: i64 = slice_get(view, 0);
+    let low: i64 = slice_get(view, 1);
+    return checked_add(checked_mul(high, 256), low);
+}

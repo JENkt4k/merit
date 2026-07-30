@@ -1,0 +1,23 @@
+module result_main
+import outcomes;
+import service;
+
+fn report(result: IntResult) -> i32 {
+    match (result) {
+        Ok(value) => { print(value); }
+        Err(error) => {
+            match (error) {
+                Negative => { print(10); }
+                TooLarge => { print(20); }
+            }
+        }
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    report(increment_checked(41));
+    report(increment_checked(-1));
+    report(increment_checked(2000));
+    return 0;
+}

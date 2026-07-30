@@ -1,0 +1,23 @@
+module outcomes
+
+pub enum MathError {
+    Negative,
+    TooLarge
+}
+
+pub enum IntResult {
+    Ok(i32),
+    Err(MathError)
+}
+
+pub fn validate(value: i32) -> IntResult {
+    if value < 0 {
+        return Err(Negative());
+    } else {
+        if value > 1000 {
+            return Err(TooLarge());
+        } else {
+            return Ok(value);
+        }
+    }
+}

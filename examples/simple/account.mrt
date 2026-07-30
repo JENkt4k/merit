@@ -1,0 +1,24 @@
+module account
+
+decimal USD(18, 2, half_even);
+bounded AccountId(u64, 1, 9999999999);
+
+stable("merit-v1") struct Account {
+    id: AccountId;
+    balance: USD;
+}
+
+fn deposit(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+ensures result >= old(account.balance);
+{
+    account.balance = checked_add(account.balance, amount);
+    return account.balance;
+}
+
+fn main() -> i32 {
+    var account: Account = Account { id: 1001, balance: 850.00 };
+    print(deposit(account, 24.25));
+    print(account.balance);
+    return 0;
+}

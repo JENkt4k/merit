@@ -1,0 +1,8 @@
+module ledger_reporting
+import ledger_types;
+
+pub fn print_balance(borrow account: Account) -> i32 {
+    print(account.id);
+    print(account.balance);
+    return 0;
+}

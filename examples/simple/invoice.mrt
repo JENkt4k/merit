@@ -1,0 +1,20 @@
+module invoice
+
+decimal USD(18, 2, half_even);
+
+fn total(subtotal: USD, tax_rate: USD) -> USD
+requires subtotal >= 0.00;
+requires tax_rate >= 0.00;
+ensures result >= subtotal;
+{
+    let tax: USD = checked_mul(subtotal, tax_rate);
+    return checked_add(subtotal, tax);
+}
+
+fn main() -> i32 {
+    let subtotal: USD = 125.50;
+    let rate: USD = 0.08;
+    let amount: USD = total(subtotal, rate);
+    print(amount);
+    return 0;
+}

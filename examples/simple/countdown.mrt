@@ -1,0 +1,13 @@
+module countdown
+
+bounded Counter(i32, 0, 10);
+
+fn main() -> i32 {
+    var remaining: Counter = 5;
+    while (remaining > 0) {
+        print(remaining);
+        remaining = checked_sub(remaining, 1);
+    }
+    print(0);
+    return 0;
+}

@@ -1,0 +1,5 @@
+[package]
+name = "text_pipeline"
+entry = "src/main.mrt"
+sources = ["src/**/*.mrt"]
+c_flags = ["-O2"]

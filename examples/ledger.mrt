@@ -1,0 +1,18 @@
+module ledger
+
+decimal USD(18, 2, half_even);
+bounded AccountId(u64, 1, 9999999999);
+capability foreign_call;
+
+fn main() -> i32 effects [io] {
+    let account_id: AccountId = 1001;
+    let balance: USD = 1000.00;
+    let debit: USD = 125.75;
+    let remaining: USD = checked_sub(balance, debit);
+    print(account_id);
+    print(remaining);
+    with capability foreign_call {
+        print(remaining);
+    }
+    return 0;
+}

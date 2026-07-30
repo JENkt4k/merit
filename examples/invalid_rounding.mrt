@@ -1,0 +1,6 @@
+module invalid_rounding
+decimal USD(18, 2, half_even);
+fn main() -> i32 {
+    let bad: USD = 1.234;
+    return 0;
+}

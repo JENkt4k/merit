@@ -1,0 +1,12 @@
+module ledger_main
+import ledger_types;
+import ledger_operations;
+import ledger_reporting;
+
+fn main() -> i32 {
+    var account: Account = Account { id: 1001, balance: 1000.00 };
+    deposit(account, 125.50);
+    withdraw(account, 25.25);
+    print_balance(account);
+    return 0;
+}

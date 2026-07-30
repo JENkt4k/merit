@@ -1,0 +1,43 @@
+module generic_result
+
+struct Pair<T, U> {
+    first: T;
+    second: U;
+}
+
+enum Option<T> {
+    Some(T),
+    None
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+fn max_value<T: Ord>(left: T, right: T) -> T {
+    if (left >= right) { return left; } else { return right; }
+}
+
+fn copy_value<T: Copy>(value: T) -> T {
+    return value;
+}
+
+fn main() -> i32 {
+    let pair: Pair<i64, i32> = Pair<i64, i32> { first: 21, second: 7 };
+    let maximum: i64 = max_value<i64>(pair.first, 42);
+    let copied: i64 = copy_value<i64>(maximum);
+    let option: Option<i64> = Option<i64>::Some(copied);
+    let result: Result<i64, i32> = Result<i64, i32>::Ok(copied);
+
+    match (option) {
+        Option<i64>::Some(value) => { print(value); }
+        Option<i64>::None => { print(0); }
+    }
+
+    match (result) {
+        Result<i64, i32>::Ok(value) => { print(value); }
+        Result<i64, i32>::Err(error) => { print(error); }
+    }
+    return 0;
+}
