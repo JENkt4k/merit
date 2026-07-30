@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import Checker, CompileError, Interpreter, compile_file, parse
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, compile_file, parse
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -214,6 +214,14 @@ def test_struct_owned_field_interpreter_and_native_agree(tmp_path):
 
 def test_vec_owned_struct_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_OWNED_STRUCT_PROGRAM, tmp_path, 'vec_owned_struct') == '2\n6\n'
+
+
+def test_vec_headers_include_layout_assertions():
+    header = CGenerator(parse(VEC_OWNED_STRUCT_PROGRAM)).header()
+    assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, data) == 0' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, len) == sizeof(void *)' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, cap) == sizeof(void *) + sizeof(size_t)' in header
+    assert '_Static_assert(sizeof(merit_Vec__OwnedText) == sizeof(void *) + sizeof(size_t) * 2' in header
 
 
 def test_enum_vec_interpreter_and_native_agree(tmp_path):

@@ -947,6 +947,10 @@ class CGenerator:
             '    size_t len;',
             '    size_t cap;',
             f'}} merit_{vt};',
+            f'_Static_assert(__builtin_offsetof(merit_{vt}, data) == 0, "Merit Vec layout mismatch: {vt}.data");',
+            f'_Static_assert(__builtin_offsetof(merit_{vt}, len) == sizeof(void *), "Merit Vec layout mismatch: {vt}.len");',
+            f'_Static_assert(__builtin_offsetof(merit_{vt}, cap) == sizeof(void *) + sizeof(size_t), "Merit Vec layout mismatch: {vt}.cap");',
+            f'_Static_assert(sizeof(merit_{vt}) == sizeof(void *) + sizeof(size_t) * 2, "Merit Vec size mismatch: {vt}");',
             ''
         ]
     def vec_can_define_before_composites(self,vt):

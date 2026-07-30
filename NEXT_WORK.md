@@ -19,8 +19,8 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 
 ## Required collection features
 1. Cleaner user-facing generic vector API names once function-name resolution can carry type arguments.
-2. C-header checks for generated vector and aggregate layouts.
-3. Compiler-supplied prelude shape for vector builtins.
+2. Compiler-supplied prelude shape for vector builtins.
+3. Consolidated ownership/drop metadata for aggregates and collections.
 
 ## Collection checkpoint now available
 - `Vec<i64>` type syntax expands through the existing monomorphization path.
@@ -31,6 +31,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generic `Option<Vec<i64>>` and `Result<Vec<i64>, Error>` compile, execute, and verify natively.
 - `Vec<OwnedStruct>` supports structs with owned fields through pop/drop semantics and generated element destructors.
 - Generated C marks expected unused helpers and match bindings so project verification output stays signal-focused.
+- Generated headers emit static layout assertions for every concrete `Vec<T>`.
 - `vec_new__T`, `vec_push__T`, `vec_len__T`, `vec_get__T`, `vec_set__T`, `vec_pop__T`, and `vec_drop__T` are available for concrete `T`.
 - `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
 - Vectors are owned values: copying/move-after-use is rejected.
@@ -49,9 +50,9 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 
 ## Suggested implementation order
 1. Keep built-in operations available through compiler-supplied prelude implementations.
-2. Add C-header checks for generated vector and aggregate layouts.
-3. Move vector builtins toward user-facing generic function syntax.
-4. Consolidate ownership/drop metadata into a typed semantic table instead of ad hoc predicates.
+2. Move vector builtins toward user-facing generic function syntax.
+3. Consolidate ownership/drop metadata into a typed semantic table instead of ad hoc predicates.
+4. Add broader C-header checks for aggregate enum layout where target ABI assumptions are explicit.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -84,6 +85,7 @@ The checkpoint is complete only when all of these pass:
 ### Regression
 - all existing tests remain green.
 - simple examples, text pipeline, binary packet, generic result, trait bounds, and generic collections projects still verify natively without expected helper-warning noise.
+- generated `Vec<T>` headers assert pointer/length/capacity layout at C compile time.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:
