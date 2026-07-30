@@ -55,7 +55,7 @@ merit-project verify PATH
 merit-project run PATH
 ```
 
-The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, and allocator-backed `Vec<T>` support for scalars, generic structs, and owned `Buffer` elements. Remaining collection work is scoped in `NEXT_WORK.md`.
+The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements, and aggregate drop glue for structs with owned fields. Remaining collection work is scoped in `NEXT_WORK.md`.
 
 ---
 

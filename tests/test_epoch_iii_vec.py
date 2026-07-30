@@ -79,6 +79,27 @@ fn main() -> i32 {
 '''
 
 
+STRUCT_OWNED_FIELD_PROGRAM = r'''
+module struct_owned_field_acceptance
+capability allocate;
+
+struct OwnedText {
+    data: Buffer;
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let a: Allocator = system_allocator();
+        let text: Buffer = buffer_from_string(a, "owned");
+        let wrapped: OwnedText = OwnedText { data: text };
+        print(buffer_len(wrapped.data));
+        drop(wrapped);
+    }
+    return 0;
+}
+'''
+
+
 def run_interpreter_and_native(source_text: str, tmp_path: Path, name: str) -> str:
     interpreted = io.StringIO()
     with contextlib.redirect_stdout(interpreted):
@@ -101,6 +122,10 @@ def test_vec_generic_struct_interpreter_and_native_agree(tmp_path):
 
 def test_vec_buffer_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_BUFFER_PROGRAM, tmp_path, 'vec_buffer') == '2\n4\n'
+
+
+def test_struct_owned_field_interpreter_and_native_agree(tmp_path):
+    assert run_interpreter_and_native(STRUCT_OWNED_FIELD_PROGRAM, tmp_path, 'struct_owned') == '5\n'
 
 
 def test_vec_allocation_requires_capability():
@@ -142,10 +167,19 @@ def test_vec_get_rejects_owned_buffer_copy():
         Checker(parse(bad)).check()
 
 
+def test_struct_init_moves_owned_field_source():
+    bad = STRUCT_OWNED_FIELD_PROGRAM.replace(
+        'print(buffer_len(wrapped.data));',
+        'print(buffer_len(text));\n        print(buffer_len(wrapped.data));',
+    )
+    with pytest.raises(CompileError, match='moved value text'):
+        Checker(parse(bad)).check()
+
+
 def test_generic_collections_project_interpreter_and_native(tmp_path):
     project = load_project(Path('examples/projects/generic_collections/Merit.toml'))
     check(project)
     output = interpret(project)
     _, _, executable = build(project, tmp_path / 'generic_collections')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
-    assert native == output == '2\n7\n13\n21\n5\n2\n4\n'
+    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n'

@@ -6,6 +6,10 @@ struct Pair<T, U> {
     second: U;
 }
 
+struct OwnedText {
+    data: Buffer;
+}
+
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
@@ -34,6 +38,11 @@ fn main() -> i32 {
         let last: Buffer = vec_pop__Buffer(buffers);
         print(buffer_len(last));
 
+        let text: Buffer = buffer_from_string(a, "owned");
+        let wrapped: OwnedText = OwnedText { data: text };
+        print(buffer_len(wrapped.data));
+
+        drop(wrapped);
         drop(last);
         drop(buffers);
         drop(pairs);

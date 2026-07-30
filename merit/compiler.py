@@ -549,6 +549,8 @@ class Checker:
                 t=self.expr_type(x,env,caps,fn)
                 if t not in (expected[n].type_name,'number'):raise CompileError(f'M4006: field {n} expects {expected[n].type_name}, got {t}')
                 if x[0]=='number':self.validate_literal(expected[n].type_name,x[1])
+                root=self.root_var(x)
+                if root and is_owned_type(t,self.p): env[root].moved=True
             return name
         if tag=='call':
             name,args=e[1],e[2]
@@ -1001,6 +1003,14 @@ class CGenerator:
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
         for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
+        for s in self.p.structs.values():
+            if vec_elem_needs_drop(s.name,self.p):
+                o.append(f'static void merit_drop_{s.name}({self.ctype(s.name)} *v);')
+        if any(vec_elem_needs_drop(s.name,self.p) for s in self.p.structs.values()):
+            o.append('')
+        for s in self.p.structs.values():
+            if vec_elem_needs_drop(s.name,self.p):
+                o.extend(self.struct_drop_runtime(s))
         for t,b in self.p.bounded.items():
             o.append(f'static {self.ctype(t)} merit_check_{t}({self.ctype(t)} x){{if(x < {b.minimum} || x > {b.maximum}) merit_fail("bounded range violation: {t}",70);return x;}}')
         for t,d in self.p.decimals.items():
@@ -1021,6 +1031,20 @@ class CGenerator:
             f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}free(v->data);v->data=NULL;v->len=0;v->cap=0;}}',
             ''
         ]
+    def drop_field_stmt(self,base,t):
+        if t=='Buffer': return f'merit_buffer_drop(&{base});'
+        if t=='I64Vec': return f'merit_i64vec_drop(&{base});'
+        if is_vec_type(t): return f'merit_vec_drop__{vec_elem_type(t)}(&{base});'
+        if t in self.p.structs and vec_elem_needs_drop(t,self.p): return f'merit_drop_{t}(&{base});'
+        return ''
+    def struct_drop_runtime(self,s):
+        lines=[f'static void merit_drop_{s.name}({self.ctype(s.name)} *v){{']
+        for field in s.fields:
+            stmt=self.drop_field_stmt(f'v->{field.name}',field.type_name)
+            if stmt: lines.append(f'    {stmt}')
+        lines.append('}')
+        lines.append('')
+        return lines
     def walk_old(self,e,out):
         if not isinstance(e,tuple):return
         if e[0]=='call' and e[1]=='old':
@@ -1043,7 +1067,14 @@ class CGenerator:
     def moved_roots(self,e):
         moved=set()
         if not isinstance(e,tuple): return moved
-        if e[0]=='call':
+        if e[0]=='struct_init':
+            s=self.p.structs[e[1]]
+            for field in s.fields:
+                value=e[2][field.name]
+                root=self.expr_root(value)
+                if root and is_owned_type(field.type_name,self.p): moved.add(root)
+                moved |= self.moved_roots(value)
+        elif e[0]=='call':
             vec=vec_builtin(e[1])
             if vec and vec[0]=='push':
                 root=self.expr_root(e[2][1])
@@ -1058,7 +1089,7 @@ class CGenerator:
     def owned_buffer_cleanup(self, f):
         locals_order=[]; explicit=set(); returned=set(); moved=set()
         for st in self.walk_statements(f['body']):
-            if st[0]=='let' and (st[2] in OWNED_BUILTINS or is_vec_type(st[2])): locals_order.append((st[1],st[2]))
+            if st[0]=='let' and (st[2] in OWNED_BUILTINS or is_vec_type(st[2]) or (st[2] in self.p.structs and vec_elem_needs_drop(st[2],self.p))): locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
             for part in st[1:]:
@@ -1082,6 +1113,7 @@ class CGenerator:
             if t=='Buffer': o.append(f'    merit_buffer_drop(&{name});')
             elif t=='I64Vec': o.append(f'    merit_i64vec_drop(&{name});')
             elif is_vec_type(t): o.append(f'    merit_vec_drop__{vec_elem_type(t)}(&{name});')
+            elif t in self.p.structs and vec_elem_needs_drop(t,self.p): o.append(f'    merit_drop_{t}(&{name});')
         if f['return']!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
     def checked(self,t,x):
@@ -1120,6 +1152,7 @@ class CGenerator:
             if t=='Buffer': return [f'{p}merit_buffer_drop(&{s[1]});']
             if t=='I64Vec': return [f'{p}merit_i64vec_drop(&{s[1]});']
             if is_vec_type(t): return [f'{p}merit_vec_drop__{vec_elem_type(t)}(&{s[1]});']
+            if t in self.p.structs and vec_elem_needs_drop(t,self.p): return [f'{p}merit_drop_{t}(&{s[1]});']
             return [f'{p}/* deterministic drop {s[1]} */']
         if s[0]=='match':
             enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
