@@ -1,12 +1,13 @@
 import contextlib
 import io
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from merit.compiler import Checker, CompileError, Interpreter, compile_file, parse
 from merit.project.loader import load_project
-from merit.project.build import check
+from merit.project.build import build, check, interpret
 
 
 TRAIT_PROGRAM = r'''
@@ -153,6 +154,17 @@ def test_public_trait_survives_project_merge(tmp_path):
     assert 'Described' in loaded.program.traits
 
 
+def test_trait_bounds_acceptance_project_interpreter_and_native(tmp_path):
+    project = load_project(Path('examples/projects/trait_bounds/Merit.toml'))
+    check(project)
+    assert any(function['name'] == 'summarize__Point' for function in project.program.functions)
+    assert any(function['name'] == 'impl__Summarized__Point__score' for function in project.program.functions)
+    interpreted = interpret(project)
+    _, _, executable = build(project, tmp_path / 'trait_bounds')
+    native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
+    assert interpreted == native == '17\n'
+
+
 def test_impl_declaration_check_accepts_matching_signature():
     program = parse(IMPL_PROGRAM)
     Checker(program).check()
@@ -188,6 +200,15 @@ def test_impl_missing_trait_method_is_rejected():
 def test_impl_signature_mismatch_is_rejected():
     bad = IMPL_PROGRAM.replace('fn score(value: Point) -> i32', 'fn score(value: Point) -> i64')
     with pytest.raises(CompileError, match='does not match trait Summarized signature'):
+        Checker(parse(bad)).check()
+
+
+def test_impl_method_effects_are_rejected_until_trait_signatures_support_them():
+    bad = IMPL_PROGRAM.replace(
+        'fn score(value: Point) -> i32 {',
+        'fn score(value: Point) -> i32 effects [io] {',
+    )
+    with pytest.raises(CompileError, match='cannot declare effects or capabilities'):
         Checker(parse(bad)).check()
 
 
@@ -262,3 +283,28 @@ def test_generic_user_trait_method_call_interpreter_and_native_agree(tmp_path):
     _, _, _, executable = compile_file(source, tmp_path / 'user_trait_call')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
     assert interpreted.getvalue() == native == '17\n'
+
+
+def test_ambiguous_trait_method_name_in_generic_bounds_is_rejected():
+    source = r'''
+module ambiguous_trait_methods
+
+stable("v1") struct Point { x: i32; }
+
+trait Primary { fn score(value: Self) -> i32; }
+trait Secondary { fn score(value: Self) -> i32; }
+
+impl Primary for Point { fn score(value: Point) -> i32 { return value.x; } }
+impl Secondary for Point { fn score(value: Point) -> i32 { return value.x; } }
+
+fn summarize<T: Primary + Secondary>(value: T) -> i32 {
+    return score(value);
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 1 };
+    return summarize<Point>(p);
+}
+'''
+    with pytest.raises(CompileError, match='ambiguous trait method score'):
+        parse(source)

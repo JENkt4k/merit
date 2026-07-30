@@ -1,0 +1,26 @@
+module trait_bounds
+
+stable("v1") struct Point {
+    x: i32;
+}
+
+trait Summarized {
+    fn score(value: Self) -> i32;
+}
+
+impl Summarized for Point {
+    fn score(value: Point) -> i32 {
+        return value.x;
+    }
+}
+
+fn summarize<T: Summarized>(value: T) -> i32 {
+    return score(value);
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 17 };
+    let total: i32 = summarize<Point>(p);
+    print(total);
+    return 0;
+}

@@ -55,7 +55,7 @@ merit-project verify PATH
 merit-project run PATH
 ```
 
-The next subsystem is user-defined traits and allocator-backed `Vec<T>`; its exact scope is in `NEXT_WORK.md`.
+The current trait checkpoint supports user-declared traits, coherent impls, and generic trait-bound dispatch. The next subsystem is allocator-backed `Vec<T>`; its exact scope is in `NEXT_WORK.md`.
 
 ---
 

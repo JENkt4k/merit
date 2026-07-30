@@ -304,11 +304,17 @@ def expand_generics(source: str) -> str:
         text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
         for param,arg in zip(t['params'],args): text=re.sub(r'\b'+re.escape(param)+r'\b',arg,text)
         if t['kind']=='fn':
+            rewrite_targets={}
             for param,arg in zip(t['params'],args):
                 for trait in t['bounds'].get(param,[]):
                     if trait in ('Copy','Eq','Ord','Display'): continue
                     for method in sorted(trait_methods.get(trait,set()),key=len,reverse=True):
-                        text=re.sub(r'\b'+re.escape(method)+r'\s*\(', _impl_function_name(trait,arg,method)+'(', text)
+                        target=_impl_function_name(trait,arg,method)
+                        if method in rewrite_targets and rewrite_targets[method]!=target:
+                            raise CompileError(f'M7003: ambiguous trait method {method} in generic {name}')
+                        rewrite_targets[method]=target
+            for method,target in rewrite_targets.items():
+                text=re.sub(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
         if t['kind']=='enum':
             # Constructor names are nominally scoped by the instantiated enum.
             head_end=text.find('{'); body=text[head_end+1:text.rfind('}')]
@@ -401,6 +407,8 @@ class Checker:
             actual_params=[(t,mode) for _,t,mode in candidate['params']]
             if actual_params!=expected_params or candidate['return']!=subst(method.return_type):
                 raise CompileError(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}')
+            if candidate['effects'] or candidate['requires_caps']:
+                raise CompileError(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them')
     def block(self,body,env,caps,fn):
         for st in body:
             tag=st[0]
