@@ -19,7 +19,6 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 
 ## Required collection features
 1. Continue migrating checker/codegen decisions onto typed semantic metadata.
-2. Replace remaining concrete vector intrinsic names in examples with generic-style calls where useful.
 
 ## Collection checkpoint now available
 - `Vec<i64>` type syntax expands through the existing monomorphization path.
@@ -33,6 +32,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generated headers emit static layout assertions for every concrete `Vec<T>`.
 - Generated headers emit conservative static layout assertions for enum tag and payload placement.
 - Generic-style vector intrinsic calls such as `vec_new<i64>` and `vec_pop<OwnedText>` parse as typed `generic_call` nodes and resolve through semantic call handling.
+- Vector acceptance tests and the generic collections example use generic-style vector intrinsic calls instead of concrete `vec_*__T` spelling.
 - Vector intrinsic arity, return kind, receiver mode, allocation requirement, and owned-copy restrictions are centralized in one compiler table.
 - Type ownership, drop requirement, and copyability are classified through a shared `TypeSemantics` helper used by checker and cleanup paths.
 - `vec_new__T`, `vec_push__T`, `vec_len__T`, `vec_get__T`, `vec_set__T`, `vec_pop__T`, and `vec_drop__T` are available for concrete `T`.
@@ -52,9 +52,8 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - concurrency
 
 ## Suggested implementation order
-1. Replace remaining concrete vector intrinsic names in examples with generic-style calls where useful.
-2. Route remaining direct aggregate/drop checks through `TypeSemantics` as parser and AST support improve.
-3. Add explicit layout-hash reporting for generated vectors and enums.
+1. Route remaining direct aggregate/drop checks through `TypeSemantics` as parser and AST support improve.
+2. Add explicit layout-hash reporting for generated vectors and enums.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

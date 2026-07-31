@@ -17,13 +17,13 @@ capability allocate;
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
-        var values: Vec<i64> = vec_new__i64(a, 2);
-        vec_push__i64(values, 7);
-        vec_push__i64(values, 11);
-        vec_set__i64(values, 1, 13);
-        print(vec_len__i64(values));
-        print(vec_get__i64(values, 0));
-        print(vec_pop__i64(values));
+        var values: Vec<i64> = vec_new<i64>(a, 2);
+        vec_push<i64>(values, 7);
+        vec_push<i64>(values, 11);
+        vec_set<i64>(values, 1, 13);
+        print(vec_len<i64>(values));
+        print(vec_get<i64>(values, 0));
+        print(vec_pop<i64>(values));
         drop(values);
     }
     return 0;
@@ -76,10 +76,10 @@ struct Pair<T, U> {
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
-        var pairs: Vec<Pair<i64, i32>> = vec_new__Pair__i64__i32(a, 1);
+        var pairs: Vec<Pair<i64, i32>> = vec_new<Pair<i64, i32>>(a, 1);
         let p: Pair<i64, i32> = Pair<i64, i32> { first: 21, second: 5 };
-        vec_push__Pair__i64__i32(pairs, p);
-        let got: Pair<i64, i32> = vec_get__Pair__i64__i32(pairs, 0);
+        vec_push<Pair<i64, i32>>(pairs, p);
+        let got: Pair<i64, i32> = vec_get<Pair<i64, i32>>(pairs, 0);
         print(got.first);
         print(got.second);
         drop(pairs);
@@ -96,13 +96,13 @@ capability allocate;
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
-        var buffers: Vec<Buffer> = vec_new__Buffer(a, 2);
+        var buffers: Vec<Buffer> = vec_new<Buffer>(a, 2);
         let first: Buffer = buffer_from_string(a, "ab");
         let second: Buffer = buffer_from_string(a, "wxyz");
-        vec_push__Buffer(buffers, first);
-        vec_push__Buffer(buffers, second);
-        print(vec_len__Buffer(buffers));
-        let last: Buffer = vec_pop__Buffer(buffers);
+        vec_push<Buffer>(buffers, first);
+        vec_push<Buffer>(buffers, second);
+        print(vec_len<Buffer>(buffers));
+        let last: Buffer = vec_pop<Buffer>(buffers);
         print(buffer_len(last));
         drop(last);
         drop(buffers);
@@ -144,15 +144,15 @@ struct OwnedText {
 fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
-        var texts: Vec<OwnedText> = vec_new__OwnedText(a, 2);
+        var texts: Vec<OwnedText> = vec_new<OwnedText>(a, 2);
         let first_buffer: Buffer = buffer_from_string(a, "first");
         let second_buffer: Buffer = buffer_from_string(a, "second");
         let first: OwnedText = OwnedText { data: first_buffer };
         let second: OwnedText = OwnedText { data: second_buffer };
-        vec_push__OwnedText(texts, first);
-        vec_push__OwnedText(texts, second);
-        print(vec_len__OwnedText(texts));
-        let last: OwnedText = vec_pop__OwnedText(texts);
+        vec_push<OwnedText>(texts, first);
+        vec_push<OwnedText>(texts, second);
+        print(vec_len<OwnedText>(texts));
+        let last: OwnedText = vec_pop<OwnedText>(texts);
         print(buffer_len(last.data));
         drop(last);
         drop(texts);
@@ -184,14 +184,14 @@ fn main() -> i32 {
     with capability allocate {
         let a: Allocator = system_allocator();
 
-        var values: Vec<i64> = vec_new__i64(a, 2);
-        vec_push__i64(values, 31);
-        vec_push__i64(values, 32);
+        var values: Vec<i64> = vec_new<i64>(a, 2);
+        vec_push<i64>(values, 31);
+        vec_push<i64>(values, 32);
         let maybe: Option<Vec<i64>> = Option<Vec<i64>>::Some(values);
         match (maybe) {
             Option<Vec<i64>>::Some(inner) => {
-                print(vec_len__i64(inner));
-                print(vec_get__i64(inner, 1));
+                print(vec_len<i64>(inner));
+                print(vec_get<i64>(inner, 1));
                 drop(inner);
             }
             Option<Vec<i64>>::None => {
@@ -199,12 +199,12 @@ fn main() -> i32 {
             }
         }
 
-        var result_values: Vec<i64> = vec_new__i64(a, 1);
-        vec_push__i64(result_values, 44);
+        var result_values: Vec<i64> = vec_new<i64>(a, 1);
+        vec_push<i64>(result_values, 44);
         let outcome: Result<Vec<i64>, Error> = Result<Vec<i64>, Error>::Ok(result_values);
         match (outcome) {
             Result<Vec<i64>, Error>::Ok(ok_values) => {
-                print(vec_get__i64(ok_values, 0));
+                print(vec_get<i64>(ok_values, 0));
                 drop(ok_values);
             }
             Result<Vec<i64>, Error>::Err(error) => {
@@ -332,8 +332,8 @@ def test_vec_mutation_requires_mutable_binding():
 
 def test_vec_push_moves_struct_value():
     bad = VEC_PAIR_PROGRAM.replace(
-        'let got: Pair<i64, i32> = vec_get__Pair__i64__i32(pairs, 0);',
-        'print(p.first);\n        let got: Pair<i64, i32> = vec_get__Pair__i64__i32(pairs, 0);',
+        'let got: Pair<i64, i32> = vec_get<Pair<i64, i32>>(pairs, 0);',
+        'print(p.first);\n        let got: Pair<i64, i32> = vec_get<Pair<i64, i32>>(pairs, 0);',
     )
     with pytest.raises(CompileError, match='moved value p'):
         Checker(parse(bad)).check()
@@ -341,8 +341,8 @@ def test_vec_push_moves_struct_value():
 
 def test_vec_push_moves_buffer_value():
     bad = VEC_BUFFER_PROGRAM.replace(
-        'print(vec_len__Buffer(buffers));',
-        'print(buffer_len(first));\n        print(vec_len__Buffer(buffers));',
+        'print(vec_len<Buffer>(buffers));',
+        'print(buffer_len(first));\n        print(vec_len<Buffer>(buffers));',
     )
     with pytest.raises(CompileError, match='moved value first'):
         Checker(parse(bad)).check()
@@ -350,8 +350,8 @@ def test_vec_push_moves_buffer_value():
 
 def test_vec_get_rejects_owned_buffer_copy():
     bad = VEC_BUFFER_PROGRAM.replace(
-        'let last: Buffer = vec_pop__Buffer(buffers);',
-        'let last: Buffer = vec_get__Buffer(buffers, 0);',
+        'let last: Buffer = vec_pop<Buffer>(buffers);',
+        'let last: Buffer = vec_get<Buffer>(buffers, 0);',
     )
     with pytest.raises(CompileError, match='cannot copy owned element Buffer'):
         Checker(parse(bad)).check()
@@ -368,8 +368,8 @@ def test_struct_init_moves_owned_field_source():
 
 def test_vec_get_rejects_owned_struct_copy():
     bad = VEC_OWNED_STRUCT_PROGRAM.replace(
-        'let last: OwnedText = vec_pop__OwnedText(texts);',
-        'let last: OwnedText = vec_get__OwnedText(texts, 0);',
+        'let last: OwnedText = vec_pop<OwnedText>(texts);',
+        'let last: OwnedText = vec_get<OwnedText>(texts, 0);',
     )
     with pytest.raises(CompileError, match='cannot copy owned element OwnedText'):
         Checker(parse(bad)).check()
@@ -378,7 +378,7 @@ def test_vec_get_rejects_owned_struct_copy():
 def test_enum_constructor_moves_owned_payload_source():
     bad = ENUM_VEC_PROGRAM.replace(
         'match (maybe) {',
-        'print(vec_len__i64(values));\n        match (maybe) {',
+        'print(vec_len<i64>(values));\n        match (maybe) {',
     )
     with pytest.raises(CompileError, match='moved value values'):
         Checker(parse(bad)).check()
@@ -386,8 +386,8 @@ def test_enum_constructor_moves_owned_payload_source():
 
 def test_match_consumes_owned_enum_subject():
     bad = ENUM_VEC_PROGRAM.replace(
-        'var result_values: Vec<i64> = vec_new__i64(a, 1);',
-        'print(maybe);\n\n        var result_values: Vec<i64> = vec_new__i64(a, 1);',
+        'var result_values: Vec<i64> = vec_new<i64>(a, 1);',
+        'print(maybe);\n\n        var result_values: Vec<i64> = vec_new<i64>(a, 1);',
     )
     with pytest.raises(CompileError, match='moved value maybe'):
         Checker(parse(bad)).check()
