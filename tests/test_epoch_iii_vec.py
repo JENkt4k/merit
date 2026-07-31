@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, is_copyable_type, parse, type_needs_drop, type_semantics, vec_return_type
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, LayoutEngine, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, is_copyable_type, parse, type_needs_drop, type_semantics, vec_return_type
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -311,18 +311,42 @@ def test_vec_owned_struct_interpreter_and_native_agree(tmp_path):
 
 def test_vec_headers_include_layout_assertions():
     header = CGenerator(parse(VEC_OWNED_STRUCT_PROGRAM)).header()
+    assert '/* Merit layout vector Vec__OwnedText hash ' in header
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, data) == 0' in header
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, len) == sizeof(void *)' in header
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, cap) == sizeof(void *) + sizeof(size_t)' in header
     assert '_Static_assert(sizeof(merit_Vec__OwnedText) == sizeof(void *) + sizeof(size_t) * 2' in header
 
 
+def test_vec_layout_report_includes_hashes():
+    layouts = {entry['name']: entry for entry in LayoutEngine(parse(VEC_OWNED_STRUCT_PROGRAM)).all()}
+    vector = layouts['Vec__OwnedText']
+    assert vector['kind'] == 'vector'
+    assert vector['size'] == 24
+    assert [field['offset'] for field in vector['fields']] == [0, 8, 16]
+    assert len(vector['layout_hash']) == 24
+
+
 def test_enum_headers_include_layout_assertions():
     header = CGenerator(parse(ENUM_VEC_PROGRAM)).header()
+    assert '/* Merit layout enum Option__Vec__i64 hash ' in header
+    assert '/* Merit layout enum Result__Vec__i64__Error hash ' in header
     assert '_Static_assert(__builtin_offsetof(merit_Option__Vec__i64, tag) == 0' in header
     assert '_Static_assert(__builtin_offsetof(merit_Option__Vec__i64, data) >= sizeof(merit_Option__Vec__i64_tag)' in header
     assert '_Static_assert(__builtin_offsetof(merit_Result__Vec__i64__Error, tag) == 0' in header
     assert '_Static_assert(__builtin_offsetof(merit_Result__Vec__i64__Error, data) >= sizeof(merit_Result__Vec__i64__Error_tag)' in header
+
+
+def test_enum_layout_report_includes_payload_hashes():
+    layouts = {entry['name']: entry for entry in LayoutEngine(parse(ENUM_VEC_PROGRAM)).all()}
+    option = layouts['Option__Vec__i64']
+    result = layouts['Result__Vec__i64__Error']
+    assert option['kind'] == 'enum'
+    assert option['tag']['offset'] == 0
+    assert option['payload_offset'] == 8
+    assert option['payload_size'] == 24
+    assert len(option['layout_hash']) == 24
+    assert result['payload_size'] == 24
 
 
 def test_enum_vec_interpreter_and_native_agree(tmp_path):

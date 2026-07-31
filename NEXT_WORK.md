@@ -31,6 +31,8 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generated C marks expected unused helpers and match bindings so project verification output stays signal-focused.
 - Generated headers emit static layout assertions for every concrete `Vec<T>`.
 - Generated headers emit conservative static layout assertions for enum tag and payload placement.
+- `merit layout` and `merit-project layout` report layout hashes for stable structs, generated vectors, and enums.
+- Generated headers include layout hash identity comments for stable structs, generated vectors, and enums.
 - Generic-style vector intrinsic calls such as `vec_new<i64>` and `vec_pop<OwnedText>` parse as typed `generic_call` nodes and resolve through semantic call handling.
 - Vector acceptance tests and the generic collections example use generic-style vector intrinsic calls instead of concrete `vec_*__T` spelling.
 - Vector intrinsic arity, return kind, receiver mode, allocation requirement, and owned-copy restrictions are centralized in one compiler table.
@@ -53,7 +55,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 
 ## Suggested implementation order
 1. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
-2. Add explicit layout-hash reporting for generated vectors and enums.
+2. Harden capability-specific hazardous operation reporting and generated/native audit boundaries.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -88,6 +90,7 @@ The checkpoint is complete only when all of these pass:
 - simple examples, text pipeline, binary packet, generic result, trait bounds, and generic collections projects still verify natively without expected helper-warning noise.
 - generated `Vec<T>` headers assert pointer/length/capacity layout at C compile time.
 - generated enum headers assert tag offset and payload placement at C compile time.
+- source and project layout commands report hashes for generated vectors and enums.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:

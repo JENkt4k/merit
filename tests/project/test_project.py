@@ -1,10 +1,12 @@
 from pathlib import Path
+import json
 import shutil
 import subprocess
 
 import pytest
 
 from merit.project.build import build, check, interpret
+from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -46,3 +48,14 @@ def test_cycle_is_rejected(tmp_path):
     (tmp_path / "src" / "b.mrt").write_text('module b\nimport a;\nfn helper() -> i32 { return 0; }\n')
     with pytest.raises(ProjectError, match="import cycle"):
         load_project(tmp_path / "Merit.toml")
+
+
+def test_project_layout_command_reports_generated_types(capsys):
+    manifest = ROOT / "examples" / "projects" / "generic_collections" / "Merit.toml"
+    assert project_cli_main(["layout", str(manifest)]) == 0
+    out = capsys.readouterr().out
+    layouts = {entry["name"]: entry for entry in json.loads(out)}
+    assert layouts["Vec__Buffer"]["kind"] == "vector"
+    assert len(layouts["Vec__Buffer"]["layout_hash"]) == 24
+    assert layouts["Option__Vec__i64"]["kind"] == "enum"
+    assert layouts["Result__Vec__i64__Error"]["payload_size"] == 24

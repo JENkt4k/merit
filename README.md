@@ -20,7 +20,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-At export time, the suite passes **50 tests** and verifies the Epoch II text pipeline, Epoch III binary packet parser, and generic-result acceptance project through both the interpreter and native C11 backend.
+The current local gate runs the pytest suite plus native project verification for the text pipeline, binary packet parser, generic result, trait bounds, and generic collections acceptance projects.
 
 ## Current checkpoint
 
@@ -50,12 +50,14 @@ Generic declarations are monomorphized into nominal declarations before the esta
 ```bash
 merit check program.mrt
 merit verify program.mrt
+merit layout program.mrt
 merit-project check PATH
 merit-project verify PATH
 merit-project run PATH
+merit-project layout PATH
 ```
 
-The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
+The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, layout hash reporting for structs/generated vectors/enums, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
 
 ---
 

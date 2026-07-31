@@ -761,22 +761,71 @@ class Checker:
 class LayoutEngine:
     SIZES={'i8':(1,1),'u8':(1,1),'i16':(2,2),'u16':(2,2),'i32':(4,4),'u32':(4,4),'i64':(8,8),'u64':(8,8)}
     def __init__(self,p):self.p=p
+    def hash_layout(self,kind,data):
+        canonical=json.dumps({'kind':kind,**data},sort_keys=True,separators=(',',':'))
+        return hashlib.sha256(canonical.encode()).hexdigest()[:24]
+    def vec_types(self):
+        found=set()
+        def add(t):
+            if is_vec_type(t):
+                found.add(t); add(vec_elem_type(t))
+        for s in self.p.structs.values():
+            for f in s.fields: add(f.type_name)
+        for e in self.p.enums.values():
+            for v in e.variants:
+                if v.payload_type: add(v.payload_type)
+        for f in self.p.functions:
+            add(f['return'])
+            for _,t,_ in f['params']: add(t)
+            for st in CGenerator(self.p).walk_statements(f['body']):
+                if st[0] in ('let','try_let'): add(st[2])
+        return sorted(found)
     def size_align(self,t):
         if t in self.SIZES:return self.SIZES[t]
         if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
         if t in self.p.bounded:return self.size_align(self.p.bounded[t].base)
+        if t in ('String','ByteSlice'): return (16,8)
+        if t in ('Buffer','I64Vec') or is_vec_type(t): return (24,8)
+        if t=='Allocator': return (4,4)
         if t in self.p.structs:
-            x=self.layout(self.p.structs[t]);return x['size'],x['alignment']
+            x=self.struct_layout(self.p.structs[t]);return x['size'],x['alignment']
+        if t in self.p.enums:
+            x=self.enum_layout(self.p.enums[t]);return x['size'],x['alignment']
         raise CompileError(f'layout unavailable for {t}')
-    def layout(self,s):
+    def struct_layout(self,s):
         off=0;align=1;fields=[]
         for f in s.fields:
             sz,al=self.size_align(f.type_name);off=(off+al-1)//al*al
             fields.append({'name':f.name,'type':f.type_name,'offset':off,'size':sz,'alignment':al});off+=sz;align=max(align,al)
         size=(off+align-1)//align*align
-        canonical=json.dumps({'abi':s.stable_abi,'name':s.name,'fields':fields,'size':size,'alignment':align},sort_keys=True,separators=(',',':'))
-        return {'name':s.name,'abi':s.stable_abi,'size':size,'alignment':align,'fields':fields,'layout_hash':hashlib.sha256(canonical.encode()).hexdigest()[:24]}
-    def all(self):return [self.layout(s) for s in self.p.structs.values()]
+        data={'name':s.name,'abi':s.stable_abi,'size':size,'alignment':align,'fields':fields}
+        return {'kind':'struct',**data,'layout_hash':self.hash_layout('struct',data)}
+    def layout(self,s): return self.struct_layout(s)
+    def vec_layout(self,t):
+        elem=vec_elem_type(t)
+        data={'name':t,'element_type':elem,'size':24,'alignment':8,'fields':[
+            {'name':'data','type':elem+'*','offset':0,'size':8,'alignment':8},
+            {'name':'len','type':'usize','offset':8,'size':8,'alignment':8},
+            {'name':'cap','type':'usize','offset':16,'size':8,'alignment':8},
+        ]}
+        return {'kind':'vector',**data,'layout_hash':self.hash_layout('vector',data)}
+    def enum_layout(self,e):
+        payloads=[]
+        max_size=0;max_align=1
+        for variant in e.variants:
+            if variant.payload_type is None:
+                payloads.append({'variant':variant.name,'type':None,'size':0,'alignment':1})
+            else:
+                sz,al=self.size_align(variant.payload_type);max_size=max(max_size,sz);max_align=max(max_align,al)
+                payloads.append({'variant':variant.name,'type':variant.payload_type,'size':sz,'alignment':al})
+        tag={'type':'i32','offset':0,'size':4,'alignment':4}
+        align=max(4,max_align)
+        payload_offset=((4+max_align-1)//max_align*max_align) if max_size else None
+        size=4 if max_size==0 else (payload_offset+max_size+align-1)//align*align
+        data={'name':e.name,'size':size,'alignment':align,'tag':tag,'payload_offset':payload_offset,'payload_size':max_size,'payload_alignment':max_align,'variants':payloads}
+        return {'kind':'enum',**data,'layout_hash':self.hash_layout('enum',data)}
+    def all(self):
+        return [self.struct_layout(s) for s in self.p.structs.values()] + [self.enum_layout(e) for e in self.p.enums.values()] + [self.vec_layout(vt) for vt in self.vec_types()]
 
 @dataclasses.dataclass
 class ReturnSignal:
@@ -985,7 +1034,9 @@ class CGenerator:
         if is_vec_type(t): return 'merit_'+t
         return {'i8':'int8_t','i16':'int16_t','i32':'int32_t','i64':'int64_t','u8':'uint8_t','u16':'uint16_t','u32':'uint32_t','u64':'uint64_t','void':'void'}[t]
     def vec_typedef_lines(self,vt):
+        layout=LayoutEngine(self.p).vec_layout(vt)
         return [
+            f'/* Merit layout vector {vt} hash {layout["layout_hash"]} */',
             f'typedef struct merit_{vt} {{',
             f'    {self.ctype(vec_elem_type(vt))} *data;',
             '    size_t len;',
@@ -1006,6 +1057,8 @@ class CGenerator:
         for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
         for enum in self.p.enums.values():
+            layout=le.enum_layout(enum)
+            o.append(f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */')
             o.append(f'typedef enum merit_{enum.name}_tag {{')
             for idx,variant in enumerate(enum.variants): o.append(f'    merit_{enum.name}_{variant.name} = {idx},')
             o.append(f'}} merit_{enum.name}_tag;')
@@ -1029,11 +1082,13 @@ class CGenerator:
                 o.append(f'static inline merit_{enum.name} merit_make_{enum.name}_{variant.name}({params}){{return {init};}}')
             o.append('')
         for s in self.p.structs.values():
+            if s.stable_abi:
+                layout=le.layout(s);o.append(f'/* Merit layout struct {s.name} hash {layout["layout_hash"]} */')
             o.append(f'typedef struct merit_{s.name} {{')
             for f in s.fields:o.append(f'    {self.ctype(f.type_name)} {f.name};')
             o.append(f'}} merit_{s.name};')
             if s.stable_abi:
-                layout=le.layout(s);o.append(f'_Static_assert(sizeof(merit_{s.name}) == {layout["size"]}, "Merit ABI size mismatch: {s.name}");')
+                o.append(f'_Static_assert(sizeof(merit_{s.name}) == {layout["size"]}, "Merit ABI size mismatch: {s.name}");')
                 for fld in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{s.name}, {fld["name"]}) == {fld["offset"]}, "Merit ABI offset mismatch: {s.name}.{fld["name"]}");')
             o.append('')
         for vt in self.vec_types():

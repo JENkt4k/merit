@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import sys
+
+from merit.compiler import LayoutEngine
 
 from .build import build, check, interpret
 from .loader import ProjectError, load_project
@@ -16,7 +19,7 @@ def _manifest(value: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="merit-project")
-    parser.add_argument("command", choices=("check", "build", "run", "verify", "graph"))
+    parser.add_argument("command", choices=("check", "build", "run", "verify", "graph", "layout"))
     parser.add_argument("path", nargs="?", default="Merit.toml")
     parser.add_argument("-o", "--output")
     args = parser.parse_args(argv)
@@ -26,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
             for unit in project.units:
                 imports = ", ".join(unit.imports) or "(none)"
                 print(f"{unit.module}: {imports}")
+            return 0
+        if args.command == "layout":
+            print(json.dumps(LayoutEngine(project.program).all(), indent=2))
             return 0
         if args.command == "check":
             checker = check(project)
