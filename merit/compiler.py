@@ -366,6 +366,10 @@ class VecIntrinsic:
 class BuiltinSig:
     params:tuple[tuple[str,str],...]; return_type:str; capability:str|None=None; hazard:str|None=None
 
+@dataclasses.dataclass(frozen=True)
+class CapabilityPolicy:
+    capability:str; hazard_class:str; review:str; scope:str
+
 def is_vec_type(t: str) -> bool:
     return t.startswith('Vec__')
 
@@ -426,11 +430,29 @@ BUILTIN_SIGS={
     'i64vec_len':BuiltinSig((('borrow','I64Vec'),), 'i64'),
     'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
     'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'file_read', 'filesystem_read'),
+    'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'i64', 'file_write', 'filesystem_write'),
 }
+
+CAPABILITY_POLICIES={
+    'allocate':CapabilityPolicy('allocate','allocation','memory-resource','lexical'),
+    'file_read':CapabilityPolicy('file_read','filesystem_read','io-read','lexical'),
+    'file_write':CapabilityPolicy('file_write','filesystem_write','io-write','lexical'),
+    'foreign_call':CapabilityPolicy('foreign_call','foreign_call','ffi-boundary','lexical'),
+}
+
+def capability_policy(cap: str) -> dict[str,str]:
+    policy=CAPABILITY_POLICIES.get(cap,CapabilityPolicy(cap,'user_declared','custom','lexical'))
+    return dataclasses.asdict(policy)
+
+def hazard_entry(function: str, operation: str, capability: str, hazard: str|None):
+    entry=capability_policy(capability)
+    entry.update({'function':function,'operation':operation,'capability':capability,'hazard':hazard or capability})
+    return entry
 
 def audit_payload(p,checker):
     return {
         'declared_capabilities':sorted(p.capabilities),
+        'capability_policies':[capability_policy(cap) for cap in sorted(p.capabilities)],
         'capability_requirements':capability_requirements(p),
         'sites':checker.audit_sites,
         'calls':checker.call_edges,
@@ -441,13 +463,19 @@ def capability_requirements(p):
     requirements=[]
     for name,sig in BUILTIN_SIGS.items():
         if sig.capability:
-            requirements.append({'kind':'builtin','operation':name,'capability':sig.capability,'hazard':sig.hazard or sig.capability})
+            entry=capability_policy(sig.capability)
+            entry.update({'kind':'builtin','operation':name,'capability':sig.capability,'hazard':sig.hazard or sig.capability})
+            requirements.append(entry)
     for name,spec in VEC_INTRINSICS.items():
         if spec.capability:
-            requirements.append({'kind':'vector_intrinsic','operation':f'vec_{name}<T>','capability':spec.capability,'hazard':spec.hazard or spec.capability})
+            entry=capability_policy(spec.capability)
+            entry.update({'kind':'vector_intrinsic','operation':f'vec_{name}<T>','capability':spec.capability,'hazard':spec.hazard or spec.capability})
+            requirements.append(entry)
     for f in p.functions:
         for cap in f['requires_caps']:
-            requirements.append({'kind':'function','operation':f['name'],'capability':cap,'hazard':'user_declared'})
+            entry=capability_policy(cap)
+            entry.update({'kind':'function','operation':f['name'],'capability':cap,'hazard':'user_declared'})
+            requirements.append(entry)
     return sorted(requirements,key=lambda x:(x['kind'],x['operation'],x['capability']))
 
 def vec_return_type(op: str, elem: str) -> str:
@@ -477,7 +505,7 @@ def resolved_call(e) -> tuple[str,list]:
     raise CompileError(f'M3011: expected call expression, got {e[0]}')
 
 class Checker:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[]
+    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
@@ -532,10 +560,19 @@ class Checker:
         missing=set(f['requires_caps'])-self.p.capabilities
         if missing:raise CompileError(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}")
         env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f['params']}
-        for e in f['pre']:self.expr_type(e,env,set(f['requires_caps']),f)
+        for e in f['pre']:self.check_contract_expr(e,env,set(f['requires_caps']),f,'pre')
         self.block(f['body'],env,set(f['requires_caps']),f)
         post_env=dict(env); post_env['result']=VarState(f['return'],False)
-        for e in f['post']:self.expr_type(e,post_env,set(f['requires_caps']),f)
+        for e in f['post']:self.check_contract_expr(e,post_env,set(f['requires_caps']),f,'post')
+    def check_contract_expr(self,e,env,caps,fn,phase):
+        previous=self.contract_phase
+        self.contract_phase=phase
+        try:
+            t=self.expr_type(e,env,caps,fn)
+        finally:
+            self.contract_phase=previous
+        if t not in ('i32','number'):
+            raise CompileError(f'M3202: {phase}condition must be boolean/comparison, got {t}')
     def check_impl_signature(self,impl,trait):
         expected={m.name:m for m in trait.methods}
         actual={m['name']:m for m in impl.methods}
@@ -676,6 +713,7 @@ class Checker:
                     if root and is_owned_type(at,self.p): env[root].moved=True
                 return enum.name
             if name=='old':
+                if self.contract_phase!='post': raise CompileError('M3201: old() is only valid in postconditions')
                 if len(args)!=1: raise CompileError('M3200: old expects one argument')
                 return self.expr_type(args[0],env,caps,fn)
             if name in ('checked_add','checked_sub','checked_mul','decimal_div'):
@@ -694,7 +732,7 @@ class Checker:
                 if len(args)!=spec.arity: raise CompileError(f'M3005: {name} expects {spec.arity} arguments')
                 if spec.capability:
                     if spec.capability not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [{spec.capability}]')
-                    self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':spec.capability,'hazard':spec.hazard or spec.capability})
+                    self.hazardous_operations.append(hazard_entry(fn['name'],name,spec.capability,spec.hazard))
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
@@ -721,7 +759,7 @@ class Checker:
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
                 if cap and cap not in caps: raise CompileError(f'M2003: call to {name} requires capabilities {[cap]}')
-                if cap: self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':cap,'hazard':sig.hazard or cap})
+                if cap: self.hazardous_operations.append(hazard_entry(fn['name'],name,cap,sig.hazard))
                 if len(args)!=len(params): raise CompileError(f'M3005: {name} expects {len(params)} arguments')
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
@@ -992,6 +1030,10 @@ class Interpreter:
             if n=='file_read':
                 path=self.eval(e[2][1],env).value
                 return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
+            if n=='file_write':
+                path=self.eval(e[2][0],env).value
+                data=self.eval(e[2][1],env).value
+                return TypedValue('i64',Path(path).write_bytes(bytes(data)))
             if n.startswith('checked_') or n=='decimal_div':
                 first=self.eval(e[2][0],env)
                 second=self.eval(e[2][1],env,first.type_name)
@@ -1150,6 +1192,7 @@ class CGenerator:
               r'''static void merit_i64vec_drop(merit_I64Vec *v){free(v->data);v->data=NULL;v->len=0;v->cap=0;}''',
               r'''static void merit_buffer_drop(merit_Buffer *b){free(b->data);b->data=NULL;b->len=0;b->cap=0;}''',
               r'''static merit_Buffer merit_file_read(merit_Allocator a,merit_String path){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"rb");free(z);if(!f)merit_fail("file read failed",83);if(fseek(f,0,SEEK_END)!=0)merit_fail("file seek failed",84);long n=ftell(f);rewind(f);merit_Buffer b=merit_buffer_new(a,n);if(n>0){size_t got=fread(b.data,1,(size_t)n,f);if(got!=(size_t)n)merit_fail("file read incomplete",84);b.len=got;}fclose(f);return b;}''',
+              r'''static int64_t merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");free(z);if(!f)merit_fail("file write failed",87);size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len)merit_fail("file write incomplete",88);if(fclose(f)!=0)merit_fail("file close failed",88);return (int64_t)wrote;}''',
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
@@ -1423,6 +1466,7 @@ class CGenerator:
             if n=='i64vec_len': return f'merit_i64vec_len({self.address_expr(a[0],env)})'
             if n=='i64vec_get': return f'merit_i64vec_get({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='file_read': return f'merit_file_read({self.expr(a[0],env)}, {self.expr(a[1],env)})'
+            if n=='file_write': return f'merit_file_write({self.expr(a[0],env)}, {self.address_expr(a[1],env)})'
             vec=vec_builtin(n)
             if vec:
                 op,elem=vec

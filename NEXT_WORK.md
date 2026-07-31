@@ -1,7 +1,13 @@
-# Next Work - Generic Collections
+# Next Work - Roadmap Status
 
 ## Goal
-Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait checkpoint.
+Advance the core Merit feature set in complete, testable epic slices while preserving interpreter/native parity.
+
+## Original epic status
+- Project-wide generic expansion and trait evidence: substantial checkpoint complete.
+- Contracts and verification depth: active checkpoint complete in this slice.
+- Capability model hardening: active checkpoint complete in this slice.
+- Memory model polish: next strong epic candidate.
 
 ## Trait checkpoint now available
 - User-declared traits with method signatures.
@@ -18,9 +24,6 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Trait method signatures cannot yet express effects or required capabilities; impl methods using them are rejected.
 - Trait-method lowering is still monomorphization-time source rewriting, guarded by ambiguity tests, not final AST-aware lowering.
 - Project-wide generic expansion is still compact source-level monomorphization, not a final typed generic IR or incremental compilation model.
-
-## Required collection features
-1. Continue migrating checker/codegen decisions onto typed semantic metadata.
 
 ## Collection checkpoint now available
 - `Vec<i64>` type syntax expands through the existing monomorphization path.
@@ -48,6 +51,34 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Mutation requires a mutable vector binding.
 - Interpreter/native verification through `examples/projects/generic_collections`.
 
+## Contract checkpoint now available
+- `requires` and `ensures` expressions are type-checked as boolean/comparison contract conditions before execution/codegen.
+- `old()` is legal only while checking postconditions.
+- `old()` in preconditions and ordinary code is rejected during checking instead of surfacing later.
+- Interpreter and generated native binaries agree on deterministic precondition failure behavior.
+- Interpreter and generated native binaries agree on deterministic postcondition failure behavior.
+- Native contract failures preserve distinct exit codes for precondition and postcondition failures.
+
+## Capability checkpoint now available
+- Builtin hazardous operation metadata covers allocation, filesystem read, and filesystem write classes.
+- `file_write` is a distinct capability-gated hazardous operation.
+- Unauthorized filesystem writes are rejected during checking.
+- Authorized filesystem writes execute in both interpreter and generated native binaries.
+- Audit output includes centralized capability policy metadata: hazard class, review category, and lexical scope.
+- Audit requirements and observed hazardous operations carry consistent policy classifications.
+
+## Recommended next epic
+Polish memory model diagnostics:
+- Improve owned borrowing edge cases around borrows, moves, drops, match subjects, and aggregate construction.
+- Replace generic ownership errors with operation-specific diagnostics where possible.
+- Keep all new diagnostics backed by negative tests.
+
+## Secondary next epic
+Continue capability hardening:
+- Add project-level acceptance coverage for `file_read` / `file_write`.
+- Add policy checks for effectful trait signatures once trait effects are modeled.
+- Add more operation classes only when the runtime has real operations to enforce.
+
 ## Deliberately deferred
 - specialization
 - associated types
@@ -58,8 +89,10 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - concurrency
 
 ## Suggested implementation order
-1. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
-2. Expand capability policies beyond allocation/file hazards as more hazardous operations are added.
+1. Improve memory model diagnostics and remaining owned borrowing edge cases.
+2. Add project-level filesystem capability acceptance coverage.
+3. Continue migrating checker/codegen decisions onto typed semantic metadata.
+4. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -96,6 +129,13 @@ The checkpoint is complete only when all of these pass:
 - generated `Vec<T>` headers assert pointer/length/capacity layout at C compile time.
 - generated enum headers assert tag offset and payload placement at C compile time.
 - source and project layout commands report hashes for generated vectors and enums.
+- contract precondition failures produce matching interpreter/native diagnostics.
+- contract postcondition failures produce matching interpreter/native diagnostics.
+- invalid contract expression types are rejected during checking.
+- `old()` outside postconditions is rejected during checking.
+- unauthorized `file_write` calls are rejected during checking.
+- authorized `file_write` calls match in interpreter and native execution.
+- audit output classifies allocation, filesystem read, and filesystem write hazards.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:

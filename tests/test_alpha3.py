@@ -8,6 +8,16 @@ def checked(src: str):
     p=parse(src); Checker(p).check(); return p
 
 
+def run_failure_parity(src: str, tmp_path: Path, name: str):
+    p=checked(src)
+    with pytest.raises(RuntimeError) as interpreted:
+        Interpreter(p).run()
+    path=tmp_path/f'{name}.mrt'; path.write_text(src)
+    exe=tmp_path/name; compile_file(path,exe)
+    native=subprocess.run([str(exe)],text=True,capture_output=True)
+    return str(interpreted.value), native
+
+
 def test_conflicting_mutable_and_shared_loans_rejected():
     src='''module x
 stable("v1") struct S { x:i32; }
@@ -69,6 +79,48 @@ fn inc(x:i32)->i32 ensures result == old(x) + 1; { return x + 1; }
 fn main()->i32 { return inc(4); }'''
     p=checked(src)
     assert Interpreter(p).run().value==5
+
+
+def test_contracts_must_be_boolean():
+    src='''module x
+fn id(x:i32)->i32 requires "not boolean"; { return x; }
+fn main()->i32 { return id(1); }'''
+    with pytest.raises(CompileError, match='precondition must be boolean'):
+        checked(src)
+
+
+def test_old_is_postcondition_only():
+    pre='''module x
+fn id(x:i32)->i32 requires old(x) == x; { return x; }
+fn main()->i32 { return id(1); }'''
+    body='''module x
+fn main()->i32 { return old(1); }'''
+    with pytest.raises(CompileError, match='old\\(\\) is only valid in postconditions'):
+        checked(pre)
+    with pytest.raises(CompileError, match='old\\(\\) is only valid in postconditions'):
+        checked(body)
+
+
+def test_contract_failure_interpreter_and_native_are_deterministic(tmp_path):
+    src='''module x
+fn inc(x:i32)->i32 ensures result == old(x) + 2; { return x + 1; }
+fn main()->i32 { return inc(4); }'''
+    interpreted, native = run_failure_parity(src,tmp_path,'contract_fail')
+    assert interpreted == 'postcondition failed in inc'
+    assert native.returncode == 73
+    assert native.stdout == ''
+    assert 'postcondition failed in inc' in native.stderr
+
+
+def test_precondition_failure_interpreter_and_native_are_deterministic(tmp_path):
+    src='''module x
+fn positive(x:i32)->i32 requires x > 0; { return x; }
+fn main()->i32 { return positive(0); }'''
+    interpreted, native = run_failure_parity(src,tmp_path,'precondition_fail')
+    assert interpreted == 'precondition failed in positive'
+    assert native.returncode == 71
+    assert native.stdout == ''
+    assert 'precondition failed in positive' in native.stderr
 
 
 def test_native_and_interpreter_match_for_borrowed_mutation(tmp_path):
