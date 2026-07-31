@@ -266,6 +266,61 @@ def test_project_wide_generic_visibility_rejects_private_template(tmp_path):
         load_project(project / 'Merit.toml')
 
 
+def test_project_wide_generic_bound_requires_imported_trait(tmp_path):
+    project = tmp_path / 'generic_bound_missing_import'
+    (project / 'src').mkdir(parents=True)
+    (project / 'Merit.toml').write_text(
+        '[package]\n'
+        'name = "generic_bound_missing_import"\n'
+        'entry = "src/main.mrt"\n'
+        'sources = ["src/*.mrt"]\n'
+    )
+    (project / 'src' / 'domain.mrt').write_text(
+        'module domain\n'
+        'pub trait Summarized { fn score(value: Self) -> i32; }\n'
+    )
+    (project / 'src' / 'algorithms.mrt').write_text(
+        'module algorithms\n'
+        'pub fn summarize<T: Summarized>(value: T) -> i32 { return 0; }\n'
+    )
+    (project / 'src' / 'main.mrt').write_text(
+        'module main\n'
+        'import algorithms;\n'
+        'fn main() -> i32 { return 0; }\n'
+    )
+
+    with pytest.raises(ProjectError, match='unimported module domain'):
+        load_project(project / 'Merit.toml')
+
+
+def test_project_wide_impl_rejects_private_trait(tmp_path):
+    project = tmp_path / 'private_impl_trait'
+    (project / 'src').mkdir(parents=True)
+    (project / 'Merit.toml').write_text(
+        '[package]\n'
+        'name = "private_impl_trait"\n'
+        'entry = "src/main.mrt"\n'
+        'sources = ["src/*.mrt"]\n'
+    )
+    (project / 'src' / 'domain.mrt').write_text(
+        'module domain\n'
+        'stable("v1") struct Point { x: i32; }\n'
+        'trait Hidden { fn score(value: Self) -> i32; }\n'
+    )
+    (project / 'src' / 'impls.mrt').write_text(
+        'module impls\n'
+        'import domain;\n'
+        'impl Hidden for Point { fn score(value: Point) -> i32 { return value.x; } }\n'
+    )
+    (project / 'src' / 'main.mrt').write_text(
+        'module main\n'
+        'fn main() -> i32 { return 0; }\n'
+    )
+
+    with pytest.raises(ProjectError, match='private symbol Hidden'):
+        load_project(project / 'Merit.toml')
+
+
 def test_impl_declaration_check_accepts_matching_signature():
     program = parse(IMPL_PROGRAM)
     Checker(program).check()

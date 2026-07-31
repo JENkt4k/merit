@@ -162,6 +162,24 @@ def _walk_statements(body):
             for arm in statement[2]: yield from _walk_statements(arm[2])
 
 
+def _split_generic_params(text: str) -> list[str]:
+    parts = []
+    depth = 0
+    start = 0
+    for idx, ch in enumerate(text):
+        if ch == "<":
+            depth += 1
+        elif ch == ">":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(text[start:idx].strip())
+            start = idx + 1
+    tail = text[start:].strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
 def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     owner: dict[str, SourceUnit] = {}
     variants: dict[str, SourceUnit] = {}
@@ -190,12 +208,29 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
             symbol = match.group(1)
             if symbol not in primitive and symbol != "Vec":
                 require(symbol, "generic application")
+        for match in re.finditer(r"\b(?:enum|struct|fn)\s+[A-Za-z_][A-Za-z0-9_]*\s*<([^>{}]+)>", unit.parser_source):
+            for param in _split_generic_params(match.group(1)):
+                if ":" not in param:
+                    continue
+                for bound in param.split(":", 1)[1].split("+"):
+                    trait = bound.strip()
+                    if trait:
+                        require(trait, "generic bound")
+        for match in re.finditer(r"\bimpl\s+([A-Za-z_][A-Za-z0-9_]*)\s+for\s+([A-Za-z_][A-Za-z0-9_]*)", unit.parser_source):
+            require(match.group(1), "impl trait")
+            if match.group(2) not in primitive:
+                require(match.group(2), "impl target")
         for struct in unit.program.structs.values():
             for field in struct.fields:
                 if field.type_name not in primitive: require(field.type_name, f"field {struct.name}.{field.name}")
         for enum in unit.program.enums.values():
             for variant in enum.variants:
                 if variant.payload_type and variant.payload_type not in primitive: require(variant.payload_type, f"variant {enum.name}.{variant.name}")
+        for trait in unit.program.traits.values():
+            for method in trait.methods:
+                if method.return_type not in primitive and method.return_type != "Self": require(method.return_type, f"trait {trait.name}.{method.name}")
+                for _, type_name, _ in method.params:
+                    if type_name not in primitive and type_name != "Self": require(type_name, f"trait {trait.name}.{method.name}")
         for function in unit.program.functions:
             for _, type_name, _ in function["params"]:
                 if type_name not in primitive: require(type_name, f"function {function['name']}")

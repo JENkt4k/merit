@@ -10,6 +10,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generic bounds resolved through user impls for concrete instantiations.
 - Trait method calls inside instantiated generic functions lower to concrete impl methods.
 - Project-wide generic expansion supports templates, instantiation sites, and trait impl evidence split across imported modules.
+- Project visibility checks cover generic template ownership, generic bounds, trait method signatures, and impl trait/target references.
 - Interpreter/native verification through `examples/projects/trait_bounds`.
 
 ## Trait limits deliberately retained for the compact compiler
