@@ -31,6 +31,39 @@ fn main() -> i32 {
 '''
 
 
+VEC_GENERIC_API_PROGRAM = r'''
+module vec_generic_api_acceptance
+capability allocate;
+
+struct OwnedText {
+    data: Buffer;
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let a: Allocator = system_allocator();
+        var values: Vec<i64> = vec_new<i64>(a, 2);
+        vec_push<i64>(values, 3);
+        vec_push<i64>(values, 8);
+        print(vec_len<i64>(values));
+        print(vec_get<i64>(values, 1));
+
+        var texts: Vec<OwnedText> = vec_new<OwnedText>(a, 1);
+        let b: Buffer = buffer_from_string(a, "generic");
+        let item: OwnedText = OwnedText { data: b };
+        vec_push<OwnedText>(texts, item);
+        let out: OwnedText = vec_pop<OwnedText>(texts);
+        print(buffer_len(out.data));
+
+        drop(out);
+        drop(texts);
+        drop(values);
+    }
+    return 0;
+}
+'''
+
+
 VEC_PAIR_PROGRAM = r'''
 module vec_pair_acceptance
 capability allocate;
@@ -198,6 +231,10 @@ def run_interpreter_and_native(source_text: str, tmp_path: Path, name: str) -> s
 
 def test_vec_i64_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_I64_PROGRAM, tmp_path, 'vec_i64') == '2\n7\n13\n'
+
+
+def test_vec_generic_api_interpreter_and_native_agree(tmp_path):
+    assert run_interpreter_and_native(VEC_GENERIC_API_PROGRAM, tmp_path, 'vec_generic_api') == '2\n8\n7\n'
 
 
 def test_vec_generic_struct_interpreter_and_native_agree(tmp_path):

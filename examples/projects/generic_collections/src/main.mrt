@@ -56,15 +56,15 @@ fn main() -> i32 {
         let wrapped: OwnedText = OwnedText { data: text };
         print(buffer_len(wrapped.data));
 
-        var text_items: Vec<OwnedText> = vec_new__OwnedText(a, 2);
+        var text_items: Vec<OwnedText> = vec_new<OwnedText>(a, 2);
         let first_item_buffer: Buffer = buffer_from_string(a, "first");
         let second_item_buffer: Buffer = buffer_from_string(a, "second");
         let first_item: OwnedText = OwnedText { data: first_item_buffer };
         let second_item: OwnedText = OwnedText { data: second_item_buffer };
-        vec_push__OwnedText(text_items, first_item);
-        vec_push__OwnedText(text_items, second_item);
-        print(vec_len__OwnedText(text_items));
-        let last_item: OwnedText = vec_pop__OwnedText(text_items);
+        vec_push<OwnedText>(text_items, first_item);
+        vec_push<OwnedText>(text_items, second_item);
+        print(vec_len<OwnedText>(text_items));
+        let last_item: OwnedText = vec_pop<OwnedText>(text_items);
         print(buffer_len(last_item.data));
 
         var option_values: Vec<i64> = vec_new__i64(a, 2);

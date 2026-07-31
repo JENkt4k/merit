@@ -223,6 +223,18 @@ def _replace_builtin_vec_types(source: str) -> str:
         source=re.sub(r'\bVec<([^<>]+)>', repl, source)
     return source
 
+def _replace_builtin_vec_ops(source: str) -> str:
+    ops='new|push|len|get|set|pop|drop'
+    changed=True
+    while changed:
+        changed=False
+        def repl(m):
+            nonlocal changed
+            changed=True
+            return f'vec_{m.group(1)}__{re.sub(r"[^A-Za-z0-9_]", "_", m.group(2).strip())}('
+        source=re.sub(r'\bvec_('+ops+r')<([^<>]+)>\s*\(', repl, source)
+    return source
+
 def _extract_generic_templates(source: str):
     templates={}; spans=[]
     header=re.compile(r'\b(enum|struct|fn)\s+([A-Za-z_]\w*)\s*<([^>{}]+)>')
@@ -297,9 +309,10 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
 def expand_generics(source: str) -> str:
     source,templates=_extract_generic_templates(source)
     source=_replace_builtin_vec_types(source)
-    if not templates: return _replace_builtin_vec_types(source)
+    if not templates: return _replace_builtin_vec_ops(_replace_builtin_vec_types(source))
     requested=set()
     source=_replace_applications(source,templates,requested)
+    source=_replace_builtin_vec_ops(source)
     trait_impls=_extract_trait_impl_registry(source)
     trait_methods=_extract_trait_methods(source)
     generated=[]; done=set()
@@ -334,8 +347,9 @@ def expand_generics(source: str) -> str:
             for variant in sorted(set(variants),key=len,reverse=True):
                 text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
         text=_replace_applications(text,templates,requested)
+        text=_replace_builtin_vec_ops(text)
         generated.append(text)
-    return _replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
+    return _replace_builtin_vec_ops(_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n'))
 
 def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
