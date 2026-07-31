@@ -7,7 +7,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Project-wide generic expansion and trait evidence: substantial checkpoint complete.
 - Contracts and verification depth: active checkpoint complete in this slice.
 - Capability model hardening: active checkpoint complete in this slice.
-- Memory model polish: next strong epic candidate.
+- Memory model polish: active checkpoint complete in this slice.
 
 ## Trait checkpoint now available
 - User-declared traits with method signatures.
@@ -67,17 +67,25 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Audit output includes centralized capability policy metadata: hazard class, review category, and lexical scope.
 - Audit requirements and observed hazardous operations carry consistent policy classifications.
 
+## Memory model checkpoint now available
+- Owned-source consumption is centralized across bindings, assignments, returns, struct construction, enum construction, vector value operations, builtin calls, and user-function calls.
+- Moving an owned field out of an aggregate is rejected until partial-move/drop-state tracking exists.
+- Passing an owned field to a consuming function is rejected.
+- Returning an owned field from an aggregate is rejected.
+- Constructing a new aggregate by moving an owned field out of another aggregate is rejected.
+- Assignment into existing owned storage is rejected until explicit replace/drop semantics exist.
+
 ## Recommended next epic
-Polish memory model diagnostics:
-- Improve owned borrowing edge cases around borrows, moves, drops, match subjects, and aggregate construction.
-- Replace generic ownership errors with operation-specific diagnostics where possible.
-- Keep all new diagnostics backed by negative tests.
+Add project-level filesystem capability acceptance coverage:
+- Create a small project that writes and reads deterministic bytes through `file_write` / `file_read`.
+- Verify interpreter/native parity and project audit classification.
+- Keep filesystem paths confined to test temp directories.
 
 ## Secondary next epic
-Continue capability hardening:
-- Add project-level acceptance coverage for `file_read` / `file_write`.
-- Add policy checks for effectful trait signatures once trait effects are modeled.
-- Add more operation classes only when the runtime has real operations to enforce.
+Continue memory model polish:
+- Add explicit replacement operations for owned storage.
+- Add partial-move tracking only if the language commits to field-level ownership states.
+- Improve diagnostics with move-origin notes once the checker carries source spans.
 
 ## Deliberately deferred
 - specialization
@@ -89,8 +97,8 @@ Continue capability hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Improve memory model diagnostics and remaining owned borrowing edge cases.
-2. Add project-level filesystem capability acceptance coverage.
+1. Add project-level filesystem capability acceptance coverage.
+2. Design explicit replacement operations for owned storage.
 3. Continue migrating checker/codegen decisions onto typed semantic metadata.
 4. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
 
@@ -136,6 +144,10 @@ The checkpoint is complete only when all of these pass:
 - unauthorized `file_write` calls are rejected during checking.
 - authorized `file_write` calls match in interpreter and native execution.
 - audit output classifies allocation, filesystem read, and filesystem write hazards.
+- owned field extraction into a new binding is rejected.
+- owned field extraction into a consuming call is rejected.
+- owned field extraction through aggregate construction or return is rejected.
+- assignment into owned storage is rejected until replacement semantics exist.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:

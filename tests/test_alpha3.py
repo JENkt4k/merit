@@ -53,6 +53,97 @@ fn main()->i32 { let s:S=S{x:1}; return bad(s); }'''
         Checker(parse(src)).check()
 
 
+def test_owned_field_move_to_binding_rejected():
+    src='''module x
+capability allocate;
+struct OwnedText { data: Buffer; }
+fn main()->i32 {
+    with capability allocate {
+        let a:Allocator=system_allocator();
+        let b:Buffer=buffer_from_string(a,"abc");
+        let wrapped:OwnedText=OwnedText{data:b};
+        let out:Buffer=wrapped.data;
+        drop(out);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match='cannot move owned field wrapped\\.data'):
+        Checker(parse(src)).check()
+
+
+def test_owned_field_move_to_call_rejected():
+    src='''module x
+capability allocate;
+struct OwnedText { data: Buffer; }
+fn take(x:Buffer)->i32 { drop(x); return 0; }
+fn main()->i32 {
+    with capability allocate {
+        let a:Allocator=system_allocator();
+        let b:Buffer=buffer_from_string(a,"abc");
+        let wrapped:OwnedText=OwnedText{data:b};
+        return take(wrapped.data);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match='cannot move owned field wrapped\\.data'):
+        Checker(parse(src)).check()
+
+
+def test_owned_field_move_to_struct_init_rejected():
+    src='''module x
+capability allocate;
+struct OwnedText { data: Buffer; }
+struct Outer { data: Buffer; }
+fn main()->i32 {
+    with capability allocate {
+        let a:Allocator=system_allocator();
+        let b:Buffer=buffer_from_string(a,"abc");
+        let wrapped:OwnedText=OwnedText{data:b};
+        let outer:Outer=Outer{data:wrapped.data};
+        drop(outer);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match='cannot move owned field wrapped\\.data'):
+        Checker(parse(src)).check()
+
+
+def test_owned_field_return_rejected():
+    src='''module x
+capability allocate;
+struct OwnedText { data: Buffer; }
+fn unwrap(wrapped:OwnedText)->Buffer { return wrapped.data; }
+fn main()->i32 {
+    with capability allocate {
+        let a:Allocator=system_allocator();
+        let b:Buffer=buffer_from_string(a,"abc");
+        let wrapped:OwnedText=OwnedText{data:b};
+        let out:Buffer=unwrap(wrapped);
+        drop(out);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match='cannot move owned field wrapped\\.data'):
+        Checker(parse(src)).check()
+
+
+def test_owned_assignment_rejected_until_replace_semantics_exist():
+    src='''module x
+capability allocate;
+fn main()->i32 {
+    with capability allocate {
+        let a:Allocator=system_allocator();
+        var first:Buffer=buffer_from_string(a,"abc");
+        let second:Buffer=buffer_from_string(a,"def");
+        first = second;
+        drop(first);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match='cannot assign into owned storage first'):
+        Checker(parse(src)).check()
+
+
 def test_mir_inserts_reverse_implicit_drops():
     src='''module x
 stable("v1") struct S { x:i32; }

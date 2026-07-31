@@ -594,9 +594,7 @@ class Checker:
                 _,n,t,e,mut=st;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):raise CompileError(f'M3001: cannot assign {et} to {t} in {n}')
                 if e[0]=='number':self.validate_literal(t,e[1])
-                if e[0]=='var' and e[1] in env and is_owned_type(env[e[1]].type_name,self.p):
-                    if env[e[1]].moved:raise CompileError(f'M5001: use of moved value {e[1]}')
-                    env[e[1]].moved=True
+                self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
             elif tag=='try_let':
                 _,n,t,e=st; self.ensure_type(t)
@@ -614,9 +612,12 @@ class Checker:
             elif tag=='assign':
                 lt=self.lvalue_type(st[1],env,True);rt=self.expr_type(st[2],env,caps,fn)
                 if rt not in (lt,'number'):raise CompileError(f'M3006: cannot assign {rt} to {lt}')
+                if type_needs_drop(lt,self.p): raise CompileError(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner')
+                self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
             elif tag=='return':
                 et=self.expr_type(st[1],env,caps,fn)
                 if et not in (fn['return'],'number'):raise CompileError(f"M3002: return type {et} does not match {fn['return']}")
+                self.consume_owned_source(st[1],et,env,f'returning from {fn["name"]}')
             elif tag in ('print','expr'):self.expr_type(st[1],env,caps,fn)
             elif tag=='drop':
                 n=st[1]
@@ -694,8 +695,7 @@ class Checker:
                 t=self.expr_type(x,env,caps,fn)
                 if t not in (expected[n].type_name,'number'):raise CompileError(f'M4006: field {n} expects {expected[n].type_name}, got {t}')
                 if x[0]=='number':self.validate_literal(expected[n].type_name,x[1])
-                root=self.root_var(x)
-                if root and is_owned_type(t,self.p): env[root].moved=True
+                self.consume_owned_source(x,t,env,f'initializing field {name}.{n}')
             return name
         if tag in ('call','generic_call'):
             name,args=resolved_call(e)
@@ -709,8 +709,7 @@ class Checker:
                     at=self.expr_type(args[0],env,caps,fn)
                     if at not in (variant.payload_type,'number'): raise CompileError(f'M6004: {name} expects {variant.payload_type}, got {at}')
                     if args[0][0]=='number': self.validate_literal(variant.payload_type,args[0][1])
-                    root=self.root_var(args[0])
-                    if root and is_owned_type(at,self.p): env[root].moved=True
+                    self.consume_owned_source(args[0],at,env,f'constructing {enum.name}::{variant.name}')
                 return enum.name
             if name=='old':
                 if self.contract_phase!='post': raise CompileError('M3201: old() is only valid in postconditions')
@@ -750,8 +749,7 @@ class Checker:
                     value_arg=args[spec.value_index]
                     at=self.expr_type(value_arg,env,caps,fn)
                     if at not in (elem,'number'): raise CompileError(f'M3008: vector value expects {elem}, got {at}')
-                    root=self.root_var(value_arg)
-                    if root and is_owned_type(at,self.p): env[root].moved=True
+                    self.consume_owned_source(value_arg,at,env,f'calling {name}')
                 if op=='drop':
                     root=self.root_var(args[0])
                     if root: env[root].dropped=True
@@ -772,7 +770,7 @@ class Checker:
                         for pr,pm in loans:
                             if pr==root and ('borrow_mut' in (mode,pm)): raise CompileError(f'M5003: conflicting loans of {root}')
                         loans.append((root,mode))
-                    if mode=='value' and root and is_owned_type(at,self.p): env[root].moved=True
+                    if mode=='value': self.consume_owned_source(arg,at,env,f'passing argument {idx} to {name}')
                 return ret
             if name not in self.fn:raise CompileError(f'M3004: unknown function {name}')
             callee=self.fn[name];missing=set(callee['requires_caps'])-caps
@@ -792,7 +790,7 @@ class Checker:
                 if mode=='borrow_mut':
                     if not root: raise CompileError(f'M5004: borrow_mut argument {pn} must be an addressable binding')
                     if not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
-                if mode=='value' and root and is_owned_type(at,self.p):env[root].moved=True
+                if mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {pn} to {name}')
             return callee['return']
         if tag=='binop':
             a=self.expr_type(e[2],env,caps,fn);b=self.expr_type(e[3],env,caps,fn)
@@ -808,6 +806,16 @@ class Checker:
         root=self.root_var(arg)
         if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
         if mode=='borrow_mut' and not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
+    def consume_owned_source(self,e,t,env,context):
+        root=self.root_var(e)
+        if not root or not is_owned_type(t,self.p): return
+        if e[0]=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
+        if env[root].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot move borrowed parameter {root}')
+        env[root].moved=True
+    def expr_path(self,e):
+        if e[0]=='var': return e[1]
+        if e[0]=='field': return self.expr_path(e[1])+'.'+e[2]
+        return '<expression>'
     def root_var(self,e):
         while e and e[0]=='field': e=e[1]
         return e[1] if e and e[0]=='var' else None
