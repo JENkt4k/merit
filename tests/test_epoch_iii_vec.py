@@ -300,6 +300,14 @@ def test_vec_headers_include_layout_assertions():
     assert '_Static_assert(sizeof(merit_Vec__OwnedText) == sizeof(void *) + sizeof(size_t) * 2' in header
 
 
+def test_enum_headers_include_layout_assertions():
+    header = CGenerator(parse(ENUM_VEC_PROGRAM)).header()
+    assert '_Static_assert(__builtin_offsetof(merit_Option__Vec__i64, tag) == 0' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Option__Vec__i64, data) >= sizeof(merit_Option__Vec__i64_tag)' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Result__Vec__i64__Error, tag) == 0' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Result__Vec__i64__Error, data) >= sizeof(merit_Result__Vec__i64__Error_tag)' in header
+
+
 def test_enum_vec_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(ENUM_VEC_PROGRAM, tmp_path, 'enum_vec') == '2\n32\n44\n'
 

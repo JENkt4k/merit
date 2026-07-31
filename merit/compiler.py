@@ -1005,6 +1005,10 @@ class CGenerator:
                 for variant in payloads:o.append(f'        {self.ctype(variant.payload_type)} {variant.name};')
                 o.append('    } data;')
             o.append(f'}} merit_{enum.name};')
+            o.append(f'_Static_assert(__builtin_offsetof(merit_{enum.name}, tag) == 0, "Merit enum layout mismatch: {enum.name}.tag");')
+            if payloads:
+                o.append(f'_Static_assert(__builtin_offsetof(merit_{enum.name}, data) >= sizeof(merit_{enum.name}_tag), "Merit enum layout mismatch: {enum.name}.data");')
+                o.append(f'_Static_assert(sizeof(merit_{enum.name}) >= __builtin_offsetof(merit_{enum.name}, data), "Merit enum size mismatch: {enum.name}");')
             for variant in enum.variants:
                 params='void' if variant.payload_type is None else f'{self.ctype(variant.payload_type)} value'
                 init=f'(merit_{enum.name}){{.tag=merit_{enum.name}_{variant.name}'
