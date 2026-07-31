@@ -371,8 +371,14 @@ def vec_elem_type(t: str) -> str:
 def is_owned_type(t: str, p=None) -> bool:
     return type_semantics(t,p).owned
 
-def vec_elem_needs_drop(t: str, p) -> bool:
+def type_needs_drop(t: str, p=None) -> bool:
     return type_semantics(t,p).needs_drop
+
+def is_copyable_type(t: str, p=None) -> bool:
+    return type_semantics(t,p).copyable
+
+def vec_elem_needs_drop(t: str, p) -> bool:
+    return type_needs_drop(t,p)
 
 def type_semantics(t: str, p=None, seen=None) -> TypeSemantics:
     if seen is None: seen=set()
@@ -555,7 +561,7 @@ class Checker:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
                 root=self.root_var(st[1])
-                if root and vec_elem_needs_drop(subject_t,self.p): env[root].moved=True
+                if root and type_needs_drop(subject_t,self.p): env[root].moved=True
             elif tag=='with_cap':
                 cap=st[1]
                 if cap not in self.p.capabilities:raise CompileError(f'M2002: undeclared capability {cap}')
@@ -650,9 +656,9 @@ class Checker:
                 if spec.receiver_mode:
                     self.check_vec_receiver(args[0],env,caps,fn,vec_t,spec.receiver_mode)
                 if spec.rejects_owned_result_copy:
-                    if vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
+                    if type_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
                 if spec.rejects_owned_replace:
-                    if vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
+                    if type_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
                 if spec.index_index is not None:
                     it=self.expr_type(args[spec.index_index],env,caps,fn)
                     if it not in ('i64','number'): raise CompileError(f'M3008: argument {spec.index_index} expects i64, got {it}')
@@ -1064,19 +1070,19 @@ class CGenerator:
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
         for e in self.p.enums.values():
-            if vec_elem_needs_drop(e.name,self.p):
+            if type_needs_drop(e.name,self.p):
                 o.append(f'static void merit_drop_{e.name}({self.ctype(e.name)} *v);')
         for s in self.p.structs.values():
-            if vec_elem_needs_drop(s.name,self.p):
+            if type_needs_drop(s.name,self.p):
                 o.append(f'static void merit_drop_{s.name}({self.ctype(s.name)} *v);')
-        if any(vec_elem_needs_drop(e.name,self.p) for e in self.p.enums.values()) or any(vec_elem_needs_drop(s.name,self.p) for s in self.p.structs.values()):
+        if any(type_needs_drop(e.name,self.p) for e in self.p.enums.values()) or any(type_needs_drop(s.name,self.p) for s in self.p.structs.values()):
             o.append('')
         for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
         for e in self.p.enums.values():
-            if vec_elem_needs_drop(e.name,self.p):
+            if type_needs_drop(e.name,self.p):
                 o.extend(self.enum_drop_runtime(e))
         for s in self.p.structs.values():
-            if vec_elem_needs_drop(s.name,self.p):
+            if type_needs_drop(s.name,self.p):
                 o.extend(self.struct_drop_runtime(s))
         for t,b in self.p.bounded.items():
             o.append(f'static {self.ctype(t)} merit_check_{t}({self.ctype(t)} x){{if(x < {b.minimum} || x > {b.maximum}) merit_fail("bounded range violation: {t}",70);return x;}}')
@@ -1100,12 +1106,15 @@ class CGenerator:
             ''
         ]
     def drop_field_stmt(self,base,t):
+        if not type_needs_drop(t,self.p): return ''
         if t=='Buffer': return f'merit_buffer_drop(&{base});'
         if t=='I64Vec': return f'merit_i64vec_drop(&{base});'
         if is_vec_type(t): return f'merit_vec_drop__{vec_elem_type(t)}(&{base});'
-        if t in self.p.enums and vec_elem_needs_drop(t,self.p): return f'merit_drop_{t}(&{base});'
-        if t in self.p.structs and vec_elem_needs_drop(t,self.p): return f'merit_drop_{t}(&{base});'
+        if t in self.p.enums or t in self.p.structs: return f'merit_drop_{t}(&{base});'
         return ''
+    def drop_binding_line(self,prefix,name,t):
+        stmt=self.drop_field_stmt(name,t)
+        return f'{prefix}{stmt}' if stmt else f'{prefix}/* deterministic drop {name} */'
     def enum_drop_runtime(self,e):
         lines=[f'static void merit_drop_{e.name}({self.ctype(e.name)} *v){{','    switch (v->tag) {']
         for variant in e.variants:
@@ -1176,13 +1185,13 @@ class CGenerator:
         for st in self.walk_statements(f['body']):
             if st[0]=='let':
                 local_types[st[1]]=st[2]
-                if type_semantics(st[2],self.p).needs_drop:
+                if type_needs_drop(st[2],self.p):
                     locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
             elif st[0]=='match':
                 root=self.expr_root(st[1])
-                if root and root in local_types and local_types[root] in self.p.enums and vec_elem_needs_drop(local_types[root],self.p):
+                if root and root in local_types and local_types[root] in self.p.enums and type_needs_drop(local_types[root],self.p):
                     moved.add(root)
             for part in st[1:]:
                 if isinstance(part,tuple): moved |= self.moved_roots(part)
@@ -1202,11 +1211,7 @@ class CGenerator:
         postenv=dict(env);postenv['result']=(f['return'],'__result__')
         for c in f['post']:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f["name"]}",73);')
         for name,t in self.owned_buffer_cleanup(f):
-            if t=='Buffer': o.append(f'    merit_buffer_drop(&{name});')
-            elif t=='I64Vec': o.append(f'    merit_i64vec_drop(&{name});')
-            elif is_vec_type(t): o.append(f'    merit_vec_drop__{vec_elem_type(t)}(&{name});')
-            elif t in self.p.enums and vec_elem_needs_drop(t,self.p): o.append(f'    merit_drop_{t}(&{name});')
-            elif t in self.p.structs and vec_elem_needs_drop(t,self.p): o.append(f'    merit_drop_{t}(&{name});')
+            o.append(self.drop_binding_line('    ',name,t))
         if f['return']!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
     def checked(self,t,x):
@@ -1242,12 +1247,7 @@ class CGenerator:
         if s[0]=='expr':return [f'{p}(void)({self.expr(s[1],env)});']
         if s[0]=='drop':
             t=self.env_type(env,s[1])
-            if t=='Buffer': return [f'{p}merit_buffer_drop(&{s[1]});']
-            if t=='I64Vec': return [f'{p}merit_i64vec_drop(&{s[1]});']
-            if is_vec_type(t): return [f'{p}merit_vec_drop__{vec_elem_type(t)}(&{s[1]});']
-            if t in self.p.enums and vec_elem_needs_drop(t,self.p): return [f'{p}merit_drop_{t}(&{s[1]});']
-            if t in self.p.structs and vec_elem_needs_drop(t,self.p): return [f'{p}merit_drop_{t}(&{s[1]});']
-            return [f'{p}/* deterministic drop {s[1]} */']
+            return [self.drop_binding_line(p,s[1],t)]
         if s[0]=='match':
             enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
             o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[1],env)};',f'{p}switch ({temp}.tag) {{']
@@ -1407,7 +1407,7 @@ def mir(p):
             return current
         tail=lower_seq(f['body'],entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
-        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and type_semantics(st[2],p).owned]
+        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and is_owned_type(st[2],p)]
         explicit={st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='drop'}
         entry['statements'].extend(('drop_implicit',name) for name in reversed(locals_order) if name not in explicit)
         return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'blocks':blocks}

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, parse, type_semantics, vec_return_type
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, is_copyable_type, parse, type_needs_drop, type_semantics, vec_return_type
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -270,6 +270,17 @@ fn main() -> i32 {
     assert type_semantics('OwnedText', program).needs_drop
     assert type_semantics('Error', program).copyable
     assert type_semantics('Option__Vec__i64', program).needs_drop
+    assert type_needs_drop('Option__Vec__i64', program)
+    assert not type_needs_drop('Error', program)
+    assert is_copyable_type('Error', program)
+    assert not is_copyable_type('OwnedText', program)
+
+
+def test_generated_drop_uses_shared_type_semantics():
+    c = CGenerator(parse(ENUM_VEC_PROGRAM))
+    assert c.drop_field_stmt('value', 'Option__Vec__i64') == 'merit_drop_Option__Vec__i64(&value);'
+    assert c.drop_binding_line('    ', 'values', 'Vec__i64') == '    merit_vec_drop__i64(&values);'
+    assert c.drop_binding_line('    ', 'error', 'Error') == '    /* deterministic drop error */'
 
 
 def test_vec_generic_api_interpreter_and_native_agree(tmp_path):

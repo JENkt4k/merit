@@ -34,7 +34,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generic-style vector intrinsic calls such as `vec_new<i64>` and `vec_pop<OwnedText>` parse as typed `generic_call` nodes and resolve through semantic call handling.
 - Vector acceptance tests and the generic collections example use generic-style vector intrinsic calls instead of concrete `vec_*__T` spelling.
 - Vector intrinsic arity, return kind, receiver mode, allocation requirement, and owned-copy restrictions are centralized in one compiler table.
-- Type ownership, drop requirement, and copyability are classified through a shared `TypeSemantics` helper used by checker and cleanup paths.
+- Type ownership, drop requirement, and copyability are classified through shared semantic helpers used by checker, cleanup, MIR, and generated drop emission paths.
 - `vec_new__T`, `vec_push__T`, `vec_len__T`, `vec_get__T`, `vec_set__T`, `vec_pop__T`, and `vec_drop__T` are available for concrete `T`.
 - `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
 - Vectors are owned values: copying/move-after-use is rejected.
@@ -52,7 +52,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - concurrency
 
 ## Suggested implementation order
-1. Route remaining direct aggregate/drop checks through `TypeSemantics` as parser and AST support improve.
+1. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
 2. Add explicit layout-hash reporting for generated vectors and enums.
 
 ## Acceptance gates
