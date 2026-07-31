@@ -55,6 +55,7 @@ match_arm: CNAME ["(" CNAME ")"] "=>" block
 ?atom: ESCAPED_STRING -> string
      | SIGNED_NUMBER -> number
      | CNAME "{" [field_inits] "}" -> struct_init
+     | GENERIC_CALL_HEAD "(" [args] ")" -> generic_call
      | CNAME "(" [args] ")" -> call
      | CNAME -> variable
      | "(" expr ")"
@@ -65,6 +66,7 @@ ADD_OP: "+"|"-"
 MUL_OP: "*"|"/"
 COMP_OP: "=="|"!="|">="|"<="|">"|"<"
 BASE_INT: "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"
+GENERIC_CALL_HEAD.2: /[A-Za-z_]\w*<\s*(?:[A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>/
 %import common.CNAME
 %import common.INT
 %import common.SIGNED_NUMBER
@@ -139,6 +141,10 @@ class ASTBuilder(Transformer):
     def field_inits(self,x): return list(x)
     def struct_init(self,x): return ('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {})
     def call(self,x): return ('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else [])
+    def generic_call(self,x):
+        head=str(x[0])
+        match=re.fullmatch(r'([A-Za-z_]\w*)<\s*([A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>',head)
+        return ('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else [])
     def postfix(self,x):
         node=x[0]
         for f in x[1:]: node=('field',node,str(f))
@@ -223,18 +229,6 @@ def _replace_builtin_vec_types(source: str) -> str:
         source=re.sub(r'\bVec<([^<>]+)>', repl, source)
     return source
 
-def _replace_builtin_vec_ops(source: str) -> str:
-    ops='|'.join(VECTOR_INTRINSIC_NAMES)
-    changed=True
-    while changed:
-        changed=False
-        def repl(m):
-            nonlocal changed
-            changed=True
-            return f'vec_{m.group(1)}__{re.sub(r"[^A-Za-z0-9_]", "_", m.group(2).strip())}('
-        source=re.sub(r'\bvec_('+ops+r')<([^<>]+)>\s*\(', repl, source)
-    return source
-
 def _extract_generic_templates(source: str):
     templates={}; spans=[]
     header=re.compile(r'\b(enum|struct|fn)\s+([A-Za-z_]\w*)\s*<([^>{}]+)>')
@@ -309,10 +303,9 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
 def expand_generics(source: str) -> str:
     source,templates=_extract_generic_templates(source)
     source=_replace_builtin_vec_types(source)
-    if not templates: return _replace_builtin_vec_ops(_replace_builtin_vec_types(source))
+    if not templates: return _replace_builtin_vec_types(source)
     requested=set()
     source=_replace_applications(source,templates,requested)
-    source=_replace_builtin_vec_ops(source)
     trait_impls=_extract_trait_impl_registry(source)
     trait_methods=_extract_trait_methods(source)
     generated=[]; done=set()
@@ -347,9 +340,8 @@ def expand_generics(source: str) -> str:
             for variant in sorted(set(variants),key=len,reverse=True):
                 text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
         text=_replace_applications(text,templates,requested)
-        text=_replace_builtin_vec_ops(text)
         generated.append(text)
-    return _replace_builtin_vec_ops(_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n'))
+    return _replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
 
 def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
@@ -418,6 +410,20 @@ def vec_builtin(name: str):
         prefix=f'vec_{op}__'
         if name.startswith(prefix): return op,name[len(prefix):]
     return None
+
+def generic_vec_call_name(base: str, type_arg: str) -> str|None:
+    if not base.startswith('vec_'): return None
+    op=base[4:]
+    if op not in VEC_INTRINSICS: return None
+    return f'vec_{op}__{type_arg}'
+
+def resolved_call(e) -> tuple[str,list]:
+    if e[0]=='call': return e[1],e[2]
+    if e[0]=='generic_call':
+        name=generic_vec_call_name(e[1],e[2])
+        if name: return name,e[3]
+        raise CompileError(f'M3010: unsupported generic call {e[1]}<{e[2]}>')
+    raise CompileError(f'M3011: expected call expression, got {e[0]}')
 
 class Checker:
     def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[]
@@ -603,8 +609,8 @@ class Checker:
                 root=self.root_var(x)
                 if root and is_owned_type(t,self.p): env[root].moved=True
             return name
-        if tag=='call':
-            name,args=e[1],e[2]
+        if tag in ('call','generic_call'):
+            name,args=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:
                 if len(variants)>1: raise CompileError(f'M6002: ambiguous enum constructor {name}')
@@ -835,8 +841,8 @@ class Interpreter:
         if e[0]=='field':return self.eval(e[1],env).value[e[2]]
         if e[0]=='struct_init':
             s=self.p.structs[e[1]];return TypedValue(e[1],{f.name:self.eval(e[2][f.name],env,f.type_name) for f in s.fields})
-        if e[0]=='call':
-            n=e[1]
+        if e[0] in ('call','generic_call'):
+            n,args=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
             if variants:
                 enum,variant=variants[0]
@@ -883,22 +889,22 @@ class Interpreter:
                 op,elem=vec; vec_t='Vec__'+elem
                 if op=='new': return TypedValue(vec_t,[])
                 if op=='push':
-                    self.eval(e[2][0],env).value.append(self.clone(self.eval(e[2][1],env,elem))); return TypedValue('void',None)
-                if op=='len': return TypedValue('i64',len(self.eval(e[2][0],env).value))
+                    self.eval(args[0],env).value.append(self.clone(self.eval(args[1],env,elem))); return TypedValue('void',None)
+                if op=='len': return TypedValue('i64',len(self.eval(args[0],env).value))
                 if op=='get':
-                    data=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                    data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                     if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
                     return self.clone(data[idx])
                 if op=='set':
-                    data=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                    data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                     if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
-                    data[idx]=self.clone(self.eval(e[2][2],env,elem)); return TypedValue('void',None)
+                    data[idx]=self.clone(self.eval(args[2],env,elem)); return TypedValue('void',None)
                 if op=='pop':
-                    data=self.eval(e[2][0],env).value
+                    data=self.eval(args[0],env).value
                     if not data: raise RuntimeError('vector pop from empty')
                     return self.clone(data.pop())
                 if op=='drop':
-                    self.eval(e[2][0],env).value.clear(); return TypedValue('void',None)
+                    self.eval(args[0],env).value.clear(); return TypedValue('void',None)
             if n=='file_read':
                 path=self.eval(e[2][1],env).value
                 return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
@@ -1147,19 +1153,20 @@ class CGenerator:
                 root=self.expr_root(value)
                 if root and is_owned_type(field.type_name,self.p): moved.add(root)
                 moved |= self.moved_roots(value)
-        elif e[0]=='call':
-            vec=vec_builtin(e[1])
+        elif e[0] in ('call','generic_call'):
+            name,args=resolved_call(e)
+            vec=vec_builtin(name)
             if vec and vec[0]=='push':
-                root=self.expr_root(e[2][1])
+                root=self.expr_root(args[1])
                 if root: moved.add(root)
             else:
-                variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==e[1]]
-                if variants and variants[0].payload_type is not None and e[2]:
-                    root=self.expr_root(e[2][0])
+                variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
+                if variants and variants[0].payload_type is not None and args:
+                    root=self.expr_root(args[0])
                     if root and is_owned_type(variants[0].payload_type,self.p): moved.add(root)
-            if e[1] in self.fn:
-                callee=self.fn[e[1]]
-                for arg,(_,t,mode) in zip(e[2],callee['params']):
+            if name in self.fn:
+                callee=self.fn[name]
+                for arg,(_,t,mode) in zip(args,callee['params']):
                     if mode=='value' and is_owned_type(t,self.p):
                         root=self.expr_root(arg)
                         if root: moved.add(root)
@@ -1279,17 +1286,18 @@ class CGenerator:
         if e[0]=='field':
             t=self.etype(e[1],env);return next(f.type_name for f in self.p.structs[t].fields if f.name==e[2])
         if e[0]=='struct_init':return e[1]
-        if e[0]=='call':
-            variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==e[1]]
+        if e[0] in ('call','generic_call'):
+            name,args=resolved_call(e)
+            variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:return variants[0]
-            if e[1]=='old':return self.etype(e[2][0],env)
+            if name=='old':return self.etype(args[0],env)
             builtin_returns={'system_allocator':'Allocator','string_len':'i64','string_byte':'u8','buffer_new':'Buffer','buffer_from_string':'Buffer','buffer_push':'void','buffer_len':'i64','buffer_get':'i64','buffer_slice':'ByteSlice','slice_len':'i64','slice_get':'i64','i64vec_new':'I64Vec','i64vec_push':'void','i64vec_len':'i64','i64vec_get':'i64','file_read':'Buffer'}
-            if e[1] in builtin_returns:return builtin_returns[e[1]]
-            vec=vec_builtin(e[1])
+            if name in builtin_returns:return builtin_returns[name]
+            vec=vec_builtin(name)
             if vec:
                 op,elem=vec
                 return vec_return_type(op,elem)
-            return self.etype(e[2][0],env) if e[1].startswith('checked_') or e[1]=='decimal_div' else self.fn[e[1]]['return']
+            return self.etype(args[0],env) if name.startswith('checked_') or name=='decimal_div' else self.fn[name]['return']
         if e[0]=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
     def address_expr(self,e,env):
         rendered=self.expr(e,env)
@@ -1307,8 +1315,8 @@ class CGenerator:
             return f'{self.expr(base,env)}{op}{e[2]}'
         if e[0]=='struct_init':
             s=self.p.structs[e[1]];return f'({self.ctype(e[1])}){{'+', '.join(f'.{f.name}={self.expr(e[2][f.name],env,f.type_name)}' for f in s.fields)+'}'
-        if e[0]=='call':
-            n=e[1];a=e[2]
+        if e[0] in ('call','generic_call'):
+            n,a=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
             if variants:
                 enum,variant=variants[0]

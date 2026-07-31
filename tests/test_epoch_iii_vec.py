@@ -276,6 +276,12 @@ def test_vec_generic_api_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_GENERIC_API_PROGRAM, tmp_path, 'vec_generic_api') == '2\n8\n7\n'
 
 
+def test_unsupported_generic_call_is_rejected():
+    bad = VEC_GENERIC_API_PROGRAM.replace('vec_new<i64>(a, 2)', 'unknown_generic<i64>(a, 2)')
+    with pytest.raises(CompileError, match='unsupported generic call unknown_generic<i64>'):
+        Checker(parse(bad)).check()
+
+
 def test_vec_generic_struct_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_PAIR_PROGRAM, tmp_path, 'vec_pair') == '21\n5\n'
 
