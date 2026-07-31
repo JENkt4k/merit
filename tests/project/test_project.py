@@ -67,6 +67,9 @@ def test_project_audit_command_reports_hazards(capsys):
     audit = json.loads(capsys.readouterr().out)
     assert audit["declared_capabilities"] == ["allocate"]
     assert audit["sites"] == [{"function": "main", "capability": "allocate"}]
+    requirements = {(entry["kind"], entry["operation"], entry["capability"], entry["hazard"]) for entry in audit["capability_requirements"]}
+    assert ("builtin", "buffer_from_string", "allocate", "allocation") in requirements
+    assert ("vector_intrinsic", "vec_new<T>", "allocate", "allocation") in requirements
     operations = {(entry["operation"], entry["capability"], entry["hazard"]) for entry in audit["hazardous_operations"]}
     assert ("buffer_from_string", "allocate", "allocation") in operations
     assert ("vec_new__Buffer", "allocate", "allocation") in operations

@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from merit.compiler import BUILTIN_SIGS, CGenerator, audit_payload, parse, Checker, CompileError, Interpreter
+from merit.compiler import BUILTIN_SIGS, CGenerator, VEC_INTRINSICS, audit_payload, parse, Checker, CompileError, Interpreter
 
 ROOT=Path(__file__).parents[1]
 
@@ -14,6 +14,8 @@ def test_builtin_hazard_metadata_is_explicit():
     assert BUILTIN_SIGS['buffer_new'].hazard == 'allocation'
     assert BUILTIN_SIGS['file_read'].capability == 'file_read'
     assert BUILTIN_SIGS['file_read'].hazard == 'filesystem_read'
+    assert VEC_INTRINSICS['new'].capability == 'allocate'
+    assert VEC_INTRINSICS['new'].hazard == 'allocation'
 
 def test_audit_reports_hazardous_builtin_operations():
     src='''module x
@@ -23,6 +25,15 @@ fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); 
     audit=audit_payload(p,ch)
     assert audit['sites'] == [{'function':'main','capability':'allocate'}]
     assert audit['hazardous_operations'] == [{'function':'main','operation':'buffer_new','capability':'allocate','hazard':'allocation'}]
+    requirements = {(entry['kind'], entry['operation'], entry['capability'], entry['hazard']) for entry in audit['capability_requirements']}
+    assert ('builtin', 'buffer_new', 'allocate', 'allocation') in requirements
+    assert ('builtin', 'file_read', 'file_read', 'filesystem_read') in requirements
+    assert ('vector_intrinsic', 'vec_new<T>', 'allocate', 'allocation') in requirements
+
+def test_audit_reports_user_declared_capability_requirements():
+    p=parse((ROOT/'examples/account_component.mrt').read_text())
+    audit=audit_payload(p,Checker(p).check())
+    assert {'kind':'function','operation':'native_notice','capability':'foreign_call','hazard':'user_declared'} in audit['capability_requirements']
 
 def test_generated_c_marks_capability_boundaries():
     c=CGenerator(parse((ROOT/'examples/ledger.mrt').read_text())).generate()

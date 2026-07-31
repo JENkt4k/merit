@@ -41,7 +41,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
 - Vectors are owned values: copying/move-after-use is rejected.
 - Allocation requires the `allocate` capability.
-- `merit audit` and `merit-project audit` report declared capabilities, capability sites, capability-bearing calls, and hazardous builtin/vector operations.
+- `merit audit` and `merit-project audit` report declared capabilities, capability policy requirements, capability sites, capability-bearing calls, and hazardous builtin/vector operations.
 - Generated C marks capability regions with explicit begin/end audit comments.
 - Mutation requires a mutable vector binding.
 - Interpreter/native verification through `examples/projects/generic_collections`.

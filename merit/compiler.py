@@ -360,7 +360,7 @@ class TypeSemantics:
     owned:bool; needs_drop:bool; copyable:bool; reason:str
 @dataclasses.dataclass(frozen=True)
 class VecIntrinsic:
-    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False
+    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False; capability:str|None=None; hazard:str|None=None
 
 @dataclasses.dataclass(frozen=True)
 class BuiltinSig:
@@ -400,7 +400,7 @@ def type_semantics(t: str, p=None, seen=None) -> TypeSemantics:
     return TypeSemantics(False,False,True,'copy scalar')
 
 VEC_INTRINSICS={
-    'new':VecIntrinsic(2,'vec',requires_allocate=True),
+    'new':VecIntrinsic(2,'vec',requires_allocate=True,capability='allocate',hazard='allocation'),
     'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1),
     'len':VecIntrinsic(1,'i64',receiver_mode='borrow'),
     'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,rejects_owned_result_copy=True),
@@ -431,10 +431,24 @@ BUILTIN_SIGS={
 def audit_payload(p,checker):
     return {
         'declared_capabilities':sorted(p.capabilities),
+        'capability_requirements':capability_requirements(p),
         'sites':checker.audit_sites,
         'calls':checker.call_edges,
         'hazardous_operations':checker.hazardous_operations,
     }
+
+def capability_requirements(p):
+    requirements=[]
+    for name,sig in BUILTIN_SIGS.items():
+        if sig.capability:
+            requirements.append({'kind':'builtin','operation':name,'capability':sig.capability,'hazard':sig.hazard or sig.capability})
+    for name,spec in VEC_INTRINSICS.items():
+        if spec.capability:
+            requirements.append({'kind':'vector_intrinsic','operation':f'vec_{name}<T>','capability':spec.capability,'hazard':spec.hazard or spec.capability})
+    for f in p.functions:
+        for cap in f['requires_caps']:
+            requirements.append({'kind':'function','operation':f['name'],'capability':cap,'hazard':'user_declared'})
+    return sorted(requirements,key=lambda x:(x['kind'],x['operation'],x['capability']))
 
 def vec_return_type(op: str, elem: str) -> str:
     kind=VEC_INTRINSICS[op].return_kind
@@ -678,9 +692,9 @@ class Checker:
                 op,elem=vec; spec=VEC_INTRINSICS[op]; vec_t='Vec__'+elem; self.ensure_type(vec_t)
                 if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
                 if len(args)!=spec.arity: raise CompileError(f'M3005: {name} expects {spec.arity} arguments')
-                if spec.requires_allocate:
-                    if 'allocate' not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [allocate]')
-                    self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':'allocate','hazard':'allocation'})
+                if spec.capability:
+                    if spec.capability not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [{spec.capability}]')
+                    self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':spec.capability,'hazard':spec.hazard or spec.capability})
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
