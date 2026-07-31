@@ -22,6 +22,7 @@ class SourceUnit:
     path: Path
     module: str
     imports: tuple[str, ...]
+    parser_source: str
     program: Program
     exports: frozenset[str]
 
@@ -44,7 +45,46 @@ def _discover(manifest: Manifest) -> list[Path]:
     return sorted(found)
 
 
-def _parse_unit(path: Path) -> SourceUnit:
+def _strip_module(source: str) -> str:
+    return re.sub(r"^\s*module\s+[A-Za-z_][A-Za-z0-9_]*\s*$", "", source, count=1, flags=re.MULTILINE)
+
+
+def _extract_block_declarations(source: str, header: re.Pattern) -> list[str]:
+    declarations = []
+    pos = 0
+    while True:
+        match = header.search(source, pos)
+        if not match:
+            break
+        brace = source.find("{", match.end())
+        if brace < 0:
+            break
+        depth = 0
+        end = None
+        for idx in range(brace, len(source)):
+            if source[idx] == "{":
+                depth += 1
+            elif source[idx] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = idx + 1
+                    break
+        if end is None:
+            break
+        declarations.append(source[match.start():end])
+        pos = end
+    return declarations
+
+
+def _extract_generic_context_declarations(source: str) -> str:
+    declarations = []
+    declarations.extend(_extract_block_declarations(source, re.compile(r"\b(?:enum|struct|fn)\s+[A-Za-z_][A-Za-z0-9_]*\s*<[^>{}]+>")))
+    declarations.extend(_extract_block_declarations(source, re.compile(r"\btrait\s+[A-Za-z_][A-Za-z0-9_]*\s*")))
+    declarations.extend(_extract_block_declarations(source, re.compile(r"\bimpl\s+[A-Za-z_][A-Za-z0-9_]*\s+for\s+[A-Za-z_][A-Za-z0-9_]*\s*")))
+    return "\n".join(declarations)
+
+
+def _parse_unit(path: Path, generic_prelude: str = "") -> SourceUnit:
     source = path.read_text()
     imports = tuple(IMPORT_RE.findall(source))
     imports_source = IMPORT_RE.sub("", source)
@@ -53,8 +93,18 @@ def _parse_unit(path: Path) -> SourceUnit:
     try:
         program = parse(parser_source)
     except Exception as exc:
-        raise ProjectError(render_exception(exc, path, source)) from exc
-    return SourceUnit(path, program.module, imports, program, exports)
+        if not generic_prelude:
+            raise ProjectError(render_exception(exc, path, source)) from exc
+        parse_source = "module " + re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)", parser_source, re.MULTILINE).group(1) + "\n" + generic_prelude + "\n" + _strip_module(parser_source)
+        try:
+            program = parse(parse_source)
+        except Exception as prelude_exc:
+            raise ProjectError(render_exception(prelude_exc, path, source)) from prelude_exc
+    return SourceUnit(path, program.module, imports, parser_source, program, exports)
+
+
+def _declaration_source(unit: SourceUnit) -> str:
+    return _strip_module(unit.parser_source)
 
 
 def _check_graph(units: Iterable[SourceUnit], entry_module: str) -> None:
@@ -118,6 +168,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     for unit in units:
         symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | set(unit.program.enums) | set(unit.program.traits)
         symbols |= {f["name"] for f in unit.program.functions}
+        symbols |= {match.group(1) for match in re.finditer(r"\b(?:enum|struct|fn)\s+([A-Za-z_][A-Za-z0-9_]*)\s*<", unit.parser_source)}
         for symbol in symbols: owner[symbol] = unit
         for enum in unit.program.enums.values():
             for variant in enum.variants: variants[variant.name] = unit
@@ -135,6 +186,10 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                 exported_symbol = next(e.name for e in target.program.enums.values() if any(v.name == symbol for v in e.variants))
             if exported_symbol not in target.exports:
                 raise ProjectError(f"module {unit.module} uses private symbol {exported_symbol} from {target.module} ({context})")
+        for match in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*<", unit.parser_source):
+            symbol = match.group(1)
+            if symbol not in primitive and symbol != "Vec":
+                require(symbol, "generic application")
         for struct in unit.program.structs.values():
             for field in struct.fields:
                 if field.type_name not in primitive: require(field.type_name, f"field {struct.name}.{field.name}")
@@ -190,20 +245,29 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 raise ProjectError(f"duplicate function {name}: {seen_functions[name]} and {unit.path}")
             seen_functions[name] = unit.path
             functions.append(function)
-    for impl in impls:
+    combined_source = "module " + manifest.name + "\n" + "\n".join(_declaration_source(unit) for unit in units)
+    try:
+        merged = parse(combined_source)
+    except Exception as exc:
+        raise ProjectError(f"project generic expansion failed: {exc}") from exc
+    seen_functions = {function["name"]: manifest.root for function in merged.functions}
+    functions = list(merged.functions)
+    for impl in merged.impls:
         for method in impl.methods:
             generated = dict(method)
             generated["name"] = _impl_function_name(impl.trait_name, impl.target_type, method["name"])
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, decimals, bounded, capabilities, structs, functions, enums, traits, impls)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:
     manifest = load_manifest(manifest_path)
     paths = _discover(manifest)
-    units = tuple(_parse_unit(path) for path in paths)
+    raw_sources = {path: path.read_text() for path in paths}
+    generic_contexts = {path: _extract_generic_context_declarations(PUB_RE.sub(r"\1", IMPORT_RE.sub("", source))) for path, source in raw_sources.items()}
+    units = tuple(_parse_unit(path, "\n".join(text for other, text in generic_contexts.items() if other != path)) for path in paths)
     entry = next((u for u in units if u.path.resolve() == manifest.entry_path.resolve()), None)
     if entry is None:
         raise ProjectError("entry module was not loaded")

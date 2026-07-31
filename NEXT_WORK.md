@@ -9,13 +9,14 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Coherence rule: at most one implementation for a concrete trait/type pair within the program.
 - Generic bounds resolved through user impls for concrete instantiations.
 - Trait method calls inside instantiated generic functions lower to concrete impl methods.
+- Project-wide generic expansion supports templates, instantiation sites, and trait impl evidence split across imported modules.
 - Interpreter/native verification through `examples/projects/trait_bounds`.
 
 ## Trait limits deliberately retained for the compact compiler
 - No associated types, blanket impls, specialization, trait objects, or dynamic dispatch.
 - Trait method signatures cannot yet express effects or required capabilities; impl methods using them are rejected.
 - Trait-method lowering is still monomorphization-time source rewriting, guarded by ambiguity tests, not final AST-aware lowering.
-- Generic templates and their trait impl evidence are still best kept in the same source unit until the compiler has a real project-wide generic expansion pass.
+- Project-wide generic expansion is still compact source-level monomorphization, not a final typed generic IR or incremental compilation model.
 
 ## Required collection features
 1. Continue migrating checker/codegen decisions onto typed semantic metadata.

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from merit.compiler import Checker, CompileError, Interpreter, compile_file, parse
-from merit.project.loader import load_project
+from merit.project.loader import ProjectError, load_project
 from merit.project.build import build, check, interpret
 
 
@@ -163,6 +163,107 @@ def test_trait_bounds_acceptance_project_interpreter_and_native(tmp_path):
     _, _, executable = build(project, tmp_path / 'trait_bounds')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
     assert interpreted == native == '17\n'
+
+
+def test_project_wide_generic_expansion_across_modules(tmp_path):
+    project = tmp_path / 'project_wide_generics'
+    (project / 'src').mkdir(parents=True)
+    (project / 'Merit.toml').write_text(
+        '[package]\n'
+        'name = "project_wide_generics"\n'
+        'entry = "src/main.mrt"\n'
+        'sources = ["src/*.mrt"]\n'
+    )
+    (project / 'src' / 'types.mrt').write_text(
+        'module types\n'
+        'pub struct Box<T> { value: T; }\n'
+        'pub fn unwrap<T>(box: Box<T>) -> T { return box.value; }\n'
+    )
+    (project / 'src' / 'main.mrt').write_text(
+        'module main\n'
+        'import types;\n'
+        'fn main() -> i32 {\n'
+        '    let box: Box<i32> = Box<i32> { value: 41 };\n'
+        '    print(unwrap<i32>(box));\n'
+        '    return 0;\n'
+        '}\n'
+    )
+
+    loaded = load_project(project / 'Merit.toml')
+    check(loaded)
+    assert any(function['name'] == 'unwrap__i32' for function in loaded.program.functions)
+    assert 'Box__i32' in loaded.program.structs
+    interpreted = interpret(loaded)
+    _, _, executable = build(loaded, tmp_path / 'project_wide_generics_bin')
+    native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
+    assert interpreted == native == '41\n'
+
+
+def test_project_wide_trait_evidence_across_modules(tmp_path):
+    project = tmp_path / 'project_wide_trait_evidence'
+    (project / 'src').mkdir(parents=True)
+    (project / 'Merit.toml').write_text(
+        '[package]\n'
+        'name = "project_wide_trait_evidence"\n'
+        'entry = "src/main.mrt"\n'
+        'sources = ["src/*.mrt"]\n'
+    )
+    (project / 'src' / 'domain.mrt').write_text(
+        'module domain\n'
+        'pub stable("v1") struct Point { x: i32; }\n'
+        'pub trait Summarized { fn score(value: Self) -> i32; }\n'
+        'impl Summarized for Point { fn score(value: Point) -> i32 { return value.x; } }\n'
+    )
+    (project / 'src' / 'algorithms.mrt').write_text(
+        'module algorithms\n'
+        'import domain;\n'
+        'pub fn summarize<T: Summarized>(value: T) -> i32 { return score(value); }\n'
+    )
+    (project / 'src' / 'main.mrt').write_text(
+        'module main\n'
+        'import domain;\n'
+        'import algorithms;\n'
+        'fn main() -> i32 {\n'
+        '    let p: Point = Point { x: 29 };\n'
+        '    print(summarize<Point>(p));\n'
+        '    return 0;\n'
+        '}\n'
+    )
+
+    loaded = load_project(project / 'Merit.toml')
+    check(loaded)
+    assert any(function['name'] == 'summarize__Point' for function in loaded.program.functions)
+    assert any(function['name'] == 'impl__Summarized__Point__score' for function in loaded.program.functions)
+    interpreted = interpret(loaded)
+    _, _, executable = build(loaded, tmp_path / 'project_wide_trait_evidence_bin')
+    native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
+    assert interpreted == native == '29\n'
+
+
+def test_project_wide_generic_visibility_rejects_private_template(tmp_path):
+    project = tmp_path / 'private_project_wide_generics'
+    (project / 'src').mkdir(parents=True)
+    (project / 'Merit.toml').write_text(
+        '[package]\n'
+        'name = "private_project_wide_generics"\n'
+        'entry = "src/main.mrt"\n'
+        'sources = ["src/*.mrt"]\n'
+    )
+    (project / 'src' / 'types.mrt').write_text(
+        'module types\n'
+        'struct Box<T> { value: T; }\n'
+    )
+    (project / 'src' / 'main.mrt').write_text(
+        'module main\n'
+        'import types;\n'
+        'fn main() -> i32 {\n'
+        '    let box: Box<i32> = Box<i32> { value: 1 };\n'
+        '    return 0;\n'
+        '}\n'
+    )
+
+    with pytest.raises(ProjectError, match='private symbol Box'):
+        load_project(project / 'Merit.toml')
 
 
 def test_impl_declaration_check_accepts_matching_signature():

@@ -43,7 +43,7 @@ fn maximum<T: Ord>(left: T, right: T) -> T {
 }
 ```
 
-Generic declarations are monomorphized into nominal declarations before the established semantic, ownership, MIR, interpreter, and C-backend pipeline.
+Generic declarations are monomorphized into nominal declarations before the established semantic, ownership, MIR, interpreter, and C-backend pipeline. Project builds support generic templates, instantiation sites, and trait impl evidence split across imported modules.
 
 ## CLI
 
@@ -59,7 +59,7 @@ merit-project layout PATH
 merit-project audit PATH
 ```
 
-The current systems checkpoint supports user-declared traits, coherent impls, generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, layout hash reporting for structs/generated vectors/enums, hazardous operation audit reporting, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
+The current systems checkpoint supports user-declared traits, coherent impls, project-wide generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, layout hash reporting for structs/generated vectors/enums, hazardous operation audit reporting, aggregate drop glue for structs with owned fields, and owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code. Remaining collection work is scoped in `NEXT_WORK.md`.
 
 ---
 
