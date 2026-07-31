@@ -59,3 +59,14 @@ def test_project_layout_command_reports_generated_types(capsys):
     assert len(layouts["Vec__Buffer"]["layout_hash"]) == 24
     assert layouts["Option__Vec__i64"]["kind"] == "enum"
     assert layouts["Result__Vec__i64__Error"]["payload_size"] == 24
+
+
+def test_project_audit_command_reports_hazards(capsys):
+    manifest = ROOT / "examples" / "projects" / "generic_collections" / "Merit.toml"
+    assert project_cli_main(["audit", str(manifest)]) == 0
+    audit = json.loads(capsys.readouterr().out)
+    assert audit["declared_capabilities"] == ["allocate"]
+    assert audit["sites"] == [{"function": "main", "capability": "allocate"}]
+    operations = {(entry["operation"], entry["capability"], entry["hazard"]) for entry in audit["hazardous_operations"]}
+    assert ("buffer_from_string", "allocate", "allocation") in operations
+    assert ("vec_new__Buffer", "allocate", "allocation") in operations

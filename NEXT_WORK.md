@@ -41,6 +41,8 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
 - Vectors are owned values: copying/move-after-use is rejected.
 - Allocation requires the `allocate` capability.
+- `merit audit` and `merit-project audit` report declared capabilities, capability sites, capability-bearing calls, and hazardous builtin/vector operations.
+- Generated C marks capability regions with explicit begin/end audit comments.
 - Mutation requires a mutable vector binding.
 - Interpreter/native verification through `examples/projects/generic_collections`.
 
@@ -55,7 +57,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 
 ## Suggested implementation order
 1. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
-2. Harden capability-specific hazardous operation reporting and generated/native audit boundaries.
+2. Expand capability policies beyond allocation/file hazards as more hazardous operations are added.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -84,6 +86,7 @@ The checkpoint is complete only when all of these pass:
 - use-after-drop rejected.
 - immutable vector mutation rejected.
 - capability-free allocation rejected.
+- hazardous builtin and vector operations appear in source/project audit output.
 
 ### Regression
 - all existing tests remain green.

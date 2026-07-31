@@ -362,6 +362,10 @@ class TypeSemantics:
 class VecIntrinsic:
     arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False
 
+@dataclasses.dataclass(frozen=True)
+class BuiltinSig:
+    params:tuple[tuple[str,str],...]; return_type:str; capability:str|None=None; hazard:str|None=None
+
 def is_vec_type(t: str) -> bool:
     return t.startswith('Vec__')
 
@@ -405,6 +409,33 @@ VEC_INTRINSICS={
     'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
 }
 
+BUILTIN_SIGS={
+    'system_allocator':BuiltinSig((), 'Allocator'),
+    'string_len':BuiltinSig((('value','String'),), 'i64'),
+    'string_byte':BuiltinSig((('value','String'),('value','i64')), 'u8'),
+    'buffer_new':BuiltinSig((('value','Allocator'),('value','i64')), 'Buffer', 'allocate', 'allocation'),
+    'buffer_from_string':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'allocate', 'allocation'),
+    'buffer_push':BuiltinSig((('borrow_mut','Buffer'),('value','u8')), 'void'),
+    'buffer_len':BuiltinSig((('borrow','Buffer'),), 'i64'),
+    'buffer_get':BuiltinSig((('borrow','Buffer'),('value','i64')), 'i64'),
+    'buffer_slice':BuiltinSig((('borrow','Buffer'),('value','i64'),('value','i64')), 'ByteSlice'),
+    'slice_len':BuiltinSig((('value','ByteSlice'),), 'i64'),
+    'slice_get':BuiltinSig((('value','ByteSlice'),('value','i64')), 'i64'),
+    'i64vec_new':BuiltinSig((('value','Allocator'),('value','i64')), 'I64Vec', 'allocate', 'allocation'),
+    'i64vec_push':BuiltinSig((('borrow_mut','I64Vec'),('value','i64')), 'void'),
+    'i64vec_len':BuiltinSig((('borrow','I64Vec'),), 'i64'),
+    'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
+    'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'file_read', 'filesystem_read'),
+}
+
+def audit_payload(p,checker):
+    return {
+        'declared_capabilities':sorted(p.capabilities),
+        'sites':checker.audit_sites,
+        'calls':checker.call_edges,
+        'hazardous_operations':checker.hazardous_operations,
+    }
+
 def vec_return_type(op: str, elem: str) -> str:
     kind=VEC_INTRINSICS[op].return_kind
     if kind=='vec': return 'Vec__'+elem
@@ -432,7 +463,7 @@ def resolved_call(e) -> tuple[str,list]:
     raise CompileError(f'M3011: expected call expression, got {e[0]}')
 
 class Checker:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[]
+    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[]
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
@@ -649,6 +680,7 @@ class Checker:
                 if len(args)!=spec.arity: raise CompileError(f'M3005: {name} expects {spec.arity} arguments')
                 if spec.requires_allocate:
                     if 'allocate' not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [allocate]')
+                    self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':'allocate','hazard':'allocation'})
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
@@ -672,27 +704,10 @@ class Checker:
                     root=self.root_var(args[0])
                     if root: env[root].dropped=True
                 return vec_return_type(op,elem)
-            builtin_sigs={
-                'system_allocator':([], 'Allocator', None),
-                'string_len':([('value','String')], 'i64', None),
-                'string_byte':([('value','String'),('value','i64')], 'u8', None),
-                'buffer_new':([('value','Allocator'),('value','i64')], 'Buffer', 'allocate'),
-                'buffer_from_string':([('value','Allocator'),('value','String')], 'Buffer', 'allocate'),
-                'buffer_push':([('borrow_mut','Buffer'),('value','u8')], 'void', None),
-                'buffer_len':([('borrow','Buffer')], 'i64', None),
-                'buffer_get':([('borrow','Buffer'),('value','i64')], 'i64', None),
-                'buffer_slice':([('borrow','Buffer'),('value','i64'),('value','i64')], 'ByteSlice', None),
-                'slice_len':([('value','ByteSlice')], 'i64', None),
-                'slice_get':([('value','ByteSlice'),('value','i64')], 'i64', None),
-                'i64vec_new':([('value','Allocator'),('value','i64')], 'I64Vec', 'allocate'),
-                'i64vec_push':([('borrow_mut','I64Vec'),('value','i64')], 'void', None),
-                'i64vec_len':([('borrow','I64Vec')], 'i64', None),
-                'i64vec_get':([('borrow','I64Vec'),('value','i64')], 'i64', None),
-                'file_read':([('value','Allocator'),('value','String')], 'Buffer', 'file_read'),
-            }
-            if name in builtin_sigs:
-                params,ret,cap=builtin_sigs[name]
+            if name in BUILTIN_SIGS:
+                sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
                 if cap and cap not in caps: raise CompileError(f'M2003: call to {name} requires capabilities {[cap]}')
+                if cap: self.hazardous_operations.append({'function':fn['name'],'operation':name,'capability':cap,'hazard':sig.hazard or cap})
                 if len(args)!=len(params): raise CompileError(f'M3005: {name} expects {len(params)} arguments')
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
@@ -1316,8 +1331,9 @@ class CGenerator:
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
         if s[0]=='with_cap':
-            o=[f'{p}/* capability: {s[1]} */']
+            o=[f'{p}/* merit capability begin: {s[1]} */']
             for z in s[2]:o+=self.stmt(z,env,i)
+            o.append(f'{p}/* merit capability end: {s[1]} */')
             return o
         if s[0]=='if':
             o=[f'{p}if ({self.expr(s[1],env)}) {{']
@@ -1346,8 +1362,7 @@ class CGenerator:
             variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:return variants[0]
             if name=='old':return self.etype(args[0],env)
-            builtin_returns={'system_allocator':'Allocator','string_len':'i64','string_byte':'u8','buffer_new':'Buffer','buffer_from_string':'Buffer','buffer_push':'void','buffer_len':'i64','buffer_get':'i64','buffer_slice':'ByteSlice','slice_len':'i64','slice_get':'i64','i64vec_new':'I64Vec','i64vec_push':'void','i64vec_len':'i64','i64vec_get':'i64','file_read':'Buffer'}
-            if name in builtin_returns:return builtin_returns[name]
+            if name in BUILTIN_SIGS:return BUILTIN_SIGS[name].return_type
             vec=vec_builtin(name)
             if vec:
                 op,elem=vec
@@ -1532,7 +1547,7 @@ def main(argv=None):
             if interpreted.getvalue()!=native:
                 raise RuntimeError('interpreter/native mismatch\n--- interpreter ---\n'+interpreted.getvalue()+'--- native ---\n'+native)
             print(f'verified: interpreter and native outputs match ({len(native.encode())} bytes)')
-        elif ns.cmd=='audit':print(json.dumps({'declared_capabilities':sorted(p.capabilities),'sites':ch.audit_sites,'calls':ch.call_edges},indent=2))
+        elif ns.cmd=='audit':print(json.dumps(audit_payload(p,ch),indent=2))
         elif ns.cmd=='emit-c':print(CGenerator(p).generate())
         elif ns.cmd=='emit-h':print(CGenerator(p).header())
         elif ns.cmd=='layout':print(json.dumps(LayoutEngine(p).all(),indent=2))
