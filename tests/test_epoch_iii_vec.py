@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, parse, vec_return_type
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, parse, type_semantics, vec_return_type
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -241,6 +241,35 @@ def test_vec_intrinsic_metadata_covers_public_operations():
     assert VEC_INTRINSICS['new'].requires_allocate
     assert VEC_INTRINSICS['push'].receiver_mode == 'borrow_mut'
     assert VEC_INTRINSICS['get'].rejects_owned_result_copy
+
+
+def test_type_semantics_classifies_owned_and_copy_values():
+    program = parse(r'''
+module type_semantics_acceptance
+struct OwnedText {
+    data: Buffer;
+}
+enum Error {
+    Bad
+}
+enum Option<T> {
+    Some(T),
+    None
+}
+fn consume_option(value: Option<Vec<i64>>) -> i32 {
+    return 0;
+}
+fn main() -> i32 {
+    return 0;
+}
+''')
+    assert type_semantics('i64', program).copyable
+    assert type_semantics('Buffer', program).needs_drop
+    assert type_semantics('Vec__i64', program).owned
+    assert type_semantics('OwnedText', program).owned
+    assert type_semantics('OwnedText', program).needs_drop
+    assert type_semantics('Error', program).copyable
+    assert type_semantics('Option__Vec__i64', program).needs_drop
 
 
 def test_vec_generic_api_interpreter_and_native_agree(tmp_path):

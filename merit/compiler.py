@@ -364,6 +364,9 @@ class TypedValue: type_name:str; value:Any
 @dataclasses.dataclass
 class VarState: type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"
 @dataclasses.dataclass(frozen=True)
+class TypeSemantics:
+    owned:bool; needs_drop:bool; copyable:bool; reason:str
+@dataclasses.dataclass(frozen=True)
 class VecIntrinsic:
     arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False
 
@@ -374,16 +377,25 @@ def vec_elem_type(t: str) -> str:
     return t[5:]
 
 def is_owned_type(t: str, p=None) -> bool:
-    return t in OWNED_BUILTINS or is_vec_type(t) or (p is not None and t in p.structs) or (p is not None and t in p.enums and vec_elem_needs_drop(t,p))
+    return type_semantics(t,p).owned
 
 def vec_elem_needs_drop(t: str, p) -> bool:
-    if t in OWNED_BUILTINS or is_vec_type(t):
-        return True
+    return type_semantics(t,p).needs_drop
+
+def type_semantics(t: str, p=None, seen=None) -> TypeSemantics:
+    if seen is None: seen=set()
+    if t in seen: return TypeSemantics(True,True,False,'recursive aggregate')
+    if t in OWNED_BUILTINS: return TypeSemantics(True,True,False,'owned builtin')
+    if is_vec_type(t): return TypeSemantics(True,True,False,'vector')
     if p is not None and t in p.structs:
-        return any(vec_elem_needs_drop(field.type_name,p) for field in p.structs[t].fields)
+        child=[type_semantics(field.type_name,p,seen|{t}) for field in p.structs[t].fields]
+        needs=any(x.needs_drop for x in child)
+        return TypeSemantics(True,needs,False,'struct with owned fields' if needs else 'struct')
     if p is not None and t in p.enums:
-        return any(variant.payload_type is not None and vec_elem_needs_drop(variant.payload_type,p) for variant in p.enums[t].variants)
-    return False
+        child=[type_semantics(v.payload_type,p,seen|{t}) for v in p.enums[t].variants if v.payload_type is not None]
+        needs=any(x.needs_drop for x in child)
+        return TypeSemantics(needs,needs,not needs,'enum with owned payload' if needs else 'copy enum')
+    return TypeSemantics(False,False,True,'copy scalar')
 
 VEC_INTRINSICS={
     'new':VecIntrinsic(2,'vec',requires_allocate=True),
@@ -1153,7 +1165,7 @@ class CGenerator:
         for st in self.walk_statements(f['body']):
             if st[0]=='let':
                 local_types[st[1]]=st[2]
-                if st[2] in OWNED_BUILTINS or is_vec_type(st[2]) or ((st[2] in self.p.structs or st[2] in self.p.enums) and vec_elem_needs_drop(st[2],self.p)):
+                if type_semantics(st[2],self.p).needs_drop:
                     locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
@@ -1383,7 +1395,7 @@ def mir(p):
             return current
         tail=lower_seq(f['body'],entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
-        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and (st[2] in p.structs or st[2] in OWNED_BUILTINS or is_vec_type(st[2]))]
+        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and type_semantics(st[2],p).owned]
         explicit={st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='drop'}
         entry['statements'].extend(('drop_implicit',name) for name in reversed(locals_order) if name not in explicit)
         return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'blocks':blocks}

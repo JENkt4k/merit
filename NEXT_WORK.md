@@ -18,9 +18,9 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generic templates and their trait impl evidence are still best kept in the same source unit until the compiler has a real project-wide generic expansion pass.
 
 ## Required collection features
-1. Consolidated ownership/drop metadata for aggregates and collections.
-2. Broader C-header checks for aggregate enum layout where target ABI assumptions are explicit.
-3. Move generic vector intrinsic lowering from source normalization into typed call resolution.
+1. Broader C-header checks for aggregate enum layout where target ABI assumptions are explicit.
+2. Move generic vector intrinsic lowering from source normalization into typed call resolution.
+3. Continue migrating checker/codegen decisions onto typed semantic metadata.
 
 ## Collection checkpoint now available
 - `Vec<i64>` type syntax expands through the existing monomorphization path.
@@ -34,6 +34,7 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - Generated headers emit static layout assertions for every concrete `Vec<T>`.
 - Generic-style vector intrinsic calls such as `vec_new<i64>` and `vec_pop<OwnedText>` lower to concrete monomorphized vector operations.
 - Vector intrinsic arity, return kind, receiver mode, allocation requirement, and owned-copy restrictions are centralized in one compiler table.
+- Type ownership, drop requirement, and copyability are classified through a shared `TypeSemantics` helper used by checker and cleanup paths.
 - `vec_new__T`, `vec_push__T`, `vec_len__T`, `vec_get__T`, `vec_set__T`, `vec_pop__T`, and `vec_drop__T` are available for concrete `T`.
 - `vec_get__Buffer` is rejected because it would copy an owned element; `vec_pop__Buffer` is the move-out operation.
 - Vectors are owned values: copying/move-after-use is rejected.
@@ -51,10 +52,10 @@ Complete allocator-backed `Vec<T>` on top of the now-usable user-visible trait c
 - concurrency
 
 ## Suggested implementation order
-1. Consolidate ownership/drop metadata into a typed semantic table instead of ad hoc predicates.
-2. Add broader C-header checks for aggregate enum layout where target ABI assumptions are explicit.
-3. Move generic vector intrinsic lowering from source normalization into typed call resolution.
-4. Replace concrete vector intrinsic names in examples once typed call resolution can carry generic arguments.
+1. Add broader C-header checks for aggregate enum layout where target ABI assumptions are explicit.
+2. Move generic vector intrinsic lowering from source normalization into typed call resolution.
+3. Replace concrete vector intrinsic names in examples once typed call resolution can carry generic arguments.
+4. Route remaining direct aggregate/drop checks through `TypeSemantics` as parser and AST support improve.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
