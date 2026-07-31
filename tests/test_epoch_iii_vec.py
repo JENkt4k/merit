@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, compile_file, parse
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, parse, vec_return_type
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -231,6 +231,16 @@ def run_interpreter_and_native(source_text: str, tmp_path: Path, name: str) -> s
 
 def test_vec_i64_interpreter_and_native_agree(tmp_path):
     assert run_interpreter_and_native(VEC_I64_PROGRAM, tmp_path, 'vec_i64') == '2\n7\n13\n'
+
+
+def test_vec_intrinsic_metadata_covers_public_operations():
+    assert tuple(VEC_INTRINSICS) == VECTOR_INTRINSIC_NAMES
+    assert vec_return_type('new', 'i64') == 'Vec__i64'
+    assert vec_return_type('get', 'OwnedText') == 'OwnedText'
+    assert vec_return_type('push', 'OwnedText') == 'void'
+    assert VEC_INTRINSICS['new'].requires_allocate
+    assert VEC_INTRINSICS['push'].receiver_mode == 'borrow_mut'
+    assert VEC_INTRINSICS['get'].rejects_owned_result_copy
 
 
 def test_vec_generic_api_interpreter_and_native_agree(tmp_path):

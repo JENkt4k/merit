@@ -224,7 +224,7 @@ def _replace_builtin_vec_types(source: str) -> str:
     return source
 
 def _replace_builtin_vec_ops(source: str) -> str:
-    ops='new|push|len|get|set|pop|drop'
+    ops='|'.join(VECTOR_INTRINSIC_NAMES)
     changed=True
     while changed:
         changed=False
@@ -355,6 +355,7 @@ def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 OWNED_BUILTINS={'Buffer','I64Vec'}
+VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
 class CompileError(Exception):pass
@@ -362,6 +363,9 @@ class CompileError(Exception):pass
 class TypedValue: type_name:str; value:Any
 @dataclasses.dataclass
 class VarState: type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"
+@dataclasses.dataclass(frozen=True)
+class VecIntrinsic:
+    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False
 
 def is_vec_type(t: str) -> bool:
     return t.startswith('Vec__')
@@ -381,8 +385,24 @@ def vec_elem_needs_drop(t: str, p) -> bool:
         return any(variant.payload_type is not None and vec_elem_needs_drop(variant.payload_type,p) for variant in p.enums[t].variants)
     return False
 
+VEC_INTRINSICS={
+    'new':VecIntrinsic(2,'vec',requires_allocate=True),
+    'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1),
+    'len':VecIntrinsic(1,'i64',receiver_mode='borrow'),
+    'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,rejects_owned_result_copy=True),
+    'set':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,rejects_owned_replace=True),
+    'pop':VecIntrinsic(1,'elem',receiver_mode='borrow_mut'),
+    'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
+}
+
+def vec_return_type(op: str, elem: str) -> str:
+    kind=VEC_INTRINSICS[op].return_kind
+    if kind=='vec': return 'Vec__'+elem
+    if kind=='elem': return elem
+    return kind
+
 def vec_builtin(name: str):
-    for op in ('new','push','len','get','set','pop','drop'):
+    for op in VECTOR_INTRINSIC_NAMES:
         prefix=f'vec_{op}__'
         if name.startswith(prefix): return op,name[len(prefix):]
     return None
@@ -600,48 +620,34 @@ class Checker:
                 return a
             vec=vec_builtin(name)
             if vec:
-                op,elem=vec; vec_t='Vec__'+elem; self.ensure_type(vec_t)
+                op,elem=vec; spec=VEC_INTRINSICS[op]; vec_t='Vec__'+elem; self.ensure_type(vec_t)
                 if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
-                if op=='new':
+                if len(args)!=spec.arity: raise CompileError(f'M3005: {name} expects {spec.arity} arguments')
+                if spec.requires_allocate:
                     if 'allocate' not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [allocate]')
-                    if len(args)!=2: raise CompileError(f'M3005: {name} expects 2 arguments')
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
-                    return vec_t
-                if op in ('len','drop'):
-                    if len(args)!=1: raise CompileError(f'M3005: {name} expects 1 arguments')
-                    mode='borrow_mut' if op=='drop' else 'borrow'
-                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,mode)
-                    if op=='drop':
-                        root=self.root_var(args[0])
-                        if root: env[root].dropped=True
-                    return 'void' if op=='drop' else 'i64'
-                if op=='get':
+                    return vec_return_type(op,elem)
+                if spec.receiver_mode:
+                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,spec.receiver_mode)
+                if spec.rejects_owned_result_copy:
                     if vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
-                    if len(args)!=2: raise CompileError(f'M3005: {name} expects 2 arguments')
-                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow')
-                    it=self.expr_type(args[1],env,caps,fn)
-                    if it not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {it}')
-                    return elem
-                if op=='pop':
-                    if len(args)!=1: raise CompileError(f'M3005: {name} expects 1 arguments')
-                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow_mut')
-                    return elem
-                if op in ('push','set'):
-                    if op=='set' and vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
-                    expected=2 if op=='push' else 3
-                    if len(args)!=expected: raise CompileError(f'M3005: {name} expects {expected} arguments')
-                    self.check_vec_receiver(args[0],env,caps,fn,vec_t,'borrow_mut')
-                    value_arg=args[1] if op=='push' else args[2]
-                    if op=='set':
-                        it=self.expr_type(args[1],env,caps,fn)
-                        if it not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {it}')
+                if spec.rejects_owned_replace:
+                    if vec_elem_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
+                if spec.index_index is not None:
+                    it=self.expr_type(args[spec.index_index],env,caps,fn)
+                    if it not in ('i64','number'): raise CompileError(f'M3008: argument {spec.index_index} expects i64, got {it}')
+                if spec.value_index is not None:
+                    value_arg=args[spec.value_index]
                     at=self.expr_type(value_arg,env,caps,fn)
                     if at not in (elem,'number'): raise CompileError(f'M3008: vector value expects {elem}, got {at}')
                     root=self.root_var(value_arg)
                     if root and is_owned_type(at,self.p): env[root].moved=True
-                    return 'void'
+                if op=='drop':
+                    root=self.root_var(args[0])
+                    if root: env[root].dropped=True
+                return vec_return_type(op,elem)
             builtin_sigs={
                 'system_allocator':([], 'Allocator', None),
                 'string_len':([('value','String')], 'i64', None),
@@ -1266,7 +1272,7 @@ class CGenerator:
             vec=vec_builtin(e[1])
             if vec:
                 op,elem=vec
-                return {'new':'Vec__'+elem,'push':'void','len':'i64','get':elem,'set':'void','pop':elem,'drop':'void'}[op]
+                return vec_return_type(op,elem)
             return self.etype(e[2][0],env) if e[1].startswith('checked_') or e[1]=='decimal_div' else self.fn[e[1]]['return']
         if e[0]=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
     def address_expr(self,e,env):
