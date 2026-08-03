@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Multiple allocator provider checkpoint
+
+- Added deterministic `portable_allocator()` alongside `system_allocator()`.
+- Routed both providers through the same stored-allocator vector growth/drop implementation.
+- Added provider-parameterized interpreter/native parity coverage.
+- Increased the regression suite from 176 to 177 tests.
+
 ## Epoch III — Allocator-retaining generic collections checkpoint
 
 - Added allocator identity to concrete `Vec<T>` runtime and layout records.

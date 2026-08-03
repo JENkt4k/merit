@@ -71,6 +71,7 @@ Parser top-level output uses immutable `DeclarationEntry` records before assembl
 Parser field initializers and function effects/capability/contract clauses also use immutable typed intermediate records rather than positional tags.
 Capability-gated filesystem builtins return nominal `FileReadResult` / `FileWriteResult` values with stable `FsError` categories in both interpreter and generated C.
 Every concrete `Vec<T>` retains the allocator passed to `vec_new<T>`; generated growth and destruction dispatch through that stored allocator and include it in deterministic layout metadata.
+`system_allocator()` and `portable_allocator()` provide distinct deterministic allocator identities while sharing the same checked vector lowering and ownership path.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

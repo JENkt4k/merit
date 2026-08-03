@@ -46,6 +46,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Generated C marks expected unused helpers and match bindings so project verification output stays signal-focused.
 - Generated headers emit static layout assertions for every concrete `Vec<T>`.
 - Concrete vector layout includes the allocator identity used for growth and destruction.
+- System and portable allocator providers pass the same interpreter/native vector acceptance matrix.
 - Generated headers emit conservative static layout assertions for enum tag and payload placement.
 - `merit layout` and `merit-project layout` report layout hashes for stable structs, generated vectors, and enums.
 - Generated headers include layout hash identity comments for stable structs, generated vectors, and enums.
@@ -276,9 +277,9 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Program semantic storage remains unchanged after typed parser assembly.
 
 ## Recommended next epic
-Continue the allocator-polymorphism feature slice:
-- Add a second deterministic allocator implementation for parity testing.
-- Reject or diagnose incompatible allocator transfer without creating a second vector execution path.
+Continue alpha-readiness hardening:
+- Define allocator compatibility for future collection transfer/merge operations.
+- Begin returned/stored borrow lifetime analysis without weakening call-scoped loan checks.
 
 ## Deliberately deferred
 - specialization
@@ -290,8 +291,8 @@ Continue the allocator-polymorphism feature slice:
 - concurrency
 
 ## Suggested implementation order
-1. Add a bounded deterministic allocator provider and construction API.
-2. Verify growth/drop dispatch and interpreter/native parity across providers.
+1. Specify allocator compatibility at collection-transfer boundaries.
+2. Add the first returned-borrow lifetime diagnostics and parity-safe lowering constraints.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

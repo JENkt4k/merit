@@ -319,10 +319,12 @@ def test_vec_headers_include_layout_assertions():
     assert '_Static_assert(sizeof(merit_Vec__OwnedText) == 32' in header
 
 
-def test_vec_runtime_retains_and_dispatches_through_allocator():
-    program = parse('''module allocator_identity
+@pytest.mark.parametrize(("constructor", "identity"), [("system_allocator", "system"), ("portable_allocator", "portable")])
+def test_vec_runtime_retains_and_dispatches_through_allocator(tmp_path, constructor, identity):
+    source_text = f'''module allocator_identity
 capability allocate;
-fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); let values:Vec<i64>=vec_new<i64>(allocator,2); drop(values); } return 0; }''')
+fn main()->i32 {{ with capability allocate {{ let allocator:Allocator={constructor}(); var values:Vec<i64>=vec_new<i64>(allocator,2); vec_push<i64>(values,7); print(vec_len<i64>(values)); drop(values); }} return 0; }}'''
+    program = parse(source_text)
     Checker(program).check()
     capability = program.node(program.functions[0].body[0])
     allocator_binding = program.node(capability.nested_body[0])
@@ -330,11 +332,18 @@ fn main()->i32 { with capability allocate { let allocator:Allocator=system_alloc
     interpreter = Interpreter(program)
     allocator = interpreter.eval(allocator_binding.initializer, {})
     vector = interpreter.eval(vector_binding.initializer, {"allocator": allocator})
-    assert vector.allocator == "system"
+    assert vector.allocator == identity
     generated = CGenerator(program).generate()
+    assert f"merit_{constructor}" in generated
     assert "v.allocator=a" in generated
     assert "merit_allocator_realloc(v->allocator" in generated
     assert "merit_allocator_free(v->allocator" in generated
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted): Interpreter(program).run()
+    source = tmp_path / f"{identity}_allocator.mrt"; executable = tmp_path / f"{identity}_allocator"
+    source.write_text(source_text); compile_file(source, executable)
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert interpreted.getvalue() == native == "1\n"
 
 
 def test_vec_layout_report_includes_hashes():

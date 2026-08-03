@@ -686,6 +686,7 @@ VEC_INTRINSICS={
 
 BUILTIN_SIGS={
     'system_allocator':BuiltinSig((), 'Allocator'),
+    'portable_allocator':BuiltinSig((), 'Allocator'),
     'string_len':BuiltinSig((('value','String'),), 'i64'),
     'string_byte':BuiltinSig((('value','String'),('value','i64')), 'u8'),
     'buffer_new':BuiltinSig((('value','Allocator'),('value','i64')), 'Buffer', 'allocate', 'allocation'),
@@ -1429,6 +1430,7 @@ class Interpreter:
                 if old_env is None: raise RuntimeError('old() is only valid in postconditions')
                 return self.eval(args[0],old_env)
             if n=='system_allocator': return TypedValue('Allocator','system')
+            if n=='portable_allocator': return TypedValue('Allocator','portable')
             if n=='string_len': return TypedValue('i64',len(self.eval(args[0],env).value.encode('utf-8')))
             if n=='string_byte':
                 text=self.eval(args[0],env).value.encode('utf-8'); idx=self.eval(args[1],env).value
@@ -1643,8 +1645,9 @@ class CGenerator:
         o.append(self.header().replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
-              r'''static void *merit_allocator_realloc(merit_Allocator a,void *p,size_t n){if(a.kind!=0)merit_fail("unsupported allocator",89);return realloc(p,n);}''',
-              r'''static void merit_allocator_free(merit_Allocator a,void *p){if(a.kind!=0)merit_fail("unsupported allocator",89);free(p);}''',
+              r'''static merit_Allocator merit_portable_allocator(void){return (merit_Allocator){1};}''',
+              r'''static void *merit_allocator_realloc(merit_Allocator a,void *p,size_t n){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);return realloc(p,n);}''',
+              r'''static void merit_allocator_free(merit_Allocator a,void *p){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);free(p);}''',
               r'''static void merit_buffer_reserve(merit_Buffer *b,size_t need){if(need<=b->cap)return;size_t c=b->cap?b->cap:8;while(c<need)c*=2;void *p=realloc(b->data,c);if(!p)merit_fail("allocation failed",80);b->data=(uint8_t*)p;b->cap=c;}''',
               r'''static merit_Buffer merit_buffer_new(merit_Allocator a,int64_t cap){(void)a;merit_Buffer b={0};if(cap<0)merit_fail("negative capacity",81);merit_buffer_reserve(&b,(size_t)cap);return b;}''',
               r'''static merit_Buffer merit_buffer_from_string(merit_Allocator a,merit_String s){merit_Buffer b=merit_buffer_new(a,(int64_t)s.len);if(s.len){memcpy(b.data,s.data,s.len);b.len=s.len;}return b;}''',
@@ -1919,6 +1922,7 @@ class CGenerator:
                 return f'merit_make_{enum.name}_{variant.name}({rendered})'
             if n=='old':return self.old_map[repr(a[0])]
             if n=='system_allocator': return 'merit_system_allocator()'
+            if n=='portable_allocator': return 'merit_portable_allocator()'
             if n=='string_len': return f'((int64_t){self.expr(a[0],env)}.len)'
             if n=='string_byte': return f'((uint8_t){self.expr(a[0],env)}.data[{self.expr(a[1],env)}])'
             if n=='buffer_new': return f'merit_buffer_new({self.expr(a[0],env)}, {self.expr(a[1],env)})'

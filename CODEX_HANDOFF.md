@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III allocator-retaining generic collections checkpoint** of Merit.
+This repository contains the verified **Epoch III multiple allocator provider checkpoint** of Merit.
 
 Current baseline:
-- 176 tests passing after editable installation
+- 177 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -72,6 +72,7 @@ python -m pytest -q
 - Typed field-initializer and function-clause parser records
 - Typed filesystem results with interpreter/native OS-failure parity
 - Allocator-retaining `Vec<T>` growth/drop paths with deterministic layout assertions
+- System and portable allocator providers verified through one interpreter/native vector path
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
