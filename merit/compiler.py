@@ -1230,6 +1230,8 @@ class Checker:
                 if b=='number':b=a
                 if a!=b:raise CompileError(f'M3101: {name} operands differ: {a} and {b}')
                 if name=='decimal_div' and a not in self.p.decimals:raise CompileError('M1302: decimal_div requires decimal operands')
+                if name!='decimal_div' and a!='number' and a not in INT_RANGES and a not in self.p.decimals and a not in self.p.bounded:
+                    self.fail(f'M3103: {name} requires numeric operands, got {a}',e)
                 return a
             vec=vec_builtin(name)
             if vec:

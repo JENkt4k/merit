@@ -47,3 +47,10 @@ fn main()->i32 { with capability allocate { let allocator:Allocator=system_alloc
 def test_builtin_operators_reject_unsupported_domains(source,message):
     with pytest.raises(CompileError,match=message):
         Checker(parse(source)).check()
+
+
+@pytest.mark.parametrize('operation',['checked_add','checked_sub','checked_mul'])
+def test_checked_arithmetic_rejects_nonnumeric_operands(operation):
+    source=f'module invalid_checked_arithmetic\nfn main()->i32 {{ let left:Allocator=system_allocator(); let right:Allocator=system_allocator(); {operation}(left,right); return 0; }}'
+    with pytest.raises(CompileError,match=f'M3103: {operation} requires numeric operands'):
+        Checker(parse(source)).check()
