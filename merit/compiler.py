@@ -33,11 +33,12 @@ contract: "requires" expr ";" -> precontract
 name_list: CNAME ("," CNAME)*
 type_ref: CNAME | BASE_INT | "void"
 block: "{" statement* "}"
-?statement: let_stmt | var_stmt | try_let_stmt | assign_stmt | return_stmt | print_stmt | expr_stmt | drop_stmt | with_capability | if_stmt | while_stmt | match_stmt
+?statement: let_stmt | var_stmt | try_let_stmt | replace_stmt | assign_stmt | return_stmt | print_stmt | expr_stmt | drop_stmt | with_capability | if_stmt | while_stmt | match_stmt
 let_stmt: "let" CNAME ":" type_ref "=" expr ";"
 var_stmt: "var" CNAME ":" type_ref "=" expr ";"
 try_let_stmt: "let" CNAME ":" type_ref "=" "try" expr ";"
 assign_stmt: postfix "=" expr ";"
+replace_stmt: "replace" "(" postfix "," expr ")" ";"
 return_stmt: "return" expr ";"
 print_stmt: "print" "(" expr ")" ";"
 expr_stmt: expr ";"
@@ -162,6 +163,7 @@ class ASTBuilder(Transformer):
     def var_stmt(self,x): return ('let',str(x[0]),x[1],x[2],True)
     def try_let_stmt(self,x): return ('try_let',str(x[0]),x[1],x[2])
     def assign_stmt(self,x): return ('assign',x[0],x[1])
+    def replace_stmt(self,x): return ('replace',x[0],x[1])
     def return_stmt(self,x): return ('return',x[0])
     def print_stmt(self,x): return ('print',x[0])
     def expr_stmt(self,x): return ('expr',x[0])
@@ -614,6 +616,18 @@ class Checker:
                 if rt not in (lt,'number'):raise CompileError(f'M3006: cannot assign {rt} to {lt}')
                 if type_needs_drop(lt,self.p): raise CompileError(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner')
                 self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
+            elif tag=='replace':
+                target,value=st[1],st[2]
+                if target[0]!='var': raise CompileError('M5205: replace currently requires a mutable local binding')
+                lt=self.lvalue_type(target,env,True)
+                if not type_needs_drop(lt,self.p): raise CompileError(f'M5203: replace requires owned storage, got {lt}')
+                target_root=self.root_var(target)
+                rt=self.expr_type(value,env,caps,fn)
+                if rt not in (lt,'number'): raise CompileError(f'M5204: replacement type {rt} does not match {lt}')
+                value_root=self.root_var(value)
+                if value_root==target_root or env[target_root].moved or env[target_root].dropped:
+                    raise CompileError(f'M5202: replacement source aliases target {self.expr_path(target)}')
+                self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
                 et=self.expr_type(st[1],env,caps,fn)
                 if et not in (fn['return'],'number'):raise CompileError(f"M3002: return type {et} does not match {fn['return']}")
@@ -931,6 +945,7 @@ class Interpreter:
                 if value.value['variant']=='Err': return TrySignal(value)
                 env[st[1]]=value.value['payload']
             elif st[0]=='assign':self.assign(st[1],self.eval(st[2],env),env)
+            elif st[0]=='replace':self.assign(st[1],self.eval(st[2],env),env)
             elif st[0]=='print':print(self.format(self.eval(st[1],env)))
             elif st[0]=='return':return ReturnSignal(self.eval(st[1],env))
             elif st[0]=='expr':self.eval(st[1],env)
@@ -1323,6 +1338,9 @@ class CGenerator:
                 if type_needs_drop(st[2],self.p):
                     locals_order.append((st[1],st[2]))
             elif st[0]=='drop': explicit.add(st[1])
+            elif st[0]=='replace':
+                root=self.expr_root(st[2])
+                if root: moved.add(root)
             elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
             elif st[0]=='match':
                 root=self.expr_root(st[1])
@@ -1362,6 +1380,14 @@ class CGenerator:
             return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[3],env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(s[2])} {s[1]} = {temp}.data.Ok;']
         if s[0]=='assign':
             t=self.etype(s[1],env);return [f'{p}{self.expr(s[1],env)} = {self.checked(t,self.expr(s[2],env,t))};']
+        if s[0]=='replace':
+            t=self.etype(s[1],env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
+            target=self.expr(s[1],env)
+            return [
+                f'{p}{self.ctype(t)} {temp} = {self.expr(s[2],env,t)};',
+                self.drop_binding_line(p,target,t),
+                f'{p}{target} = {temp};',
+            ]
         if s[0]=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(s[1],env,self.current_return))};',f'{p}goto _merit_epilogue;']
         if s[0]=='print':
             t=self.etype(s[1],env);x=self.expr(s[1],env)
@@ -1545,7 +1571,16 @@ def mir(p):
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
         locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and is_owned_type(st[2],p)]
         explicit={st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='drop'}
-        entry['statements'].extend(('drop_implicit',name) for name in reversed(locals_order) if name not in explicit)
+        replacement_moved={
+            st[2][1]
+            for st in CGenerator(p).walk_statements(f['body'])
+            if st[0]=='replace' and st[2][0]=='var'
+        }
+        entry['statements'].extend(
+            ('drop_implicit',name)
+            for name in reversed(locals_order)
+            if name not in explicit and name not in replacement_moved
+        )
         return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'blocks':blocks}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
