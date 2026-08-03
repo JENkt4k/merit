@@ -1670,7 +1670,8 @@ class Interpreter:
             if b.value==0:raise RuntimeError('division by zero')
             if a.type_name in self.p.decimals:
                 d=self.p.decimals[a.type_name];q=(Decimal(a.value)*(10**d.scale)/Decimal(b.value)).quantize(Decimal(1),rounding=ROUNDING[d.rounding]);v=int(q)
-            else:v=a.value//b.value
+            else:
+                quotient=abs(a.value)//abs(b.value);v=-quotient if (a.value<0) != (b.value<0) else quotient
         self.range(a.type_name,v);return TypedValue(a.type_name,v)
     def range(self,t,v):
         if t in self.p.decimals and abs(v)>10**self.p.decimals[t].precision-1:raise RuntimeError(f'decimal overflow in {t}')
@@ -1822,6 +1823,7 @@ class CGenerator:
               r'''static merit_FileWriteResult merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");int open_error=errno;free(z);if(!f)return merit_make_FileWriteResult_WriteErr(merit_fs_error(open_error));size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len){int e=errno;fclose(f);return merit_make_FileWriteResult_WriteErr(merit_fs_error(e));}if(fclose(f)!=0)return merit_make_FileWriteResult_WriteErr(merit_fs_error(errno));return merit_make_FileWriteResult_WriteOk((int64_t)wrote);}''',
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
+              r'''static int64_t merit_div(int64_t a,int64_t b){if(!b)merit_fail("Merit division by zero",72);if(a==INT64_MIN&&b==-1)merit_fail("Merit division overflow",70);return a/b;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
         for e in self.p.enums.values():
             if self.types.get(e.name).needs_drop:
@@ -2135,8 +2137,9 @@ class CGenerator:
                 ex=self.expr(x,env,param.type_name);rendered.append(self.address_expr(x,env) if param.mode in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
-            t=expected or self.etype(node.left,env)
-            return f'({self.expr(node.left,env,t)} {node.operator} {self.expr(node.right,env,t)})'
+            t=expected or self.etype(node.left,env);left=self.expr(node.left,env,t);right=self.expr(node.right,env,t)
+            if node.operator=='/' and t not in self.p.decimals:return self.checked(t,f'merit_div({left}, {right})')
+            return f'({left} {node.operator} {right})'
 
 def semantic_payload(value,p):
     if isinstance(value,SemanticNode):

@@ -6,6 +6,8 @@
 
 Implemented rounding policies are `half_even`, `half_up`, `down`, `ceiling`, and `floor`. Division uses the destination decimal policy. Checked integer and decimal addition/subtraction trap on overflow in both interpreted and native execution.
 
+Signed integer division truncates toward zero in both execution paths. Division by zero and the `i64` minimum divided by negative one overflow case terminate deterministically rather than relying on host C behavior.
+
 ## Bounded values
 
 `bounded Name(base, minimum, maximum);` creates a semantic integer subtype. Literal construction is checked statically. Runtime arithmetic results are range checked by the interpreter; complete native runtime range checks remain a tracked limitation.
