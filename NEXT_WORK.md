@@ -94,11 +94,19 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - HIR reports concrete type semantics; MIR reports consumed roots and explicit drops.
 - The interpreter recursively models destruction through the same lifecycle metadata.
 
+## Source-aware ownership diagnostic checkpoint now available
+- Variable, field, and drop nodes retain source spans and source identity after parsing.
+- Move and drop state carries origin spans through branches and loops.
+- Use-after-move and use-after-drop errors identify the later invalid use and the earlier consumption site.
+- Rendered source diagnostics show both primary and note excerpts.
+- Shared ownership effects and MIR expose consumption source locations.
+- Generic expansion currently reports locations in expanded source when rewriting changes line structure; typed source maps remain future work.
+
 ## Recommended next epic
-Continue memory model polish:
-- Add focused resource-destruction instrumentation if user-defined destructors are introduced; current replacement drop order is asserted in generated C.
-- Add partial-move tracking only if the language commits to field-level ownership states.
-- Preserve source spans through ownership effects and emit move-origin notes.
+Extend structured semantic diagnostics through project workflows:
+- Map merged project nodes back to their owning source units.
+- Render semantic errors consistently from `merit-project check`, build, run, and verify.
+- Add project-level move-origin diagnostic acceptance coverage.
 
 ## Deliberately deferred
 - specialization
@@ -110,9 +118,9 @@ Continue memory model polish:
 - concurrency
 
 ## Suggested implementation order
-1. Preserve source spans through semantic and ownership nodes.
-2. Add move-origin and previous-drop notes to ownership diagnostics.
-3. Continue removing compact tuple-AST special cases as typed nodes become available.
+1. Preserve per-unit origins through project merging and generic expansion.
+2. Route structured compiler diagnostics through every project command.
+3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

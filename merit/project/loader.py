@@ -91,13 +91,13 @@ def _parse_unit(path: Path, generic_prelude: str = "") -> SourceUnit:
     exports = frozenset(match.group(2) for match in PUB_RE.finditer(imports_source))
     parser_source = PUB_RE.sub(r"\1", imports_source)
     try:
-        program = parse(parser_source)
+        program = parse(parser_source, str(path))
     except Exception as exc:
         if not generic_prelude:
             raise ProjectError(render_exception(exc, path, source)) from exc
         parse_source = "module " + re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)", parser_source, re.MULTILINE).group(1) + "\n" + generic_prelude + "\n" + _strip_module(parser_source)
         try:
-            program = parse(parse_source)
+            program = parse(parse_source, str(path))
         except Exception as prelude_exc:
             raise ProjectError(render_exception(prelude_exc, path, source)) from prelude_exc
     return SourceUnit(path, program.module, imports, parser_source, program, exports)
@@ -282,7 +282,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             functions.append(function)
     combined_source = "module " + manifest.name + "\n" + "\n".join(_declaration_source(unit) for unit in units)
     try:
-        merged = parse(combined_source)
+        merged = parse(combined_source, str(manifest.root / "<merged-project>"))
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
     seen_functions = {function["name"]: manifest.root for function in merged.functions}
@@ -294,7 +294,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.spans)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:

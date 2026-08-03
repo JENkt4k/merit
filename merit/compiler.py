@@ -4,7 +4,7 @@ import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess,
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any
-from lark import Lark, Transformer
+from lark import Lark, Transformer, v_args
 
 GRAMMAR=r'''
 start: module_decl declaration*
@@ -96,14 +96,21 @@ class TraitImpl: trait_name:str; target_type:str; methods:tuple[dict[str,Any],..
 class Field: name:str; type_name:str
 @dataclasses.dataclass(frozen=True)
 class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
+@dataclasses.dataclass(frozen=True)
+class SourceSpan:
+    line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
+    def span(self,node):return self.spans.get(id(node))
 
 def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> str:
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
 
 class ASTBuilder(Transformer):
+    def __init__(self,source_name=None):super().__init__();self.spans={};self.source_name=source_name
+    def mark(self,node,meta):
+        self.spans[id(node)]=SourceSpan(meta.line,meta.column,meta.end_line,meta.end_column,self.source_name);return node
     def module_decl(self,x): return str(x[0])
     def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
     def enum_decl(self,x): return ('enum', EnumType(str(x[0]), tuple(x[1:])))
@@ -136,7 +143,8 @@ class ASTBuilder(Transformer):
     def postcontract(self,x): return ('post',x[0])
     def string(self,x): return ('string',json.loads(str(x[0])))
     def number(self,x): return ('number',str(x[0]))
-    def variable(self,x): return ('var',str(x[0]))
+    @v_args(meta=True)
+    def variable(self,meta,x): return self.mark(('var',str(x[0])),meta)
     def args(self,x): return list(x)
     def field_init(self,x): return (str(x[0]),x[1])
     def field_inits(self,x): return list(x)
@@ -146,10 +154,11 @@ class ASTBuilder(Transformer):
         head=str(x[0])
         match=re.fullmatch(r'([A-Za-z_]\w*)<\s*([A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>',head)
         return ('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else [])
-    def postfix(self,x):
+    @v_args(meta=True)
+    def postfix(self,meta,x):
         node=x[0]
         for f in x[1:]: node=('field',node,str(f))
-        return node
+        return self.mark(node,meta)
     def comparison(self,x): return x[0] if len(x)==1 else ('binop',str(x[1]),x[0],x[2])
     def sum(self,x):
         n=x[0]
@@ -167,7 +176,8 @@ class ASTBuilder(Transformer):
     def return_stmt(self,x): return ('return',x[0])
     def print_stmt(self,x): return ('print',x[0])
     def expr_stmt(self,x): return ('expr',x[0])
-    def drop_stmt(self,x): return ('drop',str(x[0]))
+    @v_args(meta=True)
+    def drop_stmt(self,meta,x): return self.mark(('drop',str(x[0])),meta)
     def block(self,x): return list(x)
     def with_capability(self,x): return ('with_cap',str(x[0]),x[1])
     def if_stmt(self,x): return ('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else [])
@@ -203,7 +213,7 @@ class ASTBuilder(Transformer):
                 generated=dict(method); generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
-        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims,dict(self.spans))
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0
@@ -345,23 +355,31 @@ def expand_generics(source: str) -> str:
         generated.append(text)
     return _replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
 
-def parse(s:str)->Program:
-    return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
+def parse(s:str,source_name=None)->Program:
+    return ASTBuilder(source_name).transform(PARSER.parse(expand_generics(s)))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
-class CompileError(Exception):pass
+@dataclasses.dataclass(frozen=True)
+class DiagnosticNote:
+    message:str; span:SourceSpan|None=None
+class CompileError(Exception):
+    def __init__(self,text,span=None,notes=()):
+        super().__init__(text);self.text=text;self.span=span;self.notes=tuple(notes)
+        match=re.match(r'^(M\d+):\s*(.*)$',text)
+        self.code=match.group(1) if match else 'M0000';self.message=match.group(2) if match else text
 @dataclasses.dataclass
 class TypedValue: type_name:str; value:Any
 @dataclasses.dataclass
-class VarState: type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"
+class VarState:
+    type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"; move_origin:SourceSpan|None=None; move_context:str|None=None; drop_origin:SourceSpan|None=None
 @dataclasses.dataclass(frozen=True)
 class TypeSemantics:
     owned:bool; needs_drop:bool; copyable:bool; reason:str; kind:str='scalar'; drop_strategy:str='none'
 @dataclasses.dataclass(frozen=True)
 class FunctionOwnership:
-    owned_locals:tuple[tuple[str,str],...]; explicit_drops:frozenset[str]; consumed_roots:frozenset[str]
+    owned_locals:tuple[tuple[str,str],...]; explicit_drops:frozenset[str]; consumed_roots:frozenset[str]; consumption_sites:tuple[tuple[str,SourceSpan|None],...]=()
 @dataclasses.dataclass(frozen=True)
 class VecIntrinsic:
     arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; element_policy:str='any'; capability:str|None=None; hazard:str|None=None
@@ -549,38 +567,43 @@ class OwnershipEffects:
         while isinstance(e,tuple) and e and e[0]=='field':e=e[1]
         return e[1] if isinstance(e,tuple) and e and e[0]=='var' else None
     def consume(self,e,type_name):
-        roots=self.effects(e);root=self.root(e)
-        if root and self.types.get(type_name).owned:roots.add(root)
-        return roots
+        return set(self.consume_sites(e,type_name))
+    def consume_sites(self,e,type_name):
+        sites=self.effect_sites(e);root=self.root(e)
+        if root and self.types.get(type_name).owned:sites[root]=self.p.span(e)
+        return sites
     def effects(self,e):
-        if not isinstance(e,tuple):return set()
-        roots=set()
+        return set(self.effect_sites(e))
+    def effect_sites(self,e):
+        if not isinstance(e,tuple):return {}
+        sites={}
         if e[0]=='struct_init':
             struct=self.p.structs[e[1]]
-            for field in struct.fields:roots |= self.consume(e[2][field.name],field.type_name)
-            return roots
+            for field in struct.fields:sites.update(self.consume_sites(e[2][field.name],field.type_name))
+            return sites
         if e[0] in ('call','generic_call'):
             name,args=resolved_call(e)
-            for arg in args:roots |= self.effects(arg)
+            for arg in args:sites.update(self.effect_sites(arg))
             variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants and variants[0].payload_type is not None and args:
-                roots |= self.consume(args[0],variants[0].payload_type)
-                return roots
+                sites.update(self.consume_sites(args[0],variants[0].payload_type))
+                return sites
             vec=vec_builtin(name)
             if vec:
                 op,elem=vec;index=VEC_INTRINSICS[op].value_index
-                if index is not None:roots |= self.consume(args[index],elem)
-                return roots
+                if index is not None:sites.update(self.consume_sites(args[index],elem))
+                return sites
             if name in BUILTIN_SIGS:
                 for arg,(mode,type_name) in zip(args,BUILTIN_SIGS[name].params):
-                    if mode=='value':roots |= self.consume(arg,type_name)
-                return roots
+                    if mode=='value':sites.update(self.consume_sites(arg,type_name))
+                return sites
             if name in self.fn:
                 for arg,(_,type_name,mode) in zip(args,self.fn[name]['params']):
-                    if mode=='value':roots |= self.consume(arg,type_name)
-            return roots
-        if e[0]=='binop':return self.effects(e[2])|self.effects(e[3])
-        return roots
+                    if mode=='value':sites.update(self.consume_sites(arg,type_name))
+            return sites
+        if e[0]=='binop':
+            sites.update(self.effect_sites(e[2]));sites.update(self.effect_sites(e[3]));return sites
+        return sites
     def statements(self,body):
         for statement in body:
             yield statement
@@ -605,26 +628,26 @@ class OwnershipEffects:
             if name in self.fn:return self.fn[name]['return']
         return None
     def function(self,f):
-        env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed=set()
+        env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed_sites={}
         for statement in self.statements(f['body']):
             tag=statement[0]
             if tag=='let':
-                consumed |= self.consume(statement[3],statement[2]);env[statement[1]]=statement[2]
+                consumed_sites.update(self.consume_sites(statement[3],statement[2]));env[statement[1]]=statement[2]
                 if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
             elif tag=='try_let':
-                consumed |= self.effects(statement[3]);env[statement[1]]=statement[2]
+                consumed_sites.update(self.effect_sites(statement[3]));env[statement[1]]=statement[2]
                 if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
-            elif tag=='assign':consumed |= self.effects(statement[2])
+            elif tag=='assign':consumed_sites.update(self.effect_sites(statement[2]))
             elif tag=='replace':
                 target_type=self.expression_type(statement[1],env)
-                if target_type:consumed |= self.consume(statement[2],target_type)
-            elif tag=='return':consumed |= self.consume(statement[1],f['return'])
+                if target_type:consumed_sites.update(self.consume_sites(statement[2],target_type))
+            elif tag=='return':consumed_sites.update(self.consume_sites(statement[1],f['return']))
             elif tag=='match':
                 subject_type=self.expression_type(statement[1],env)
-                if subject_type:consumed |= self.consume(statement[1],subject_type)
-            elif tag in ('expr','print'):consumed |= self.effects(statement[1])
+                if subject_type:consumed_sites.update(self.consume_sites(statement[1],subject_type))
+            elif tag in ('expr','print'):consumed_sites.update(self.effect_sites(statement[1]))
             elif tag=='drop':explicit.add(statement[1])
-        return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed))
+        return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed_sites),tuple(sorted(consumed_sites.items())))
 
 class Checker:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
@@ -755,9 +778,12 @@ class Checker:
             elif tag=='drop':
                 n=st[1]
                 if n not in env: raise CompileError(f'M5100: cannot drop unknown binding {n}')
-                if env[n].moved or env[n].dropped: raise CompileError(f'M5101: binding {n} already consumed')
+                if env[n].moved or env[n].dropped:
+                    origin=env[n].move_origin or env[n].drop_origin
+                    note='value moved here' if env[n].moved else 'value previously dropped here'
+                    raise CompileError(f'M5101: binding {n} already consumed',self.p.span(st),(DiagnosticNote(note,origin),))
                 if env[n].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot drop borrowed parameter {n}')
-                env[n].dropped=True
+                env[n].dropped=True;env[n].drop_origin=self.p.span(st)
             elif tag=='match':
                 subject_t=self.expr_type(st[1],env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: raise CompileError(f'M6100: match requires enum value, got {subject_t}')
@@ -777,7 +803,8 @@ class Checker:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
                 root=self.root_var(st[1])
-                if root and self.types.get(subject_t).needs_drop: env[root].moved=True
+                if root and self.types.get(subject_t).needs_drop:
+                    env[root].moved=True;env[root].move_origin=self.p.span(st[1]);env[root].move_context='matching owned enum subject'
             elif tag=='with_cap':
                 cap=st[1]
                 if cap not in self.p.capabilities:raise CompileError(f'M2002: undeclared capability {cap}')
@@ -791,6 +818,9 @@ class Checker:
                 for k in env:
                     env[k].moved=left[k].moved or right[k].moved
                     env[k].dropped=left[k].dropped or right[k].dropped
+                    env[k].move_origin=left[k].move_origin or right[k].move_origin
+                    env[k].move_context=left[k].move_context or right[k].move_context
+                    env[k].drop_origin=left[k].drop_origin or right[k].drop_origin
             elif tag=='while':
                 ct=self.expr_type(st[1],env,caps,fn)
                 if ct not in ('i32','number'): raise CompileError('M3301: while condition must be boolean/comparison')
@@ -798,12 +828,17 @@ class Checker:
                 for k in env:
                     env[k].moved=env[k].moved or loop[k].moved
                     env[k].dropped=env[k].dropped or loop[k].dropped
+                    env[k].move_origin=env[k].move_origin or loop[k].move_origin
+                    env[k].move_context=env[k].move_context or loop[k].move_context
+                    env[k].drop_origin=env[k].drop_origin or loop[k].drop_origin
     def lvalue_type(self,e,env,write=False):
         if e[0]=='var':
             n=e[1]
             if n not in env:raise CompileError(f'M3003: unknown variable {n}')
-            if env[n].moved:raise CompileError(f'M5001: use of moved value {n}')
-            if env[n].dropped:raise CompileError(f'M5103: use of dropped value {n}')
+            if env[n].moved:
+                context=f' ({env[n].move_context})' if env[n].move_context else ''
+                raise CompileError(f'M5001: use of moved value {n}',self.p.span(e),(DiagnosticNote(f'value moved here{context}',env[n].move_origin),))
+            if env[n].dropped:raise CompileError(f'M5103: use of dropped value {n}',self.p.span(e),(DiagnosticNote('value dropped here',env[n].drop_origin),))
             if write and not env[n].mutable:raise CompileError(f'M5002: cannot assign to immutable binding {n}')
             return env[n].type_name
         if e[0]=='field':
@@ -891,7 +926,7 @@ class Checker:
                     self.consume_owned_source(value_arg,at,env,f'calling {name}')
                 if op=='drop':
                     root=self.root_var(args[0])
-                    if root: env[root].dropped=True
+                    if root: env[root].dropped=True;env[root].drop_origin=self.p.span(args[0])
                 return vec_return_type(op,elem)
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
@@ -950,7 +985,7 @@ class Checker:
         if not root or not self.types.get(t).owned: return
         if e[0]=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
         if env[root].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot move borrowed parameter {root}')
-        env[root].moved=True
+        env[root].moved=True;env[root].move_origin=self.p.span(e);env[root].move_context=context
     def expr_path(self,e):
         if e[0]=='var': return e[1]
         if e[0]=='field': return self.expr_path(e[1])+'.'+e[2]
@@ -1723,12 +1758,13 @@ def mir(p):
             for name in reversed(locals_order)
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
-        return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'blocks':blocks}
+        sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
+        return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 
 def compile_file(path,out=None):
-    p=parse(path.read_text());ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate());hpath.write_text(cg.header());subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
+    p=parse(path.read_text(),str(path));ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate());hpath.write_text(cg.header());subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
 
 PROGRAM_TEMPLATE = """module {module}
 
@@ -1777,7 +1813,7 @@ def main(argv=None):
             return 0
         path=Path(ns.source)
         if not path.exists(): raise FileNotFoundError(path)
-        p=parse(path.read_text());ch=Checker(p).check()
+        p=parse(path.read_text(),str(path));ch=Checker(p).check()
         if ns.cmd=='check':print(f'ok: {p.module} ({len(p.functions)} functions, {len(p.structs)} structs)')
         elif ns.cmd=='run':Interpreter(p).run()
         elif ns.cmd=='verify':

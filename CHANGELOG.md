@@ -1,5 +1,14 @@
 # Changelog
 
+## Epoch III — Source-aware ownership diagnostics checkpoint
+
+- Preserved source spans and source identity for variable, field, and drop nodes.
+- Added move and drop origins to ownership state, including branch and loop merges.
+- Added structured compile errors with primary spans and related notes.
+- Rendered use-after-move and use-after-drop diagnostics with both source excerpts.
+- Exposed ownership consumption sites in MIR.
+- Added single-source, branch-flow, rendered diagnostic, MIR provenance, and project-merge tests.
+
 ## Epoch III — Typed semantic metadata checkpoint
 
 - Added a cached concrete type table for ownership, copyability, drop requirements, semantic kinds, and drop strategies.
