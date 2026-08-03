@@ -138,13 +138,19 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - `SemanticNodeView` provides typed kind, operands, primary span, and related provenance over compatibility tuples.
 - `Program.node()` is the centralized boundary from legacy representation to semantic-node metadata.
 - The checker and shared ownership-effects analysis dispatch through the typed view.
-- Interpreter and C lowering remain unchanged behind the compatibility layer.
+- MIR, interpreter, and C lowering dispatch through the same typed view while retaining compatibility operands.
+
+## Typed backend-dispatch checkpoint now available
+- MIR control-flow lowering uses semantic node kinds rather than raw positional tag dispatch.
+- Interpreter statement and expression execution uses the typed node boundary.
+- C statement, expression-type, and expression lowering uses the typed node boundary.
+- Tuple operands remain temporarily compatible while typed ownership-sensitive accessors are introduced.
 
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Migrate MIR, interpreter, and C lowering dispatch through `SemanticNodeView` one subsystem at a time.
 - Replace positional operands with typed accessors for high-risk ownership and replacement nodes.
-- Keep tuple compatibility until every backend path uses the typed interface.
+- Introduce typed statement/expression variants behind `SemanticNodeView`.
+- Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
 - specialization
@@ -157,7 +163,7 @@ Continue typed semantic-node decomposition:
 
 ## Suggested implementation order
 1. Add typed accessors for ownership-sensitive nodes.
-2. Migrate MIR, interpreter, and C lowering dispatch before removing compatibility tuples.
+2. Introduce typed statement/expression variants before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

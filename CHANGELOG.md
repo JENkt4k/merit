@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed backend-dispatch checkpoint
+
+- Migrated MIR control-flow dispatch to `SemanticNodeView`.
+- Migrated interpreter statement and expression dispatch to the typed boundary.
+- Migrated C statement, expression-type, and expression dispatch to the typed boundary.
+- Preserved all interpreter/native behavior and the 169-test baseline.
+
 ## Epoch III — Typed semantic-node adapter checkpoint
 
 - Added a typed semantic-node view with kind, operand, span, and related-provenance access.

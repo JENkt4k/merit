@@ -1194,32 +1194,33 @@ class Interpreter:
             self.call_modes.pop()
     def block(self,b,env):
         for st in b:
-            if st[0]=='let':env[st[1]]=self.eval(st[3],env,st[2])
-            elif st[0]=='try_let':
+            kind=self.p.node(st).kind
+            if kind=='let':env[st[1]]=self.eval(st[3],env,st[2])
+            elif kind=='try_let':
                 value=self.eval(st[3],env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
                 env[st[1]]=value.value['payload']
-            elif st[0]=='assign':self.assign(st[1],self.eval(st[2],env),env)
-            elif st[0]=='replace':
+            elif kind=='assign':self.assign(st[1],self.eval(st[2],env),env)
+            elif kind=='replace':
                 replacement=self.eval(st[2],env);self.drop_value(self.eval(st[1],env));self.assign(st[1],replacement,env)
-            elif st[0]=='print':print(self.format(self.eval(st[1],env)))
-            elif st[0]=='return':return ReturnSignal(self.eval(st[1],env))
-            elif st[0]=='expr':self.eval(st[1],env)
-            elif st[0]=='drop': self.drop_value(env.pop(st[1],None))
-            elif st[0]=='match':
+            elif kind=='print':print(self.format(self.eval(st[1],env)))
+            elif kind=='return':return ReturnSignal(self.eval(st[1],env))
+            elif kind=='expr':self.eval(st[1],env)
+            elif kind=='drop': self.drop_value(env.pop(st[1],None))
+            elif kind=='match':
                 value=self.eval(st[1],env); variant=value.value['variant']
                 arm=next(a for a in st[2] if a[0]==variant)
                 if arm[1] is not None: env[arm[1]]=value.value['payload']
                 r=self.block(arm[2],env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
-            elif st[0]=='with_cap':
+            elif kind=='with_cap':
                 r=self.block(st[2],env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
-            elif st[0]=='if':
+            elif kind=='if':
                 branch=st[2] if self.eval(st[1],env).value else st[3]
                 r=self.block(branch,env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
-            elif st[0]=='while':
+            elif kind=='while':
                 guard=0
                 while self.eval(st[1],env).value:
                     r=self.block(st[2],env)
@@ -1255,13 +1256,14 @@ class Interpreter:
             payload=v.value.get('payload')
             if payload is not None:self.drop_value(payload)
     def eval(self,e,env,expected=None):
-        if e[0]=='string':return TypedValue('String',e[1])
-        if e[0]=='number':return self.literal(expected or 'i64',e[1])
-        if e[0]=='var':return env[e[1]]
-        if e[0]=='field':return self.eval(e[1],env).value[e[2]]
-        if e[0]=='struct_init':
+        kind=self.p.node(e).kind
+        if kind=='string':return TypedValue('String',e[1])
+        if kind=='number':return self.literal(expected or 'i64',e[1])
+        if kind=='var':return env[e[1]]
+        if kind=='field':return self.eval(e[1],env).value[e[2]]
+        if kind=='struct_init':
             s=self.p.structs[e[1]];return TypedValue(e[1],{f.name:self.eval(e[2][f.name],env,f.type_name) for f in s.fields})
-        if e[0] in ('call','generic_call'):
+        if kind in ('call','generic_call'):
             n,args=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
             if variants:
@@ -1344,7 +1346,7 @@ class Interpreter:
             callee=self.fn[n]
             vals=[self.eval(x,env,t) for x,(_,t,_) in zip(e[2],callee['params'])]
             return self.call(n,vals)
-        if e[0]=='binop':
+        if kind=='binop':
             a=self.eval(e[2],env);b=self.eval(e[3],env,a.type_name)
             if e[1] in ('==','!=','>=','<=','>','<'):
                 return TypedValue('i32',int({'==':a.value==b.value,'!=':a.value!=b.value,'>=':a.value>=b.value,'<=':a.value<=b.value,'>':a.value>b.value,'<':a.value<b.value}[e[1]]))
@@ -1618,15 +1620,16 @@ class CGenerator:
         return x
     def stmt(self,s,env,i):
         p='    '*i
-        if s[0]=='let':env[s[1]]=s[2];return [f'{p}{self.ctype(s[2])} {s[1]} = {self.checked(s[2],self.expr(s[3],env,s[2]))};']
-        if s[0]=='try_let':
+        kind=self.p.node(s).kind
+        if kind=='let':env[s[1]]=s[2];return [f'{p}{self.ctype(s[2])} {s[1]} = {self.checked(s[2],self.expr(s[3],env,s[2]))};']
+        if kind=='try_let':
             enum_t=self.etype(s[3],env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
             env[s[1]]=s[2]
             return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[3],env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(s[2])} {s[1]} = {temp}.data.Ok;']
-        if s[0]=='assign':
+        if kind=='assign':
             t=self.etype(s[1],env);return [f'{p}{self.expr(s[1],env)} = {self.checked(t,self.expr(s[2],env,t))};']
-        if s[0]=='replace':
+        if kind=='replace':
             t=self.etype(s[1],env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
             address=self.address_expr(s[1],env)
             return [
@@ -1634,8 +1637,8 @@ class CGenerator:
                 self.drop_address_line(p,address,t),
                 f'{p}*({address}) = {temp};',
             ]
-        if s[0]=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(s[1],env,self.current_return))};',f'{p}goto _merit_epilogue;']
-        if s[0]=='print':
+        if kind=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(s[1],env,self.current_return))};',f'{p}goto _merit_epilogue;']
+        if kind=='print':
             t=self.etype(s[1],env);x=self.expr(s[1],env)
             temp=f'_merit_print_{self.temp_counter}';self.temp_counter+=1
             lines=[f'{p}{self.ctype(t)} {temp} = {x};']
@@ -1651,7 +1654,7 @@ class CGenerator:
             else:
                 lines.append(f'{p}printf("%lld\\n",(long long)({temp}));')
             return lines
-        if s[0]=='expr':
+        if kind=='expr':
             expression=s[1]
             if expression[0] in ('call','generic_call'):
                 name,args=resolved_call(expression);vec=vec_builtin(name)
@@ -1665,10 +1668,10 @@ class CGenerator:
                         f'{p}merit_vec_replace__{elem}({self.address_expr(args[0],env)}, {index_temp}, {value_temp});',
                     ]
             return [f'{p}(void)({self.expr(expression,env)});']
-        if s[0]=='drop':
+        if kind=='drop':
             t=self.env_type(env,s[1])
             return [self.drop_binding_line(p,s[1],t)]
-        if s[0]=='match':
+        if kind=='match':
             enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
             o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[1],env)};',f'{p}switch ({temp}.tag) {{']
             enum=self.p.enums[enum_t]
@@ -1680,18 +1683,18 @@ class CGenerator:
                 for z in arm[2]:o+=self.stmt(z,local,i+1)
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
-        if s[0]=='with_cap':
+        if kind=='with_cap':
             o=[f'{p}/* merit capability begin: {s[1]} */']
             for z in s[2]:o+=self.stmt(z,env,i)
             o.append(f'{p}/* merit capability end: {s[1]} */')
             return o
-        if s[0]=='if':
+        if kind=='if':
             o=[f'{p}if ({self.expr(s[1],env)}) {{']
             for z in s[2]:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}} else {{')
             for z in s[3]:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
-        if s[0]=='while':
+        if kind=='while':
             o=[f'{p}while ({self.expr(s[1],env)}) {{']
             for z in s[2]:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
@@ -1701,13 +1704,14 @@ class CGenerator:
     def env_mode(self,env,n):
         v=env[n]; return v[1] if isinstance(v,tuple) else 'value'
     def etype(self,e,env):
-        if e[0]=='string':return 'String'
-        if e[0]=='number':return 'i64'
-        if e[0]=='var':return self.env_type(env,e[1])
-        if e[0]=='field':
+        kind=self.p.node(e).kind
+        if kind=='string':return 'String'
+        if kind=='number':return 'i64'
+        if kind=='var':return self.env_type(env,e[1])
+        if kind=='field':
             t=self.etype(e[1],env);return next(f.type_name for f in self.p.structs[t].fields if f.name==e[2])
-        if e[0]=='struct_init':return e[1]
-        if e[0] in ('call','generic_call'):
+        if kind=='struct_init':return e[1]
+        if kind in ('call','generic_call'):
             name,args=resolved_call(e)
             variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:return variants[0]
@@ -1718,24 +1722,25 @@ class CGenerator:
                 op,elem=vec
                 return vec_return_type(op,elem)
             return self.etype(args[0],env) if name.startswith('checked_') or name=='decimal_div' else self.fn[name]['return']
-        if e[0]=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
+        if kind=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
     def address_expr(self,e,env):
         rendered=self.expr(e,env)
         if e[0]=='var' and self.env_mode(env,e[1]) in ('borrow','borrow_mut'):
             return rendered
         return '&'+rendered
     def expr(self,e,env,expected=None):
-        if e[0]=='string':
+        kind=self.p.node(e).kind
+        if kind=='string':
             raw=json.dumps(e[1]); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
-        if e[0]=='number':return str(int(Decimal(e[1])*(10**self.p.decimals[expected].scale))) if expected in self.p.decimals else str(int(Decimal(e[1])))
-        if e[0]=='var':return '_merit_result' if e[1]=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else e[1]
-        if e[0]=='field':
+        if kind=='number':return str(int(Decimal(e[1])*(10**self.p.decimals[expected].scale))) if expected in self.p.decimals else str(int(Decimal(e[1])))
+        if kind=='var':return '_merit_result' if e[1]=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else e[1]
+        if kind=='field':
             base=e[1]; op='.'
             if base[0]=='var' and self.env_mode(env,base[1]) in ('borrow','borrow_mut'): op='->'
             return f'{self.expr(base,env)}{op}{e[2]}'
-        if e[0]=='struct_init':
+        if kind=='struct_init':
             s=self.p.structs[e[1]];return f'({self.ctype(e[1])}){{'+', '.join(f'.{f.name}={self.expr(e[2][f.name],env,f.type_name)}' for f in s.fields)+'}'
-        if e[0] in ('call','generic_call'):
+        if kind in ('call','generic_call'):
             n,a=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
             if variants:
@@ -1783,7 +1788,7 @@ class CGenerator:
             for x,(_,t,m) in zip(a,callee['params']):
                 ex=self.expr(x,env,t);rendered.append(('&'+ex) if m in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
-        if e[0]=='binop':
+        if kind=='binop':
             t=expected or self.etype(e[2],env)
             return f'({self.expr(e[2],env,t)} {e[1]} {self.expr(e[3],env,t)})'
 
@@ -1801,21 +1806,22 @@ def mir(p):
         entry=new_block()
         def lower_seq(body,current):
             for st in body:
-                if st[0]=='if':
+                kind=p.node(st).kind
+                if kind=='if':
                     then_b=new_block(); else_b=new_block(); join_b=new_block()
                     current['terminator']={'kind':'branch','condition':st[1],'then':then_b['id'],'else':else_b['id']}
                     end_then=lower_seq(st[2],then_b); end_else=lower_seq(st[3],else_b)
                     if end_then['terminator']['kind']=='fallthrough': end_then['terminator']={'kind':'goto','target':join_b['id']}
                     if end_else['terminator']['kind']=='fallthrough': end_else['terminator']={'kind':'goto','target':join_b['id']}
                     current=join_b
-                elif st[0]=='while':
+                elif kind=='while':
                     cond_b=new_block(); body_b=new_block(); exit_b=new_block()
                     current['terminator']={'kind':'goto','target':cond_b['id']}
                     cond_b['terminator']={'kind':'branch','condition':st[1],'then':body_b['id'],'else':exit_b['id']}
                     end_body=lower_seq(st[2],body_b)
                     if end_body['terminator']['kind']=='fallthrough': end_body['terminator']={'kind':'goto','target':cond_b['id']}
                     current=exit_b
-                elif st[0]=='match':
+                elif kind=='match':
                     arm_blocks=[]; join_b=new_block()
                     for arm in st[2]:
                         b=new_block(); arm_blocks.append({'variant':arm[0],'binding':arm[1],'target':b['id']})
@@ -1823,7 +1829,7 @@ def mir(p):
                         if end_arm['terminator']['kind']=='fallthrough': end_arm['terminator']={'kind':'goto','target':join_b['id']}
                     current['terminator']={'kind':'switch','subject':st[1],'arms':arm_blocks}
                     current=join_b
-                elif st[0]=='return':
+                elif kind=='return':
                     current['terminator']={'kind':'return','value':st[1]}; current=new_block()
                 else:
                     current['statements'].append(st)

@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III typed semantic-node adapter checkpoint** of Merit.
+This repository contains the verified **Epoch III typed backend-dispatch checkpoint** of Merit.
 
 Current baseline:
 - 169 tests passing after editable installation
@@ -44,6 +44,7 @@ python -m pytest -q
 - precise declaration spans for type, trait, implementation, field, function, and declaration-policy errors
 - source-aware generic arity, bound, and ambiguous-dispatch expansion errors across single files and projects
 - typed semantic-node views used by checking and shared ownership analysis over the backend-compatible tuple representation
+- typed node dispatch across MIR, interpreter, and native C lowering with unchanged parity
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

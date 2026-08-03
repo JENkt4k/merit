@@ -32,7 +32,7 @@ Semantic expression and statement nodes retain source spans in the program metad
 
 Declaration objects and function records also retain spans. Declaration validation uses those locations for duplicate, unknown-type, numeric-policy, trait/implementation, and function capability diagnostics.
 
-`SemanticNodeView` is the migration boundary around compact tuple nodes. It exposes typed kind/operand access together with primary and related spans. The checker and shared ownership-effects model use this boundary; MIR, interpreter, and C lowering remain on the compatible raw representation pending incremental migration.
+`SemanticNodeView` is the migration boundary around compact tuple nodes. It exposes typed kind/operand access together with primary and related spans. Checker, ownership effects, MIR control flow, interpreter execution, and C statement/type/expression lowering dispatch through this boundary while operands remain compatible during incremental accessor migration.
 
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
