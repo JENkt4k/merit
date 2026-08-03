@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 229 tests passing after editable installation
+- 236 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -94,6 +94,7 @@ python -m pytest -q
 - Custom struct destructors with exact-once interpreter/native cleanup parity
 - Cross-module destructor visibility and source-mapped project diagnostics
 - Structured destructor control flow and copy-field mutation
+- Strict numeric-literal compatibility and range validation at every value boundary
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

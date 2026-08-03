@@ -1047,7 +1047,7 @@ class Checker:
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if self.borrowed_call_mode(e):self.fail('M5304: borrowed return cannot be stored in an owned binding',e)
-                if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
+                if not self.argument_matches(et,t):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if self.p.node(e).kind=='number':self.validate_literal(t,self.p.node(e).atom_value)
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
@@ -1068,7 +1068,8 @@ class Checker:
                 target=node.assignment_target;value=node.assigned_value
                 if self.borrowed_call_mode(value):self.fail('M5304: borrowed return cannot be stored in owned storage',value)
                 lt=self.borrowed_field_target_type(target,env,caps,fn) or self.lvalue_type(target,env,True);rt=self.expr_type(value,env,caps,fn)
-                if rt not in (lt,'number'):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
+                if not self.argument_matches(rt,lt):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
+                if self.p.node(value).kind=='number':self.validate_literal(lt,self.p.node(value).atom_value)
                 if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(target)}; drop and create a new owner',st)
                 self.consume_owned_source(value,rt,env,f'assigning {self.expr_path(target)}')
             elif tag=='replace':
@@ -1077,14 +1078,15 @@ class Checker:
                 if not self.types.get(lt).needs_drop: self.fail(f'M5203: replace requires owned storage, got {lt}',st)
                 target_root=self.root_var(target)
                 rt=self.expr_type(value,env,caps,fn)
-                if rt not in (lt,'number'): self.fail(f'M5204: replacement type {rt} does not match {lt}',st)
+                if not self.argument_matches(rt,lt): self.fail(f'M5204: replacement type {rt} does not match {lt}',st)
                 value_root=self.root_var(value)
                 if value_root==target_root or env[target_root].moved or env[target_root].dropped:
                     self.fail(f'M5202: replacement source aliases target {self.expr_path(target)}',st)
                 self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
                 et=self.expr_type(node.expression,env,caps,fn)
-                if et not in (fn.return_type,'number'):self.fail(f"M3002: return type {et} does not match {fn.return_type}",st)
+                if not self.argument_matches(et,fn.return_type):self.fail(f"M3002: return type {et} does not match {fn.return_type}",st)
+                if self.p.node(node.expression).kind=='number':self.validate_literal(fn.return_type,self.p.node(node.expression).atom_value)
                 if fn.return_mode=='value' and self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot escape through an owned return',node.expression)
                 if fn.return_mode=='value':self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
             elif tag in ('print','expr'):self.expr_type(node.expression,env,caps,fn)
@@ -1183,7 +1185,7 @@ class Checker:
             if set(vals)!=set(expected):self.fail(f'M4005: {name} fields must be {sorted(expected)}',e)
             for n,x in vals.items():
                 t=self.expr_type(x,env,caps,fn)
-                if t not in (expected[n].type_name,'number'):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
+                if not self.argument_matches(t,expected[n].type_name):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
                 value_node=self.p.node(x)
                 if value_node.kind=='number':self.validate_literal(expected[n].type_name,value_node.atom_value)
                 self.consume_owned_source(x,t,env,f'initializing field {name}.{n}')
@@ -1198,7 +1200,7 @@ class Checker:
                 if len(args)!=expected_count: self.fail(f'M6003: {name} expects {expected_count} arguments',e)
                 if expected_count:
                     at=self.expr_type(args[0],env,caps,fn)
-                    if at not in (variant.payload_type,'number'): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
+                    if not self.argument_matches(at,variant.payload_type): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
                     argument_node=self.p.node(args[0])
                     if argument_node.kind=='number': self.validate_literal(variant.payload_type,argument_node.atom_value)
                     self.consume_owned_source(args[0],at,env,f'constructing {enum.name}::{variant.name}')
@@ -1252,6 +1254,7 @@ class Checker:
                         raise CompileError(f'M7303: replacement source aliases vector {receiver_root}')
                     at=self.expr_type(value_arg,env,caps,fn)
                     if not self.argument_matches(at,elem): self.fail(f'M3008: vector value expects {elem}, got {at}',value_arg)
+                    if self.p.node(value_arg).kind=='number':self.validate_literal(elem,self.p.node(value_arg).atom_value)
                     self.consume_owned_source(value_arg,at,env,f'calling {name}')
                 if op=='drop':
                     root=self.root_var(args[0])
@@ -1268,6 +1271,7 @@ class Checker:
                     if mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
                     if mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
                     if not self.argument_matches(at,pt): self.fail(f'M3008: argument {idx} expects {pt}, got {at}',arg)
+                    if self.p.node(arg).kind=='number':self.validate_literal(pt,self.p.node(arg).atom_value)
                     root=self.root_var(arg)
                     if mode in ('borrow','borrow_mut'):
                         if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
@@ -1288,6 +1292,7 @@ class Checker:
                 if param.mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
                 if param.mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
                 if not self.argument_matches(at,param.type_name):self.fail(f'M3008: argument {param.name} expects {param.type_name}, got {at}',arg)
+                if self.p.node(arg).kind=='number':self.validate_literal(param.type_name,self.p.node(arg).atom_value)
                 root=self.root_var(arg)
                 if root and param.mode in ('borrow','borrow_mut'):
                     for previous_root,previous_mode,previous_param in loans:
