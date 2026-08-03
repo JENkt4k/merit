@@ -178,9 +178,14 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Semantic nodes are distinguishable from incidental tuples while retaining equality/index compatibility during migration.
 - `SemanticNodeView` remains the typed accessor and provenance facade over concrete storage.
 
+## Typed semantic storage-family checkpoint now available
+- Concrete nodes are classified as atom, field, constructor, call, binary, binding, assignment, effect-statement, or control-flow storage.
+- Parser construction selects the storage family deterministically by semantic kind.
+- Storage-family tests cover capability control flow, owned bindings/calls, and replacement nodes.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Introduce per-kind typed variants over `SemanticTuple` storage.
+- Split storage families into per-kind typed variants where distinct invariants justify them.
 - Move span/provenance storage onto concrete variants before removing external metadata maps.
 - Remove tuple compatibility only after every operand access is typed.
 
@@ -194,7 +199,7 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Introduce per-kind typed variants with compatibility serialization.
+1. Add per-kind variants for ownership and control-flow nodes.
 2. Move span/provenance storage onto variants before removing external metadata maps.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

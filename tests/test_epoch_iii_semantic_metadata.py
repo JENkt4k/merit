@@ -3,7 +3,7 @@ import contextlib
 import io
 import subprocess
 
-from merit.compiler import CGenerator, Checker, Interpreter, OwnershipEffects, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, Checker, ControlFlowNode, Interpreter, OwnershipEffects, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -60,6 +60,7 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     program = parse(DIRECT_MOVE_PROGRAM, "semantic_nodes.mrt")
     capability_statement = program.functions[0]["body"][0]
     assert isinstance(capability_statement, SemanticTuple)
+    assert isinstance(capability_statement, ControlFlowNode)
     assert isinstance(capability_statement, tuple)
     capability = program.node(capability_statement)
     assert capability.kind == "with_cap"
@@ -69,9 +70,11 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
     assert capability.related_span is None
     binding = program.node(capability.operand(1)[1])
+    assert isinstance(binding.raw, BindingNode)
     assert (binding.kind, binding.binding_name, binding.declared_type) == ("let", "source", "Buffer")
     assert program.node(binding.initializer).kind == "call"
     call = program.node(binding.initializer)
+    assert isinstance(call.raw, CallNode)
     assert (call.callee_name, len(call.arguments)) == ("buffer_from_string", 2)
 
 
@@ -83,6 +86,7 @@ fn main() -> i32 {
     return 0;
 }''')
     replacement = program.node(program.functions[0]["body"][1])
+    assert isinstance(replacement.raw, AssignmentNode)
     assert replacement.kind == "replace"
     assert program.node(replacement.assignment_target).kind == "var"
     assert program.node(replacement.assigned_value).kind == "number"

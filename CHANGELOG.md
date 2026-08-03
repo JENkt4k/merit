@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed semantic storage-family checkpoint
+
+- Added concrete storage families for expression and statement categories.
+- Routed parser construction through a deterministic semantic-kind storage registry.
+- Added runtime storage-family assertions for control flow, bindings, calls, and replacement.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Concrete semantic storage checkpoint
 
 - Added tuple-compatible `SemanticTuple` storage with explicit kind and operand surfaces.

@@ -106,6 +106,22 @@ class SemanticTuple(tuple):
     def kind(self):return self[0]
     @property
     def operands(self):return self[1:]
+class AtomNode(SemanticTuple):pass
+class FieldNode(SemanticTuple):pass
+class ConstructorNode(SemanticTuple):pass
+class CallNode(SemanticTuple):pass
+class BinaryNode(SemanticTuple):pass
+class BindingNode(SemanticTuple):pass
+class AssignmentNode(SemanticTuple):pass
+class EffectStatementNode(SemanticTuple):pass
+class ControlFlowNode(SemanticTuple):pass
+SEMANTIC_STORAGE_TYPES={
+    'string':AtomNode,'number':AtomNode,'var':AtomNode,'field':FieldNode,
+    'struct_init':ConstructorNode,'call':CallNode,'generic_call':CallNode,'binop':BinaryNode,
+    'let':BindingNode,'try_let':BindingNode,'assign':AssignmentNode,'replace':AssignmentNode,
+    'return':EffectStatementNode,'print':EffectStatementNode,'expr':EffectStatementNode,'drop':EffectStatementNode,
+    'with_cap':ControlFlowNode,'if':ControlFlowNode,'while':ControlFlowNode,'match':ControlFlowNode,
+}
 @dataclasses.dataclass(frozen=True)
 class SemanticNodeView:
     raw:tuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
@@ -182,7 +198,7 @@ class ASTBuilder(Transformer):
         self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
         if meta.line in self.related_line_map:self.related_spans[id(node)]=SourceSpan(self.related_line_map[meta.line],1,self.related_line_map[meta.line],1,self.source_name)
         return node
-    def semantic(self,kind,*operands):return SemanticTuple(kind,*operands)
+    def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])
     @v_args(meta=True)
     def enum_variant(self,meta,x): return self.mark(EnumVariant(str(x[0]), x[1] if len(x)>1 else None),meta)

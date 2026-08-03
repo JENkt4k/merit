@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Implement **per-kind typed semantic variants** as described in `NEXT_WORK.md`.
+Implement **per-kind ownership and control-flow variants** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.
