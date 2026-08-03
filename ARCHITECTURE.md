@@ -69,6 +69,7 @@ Compiler semantic nodes use immutable typed storage with named semantic views an
 Function and trait-method parameters share an immutable `Parameter` record consumed by checking, ownership, interpretation, C lowering, MIR, and project visibility.
 Parser top-level output uses immutable `DeclarationEntry` records before assembling the typed `Program` symbol tables.
 Parser field initializers and function effects/capability/contract clauses also use immutable typed intermediate records rather than positional tags.
+Capability-gated filesystem builtins return nominal `FileReadResult` / `FileWriteResult` values with stable `FsError` categories in both interpreter and generated C.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

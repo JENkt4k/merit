@@ -60,7 +60,8 @@ fn main()->i32 {{
         let a:Allocator=system_allocator();
         let b:Buffer=buffer_from_string(a,"abc");
         with capability file_write {{
-            print(file_write("{target}", b));
+            let written:FileWriteResult=file_write("{target}", b);
+            match(written) {{ WriteOk(count)=>{{print(count);}} WriteErr(error)=>{{print(0);}} }}
         }}
         drop(b);
     }}
@@ -79,6 +80,43 @@ fn main()->i32 {{
     native=subprocess.run([str(exe)],check=True,text=True,capture_output=True)
     assert native.stdout == '3\n'
     assert (tmp_path / 'written.bin').read_bytes() == b'abc'
+
+
+def test_typed_filesystem_failures_match_interpreter_and_native(tmp_path, capsys):
+    missing = (tmp_path / 'missing.bin').as_posix()
+    directory = tmp_path.as_posix()
+    src=f'''module typed_filesystem_errors
+capability allocate;
+capability file_read;
+capability file_write;
+fn main()->i32 {{
+    with capability allocate {{
+        let allocator:Allocator=system_allocator();
+        with capability file_read {{
+            let read:FileReadResult=file_read(allocator,"{missing}");
+            match(read) {{
+                ReadOk(data)=>{{print(0);drop(data);}}
+                ReadErr(error)=>{{match(error) {{ FsNotFound=>{{print(1);}} FsPermissionDenied=>{{print(2);}} FsIoError=>{{print(3);}} }}}}
+            }}
+        }}
+        let data:Buffer=buffer_from_string(allocator,"abc");
+        with capability file_write {{
+            let written:FileWriteResult=file_write("{directory}",data);
+            match(written) {{
+                WriteOk(count)=>{{print(count);}}
+                WriteErr(error)=>{{match(error) {{ FsNotFound=>{{print(1);}} FsPermissionDenied=>{{print(2);}} FsIoError=>{{print(3);}} }}}}
+            }}
+        }}
+        drop(data);
+    }}
+    return 0;
+}}'''
+    program=parse(src);Checker(program).check();Interpreter(program).run()
+    interpreted=capsys.readouterr().out
+    source=tmp_path/'typed_filesystem_errors.mrt';executable=tmp_path/'typed_filesystem_errors'
+    source.write_text(src);compile_file(source,executable)
+    native=subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout
+    assert interpreted == native == '1\n3\n'
 
 def test_generated_c_marks_capability_boundaries():
     c=CGenerator(parse((ROOT/'examples/ledger.mrt').read_text())).generate()

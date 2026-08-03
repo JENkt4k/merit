@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed filesystem error checkpoint
+
+- Changed `file_read` and `file_write` to return built-in nominal result enums.
+- Added stable `FsNotFound`, `FsPermissionDenied`, and `FsIoError` categories.
+- Added interpreter/native failure parity coverage while preserving lexical capability gates.
+- Increased the regression suite from 174 to 175 tests.
+
 ## Epoch III — Typed parser intermediate checkpoint
 
 - Replaced field-initializer tuples with immutable `FieldInitializer` records.

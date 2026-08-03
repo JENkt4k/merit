@@ -31,6 +31,18 @@ fn increment(value: i32) -> IntResult {
 
 `try` is currently restricted to typed local bindings. Its input and containing function must use Result-shaped nominal enums with variants ordered `Ok`, `Err`. The `Err` payload types must agree. An error returns immediately through the function epilogue.
 
+## Filesystem errors
+
+Filesystem operations retain their lexical `file_read` and `file_write` capability requirements and return built-in nominal results:
+
+```merit
+enum FsError { FsNotFound, FsPermissionDenied, FsIoError }
+enum FileReadResult { ReadOk(Buffer), ReadErr(FsError) }
+enum FileWriteResult { WriteOk(i64), WriteErr(FsError) }
+```
+
+`file_read(allocator, path)` and `file_write(path, buffer)` never expose host exceptions or terminate native execution for ordinary OS failures. Both execution paths map missing paths, permission failures, and other I/O errors to the same `FsError` variants. Allocation failure remains a separate fatal allocation hazard.
+
 ## Visibility
 
 Project declarations are private by default. Prefix exported declarations with `pub`:

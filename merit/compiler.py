@@ -88,6 +88,11 @@ class BoundedType: name:str; base:str; minimum:int; maximum:int
 class EnumVariant: name:str; payload_type:str|None=None
 @dataclasses.dataclass(frozen=True)
 class EnumType: name:str; variants:tuple[EnumVariant,...]
+FS_BUILTIN_ENUMS={
+    'FsError':EnumType('FsError',(EnumVariant('FsNotFound'),EnumVariant('FsPermissionDenied'),EnumVariant('FsIoError'))),
+    'FileReadResult':EnumType('FileReadResult',(EnumVariant('ReadOk','Buffer'),EnumVariant('ReadErr','FsError'))),
+    'FileWriteResult':EnumType('FileWriteResult',(EnumVariant('WriteOk','i64'),EnumVariant('WriteErr','FsError'))),
+}
 @dataclasses.dataclass(frozen=True)
 class Parameter:
     name:str; type_name:str; mode:str='value'
@@ -375,7 +380,7 @@ class ASTBuilder(Transformer):
             i+=1
         return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
     def start(self,x):
-        ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
+        ds={};bs={};cs=set();ss={};es=dict(FS_BUILTIN_ENUMS);ts={};fs=[];ims=[];symbols={name:'builtin' for name in FS_BUILTIN_ENUMS}
         def add_symbol(kind,name,node):
             if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',getattr(node,'provenance',NodeProvenance()).primary)
             symbols[name]=kind
@@ -565,7 +570,7 @@ def parse(s:str,source_name=None)->Program:
     except VisitError as exc:
         if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
         raise
-BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
+BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
@@ -695,8 +700,8 @@ BUILTIN_SIGS={
     'i64vec_push':BuiltinSig((('borrow_mut','I64Vec'),('value','i64')), 'void'),
     'i64vec_len':BuiltinSig((('borrow','I64Vec'),), 'i64'),
     'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
-    'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'file_read', 'filesystem_read'),
-    'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'i64', 'file_write', 'filesystem_write'),
+    'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'FileReadResult', 'file_read', 'filesystem_read'),
+    'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'FileWriteResult', 'file_write', 'filesystem_write'),
 }
 
 CAPABILITY_POLICIES={
@@ -1481,11 +1486,17 @@ class Interpreter:
                     self.drop_value(self.eval(args[0],env)); return TypedValue('void',None)
             if n=='file_read':
                 path=self.eval(args[1],env).value
-                return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
+                try:return TypedValue('FileReadResult',{'variant':'ReadOk','payload':TypedValue('Buffer',bytearray(Path(path).read_bytes()))})
+                except FileNotFoundError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsNotFound','payload':None})})
+                except PermissionError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsPermissionDenied','payload':None})})
+                except OSError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsIoError','payload':None})})
             if n=='file_write':
                 path=self.eval(args[0],env).value
                 data=self.eval(args[1],env).value
-                return TypedValue('i64',Path(path).write_bytes(bytes(data)))
+                try:return TypedValue('FileWriteResult',{'variant':'WriteOk','payload':TypedValue('i64',Path(path).write_bytes(bytes(data)))})
+                except FileNotFoundError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsNotFound','payload':None})})
+                except PermissionError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsPermissionDenied','payload':None})})
+                except OSError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsIoError','payload':None})})
             if n.startswith('checked_') or n=='decimal_div':
                 first=self.eval(args[0],env)
                 second=self.eval(args[1],env,first.type_name)
@@ -1624,7 +1635,7 @@ class CGenerator:
             o.append(f'{self.ctype(f.return_type)} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
-        o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
+        o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
         o.append(self.header().replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
@@ -1644,8 +1655,9 @@ class CGenerator:
               r'''static int64_t merit_i64vec_get(const merit_I64Vec *v,int64_t i){if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}''',
               r'''static void merit_i64vec_drop(merit_I64Vec *v){free(v->data);v->data=NULL;v->len=0;v->cap=0;}''',
               r'''static void merit_buffer_drop(merit_Buffer *b){free(b->data);b->data=NULL;b->len=0;b->cap=0;}''',
-              r'''static merit_Buffer merit_file_read(merit_Allocator a,merit_String path){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"rb");free(z);if(!f)merit_fail("file read failed",83);if(fseek(f,0,SEEK_END)!=0)merit_fail("file seek failed",84);long n=ftell(f);rewind(f);merit_Buffer b=merit_buffer_new(a,n);if(n>0){size_t got=fread(b.data,1,(size_t)n,f);if(got!=(size_t)n)merit_fail("file read incomplete",84);b.len=got;}fclose(f);return b;}''',
-              r'''static int64_t merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");free(z);if(!f)merit_fail("file write failed",87);size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len)merit_fail("file write incomplete",88);if(fclose(f)!=0)merit_fail("file close failed",88);return (int64_t)wrote;}''',
+              r'''static merit_FsError merit_fs_error(int e){if(e==ENOENT)return merit_make_FsError_FsNotFound();if(e==EACCES||e==EPERM)return merit_make_FsError_FsPermissionDenied();return merit_make_FsError_FsIoError();}''',
+              r'''static merit_FileReadResult merit_file_read(merit_Allocator a,merit_String path){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"rb");int open_error=errno;free(z);if(!f)return merit_make_FileReadResult_ReadErr(merit_fs_error(open_error));if(fseek(f,0,SEEK_END)!=0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}long n=ftell(f);if(n<0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}rewind(f);merit_Buffer b=merit_buffer_new(a,n);if(n>0){size_t got=fread(b.data,1,(size_t)n,f);if(got!=(size_t)n){int e=errno;merit_buffer_drop(&b);fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}b.len=got;}if(fclose(f)!=0){merit_buffer_drop(&b);return merit_make_FileReadResult_ReadErr(merit_fs_error(errno));}return merit_make_FileReadResult_ReadOk(b);}''',
+              r'''static merit_FileWriteResult merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");int open_error=errno;free(z);if(!f)return merit_make_FileWriteResult_WriteErr(merit_fs_error(open_error));size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len){int e=errno;fclose(f);return merit_make_FileWriteResult_WriteErr(merit_fs_error(e));}if(fclose(f)!=0)return merit_make_FileWriteResult_WriteErr(merit_fs_error(errno));return merit_make_FileWriteResult_WriteOk((int64_t)wrote);}''',
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']

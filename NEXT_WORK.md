@@ -16,6 +16,8 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Interpreter and native output agree for project-level filesystem operations.
 - Project audit output classifies allocation, filesystem reads, and filesystem writes with their review categories and lexical scope.
 - Project-derived negative tests reject read and write calls outside the corresponding capability region.
+- Reads and writes return typed nominal results with stable not-found, permission, and general I/O errors.
+- Missing-read and write-failure behavior matches between interpreter and native execution.
 
 ## Trait checkpoint now available
 - User-declared traits with method signatures.
@@ -274,8 +276,8 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Begin the next alpha-readiness feature slice:
-- Add typed filesystem/OS error results while preserving `file_read` and `file_write` capability gates.
-- Specify interpreter/native parity for missing files, permission failures, and write failures.
+- Add allocator parameters to generic collection APIs without creating a second vector execution path.
+- Preserve exact ownership/drop behavior across allocator selection.
 
 ## Deliberately deferred
 - specialization
@@ -287,8 +289,8 @@ Begin the next alpha-readiness feature slice:
 - concurrency
 
 ## Suggested implementation order
-1. Specify typed filesystem result types and failure mapping.
-2. Implement interpreter/native parity and focused diagnostics.
+1. Specify allocator identity and compatibility rules for `Vec<T>`.
+2. Thread allocator selection through existing vector lowering and runtime storage.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -334,6 +336,7 @@ The checkpoint is complete only when all of these pass:
 - `old()` outside postconditions is rejected during checking.
 - unauthorized `file_write` calls are rejected during checking.
 - authorized `file_write` calls match in interpreter and native execution.
+- typed missing-read and write-failure results match in interpreter and native execution.
 - audit output classifies allocation, filesystem read, and filesystem write hazards.
 - owned field extraction into a new binding is rejected.
 - owned field extraction into a consuming call is rejected.

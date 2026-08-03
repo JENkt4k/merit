@@ -10,16 +10,25 @@ fn main() -> i32 {
         let outgoing: Buffer = buffer_from_string(allocator, "MRT");
 
         with capability file_write {
-            print(file_write("merit-filesystem-capabilities.bin", outgoing));
+            let written: FileWriteResult = file_write("merit-filesystem-capabilities.bin", outgoing);
+            match(written) {
+                WriteOk(count) => { print(count); }
+                WriteErr(error) => { print(0); }
+            }
         }
 
         with capability file_read {
-            let incoming: Buffer = file_read(allocator, "merit-filesystem-capabilities.bin");
-            print(buffer_len(incoming));
-            print(buffer_get(incoming, 0));
-            print(buffer_get(incoming, 1));
-            print(buffer_get(incoming, 2));
-            drop(incoming);
+            let read: FileReadResult = file_read(allocator, "merit-filesystem-capabilities.bin");
+            match(read) {
+                ReadOk(incoming) => {
+                    print(buffer_len(incoming));
+                    print(buffer_get(incoming, 0));
+                    print(buffer_get(incoming, 1));
+                    print(buffer_get(incoming, 2));
+                    drop(incoming);
+                }
+                ReadErr(error) => { print(0); }
+            }
         }
 
         drop(outgoing);

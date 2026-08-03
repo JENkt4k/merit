@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import CompileError, FunctionDecl, NodeProvenance, Program, SemanticNode, SourceSpan, parse, _impl_function_name
+from merit.compiler import CompileError, FS_BUILTIN_ENUMS, FunctionDecl, NodeProvenance, Program, SemanticNode, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -191,11 +191,12 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     owner: dict[str, SourceUnit] = {}
     variants: dict[str, SourceUnit] = {}
     for unit in units:
-        symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | set(unit.program.enums) | set(unit.program.traits)
+        symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | (set(unit.program.enums)-set(FS_BUILTIN_ENUMS)) | set(unit.program.traits)
         symbols |= {f.name for f in unit.program.functions}
         symbols |= {match.group(1) for match in re.finditer(r"\b(?:enum|struct|fn)\s+([A-Za-z_][A-Za-z0-9_]*)\s*<", unit.parser_source)}
         for symbol in symbols: owner[symbol] = unit
-        for enum in unit.program.enums.values():
+        for name,enum in unit.program.enums.items():
+            if name in FS_BUILTIN_ENUMS: continue
             for variant in enum.variants: variants[variant.name] = unit
     builtins = {"checked_add", "checked_sub", "checked_mul", "decimal_div", "old"}
     primitive = {"void", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"}
@@ -276,6 +277,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             (traits, unit.program.traits, "trait"),
         ):
             for name, value in incoming.items():
+                if kind == "type" and name in FS_BUILTIN_ENUMS: continue
                 if name in decimals or name in bounded or name in structs or name in enums or name in traits:
                     raise ProjectError(f"duplicate {kind} symbol {name} in {unit.path}")
                 collection[name] = value
