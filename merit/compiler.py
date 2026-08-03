@@ -1722,6 +1722,14 @@ class CGenerator:
         if t=='I64Vec': return 'merit_I64Vec'
         if is_vec_type(t): return 'merit_'+t
         return {'i8':'int8_t','i16':'int16_t','i32':'int32_t','i64':'int64_t','u8':'uint8_t','u16':'uint16_t','u32':'uint32_t','u64':'uint64_t','void':'void'}[t]
+    def parameter_c(self,param):
+        if param.mode=='borrow':return f'const {self.ctype(param.type_name)} *{param.name}'
+        if param.mode=='borrow_mut':return f'{self.ctype(param.type_name)} *{param.name}'
+        return f'{self.ctype(param.type_name)} {param.name}'
+    def return_ctype(self,function):
+        if function.return_mode=='borrow':return f'const {self.ctype(function.return_type)} *'
+        if function.return_mode=='borrow_mut':return f'{self.ctype(function.return_type)} *'
+        return self.ctype(function.return_type)
     def vec_typedef_lines(self,vt):
         layout=LayoutEngine(self.p).vec_layout(vt)
         return [
@@ -1790,8 +1798,8 @@ class CGenerator:
         for f in self.p.functions:
             if f.name=='main':continue
             if self.p.exports and not include_private and f.name not in self.p.exports:continue
-            params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void'
-            return_type=self.ctype(f.return_type)+(' *' if f.return_mode!='value' else '')
+            params=', '.join(self.parameter_c(param) for param in f.params) or 'void'
+            return_type=self.return_ctype(f)
             o.append(f'{return_type} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
@@ -1941,7 +1949,7 @@ class CGenerator:
             and name not in ownership.consumed_roots
         ]
     def fn_c(self,f):
-        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};return_type=self.ctype(f.return_type)+(' *' if f.return_mode!='value' else '');o=[f'{return_type} {name}({params}) {{']
+        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(self.parameter_c(param) for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};return_type=self.return_ctype(f);o=[f'{return_type} {name}({params}) {{']
         old={}
         for c in f.post:self.walk_old(c,old)
         self.old_map={}
@@ -1950,7 +1958,8 @@ class CGenerator:
         for c in f.pre:o.append(f'    if(!({self.expr(c,env)})) merit_fail("precondition failed in {f.name}",71);')
         self.current_return=f.return_type
         if f.return_type!='void':
-            if f.return_mode!='value':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
+            if f.return_mode=='borrow':o.append(f'    const {self.ctype(f.return_type)} *_merit_result = NULL;')
+            elif f.return_mode=='borrow_mut':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
             else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')

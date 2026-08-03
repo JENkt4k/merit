@@ -13,6 +13,8 @@ fn edit(borrow_mut value: Value) -> borrow_mut Value { return value; }
 
 Borrowed results must originate from one consistent borrowed parameter, and mutable results require a `borrow_mut` origin. Callers may use returned borrows ephemerally for field access or pass them onward to a compatible borrow parameter. Mutable results support direct field assignment and owned-field replacement. The interpreter preserves object identity and native C lowers the result as a pointer. Returned borrows cannot be stored in owned bindings, passed by value, or escalated from shared to mutable access.
 
+Generated C signatures preserve mutability: shared borrow parameters and results are `const T *`, while mutable borrows are `T *`.
+
 ## User-defined destructors
 
 Structs may define one custom destructor:

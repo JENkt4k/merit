@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import Checker, CompileError, Interpreter, compile_file, hir, parse
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, compile_file, hir, parse
 from merit.project.build import build, build_shared, check, interpret
 from merit.project.loader import load_project
 
@@ -154,3 +154,10 @@ def test_borrowed_views_are_stable_shared_library_pointers(tmp_path):
     assert library.merit_view_record(ctypes.byref(record)).contents.number == 31
     library.merit_edit_record(ctypes.byref(record)).contents.number=37
     assert record.number == 37
+
+
+def test_generated_c_signatures_preserve_borrow_constness():
+    shared=parse(source('borrow value: Value','return value;'))
+    mutable=parse(source('borrow_mut value: Value','return value;').replace('-> borrow Value','-> borrow_mut Value'))
+    assert 'const merit_Value * merit_expose(const merit_Value *value);' in CGenerator(shared).header()
+    assert 'merit_Value * merit_expose(merit_Value *value);' in CGenerator(mutable).header()
