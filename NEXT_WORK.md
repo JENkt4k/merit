@@ -297,6 +297,7 @@ Continue alpha-readiness hardening:
 - Compatibility requires matching provider identity; system and portable allocations are not interchangeable.
 - Future zero-copy collection transfers must validate compatibility before moving storage.
 - `vec_transfer<T>` now performs that checked zero-copy handoff into an empty destination.
+- `vec_allocator<T>` exposes retained provider identity for compatibility preflight.
 - The source remains valid and empty; owned element drop obligations transfer without intermediate destruction.
 
 ## Borrowed return diagnostic checkpoint now available

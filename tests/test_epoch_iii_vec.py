@@ -530,3 +530,10 @@ fn main()->i32 {{ with capability allocate {{ let system:Allocator=system_alloca
     native=subprocess.run([str(executable)],text=True,capture_output=True)
     assert native.returncode == 90
     assert expected in native.stderr
+
+
+def test_vec_allocator_allows_transfer_compatibility_preflight(tmp_path):
+    source='''module vector_allocator_preflight
+capability allocate;
+fn main()->i32 { with capability allocate { let system:Allocator=system_allocator(); let portable:Allocator=portable_allocator(); var left:Vec<i64>=vec_new<i64>(system,0); var same:Vec<i64>=vec_new<i64>(system,0); var other:Vec<i64>=vec_new<i64>(portable,0); print(allocator_compatible(vec_allocator<i64>(left),vec_allocator<i64>(same))); print(allocator_compatible(vec_allocator<i64>(left),vec_allocator<i64>(other))); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'vector_allocator_preflight') == '1\n0\n'

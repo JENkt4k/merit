@@ -587,7 +587,7 @@ def parse(s:str,source_name=None)->Program:
         if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
         raise
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
-VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer')
+VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer','allocator')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
 @dataclasses.dataclass(frozen=True)
@@ -699,6 +699,7 @@ VEC_INTRINSICS={
     'pop':VecIntrinsic(1,'elem',receiver_mode='borrow_mut'),
     'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
     'transfer':VecIntrinsic(2,'void',receiver_mode='borrow_mut'),
+    'allocator':VecIntrinsic(1,'Allocator',receiver_mode='borrow'),
 }
 
 BUILTIN_SIGS={
@@ -1589,6 +1590,7 @@ class Interpreter:
                 if op=='push':
                     self.eval(args[0],env).value.append(self.clone(self.eval(args[1],env,elem))); return TypedValue('void',None)
                 if op=='len': return TypedValue('i64',len(self.eval(args[0],env).value))
+                if op=='allocator': return TypedValue('Allocator',self.eval(args[0],env).allocator)
                 if op=='get':
                     data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                     if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
@@ -1830,6 +1832,7 @@ class CGenerator:
             f'static {vct} merit_vec_new__{suffix}(merit_Allocator a,int64_t cap){{{vct} v={{0}};v.allocator=a;if(cap<0)merit_fail("negative capacity",81);merit_vec_reserve__{suffix}(&v,(size_t)cap);return v;}}',
             f'static void merit_vec_push__{suffix}({vct} *v,{ct} x){{merit_vec_reserve__{suffix}(v,v->len+1);v->data[v->len++]=x;}}',
             f'static int64_t merit_vec_len__{suffix}(const {vct} *v){{return (int64_t)v->len;}}',
+            f'static merit_Allocator merit_vec_allocator__{suffix}(const {vct} *v){{return v->allocator;}}',
             f'static {ct} merit_vec_get__{suffix}(const {vct} *v,int64_t i){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}}',
             f'static void merit_vec_set__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);v->data[i]=x;}}',
             f'static void merit_vec_replace__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);{self.drop_field_stmt("v->data[i]",elem)}v->data[i]=x;}}',
@@ -2089,6 +2092,7 @@ class CGenerator:
                 if op=='new': return f'merit_vec_new__{elem}({self.expr(a[0],env)}, {self.expr(a[1],env)})'
                 if op=='push': return f'(merit_vec_push__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env,elem)}), 0)'
                 if op=='len': return f'merit_vec_len__{elem}({self.address_expr(a[0],env)})'
+                if op=='allocator': return f'merit_vec_allocator__{elem}({self.address_expr(a[0],env)})'
                 if op=='get': return f'merit_vec_get__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
                 if op=='set': return f'(merit_vec_set__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
                 if op=='replace': return f'(merit_vec_replace__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
