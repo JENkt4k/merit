@@ -723,7 +723,7 @@ BUILTIN_SIGS={
     'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
     'i64vec_allocator':BuiltinSig((('borrow','I64Vec'),), 'Allocator'),
     'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'FileReadResult', 'file_read', 'filesystem_read', ('allocate',)),
-    'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'FileWriteResult', 'file_write', 'filesystem_write'),
+    'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'FileWriteResult', 'file_write', 'filesystem_write', ('allocate',)),
 }
 
 CAPABILITY_POLICIES={

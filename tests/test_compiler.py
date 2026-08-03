@@ -32,6 +32,7 @@ fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); 
     assert ('builtin', 'buffer_new', 'allocate', 'allocation') in requirements
     assert ('builtin', 'file_read', 'file_read', 'filesystem_read') in requirements
     assert ('builtin', 'file_write', 'file_write', 'filesystem_write') in requirements
+    assert ('builtin', 'file_write', 'allocate', 'allocation') in requirements
     assert ('vector_intrinsic', 'vec_new<T>', 'allocate', 'allocation') in requirements
     policies = {(entry['capability'], entry['hazard_class'], entry['review'], entry['scope']) for entry in audit['capability_policies']}
     assert ('allocate', 'allocation', 'memory-resource', 'lexical') in policies
@@ -73,6 +74,7 @@ fn main()->i32 {{
     audit=audit_payload(p,ch)
     operations = {(entry['operation'], entry['capability'], entry['hazard'], entry['hazard_class']) for entry in audit['hazardous_operations']}
     assert ('file_write', 'file_write', 'filesystem_write', 'filesystem_write') in operations
+    assert ('file_write', 'allocate', 'allocation', 'allocation') in operations
     exe=tmp_path/'file_write'
     source=tmp_path/'file_write.mrt'
     source.write_text(src)
@@ -80,6 +82,15 @@ fn main()->i32 {{
     native=subprocess.run([str(exe)],check=True,text=True,capture_output=True)
     assert native.stdout == '3\n'
     assert (tmp_path / 'written.bin').read_bytes() == b'abc'
+
+
+def test_file_write_requires_allocation_capability_at_call_site():
+    src='''module file_write_allocate
+capability allocate;
+capability file_write;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); let data:Buffer=buffer_from_string(allocator,"abc"); } with capability file_write { let result:FileWriteResult=file_write("out.bin",data); } return 0; }'''
+    with pytest.raises(CompileError,match=r"call to file_write requires capabilities \['allocate'\]"):
+        Checker(parse(src)).check()
 
 
 def test_typed_filesystem_failures_match_interpreter_and_native(tmp_path, capsys):

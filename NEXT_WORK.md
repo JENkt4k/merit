@@ -307,6 +307,7 @@ Continue alpha-readiness hardening:
 - Legacy `I64Vec` also retains and exposes its provider, closing the growable-container allocator gap.
 - Every potentially growing push operation now requires and audits the lexical `allocate` capability.
 - `file_read` requires both `file_read` and `allocate`, with distinct audit entries.
+- `file_write` also separates filesystem-write and temporary-allocation authority.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.
