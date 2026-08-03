@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 201 tests passing after editable installation
+- 204 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -108,7 +108,7 @@ This design is useful because all instantiated generic code reuses one semantic 
 - generic arguments remain explicit
 - no associated types, blanket impls, specialization, trait objects, or dynamic dispatch
 - trait methods cannot yet declare effects or required capabilities
-- user-defined destructors are absent
+- user-defined destructors currently support effect-free `print` and expression bodies; broader ownership-changing destructor contracts remain deferred
 - returned/stored borrows are absent
 - only the system allocator is implemented
 - modules merge into one generated C translation unit

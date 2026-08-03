@@ -60,3 +60,30 @@ destructor Marker { let value:i32=1; print(value); }
 fn main()->i32 { return 0; }'''
     with pytest.raises(CompileError,match='M5502: destructor bodies currently allow only print and expression statements'):
         Checker(parse(source)).check()
+
+
+def test_custom_destructor_runs_before_owned_field_cleanup(tmp_path):
+    source='''module destructor_order
+capability allocate;
+struct Resource { data:Buffer; }
+destructor Resource { print(buffer_len(self.data)); }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); let resource:Resource=Resource{data:buffer_from_string(allocator,"abc")}; drop(resource); } return 0; }'''
+    assert outputs(source,tmp_path) == ('3\n','3\n')
+
+
+def test_returned_owned_value_transfers_custom_destructor_obligation(tmp_path):
+    source='''module destructor_move
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn make()->Marker { let marker:Marker=Marker{number:11}; return marker; }
+fn main()->i32 { let marker:Marker=make(); drop(marker); return 0; }'''
+    assert outputs(source,tmp_path) == ('11\n','11\n')
+
+
+def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
+    source='''module nested_destructor
+stable("marker-v1") struct Marker { number:i32; }
+struct Wrapper { marker:Marker; }
+destructor Marker { print(self.number); }
+fn main()->i32 { let wrapper:Wrapper=Wrapper{marker:Marker{number:13}}; return 0; }'''
+    assert outputs(source,tmp_path) == ('13\n','13\n')
