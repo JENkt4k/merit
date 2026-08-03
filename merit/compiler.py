@@ -223,12 +223,14 @@ class ASTBuilder(Transformer):
     def mark(self,node,meta):
         line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
         primary=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
-        self.spans[id(node)]=primary;related_span=None
+        related_span=None
         if meta.line in self.related_line_map:
             related=self.related_line_map[meta.line]
             related_span=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
-            self.related_spans[id(node)]=related_span
         if isinstance(node,SemanticTuple):node.provenance=NodeProvenance(primary,related_span)
+        else:
+            self.spans[id(node)]=primary
+            if related_span is not None:self.related_spans[id(node)]=related_span
         return node
     def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])

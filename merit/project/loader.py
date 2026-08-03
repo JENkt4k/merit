@@ -293,15 +293,15 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         start_line = combined_source.count("\n") + 1
         combined_source += declaration + "\n"
         source_ranges.append((start_line, start_line + declaration.count("\n"), unit.path))
+    def remap(span):
+        if span is None: return None
+        owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
+        if not owner: return span
+        start, _, path = owner
+        return SourceSpan(span.line-start+1,span.column,span.end_line-start+1,span.end_column,str(path))
     try:
         merged = parse(combined_source, str(manifest.root / "<merged-project>"))
     except CompileError as exc:
-        def remap(span):
-            if span is None: return None
-            owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
-            if not owner: return span
-            start, _, path = owner
-            return SourceSpan(span.line-start+1,span.column,span.end_line-start+1,span.end_column,str(path))
         exc.span=remap(exc.span)
         exc.notes=tuple(type(note)(note.message,remap(note.span)) for note in exc.notes)
         raise
@@ -337,7 +337,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         for statement in _walk_statements(function["body"]):
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
     for node_id, node in semantic_nodes.items():
-        node.provenance = NodeProvenance(merged.spans.get(node_id), merged.related_spans.get(node_id))
+        node.provenance = NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related))
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:

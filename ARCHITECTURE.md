@@ -56,6 +56,8 @@ Atoms, struct initialization, direct/generic calls, and effect statements also h
 
 Every concrete semantic node now embeds its `NodeProvenance`. Project assembly walks reachable semantic nodes after source-unit remapping and refreshes their embedded primary/related locations. External maps remain only as a compatibility and declaration-provenance layer pending the next cleanup.
 
+Semantic nodes are no longer inserted into the external ID maps. Those maps now serve only declaration/function records, while project assembly remaps semantic-node provenance in place.
+
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
 Diagnostic rendering consumes both start and end columns for primary and related spans, producing full-width source underlines rather than point-only carets.

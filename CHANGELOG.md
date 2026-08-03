@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Semantic provenance map-retirement checkpoint
+
+- Removed duplicate semantic-node entries from primary and related ID maps.
+- Remapped embedded semantic provenance directly during project assembly.
+- Retained external maps only for declaration/function records.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Embedded semantic-node provenance checkpoint
 
 - Embedded typed primary/related provenance on every concrete semantic node.
