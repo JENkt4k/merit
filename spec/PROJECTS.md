@@ -10,7 +10,7 @@ Public ABI signatures are closed over public types: exported functions, structs,
 
 ## Object caching
 
-Executable and shared builds compile generated C to a content-addressed object before linking. The cache key includes generated source, compiler selection, project C flags, and PIC mode. Identical rebuilds reuse the existing object. This checkpoint caches the current merged project translation unit; per-module object generation remains future work.
+Executable and shared builds compile generated C to a content-addressed object before linking. The cache key includes generated source, resolved compiler binary identity, project C flags, and PIC mode. Identical rebuilds reuse the existing object, while flag or compiler changes produce a distinct entry. This checkpoint caches the current merged project translation unit; per-module object generation remains future work.
 
 ## Manifest
 

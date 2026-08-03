@@ -1,5 +1,6 @@
 from pathlib import Path
 import ctypes
+import dataclasses
 import json
 import shutil
 import subprocess
@@ -46,6 +47,9 @@ def test_project_build_reuses_content_addressed_object(tmp_path):
     build(project, tmp_path / "second")
     assert list((tmp_path / ".merit-cache").glob("*.o")) == [cached_object]
     assert cached_object.stat().st_mtime_ns == original_mtime
+    changed_manifest = dataclasses.replace(project.manifest, c_flags=("-O0",))
+    build(dataclasses.replace(project, manifest=changed_manifest), tmp_path / "changed_flags")
+    assert len(list((tmp_path / ".merit-cache").glob("*.o"))) == 2
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")

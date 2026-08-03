@@ -5,6 +5,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 from merit.compiler import CGenerator, Checker, Interpreter
@@ -17,9 +18,15 @@ def check(project: LoadedProject) -> Checker:
 
 def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path, pic: bool = False) -> Path:
     compiler = os.environ.get("CC", "cc")
+    compiler_path = Path(shutil.which(compiler) or compiler).resolve()
     digest = hashlib.sha256()
     digest.update(c_path.read_bytes())
-    digest.update(compiler.encode())
+    digest.update(str(compiler_path).encode())
+    try:
+        compiler_stat = compiler_path.stat()
+        digest.update(f"{compiler_stat.st_size}:{compiler_stat.st_mtime_ns}".encode())
+    except OSError:
+        pass
     digest.update(repr(project.manifest.c_flags).encode())
     digest.update(b"pic" if pic else b"exe")
     cache_dir = cache_root / ".merit-cache"
