@@ -1,5 +1,10 @@
 # Changelog
 
+## Epoch III — Typed parser intermediate checkpoint
+
+- Replaced field-initializer tuples with immutable `FieldInitializer` records.
+- Replaced effects, capability, and contract tag tuples with immutable `FunctionClause` records.
+
 ## Epoch III — Typed parser declaration checkpoint
 
 - Replaced top-level parser declaration-tag tuples with immutable `DeclarationEntry` records.

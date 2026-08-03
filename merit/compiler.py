@@ -113,6 +113,12 @@ class MatchArm:
 @dataclasses.dataclass(frozen=True)
 class DeclarationEntry:
     kind:str; value:Any
+@dataclasses.dataclass(frozen=True)
+class FieldInitializer:
+    name:str; value:SemanticNode
+@dataclasses.dataclass(frozen=True)
+class FunctionClause:
+    kind:str; value:Any
 class SemanticNode:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
@@ -287,10 +293,10 @@ class ASTBuilder(Transformer):
     def param_value(self,x): return Parameter(str(x[0]),x[1],'value')
     def params(self,x): return list(x)
     def name_list(self,x): return [str(v) for v in x]
-    def effects(self,x): return ('effects',x[0] if x else [])
-    def requires_caps(self,x): return ('requires_caps',x[0] if x else [])
-    def precontract(self,x): return ('pre',x[0])
-    def postcontract(self,x): return ('post',x[0])
+    def effects(self,x): return FunctionClause('effects',x[0] if x else [])
+    def requires_caps(self,x): return FunctionClause('requires_caps',x[0] if x else [])
+    def precontract(self,x): return FunctionClause('pre',x[0])
+    def postcontract(self,x): return FunctionClause('post',x[0])
     @v_args(meta=True)
     def string(self,meta,x): return self.mark(self.semantic('string',json.loads(str(x[0]))),meta)
     @v_args(meta=True)
@@ -298,10 +304,10 @@ class ASTBuilder(Transformer):
     @v_args(meta=True)
     def variable(self,meta,x): return self.mark(self.semantic('var',str(x[0])),meta)
     def args(self,x): return list(x)
-    def field_init(self,x): return (str(x[0]),x[1])
+    def field_init(self,x): return FieldInitializer(str(x[0]),x[1])
     def field_inits(self,x): return list(x)
     @v_args(meta=True)
-    def struct_init(self,meta,x): return self.mark(self.semantic('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {}),meta)
+    def struct_init(self,meta,x): return self.mark(self.semantic('struct_init',str(x[0]),{field.name:field.value for field in x[1]} if len(x)>1 else {}),meta)
     @v_args(meta=True)
     def call(self,meta,x): return self.mark(self.semantic('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else []),meta)
     @v_args(meta=True)
@@ -361,11 +367,11 @@ class ASTBuilder(Transformer):
         elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
         ret=x[i];i+=1; effects=[]; caps=[]; pre=[]; post=[]
         while i<len(x)-1:
-            tag,val=x[i]
-            if tag=='effects':effects=val
-            elif tag=='requires_caps':caps=val
-            elif tag=='pre':pre.append(val)
-            elif tag=='post':post.append(val)
+            clause=x[i]
+            if clause.kind=='effects':effects=clause.value
+            elif clause.kind=='requires_caps':caps=clause.value
+            elif clause.kind=='pre':pre.append(clause.value)
+            elif clause.kind=='post':post.append(clause.value)
             i+=1
         return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
     def start(self,x):

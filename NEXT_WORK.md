@@ -267,10 +267,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Impl-method extraction and program symbol assembly use named declaration fields.
 - Duplicate symbol diagnostics remain attached to typed declaration provenance.
 
+## Typed parser intermediate checkpoint now available
+- Field initializers use immutable `FieldInitializer` records.
+- Effects, required capabilities, and pre/postconditions use immutable `FunctionClause` records.
+- Program semantic storage remains unchanged after typed parser assembly.
+
 ## Recommended next epic
-Continue typed semantic-node decomposition:
-- Replace field-initializer tuples with typed records.
-- Replace compact function-clause tuples for effects, capabilities, and contracts.
+Begin the next alpha-readiness feature slice:
+- Add typed filesystem/OS error results while preserving `file_read` and `file_write` capability gates.
+- Specify interpreter/native parity for missing files, permission failures, and write failures.
 
 ## Deliberately deferred
 - specialization
@@ -282,8 +287,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace field-initializer tuples with typed records.
-2. Replace compact function-clause tuples with typed records.
+1. Specify typed filesystem result types and failure mapping.
+2. Implement interpreter/native parity and focused diagnostics.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

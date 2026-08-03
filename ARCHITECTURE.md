@@ -68,6 +68,7 @@ HIR function bodies and MIR `semantic_blocks` serialize semantic nodes explicitl
 Compiler semantic nodes use immutable typed storage with named semantic views and no indexed sequence compatibility; source provenance is attached only through controlled parser/project-loader paths.
 Function and trait-method parameters share an immutable `Parameter` record consumed by checking, ownership, interpretation, C lowering, MIR, and project visibility.
 Parser top-level output uses immutable `DeclarationEntry` records before assembling the typed `Program` symbol tables.
+Parser field initializers and function effects/capability/contract clauses also use immutable typed intermediate records rather than positional tags.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
