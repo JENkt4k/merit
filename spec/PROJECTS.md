@@ -4,7 +4,7 @@
 
 `merit-project build-shared <Merit.toml> -o <output>` checks and lowers the same merged project used by executable builds, emits adjacent `.c` and `.h` files, and compiles a position-independent `.so`. Non-`main` Merit functions use their generated `merit_<name>` C symbols and header declarations.
 
-The current acceptance gate loads the resulting library from a C-compatible foreign caller and invokes a primitive `i32 -> i32` function. Export filtering, platform-specific library suffixes, and richer ABI surface policy remain future hardening work.
+The current acceptance gate loads the resulting library from a C-compatible foreign caller and invokes a primitive `i32 -> i32` function. Consumer headers include public project functions and omit private helpers; platform-specific library suffixes and richer ABI surface policy remain future hardening work.
 
 ## Manifest
 

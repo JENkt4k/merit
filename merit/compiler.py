@@ -244,7 +244,7 @@ class SemanticNodeView:
     def match_arms(self):self.require('match');return self.operand(1)
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); exports:set[str]=dataclasses.field(default_factory=set)
     def provenance(self,node):
         embedded=getattr(node,'provenance',None)
         return embedded if embedded is not None else NodeProvenance()
@@ -1622,7 +1622,7 @@ class CGenerator:
     def vec_can_define_before_composites(self,vt):
         elem=vec_elem_type(vt)
         return not is_vec_type(elem) and elem not in self.p.structs and elem not in self.p.enums
-    def header(self):
+    def header(self,include_private=False):
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { uint8_t *data; size_t len; size_t cap; } merit_Buffer;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; } merit_I64Vec;', '']
         early_vecs=[vt for vt in self.vec_types() if self.vec_can_define_before_composites(vt)]
         for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
@@ -1667,12 +1667,13 @@ class CGenerator:
                 o.extend(self.vec_typedef_lines(vt))
         for f in self.p.functions:
             if f.name=='main':continue
+            if self.p.exports and not include_private and f.name not in self.p.exports:continue
             params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void'
             o.append(f'{self.ctype(f.return_type)} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
         o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
-        o.append(self.header().replace('#pragma once','').replace('#include <stdint.h>',''))
+        o.append(self.header(include_private=True).replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
               r'''static merit_Allocator merit_portable_allocator(void){return (merit_Allocator){1};}''',

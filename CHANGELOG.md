@@ -5,6 +5,7 @@
 - Added project `build_shared` support and the `build-shared` CLI command.
 - Emitted PIC shared objects alongside generated C headers.
 - Added a foreign-caller smoke test for a generated primitive ABI function.
+- Preserved merged-project `pub` exports and filtered private functions from consumer headers.
 - Increased the regression suite from 184 to 185 tests.
 
 ## Epoch III — MIR constant branch checkpoint

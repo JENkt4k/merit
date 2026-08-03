@@ -315,6 +315,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
     seen_functions = {function.name: manifest.root for function in merged.functions}
+    merged.exports = {symbol for unit in units for symbol in unit.exports}
     semantic_nodes = {}
     for function in merged.functions:
         for expression in (*function.pre, *function.post):
@@ -339,7 +340,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.exports)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:

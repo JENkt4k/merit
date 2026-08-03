@@ -45,12 +45,15 @@ def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     (project_root / "src" / "main.mrt").write_text(
         "module shared_api\n"
         "pub fn increment(value:i32)->i32 { return checked_add(value,1); }\n"
+        "fn private_helper(value:i32)->i32 { return value; }\n"
         "fn main()->i32 { return 0; }\n"
     )
     project = load_project(project_root / "Merit.toml")
     _, header, library = build_shared(project, project_root / "build" / "libshared_api")
     assert library.suffix == ".so"
     assert "int32_t merit_increment(int32_t value);" in header.read_text()
+    assert "merit_private_helper" not in header.read_text()
+    assert project.program.exports == {"increment"}
     shared = ctypes.CDLL(str(library))
     shared.merit_increment.argtypes = [ctypes.c_int32]
     shared.merit_increment.restype = ctypes.c_int32

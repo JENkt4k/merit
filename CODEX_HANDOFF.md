@@ -77,6 +77,7 @@ python -m pytest -q
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
 - PIC C shared-library builds with generated headers and foreign-caller acceptance
+- Public-only project consumer headers with private internal C prototypes retained
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
