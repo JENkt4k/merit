@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III semantic provenance map-retirement checkpoint** of Merit.
+This repository contains the verified **Epoch III fully embedded provenance checkpoint** of Merit.
 
 Current baseline:
 - 171 tests passing after editable installation
@@ -59,6 +59,7 @@ python -m pytest -q
 - full-width primary and related source underlines from semantic span ranges
 - embedded primary/related provenance on every semantic node with project remapping parity
 - direct project remapping of embedded semantic provenance without duplicate ID-map entries
+- embedded declaration/function provenance with external node-ID maps removed
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

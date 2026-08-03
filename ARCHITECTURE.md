@@ -58,6 +58,8 @@ Every concrete semantic node now embeds its `NodeProvenance`. Project assembly w
 
 Semantic nodes are no longer inserted into the external ID maps. Those maps now serve only declaration/function records, while project assembly remaps semantic-node provenance in place.
 
+Declaration dataclasses and `FunctionDecl` mappings also embed provenance. Project assembly remaps both semantic and declaration locations in place, and `Program` no longer exposes node-ID span maps.
+
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
 Diagnostic rendering consumes both start and end columns for primary and related spans, producing full-width source underlines rather than point-only carets.

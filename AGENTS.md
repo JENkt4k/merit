@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Implement **embedded declaration provenance** as described in `NEXT_WORK.md`.
+Implement **typed function declaration records** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

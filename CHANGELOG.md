@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Fully embedded provenance checkpoint
+
+- Embedded provenance on declaration dataclasses and `FunctionDecl` records.
+- Migrated duplicate-symbol and project declaration remapping to embedded locations.
+- Removed `Program.spans` and `Program.related_spans` entirely.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Semantic provenance map-retirement checkpoint
 
 - Removed duplicate semantic-node entries from primary and related ID maps.

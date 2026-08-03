@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import CompileError, NodeProvenance, Program, SemanticTuple, SourceSpan, parse, _impl_function_name
+from merit.compiler import CompileError, FunctionDecl, NodeProvenance, Program, SemanticTuple, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -308,28 +308,6 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
     seen_functions = {function["name"]: manifest.root for function in merged.functions}
-    for node_id, span in list(merged.spans.items()):
-        owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
-        if owner:
-            start, _, path = owner
-            merged.spans[node_id] = SourceSpan(
-                span.line - start + 1,
-                span.column,
-                span.end_line - start + 1,
-                span.end_column,
-                str(path),
-            )
-    for node_id, span in list(merged.related_spans.items()):
-        owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
-        if owner:
-            start, _, path = owner
-            merged.related_spans[node_id] = SourceSpan(
-                span.line - start + 1,
-                span.column,
-                span.end_line - start + 1,
-                span.end_column,
-                str(path),
-            )
     semantic_nodes = {}
     for function in merged.functions:
         for expression in (*function["pre"], *function["post"]):
@@ -338,15 +316,23 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
     for node_id, node in semantic_nodes.items():
         node.provenance = NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related))
+    declarations = [*merged.decimals.values(), *merged.bounded.values(), *merged.structs.values(), *merged.enums.values(), *merged.traits.values(), *merged.impls, *merged.functions]
+    declarations.extend(field for struct in merged.structs.values() for field in struct.fields)
+    declarations.extend(variant for enum in merged.enums.values() for variant in enum.variants)
+    declarations.extend(method for trait in merged.traits.values() for method in trait.methods)
+    declarations.extend(method for impl in merged.impls for method in impl.methods)
+    for declaration in declarations:
+        provenance=getattr(declaration,'provenance',NodeProvenance())
+        object.__setattr__(declaration,'provenance',NodeProvenance(remap(provenance.primary),remap(provenance.related)))
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:
-            generated = dict(method)
+            generated = FunctionDecl(method);generated.provenance=getattr(method,'provenance',NodeProvenance())
             generated["name"] = _impl_function_name(impl.trait_name, impl.target_type, method["name"])
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.spans, merged.related_spans)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:

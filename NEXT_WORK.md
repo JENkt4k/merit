@@ -216,10 +216,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Project merging remaps embedded semantic provenance directly.
 - External maps now contain only declaration/function records awaiting embedded provenance.
 
+## Fully embedded provenance checkpoint now available
+- Declaration dataclasses and `FunctionDecl` records carry typed provenance directly.
+- Duplicate-symbol and declaration diagnostics use embedded locations.
+- Project assembly remaps semantic and declaration provenance in place.
+- `Program.spans` and `Program.related_spans` have been removed.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Embed provenance on declaration records and remove the remaining external maps.
-- Replace function dictionaries with typed declaration records while preserving backend compatibility.
+- Replace compatibility `FunctionDecl` mappings with typed function fields and mapping serialization.
+- Remove tuple compatibility from semantic nodes after MIR/public inspection serialization is explicit.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -232,8 +238,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Embed declaration provenance and retire the remaining external maps.
-2. Replace function dictionaries with typed declaration records.
+1. Replace function mappings with typed function records.
+2. Add explicit MIR/HIR serialization before removing semantic tuple compatibility.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

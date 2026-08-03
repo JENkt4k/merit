@@ -110,6 +110,7 @@ class SemanticTuple(tuple):
     def kind(self):return self[0]
     @property
     def operands(self):return self[1:]
+class FunctionDecl(dict):pass
 class AtomNode(SemanticTuple):pass
 class StringNode(AtomNode):pass
 class NumberNode(AtomNode):pass
@@ -204,11 +205,10 @@ class SemanticNodeView:
     def match_arms(self):self.require('match');return self.operand(1)
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list)
     def provenance(self,node):
         embedded=getattr(node,'provenance',None)
-        if embedded is not None and (embedded.primary is not None or embedded.related is not None):return embedded
-        return NodeProvenance(self.spans.get(id(node)),self.related_spans.get(id(node)))
+        return embedded if embedded is not None else NodeProvenance()
     def span(self,node):return self.provenance(node).primary
     def node(self,raw):
         if not isinstance(raw,tuple) or not raw:return None
@@ -219,7 +219,7 @@ def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> 
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
 
 class ASTBuilder(Transformer):
-    def __init__(self,source_name=None,line_map=None,related_line_map=None):super().__init__();self.spans={};self.related_spans={};self.source_name=source_name;self.line_map=line_map or {};self.related_line_map=related_line_map or {}
+    def __init__(self,source_name=None,line_map=None,related_line_map=None):super().__init__();self.source_name=source_name;self.line_map=line_map or {};self.related_line_map=related_line_map or {}
     def mark(self,node,meta):
         line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
         primary=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
@@ -227,10 +227,7 @@ class ASTBuilder(Transformer):
         if meta.line in self.related_line_map:
             related=self.related_line_map[meta.line]
             related_span=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
-        if isinstance(node,SemanticTuple):node.provenance=NodeProvenance(primary,related_span)
-        else:
-            self.spans[id(node)]=primary
-            if related_span is not None:self.related_spans[id(node)]=related_span
+        if isinstance(node,(SemanticTuple,FunctionDecl)) or dataclasses.is_dataclass(node):object.__setattr__(node,'provenance',NodeProvenance(primary,related_span))
         return node
     def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])
@@ -348,11 +345,11 @@ class ASTBuilder(Transformer):
             elif tag=='pre':pre.append(val)
             elif tag=='post':post.append(val)
             i+=1
-        return ('function',self.mark({'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]},meta))
+        return ('function',self.mark(FunctionDecl({'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]}),meta))
     def start(self,x):
         ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
         def add_symbol(kind,name,node):
-            if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',self.spans.get(id(node)))
+            if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',getattr(node,'provenance',NodeProvenance()).primary)
             symbols[name]=kind
         for k,v in x[1:]:
             if k in ('decimal','bounded','struct','enum','trait'):
@@ -362,10 +359,10 @@ class ASTBuilder(Transformer):
             {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
         for impl in ims:
             for method in impl.methods:
-                generated=dict(method); generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
+                generated=FunctionDecl(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
-        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims,dict(self.spans),dict(self.related_spans))
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0

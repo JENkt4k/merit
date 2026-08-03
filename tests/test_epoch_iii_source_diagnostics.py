@@ -97,13 +97,15 @@ def test_mir_exposes_consumption_source_span():
     }
 
 
-def test_project_merge_retains_source_identity_for_semantic_nodes():
+def test_project_merge_retains_embedded_source_identity_without_legacy_maps():
     project = load_project(Path("examples/projects/binary_packet/Merit.toml"))
-    spans = list(project.program.spans.values())
+    spans = [project.program.provenance(function).primary for function in project.program.functions]
     assert spans
     source_names = {span.source_name for span in spans}
     assert str((Path("examples/projects/binary_packet/src/main.mrt")).resolve()) in source_names
     assert str((Path("examples/projects/binary_packet/src/packet.mrt")).resolve()) in source_names
+    assert not hasattr(project.program, "spans")
+    assert not hasattr(project.program, "related_spans")
 
 
 def write_invalid_project(tmp_path):
