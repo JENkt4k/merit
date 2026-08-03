@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This export contains the verified **Epoch III Generic Type Engine checkpoint** of Merit.
+This repository contains the verified **Epoch III filesystem capability acceptance checkpoint** of Merit.
 
-Baseline at export:
-- 50 tests passing after editable installation
+Current baseline:
+- 118 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -12,7 +12,7 @@ Baseline at export:
 
 Verified command sequence:
 ```bash
-python -m pip install -e . --no-build-isolation
+python -m pip install -e ".[dev]" --no-build-isolation
 python -m pytest -q
 ```
 
@@ -31,6 +31,9 @@ python -m pytest -q
 - explicit generic arguments and monomorphization
 - compiler-defined `Copy`, `Eq`, `Ord`, and `Display` bounds
 - nominally scoped generic enum variants
+- user-declared traits, coherent implementations, and project-wide trait-bound dispatch
+- allocator-backed generic `Vec<T>` collections with owned-element drop glue
+- project-level filesystem read/write capability parity and audit coverage
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
@@ -49,11 +52,9 @@ source/project
 This design is useful because all instantiated generic code reuses one semantic source of truth. Preserve that property while gradually decomposing the compiler.
 
 ## Known constraints
-- generic arguments are explicit
-- generic definitions and uses are currently constrained by module handling
-- nested generic applications are incomplete
-- traits are compiler-defined bounds, not user declarations/implementations
-- `I64Vec` is fixed-element rather than `Vec<T>`
+- generic arguments remain explicit
+- no associated types, blanket impls, specialization, trait objects, or dynamic dispatch
+- trait methods cannot yet declare effects or required capabilities
 - user-defined destructors are absent
 - returned/stored borrows are absent
 - only the system allocator is implemented

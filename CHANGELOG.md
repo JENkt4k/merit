@@ -1,5 +1,14 @@
 # Changelog
 
+## Epoch III — Filesystem capability acceptance checkpoint
+
+- Added a project-level deterministic filesystem read/write acceptance application.
+- Added interpreter/native parity coverage confined to test temporary directories.
+- Added project audit assertions for allocation, filesystem-read, and filesystem-write policy classifications.
+- Added project-derived negative tests for reads and writes outside their required capability regions.
+- Updated the bootstrap environment to install declared development dependencies.
+- Added an LF policy for executable shell scripts.
+
 ## Epoch II — Application Language
 
 - Closed Application Foundation A and B into one application-language release.

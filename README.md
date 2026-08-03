@@ -20,7 +20,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-The current local gate runs the pytest suite plus native project verification for the text pipeline, binary packet parser, generic result, trait bounds, and generic collections acceptance projects.
+The current local gate runs the pytest suite plus native project verification for the text pipeline, binary packet parser, generic result, trait bounds, generic collections, and filesystem capability acceptance projects. Filesystem verification runs in a disposable temporary directory.
 
 ## Current checkpoint
 
@@ -59,7 +59,7 @@ merit-project layout PATH
 merit-project audit PATH
 ```
 
-The current systems checkpoint supports user-declared traits, coherent impls, project-wide generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, layout hash reporting for structs/generated vectors/enums, hazardous operation audit reporting with explicit capability policy metadata, aggregate drop glue for structs with owned fields, owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code, contract checking with deterministic interpreter/native precondition and postcondition failure behavior, capability-gated `file_read` / `file_write` filesystem hazards, and conservative memory-model checks that reject owned field extraction or owned assignment until explicit replacement/partial-move semantics exist. Remaining work is scoped in `NEXT_WORK.md`.
+The current systems checkpoint supports user-declared traits, coherent impls, project-wide generic trait-bound dispatch, allocator-backed `Vec<T>` support for scalars/generic structs/owned `Buffer` elements/owned structs, parsed generic-style vector intrinsic calls such as `vec_new<i64>`, compile-time `Vec<T>` and enum layout assertions, layout hash reporting for structs/generated vectors/enums, hazardous operation audit reporting with explicit capability policy metadata, aggregate drop glue for structs with owned fields, owned enum payloads for `Option<Vec<i64>>` / `Result<Vec<i64>, Error>` style code, contract checking with deterministic interpreter/native precondition and postcondition failure behavior, project-level interpreter/native acceptance coverage for capability-gated `file_read` / `file_write`, and conservative memory-model checks that reject owned field extraction or owned assignment until explicit replacement/partial-move semantics exist. Remaining work is scoped in `NEXT_WORK.md`.
 
 ---
 

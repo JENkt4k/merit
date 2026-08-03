@@ -5,6 +5,7 @@ import subprocess
 
 import pytest
 
+from merit.compiler import CompileError
 from merit.project.build import build, check, interpret
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
@@ -73,3 +74,46 @@ def test_project_audit_command_reports_hazards(capsys):
     operations = {(entry["operation"], entry["capability"], entry["hazard"]) for entry in audit["hazardous_operations"]}
     assert ("buffer_from_string", "allocate", "allocation") in operations
     assert ("vec_new__Buffer", "allocate", "allocation") in operations
+
+
+def test_filesystem_capability_project_verifies_in_temporary_directory(tmp_path, monkeypatch, capsys):
+    manifest = ROOT / "examples" / "projects" / "filesystem_capabilities" / "Merit.toml"
+    executable = tmp_path / "filesystem-capabilities"
+    monkeypatch.chdir(tmp_path)
+
+    assert project_cli_main(["verify", str(manifest), "-o", str(executable)]) == 0
+    assert capsys.readouterr().out == "verified 1 modules; output matches (13 bytes)\n"
+    assert (tmp_path / "merit-filesystem-capabilities.bin").read_bytes() == b"MRT"
+
+
+def test_filesystem_capability_project_audit_classifies_read_and_write(capsys):
+    manifest = ROOT / "examples" / "projects" / "filesystem_capabilities" / "Merit.toml"
+    assert project_cli_main(["audit", str(manifest)]) == 0
+    audit = json.loads(capsys.readouterr().out)
+
+    assert audit["declared_capabilities"] == ["allocate", "file_read", "file_write"]
+    operations = {
+        (entry["operation"], entry["capability"], entry["hazard_class"], entry["review"], entry["scope"])
+        for entry in audit["hazardous_operations"]
+    }
+    assert ("buffer_from_string", "allocate", "allocation", "memory-resource", "lexical") in operations
+    assert ("file_read", "file_read", "filesystem_read", "io-read", "lexical") in operations
+    assert ("file_write", "file_write", "filesystem_write", "io-write", "lexical") in operations
+
+
+@pytest.mark.parametrize(
+    ("capability", "block"),
+    [
+        ("file_read", "with capability file_read"),
+        ("file_write", "with capability file_write"),
+    ],
+)
+def test_filesystem_capability_project_rejects_unauthorized_io(tmp_path, capability, block):
+    example = ROOT / "examples" / "projects" / "filesystem_capabilities"
+    project_root = tmp_path / capability
+    shutil.copytree(example, project_root)
+    source = project_root / "src" / "main.mrt"
+    source.write_text(source.read_text().replace(block, "with capability allocate"))
+
+    with pytest.raises(CompileError, match=rf"requires capabilities \['{capability}'\]"):
+        check(load_project(project_root / "Merit.toml"))

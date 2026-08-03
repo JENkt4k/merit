@@ -1,22 +1,28 @@
 # Verified Baseline
 
-Export verification completed on 2026-07-30.
+Verification completed on 2026-08-03.
 
 Commands:
 ```bash
-python -m pip install -e . --no-build-isolation
+python -m pip install -e ".[dev]" --no-build-isolation
 python -m pytest -q
 merit-project verify examples/projects/text_pipeline
 merit-project verify examples/projects/binary_packet
 merit-project verify examples/projects/generic_result
+merit-project verify examples/projects/trait_bounds
+merit-project verify examples/projects/generic_collections
+# filesystem_capabilities is verified from a temporary working directory
 ```
 
 Results:
 ```text
-50 passed
+118 passed
 text_pipeline: verified 2 modules; output matches (26 bytes)
 binary_packet: verified 2 modules; output matches (16 bytes)
 generic_result: verified 1 modules; output matches (6 bytes)
+trait_bounds: verified 1 modules; output matches (3 bytes)
+generic_collections: verified 1 modules; output matches (30 bytes)
+filesystem_capabilities: verified 1 modules; output matches (13 bytes)
 ```
 
-Native compilation emitted unused-static-function warnings because the compact C backend currently emits the complete runtime helper set into each translation unit. These warnings do not affect correctness and are a useful future dead-runtime-elimination task.
+The full gate verifies interpreter/native equivalence for every acceptance project, including deterministic filesystem I/O confined to a temporary directory.

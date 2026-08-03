@@ -1,0 +1,28 @@
+module filesystem_capabilities
+
+capability allocate;
+capability file_read;
+capability file_write;
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        let outgoing: Buffer = buffer_from_string(allocator, "MRT");
+
+        with capability file_write {
+            print(file_write("merit-filesystem-capabilities.bin", outgoing));
+        }
+
+        with capability file_read {
+            let incoming: Buffer = file_read(allocator, "merit-filesystem-capabilities.bin");
+            print(buffer_len(incoming));
+            print(buffer_get(incoming, 0));
+            print(buffer_get(incoming, 1));
+            print(buffer_get(incoming, 2));
+            drop(incoming);
+        }
+
+        drop(outgoing);
+    }
+    return 0;
+}

@@ -8,6 +8,14 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Contracts and verification depth: active checkpoint complete in this slice.
 - Capability model hardening: active checkpoint complete in this slice.
 - Memory model polish: active checkpoint complete in this slice.
+- Project-level filesystem capability acceptance: complete in this slice.
+
+## Filesystem capability acceptance checkpoint now available
+- A dedicated project writes and reads deterministic `MRT` bytes through `file_write` and `file_read`.
+- Acceptance execution is confined to pytest or shell-created temporary directories.
+- Interpreter and native output agree for project-level filesystem operations.
+- Project audit output classifies allocation, filesystem reads, and filesystem writes with their review categories and lexical scope.
+- Project-derived negative tests reject read and write calls outside the corresponding capability region.
 
 ## Trait checkpoint now available
 - User-declared traits with method signatures.
@@ -76,12 +84,6 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Assignment into existing owned storage is rejected until explicit replace/drop semantics exist.
 
 ## Recommended next epic
-Add project-level filesystem capability acceptance coverage:
-- Create a small project that writes and reads deterministic bytes through `file_write` / `file_read`.
-- Verify interpreter/native parity and project audit classification.
-- Keep filesystem paths confined to test temp directories.
-
-## Secondary next epic
 Continue memory model polish:
 - Add explicit replacement operations for owned storage.
 - Add partial-move tracking only if the language commits to field-level ownership states.
@@ -97,10 +99,9 @@ Continue memory model polish:
 - concurrency
 
 ## Suggested implementation order
-1. Add project-level filesystem capability acceptance coverage.
-2. Design explicit replacement operations for owned storage.
-3. Continue migrating checker/codegen decisions onto typed semantic metadata.
-4. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
+1. Design explicit replacement operations for owned storage.
+2. Continue migrating checker/codegen decisions onto typed semantic metadata.
+3. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
