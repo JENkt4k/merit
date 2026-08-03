@@ -149,8 +149,8 @@ def test_mir_inserts_reverse_implicit_drops():
 stable("v1") struct S { x:i32; }
 fn main()->i32 { let a:S=S{x:1}; let b:S=S{x:2}; return 0; }'''
     p=checked(src)
-    statements=mir(p)['functions'][0]['blocks'][0]['statements']
-    assert statements[-2:]==[('drop_implicit','b'),('drop_implicit','a')]
+    statements=mir(p)['functions'][0]['semantic_blocks'][0]['statements']
+    assert statements[-2:]==[['drop_implicit','b'],['drop_implicit','a']]
 
 
 def test_c_backend_uses_pointers_for_borrows():

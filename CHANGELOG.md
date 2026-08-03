@@ -1,5 +1,10 @@
 # Changelog
 
+## Epoch III — Canonical explicit MIR checkpoint
+
+- Migrated repository MIR consumers to JSON-safe `semantic_blocks`.
+- Removed raw tuple-compatible MIR blocks from public output.
+
 ## Epoch III — Explicit semantic serialization checkpoint
 
 - Added JSON-safe kind/operand/provenance serialization for semantic nodes.

@@ -37,7 +37,7 @@ fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); 
 def test_cfg_mir_has_branch_and_loop_terminators():
     p=checked('''module x
 fn main()->i32 { var x:i32=0; while x<2 { if x==1 { print(x); } else { print(0); } x=checked_add(x,1); } return 0; }''')
-    kinds={b['terminator']['kind'] for b in mir(p)['functions'][0]['blocks']}
+    kinds={b['terminator']['kind'] for b in mir(p)['functions'][0]['semantic_blocks']}
     assert {'branch','goto','return'} <= kinds
 
 def test_text_pipeline_project_native_matches():

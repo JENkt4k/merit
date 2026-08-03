@@ -171,8 +171,8 @@ def test_direct_owned_move_cleanup_matches_interpreter_and_native(tmp_path):
     generated = CGenerator(program).generate()
     assert "merit_buffer_drop(&source);" not in generated
     assert generated.count("merit_buffer_drop(&destination);") == 1
-    statements = mir(program)["functions"][0]["blocks"][0]["statements"]
-    assert ("drop_implicit", "source") not in statements
+    statements = mir(program)["functions"][0]["semantic_blocks"][0]["statements"]
+    assert ["drop_implicit", "source"] not in statements
 
     interpreted = io.StringIO()
     with contextlib.redirect_stdout(interpreted):

@@ -1993,7 +1993,7 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks,'semantic_blocks':semantic_payload(blocks,p)}
+        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 

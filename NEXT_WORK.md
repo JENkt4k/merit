@@ -234,12 +234,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Explicit semantic serialization checkpoint now available
 - HIR function bodies serialize semantic nodes as JSON-safe kind/operand/provenance records.
-- MIR exposes `semantic_blocks` with the same explicit representation alongside compatibility blocks.
+- MIR exposes `semantic_blocks` with the same explicit representation and no raw compatibility blocks.
 - Primary and related source locations are included without exposing internal node objects.
+
+## Explicit MIR consumer checkpoint now available
+- All repository MIR consumers inspect `semantic_blocks`.
+- Raw tuple-compatible MIR `blocks` have been retired.
+- CLI MIR output is JSON-safe without relying on fallback string conversion for semantic nodes.
 
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Migrate MIR inspection tests/tooling to `semantic_blocks` and retire raw compatibility blocks.
 - Replace tuple-compatible semantic storage with immutable typed sequence records.
 - Remove tuple compatibility only after every operand access is typed.
 
@@ -253,9 +257,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Migrate MIR consumers to explicit semantic serialization.
-2. Replace tuple-compatible storage with immutable typed records.
-3. Continue replacing compact tuple-AST special cases with typed nodes.
+1. Replace tuple-compatible storage with immutable typed records.
+2. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

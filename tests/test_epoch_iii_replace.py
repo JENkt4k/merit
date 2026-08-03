@@ -54,10 +54,11 @@ def test_replace_lowers_rhs_once_before_drop_and_assignment():
 
 def test_replace_is_preserved_in_mir():
     function = mir(checked())["functions"][0]
-    statements = function["blocks"][0]["statements"]
-    capability_body = next(statement[2] for statement in statements if statement[0] == "with_cap")
-    assert any(statement[0] == "replace" for statement in capability_body)
-    assert ("drop_implicit", "replacement") not in statements
+    statements = function["semantic_blocks"][0]["statements"]
+    capability = next(statement for statement in statements if statement["kind"] == "with_cap")
+    capability_body = capability["operands"][1]
+    assert any(statement["kind"] == "replace" for statement in capability_body)
+    assert ["drop_implicit", "replacement"] not in statements
 
 
 def test_replace_consumes_source():
