@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — C shared-library acceptance checkpoint
+
+- Added project `build_shared` support and the `build-shared` CLI command.
+- Emitted PIC shared objects alongside generated C headers.
+- Added a foreign-caller smoke test for a generated primitive ABI function.
+- Increased the regression suite from 184 to 185 tests.
+
 ## Epoch III — MIR constant branch checkpoint
 
 - Folded exact literal/arithmetic/comparison branch conditions to direct MIR gotos.

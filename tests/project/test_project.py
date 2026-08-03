@@ -1,4 +1,5 @@
 from pathlib import Path
+import ctypes
 import json
 import shutil
 import subprocess
@@ -6,7 +7,7 @@ import subprocess
 import pytest
 
 from merit.compiler import CompileError
-from merit.project.build import build, check, interpret
+from merit.project.build import build, build_shared, check, interpret
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 
@@ -32,6 +33,28 @@ def test_multimodule_native_matches_interpreter(tmp_path):
     _, _, executable = build(project, tmp_path / "ledger")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpret(project)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
+def test_build_shared_exports_c_callable_merit_functions(tmp_path):
+    project_root = tmp_path / "shared_api"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "shared_api"\nentry = "src/main.mrt"\nsources = ["src/*.mrt"]\n'
+    )
+    (project_root / "src" / "main.mrt").write_text(
+        "module shared_api\n"
+        "pub fn increment(value:i32)->i32 { return checked_add(value,1); }\n"
+        "fn main()->i32 { return 0; }\n"
+    )
+    project = load_project(project_root / "Merit.toml")
+    _, header, library = build_shared(project, project_root / "build" / "libshared_api")
+    assert library.suffix == ".so"
+    assert "int32_t merit_increment(int32_t value);" in header.read_text()
+    shared = ctypes.CDLL(str(library))
+    shared.merit_increment.argtypes = [ctypes.c_int32]
+    shared.merit_increment.restype = ctypes.c_int32
+    assert shared.merit_increment(41) == 42
 
 
 def test_missing_import_is_diagnostic(tmp_path):

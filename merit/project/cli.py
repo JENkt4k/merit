@@ -9,7 +9,7 @@ import sys
 from merit.compiler import CompileError, LayoutEngine, audit_payload
 from merit.diagnostics import render_exception
 
-from .build import build, check, interpret
+from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
 
 
@@ -20,7 +20,7 @@ def _manifest(value: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="merit-project")
-    parser.add_argument("command", choices=("check", "build", "run", "verify", "graph", "layout", "audit"))
+    parser.add_argument("command", choices=("check", "build", "build-shared", "run", "verify", "graph", "layout", "audit"))
     parser.add_argument("path", nargs="?", default="Merit.toml")
     parser.add_argument("-o", "--output")
     args = parser.parse_args(argv)
@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "build":
             _, _, executable = build(project, output)
             print(executable)
+            return 0
+        if args.command == "build-shared":
+            _, _, library = build_shared(project, output)
+            print(library)
             return 0
         if args.command == "run":
             _, _, executable = build(project, output)

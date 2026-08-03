@@ -310,6 +310,11 @@ Continue alpha-readiness hardening:
 - The original folded condition remains available in explicit semantic MIR.
 - Dead branch blocks are removed by the shared reachability pass.
 
+## C shared-library acceptance checkpoint now available
+- Project builds emit PIC `.so`, generated C, and a matching header.
+- A foreign caller loads the library and invokes a generated primitive ABI function.
+- Export filtering and cross-platform suffix policy remain deliberately deferred.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

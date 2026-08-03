@@ -37,6 +37,33 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     return c_path, h_path, output
 
 
+def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
+    check(project)
+    library = output.resolve()
+    if library.suffix != ".so":
+        library = library.with_suffix(".so")
+    library.parent.mkdir(parents=True, exist_ok=True)
+    c_path = library.with_suffix(".c")
+    h_path = library.with_suffix(".h")
+    generator = CGenerator(project.program)
+    c_path.write_text(generator.generate())
+    h_path.write_text(generator.header())
+    command = [
+        os.environ.get("CC", "cc"),
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-fPIC",
+        "-shared",
+        *project.manifest.c_flags,
+        str(c_path),
+        "-o",
+        str(library),
+    ]
+    subprocess.run(command, check=True)
+    return c_path, h_path, library
+
+
 def interpret(project: LoadedProject) -> str:
     check(project)
     output = io.StringIO()
