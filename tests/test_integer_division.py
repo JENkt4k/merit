@@ -106,3 +106,20 @@ fn main()->i32 { let value:Money=1.25; let greater:i32=value>1.20; print(greater
     with contextlib.redirect_stdout(interpreted):Interpreter(program).run()
     native=subprocess.run([str(compile_program(source,tmp_path,'decimal_comparison'))],check=True,text=True,capture_output=True).stdout
     assert interpreted.getvalue() == native == '1\n'
+
+
+@pytest.mark.parametrize(
+    ('body','name'),
+    [
+        ('fn main()->i32 { let value:i8=127+1; print(value); return 0; }','typed_binding_expression'),
+        ('fn main()->i32 { var value:i8=0; value=127+1; print(value); return 0; }','typed_assignment_expression'),
+        ('fn produce()->i8 { return 127+1; } fn main()->i32 { print(produce()); return 0; }','typed_return_expression'),
+    ],
+)
+def test_compound_literal_expression_keeps_destination_type(tmp_path,body,name):
+    source=f'module {name}\n{body}'
+    program=parse(source);Checker(program).check()
+    with pytest.raises(RuntimeError,match='integer overflow in i8'):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,name))],text=True,capture_output=True)
+    assert native.returncode == 70
+    assert 'i8 addition overflow' in native.stderr

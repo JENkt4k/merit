@@ -169,3 +169,11 @@ stable("v1") struct Value { number:i32; }
 fn expose(borrow value:Value)->borrow Value ensures result.number == value.number; { return value; }
 fn main()->i32 { let value:Value=Value{number:67}; print(expose(value).number); return 0; }'''
     assert parity(source_text,tmp_path) == ('67\n','67\n')
+
+
+def test_borrowed_return_assignment_evaluates_target_call_once(tmp_path):
+    source_text='''module borrowed_target_once
+stable("v1") struct Value { number:i32; }
+fn expose_mut(borrow_mut value:Value)->borrow_mut Value { print(1); return value; }
+fn main()->i32 { var value:Value=Value{number:0}; expose_mut(value).number=71; print(value.number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('1\n71\n','1\n71\n')

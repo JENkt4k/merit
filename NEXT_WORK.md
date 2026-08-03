@@ -284,6 +284,7 @@ Continue alpha-readiness hardening:
 - Preserve the completed type-specific native arithmetic policy when adding numeric types or operators.
 - Keep operator-domain validation ahead of MIR/interpreter/native lowering.
 - Explicit checked arithmetic shares the same numeric-domain validation.
+- Interpreter destination typing now matches native narrowing without re-evaluating assignment targets.
 
 ## Deliberately deferred
 - specialization

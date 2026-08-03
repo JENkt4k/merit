@@ -1473,11 +1473,12 @@ class TrySignal:
     value:TypedValue
 
 class Interpreter:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[]
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[];self.call_return_types=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
         f=self.fn[n];env={param.name:v for param,v in zip(f.params,args)}
         self.call_modes.append({param.name:param.mode for param in f.params})
+        self.call_return_types.append(f.return_type)
         try:
             for c in f.pre:
                 if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
@@ -1492,6 +1493,7 @@ class Interpreter:
                     self.drop_value(env.pop(name))
             return r
         finally:
+            self.call_return_types.pop()
             self.call_modes.pop()
     def block(self,b,env):
         for st in b:
@@ -1501,11 +1503,11 @@ class Interpreter:
                 value=self.eval(node.initializer,env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
                 env[node.binding_name]=value.value['payload']
-            elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env),env)
+            elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env)),env)
             elif kind=='replace':
-                replacement=self.eval(node.assigned_value,env);self.drop_value(self.eval(node.assignment_target,env));self.assign(node.assignment_target,replacement,env)
+                replacement=self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env));current=self.eval(node.assignment_target,env);self.drop_value(current);self.assign(node.assignment_target,replacement,env)
             elif kind=='print':print(self.format(self.eval(node.expression,env)))
-            elif kind=='return':return ReturnSignal(self.eval(node.expression,env))
+            elif kind=='return':return ReturnSignal(self.eval(node.expression,env,self.call_return_types[-1]))
             elif kind=='expr':self.eval(node.expression,env)
             elif kind=='drop': self.drop_value(env.pop(node.binding_name,None))
             elif kind=='match':
@@ -1529,6 +1531,23 @@ class Interpreter:
                     guard+=1
                     if guard>1000000:raise RuntimeError('loop iteration limit exceeded')
         return None
+    def value_type(self,e,env):
+        node=self.p.node(e)
+        if node.kind=='var':return env[node.atom_value].type_name
+        if node.kind=='field':
+            base=self.value_type(node.field_base,env)
+            return next(field.type_name for field in self.p.structs[base].fields if field.name==node.field_name)
+        if node.kind=='struct_init':return node.constructed_type
+        if node.kind in ('call','generic_call'):
+            name,_=resolved_call(node)
+            if name in BUILTIN_SIGS:return BUILTIN_SIGS[name].return_type
+            vector=vec_builtin(name)
+            if vector:return vec_return_type(*vector)
+            return self.fn[name].return_type
+        if node.kind=='number':return 'i64'
+        if node.kind=='string':return 'String'
+        if node.kind=='binop':return 'i32' if node.operator in ('==','!=','>=','<=','>','<') else self.value_type(node.left,env)
+        raise RuntimeError(f'cannot determine runtime type of {node.kind}')
     def assign(self,e,v,env):
         node=self.p.node(e)
         if node.kind=='var':
@@ -1667,7 +1686,8 @@ class Interpreter:
             vals=[self.eval(x,env,param.type_name) for x,param in zip(args,callee.params)]
             return self.call(n,vals)
         if kind=='binop':
-            a=self.eval(node.left,env);b=self.eval(node.right,env,a.type_name)
+            comparison=node.operator in ('==','!=','>=','<=','>','<');operand_expected=None if comparison else expected
+            a=self.eval(node.left,env,operand_expected);b=self.eval(node.right,env,a.type_name)
             if node.operator in ('==','!=','>=','<=','>','<'):
                 return TypedValue('i32',int({'==':a.value==b.value,'!=':a.value!=b.value,'>=':a.value>=b.value,'<=':a.value<=b.value,'>':a.value>b.value,'<':a.value<b.value}[node.operator]))
             return self.arith({'+':'add','-':'sub','*':'mul','/':'div'}[node.operator],a,b)
