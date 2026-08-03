@@ -1,5 +1,10 @@
 # Changelog
 
+## Development tooling — Python launcher portability
+
+- Made bootstrap select `python` or `python3` instead of requiring a `python` command.
+- Preserved explicit failure when no Python 3 launcher is available.
+
 ## Epoch III — Precise diagnostic range checkpoint
 
 - Extended rendered primary and related diagnostics with end-column ranges.
