@@ -199,6 +199,11 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - `Program.provenance()` is the only semantic lookup boundary used by node views and checker diagnostics.
 - Existing project remapping remains compatible while embedded storage is implemented next.
 
+## Column-precise generic provenance now available
+- Generic application discovery records start and end columns as well as source lines.
+- Expansion-time arity/bound failures underline the concrete application.
+- Generated-body related notes underline the instantiation in both single-source and project diagnostics.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
 - Move primary span and related provenance storage onto concrete variants.

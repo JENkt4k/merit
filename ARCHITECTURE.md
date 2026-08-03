@@ -54,6 +54,8 @@ Atoms, struct initialization, direct/generic calls, and effect statements also h
 
 `NodeProvenance` groups primary and related locations, and `Program.provenance()` is the single lookup boundary used by semantic views and checker diagnostics. This isolates the current external maps so embedded node provenance can replace them without changing consumers.
 
+Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.

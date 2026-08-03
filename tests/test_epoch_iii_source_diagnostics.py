@@ -262,7 +262,7 @@ pub fn convert<T>(value: T) -> i32 {
     assert "error[M3002]: return type i64 does not match i32" in error
     assert f" --> {worker}:3:5" in error
     assert "note: generic instantiated here" in error
-    assert f" --> {main_source}:4:1" in error
+    assert f" --> {main_source}:4:12" in error
 
 
 @pytest.mark.parametrize(
@@ -299,28 +299,30 @@ def test_declaration_errors_carry_precise_source_spans(source, code, line):
 
 
 @pytest.mark.parametrize(
-    ("source", "code", "line", "excerpt"),
+    ("source", "code", "line", "column", "excerpt"),
     [
         (
             "module generic_arity\nstruct Pair<T, U> { first: T; second: U; }\nfn main() -> i32 {\n    let pair: Pair<i64> = Pair<i64> { first: 1 };\n    return 0;\n}",
             "M7001",
             4,
+            15,
             "Pair<i64>",
         ),
         (
             "module generic_bound\nfn identity<T: Copy>(value: T) -> T { return value; }\nfn main() -> i32 {\n    return identity<Buffer>(0);\n}",
             "M7002",
             4,
+            12,
             "identity<Buffer>(0)",
         ),
     ],
 )
-def test_generic_expansion_errors_point_to_instantiation(source, code, line, excerpt):
+def test_generic_expansion_errors_point_to_instantiation(source, code, line, column, excerpt):
     error = semantic_error(source, "generic_expansion.mrt")
     assert error.code == code
-    assert (error.span.line, error.span.source_name) == (line, "generic_expansion.mrt")
+    assert (error.span.line, error.span.column, error.span.source_name) == (line, column, "generic_expansion.mrt")
     rendered = render_exception(error, Path("generic_expansion.mrt"), source)
-    assert f" --> generic_expansion.mrt:{line}:1" in rendered
+    assert f" --> generic_expansion.mrt:{line}:{column}" in rendered
     assert excerpt in rendered
 
 
@@ -341,5 +343,5 @@ pub fn identity<T: Copy>(value: T) -> T { return value; }''')
     assert project_cli_main(["check", str(root)]) == 1
     error = capsys.readouterr().err
     assert "error[M7002]: type Buffer does not satisfy generic bound Copy" in error
-    assert f" --> {main_source}:4:1" in error
+    assert f" --> {main_source}:4:12" in error
     assert "4 |     return identity<Buffer>(0);" in error

@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Column-precise generic provenance checkpoint
+
+- Recorded exact generic application start/end columns during expansion.
+- Used precise ranges for arity and bound diagnostics.
+- Preserved exact related instantiation ranges for generated-body diagnostics across projects.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Typed semantic provenance boundary checkpoint
 
 - Added `NodeProvenance` for typed primary and related source locations.

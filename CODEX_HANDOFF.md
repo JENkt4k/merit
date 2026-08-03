@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III typed semantic provenance boundary checkpoint** of Merit.
+This repository contains the verified **Epoch III column-precise generic provenance checkpoint** of Merit.
 
 Current baseline:
 - 171 tests passing after editable installation
@@ -55,6 +55,7 @@ python -m pytest -q
 - distinct ownership-sensitive and control-flow node variants with compatibility serialization
 - concrete per-kind runtime variants for every parser-produced semantic expression and statement
 - centralized typed primary/related provenance lookup for node views and checker diagnostics
+- exact generic application columns for expansion errors and related instantiation notes
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

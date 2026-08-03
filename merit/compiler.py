@@ -219,7 +219,9 @@ class ASTBuilder(Transformer):
     def mark(self,node,meta):
         line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
         self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
-        if meta.line in self.related_line_map:self.related_spans[id(node)]=SourceSpan(self.related_line_map[meta.line],1,self.related_line_map[meta.line],1,self.source_name)
+        if meta.line in self.related_line_map:
+            related=self.related_line_map[meta.line]
+            self.related_spans[id(node)]=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
         return node
     def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])
@@ -417,7 +419,9 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
             def qrepl(m):
                 nonlocal changed
                 args=_split_generic_args(m.group(1)); key=(name,tuple(args));requested.add(key);changed=True
-                if request_lines is not None:request_lines.setdefault(key,base_line+text.count('\n',0,m.start()))
+                if request_lines is not None:
+                    line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
+                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
                 return _mangle_generic(name,args)+'__'+m.group(2)
             text=pat.sub(qrepl,text)
         for name in templates:
@@ -425,7 +429,9 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
             def repl(m):
                 nonlocal changed
                 args=_split_generic_args(m.group(1));key=(name,tuple(args));requested.add(key);changed=True
-                if request_lines is not None:request_lines.setdefault(key,base_line+text.count('\n',0,m.start()))
+                if request_lines is not None:
+                    line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
+                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
                 return _mangle_generic(name,args)
             text=pat.sub(repl,text)
     return text
@@ -468,13 +474,14 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
     trait_methods=_extract_trait_methods(source)
     generated=[]; generated_origins=[];generated_requests=[]; done=set()
     def expansion_error(text,name,args,template_primary=False):
-        request_line=request_lines.get((name,args))
+        request=request_lines.get((name,args))
         template_line=templates[name]['line']
-        primary_line=template_line if template_primary else request_line or template_line
+        primary=SourceSpan(template_line,1,template_line,1,source_name)
+        if not template_primary and request is not None:primary=SourceSpan(request[0],request[1],request[0],request[2],source_name)
         notes=()
-        if template_primary and request_line is not None:
-            notes=(DiagnosticNote('generic instantiated here',SourceSpan(request_line,1,request_line,1,source_name)),)
-        raise CompileError(text,SourceSpan(primary_line,1,primary_line,1,source_name),notes)
+        if template_primary and request is not None:
+            notes=(DiagnosticNote('generic instantiated here',SourceSpan(request[0],request[1],request[0],request[2],source_name)),)
+        raise CompileError(text,primary,notes)
     while True:
         pending=[x for x in requested if x not in done]
         if not pending: break
