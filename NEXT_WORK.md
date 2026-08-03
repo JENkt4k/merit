@@ -297,6 +297,7 @@ Continue alpha-readiness hardening:
 - Generated C orders struct and enum definitions by their acyclic by-value dependencies.
 - Recursive by-value aggregate cycles are rejected during semantic checking before backend generation.
 - Opaque C forward declarations allow by-value aggregates to contain vectors of composite elements without definition-order failures.
+- `try` participates in shared owned-source consumption for exact-once `Ok` binding and `Err` propagation.
 
 ## Deliberately deferred
 - specialization

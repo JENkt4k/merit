@@ -165,6 +165,27 @@ fn main()->i32 { let holder:Holder=Holder{state:Ready()}; match (holder.state) {
     assert outputs(source,tmp_path) == ('','')
 
 
+def test_try_consumes_owned_enum_and_cleans_ok_payload_once(tmp_path):
+    source='''module owned_try_cleanup
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum Outcome { Ok(Marker), Err(i32) }
+fn consume(value:Outcome)->Outcome { let marker:Marker=try value; drop(marker); return Err(0); }
+fn main()->i32 { let marker:Marker=Marker{number:47}; let value:Outcome=Ok(marker); let result:Outcome=consume(value); match (result) { Ok(unexpected)=>{ drop(unexpected); } Err(code)=>{ print(code); } } return 0; }'''
+    assert outputs(source,tmp_path) == ('47\n0\n','47\n0\n')
+
+
+def test_try_rejects_reuse_of_consumed_owned_enum():
+    source='''module owned_try_reuse
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum Outcome { Ok(Marker), Err(i32) }
+fn consume(value:Outcome)->Outcome { let marker:Marker=try value; print(value); drop(marker); return Err(0); }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5001: use of moved value value'):
+        Checker(parse(source)).check()
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

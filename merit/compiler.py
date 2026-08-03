@@ -891,7 +891,7 @@ class OwnershipEffects:
                 consumed_sites.update(self.consume_sites(node.initializer,node.declared_type));env[node.binding_name]=node.declared_type
                 if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
             elif tag=='try_let':
-                consumed_sites.update(self.effect_sites(node.initializer));env[node.binding_name]=node.declared_type
+                initializer_type=self.expression_type(node.initializer,env);consumed_sites.update(self.consume_sites(node.initializer,initializer_type) if initializer_type else self.effect_sites(node.initializer));env[node.binding_name]=node.declared_type
                 if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
             elif tag=='assign':consumed_sites.update(self.effect_sites(node.assigned_value))
             elif tag=='replace':
@@ -1120,6 +1120,7 @@ class Checker:
                     self.fail('M6202: function using try must return a Result-style enum',st)
                 if ret_enum.variants[1].payload_type != enum.variants[1].payload_type:
                     self.fail('M6203: try error payload does not match function return error type',st)
+                self.consume_owned_source(e,et,env,f'trying into {n}')
                 env[n]=VarState(t,False)
             elif tag=='assign':
                 target=node.assignment_target;value=node.assigned_value
