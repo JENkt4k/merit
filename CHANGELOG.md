@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Content-addressed object-cache checkpoint
+
+- Split project C compilation from executable/shared linking.
+- Added content-addressed object caching keyed by source, compiler, flags, and PIC mode.
+- Added deterministic reuse coverage for repeated identical builds.
+- Increased the regression suite from 187 to 188 tests.
+
 ## Epoch III — C shared-library acceptance checkpoint
 
 - Added project `build_shared` support and the `build-shared` CLI command.

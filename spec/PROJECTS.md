@@ -8,6 +8,10 @@ The current acceptance gate loads the resulting library from a C-compatible fore
 
 Public ABI signatures are closed over public types: exported functions, structs, and enums cannot expose a private project type. Consumer headers omit private structs and enums while retaining public types imported from another project module.
 
+## Object caching
+
+Executable and shared builds compile generated C to a content-addressed object before linking. The cache key includes generated source, compiler selection, project C flags, and PIC mode. Identical rebuilds reuse the existing object. This checkpoint caches the current merged project translation unit; per-module object generation remains future work.
+
 ## Manifest
 
 A project is rooted by `Merit.toml`.

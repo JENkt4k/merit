@@ -77,6 +77,7 @@ Canonical MIR runs a reachability pass after CFG construction so blocks synthesi
 Exact literal/arithmetic/comparison conditions are folded to direct MIR gotos before reachability pruning, with the original condition retained in explicit inspection metadata.
 Project builds can emit a PIC shared object and matching generated header from the same checked merged program used for executable builds.
 Merged projects preserve `pub` exports so consumer headers expose public functions while generated implementation C retains private internal prototypes.
+Project executable/shared builds use a content-addressed object cache for the merged generated-C translation unit, separating compilation from linking as the first step toward per-module objects.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

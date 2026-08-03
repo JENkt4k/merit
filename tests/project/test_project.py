@@ -36,6 +36,19 @@ def test_multimodule_native_matches_interpreter(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
+def test_project_build_reuses_content_addressed_object(tmp_path):
+    project = load_project(EXAMPLE)
+    build(project, tmp_path / "first")
+    objects = list((tmp_path / ".merit-cache").glob("*.o"))
+    assert len(objects) == 1
+    cached_object = objects[0]
+    original_mtime = cached_object.stat().st_mtime_ns
+    build(project, tmp_path / "second")
+    assert list((tmp_path / ".merit-cache").glob("*.o")) == [cached_object]
+    assert cached_object.stat().st_mtime_ns == original_mtime
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
 def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     project_root = tmp_path / "shared_api"
     (project_root / "src").mkdir(parents=True)

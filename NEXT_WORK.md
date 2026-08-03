@@ -317,6 +317,12 @@ Continue alpha-readiness hardening:
 - Consumer headers preserve project `pub` function filtering; cross-platform suffix policy remains deliberately deferred.
 - Public ABI declarations reject private-type leakage and consumer headers omit private structs/enums.
 
+## Object-cache checkpoint now available
+- Executable and shared builds compile generated C to an object before linking.
+- Cache identity includes generated source, compiler, flags, and PIC mode.
+- Repeated identical builds reuse the merged-project object without rewriting it.
+- Per-module objects and dependency-granular invalidation remain deliberately deferred.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

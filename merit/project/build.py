@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -14,6 +15,26 @@ def check(project: LoadedProject) -> Checker:
     return Checker(project.program).check()
 
 
+def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path, pic: bool = False) -> Path:
+    compiler = os.environ.get("CC", "cc")
+    digest = hashlib.sha256()
+    digest.update(c_path.read_bytes())
+    digest.update(compiler.encode())
+    digest.update(repr(project.manifest.c_flags).encode())
+    digest.update(b"pic" if pic else b"exe")
+    cache_dir = cache_root / ".merit-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    object_path = cache_dir / f"{digest.hexdigest()[:24]}.o"
+    if object_path.exists():
+        return object_path
+    command = [compiler, "-std=c11", "-Wall", "-Wextra"]
+    if pic:
+        command.append("-fPIC")
+    command.extend((*project.manifest.c_flags, "-c", str(c_path), "-o", str(object_path)))
+    subprocess.run(command, check=True)
+    return object_path
+
+
 def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     check(project)
     output = output.resolve()
@@ -23,16 +44,8 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     generator = CGenerator(project.program)
     c_path.write_text(generator.generate())
     h_path.write_text(generator.header())
-    command = [
-        os.environ.get("CC", "cc"),
-        "-std=c11",
-        "-Wall",
-        "-Wextra",
-        *project.manifest.c_flags,
-        str(c_path),
-        "-o",
-        str(output),
-    ]
+    object_path = compile_cached_object(project, c_path, output.parent)
+    command = [os.environ.get("CC", "cc"), str(object_path), *project.manifest.c_flags, "-o", str(output)]
     subprocess.run(command, check=True)
     return c_path, h_path, output
 
@@ -48,18 +61,8 @@ def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path
     generator = CGenerator(project.program)
     c_path.write_text(generator.generate())
     h_path.write_text(generator.header())
-    command = [
-        os.environ.get("CC", "cc"),
-        "-std=c11",
-        "-Wall",
-        "-Wextra",
-        "-fPIC",
-        "-shared",
-        *project.manifest.c_flags,
-        str(c_path),
-        "-o",
-        str(library),
-    ]
+    object_path = compile_cached_object(project, c_path, library.parent, pic=True)
+    command = [os.environ.get("CC", "cc"), "-shared", str(object_path), *project.manifest.c_flags, "-o", str(library)]
     subprocess.run(command, check=True)
     return c_path, h_path, library
 

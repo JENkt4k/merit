@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III C shared-library acceptance checkpoint** of Merit.
+This repository contains the verified **Epoch III content-addressed object-cache checkpoint** of Merit.
 
 Current baseline:
-- 187 tests passing after editable installation
+- 188 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -80,6 +80,7 @@ python -m pytest -q
 - Public-only project consumer headers with private internal C prototypes retained
 - Stable-layout struct foreign-call acceptance through the generated shared library
 - Public ABI type-closure validation and private type filtering
+- Content-addressed merged-project object caching with separate linking
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
