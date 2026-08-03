@@ -969,8 +969,18 @@ class Checker:
         env={param.name:VarState(param.type_name,param.mode=='borrow_mut',False,False,param.mode) for param in f.params}
         for e in f.pre:self.check_contract_expr(e,env,set(f.requires_caps),f,'pre')
         self.block(f.body,env,set(f.requires_caps),f)
+        if f.return_type!='void' and not self.block_definitely_returns(f.body):
+            self.fail(f'M3009: function {f.name} does not return on every path',f)
         post_env=dict(env); post_env['result']=VarState(f.return_type,False)
         for e in f.post:self.check_contract_expr(e,post_env,set(f.requires_caps),f,'post')
+    def block_definitely_returns(self,body):
+        for statement in body:
+            node=self.p.node(statement)
+            if node.kind=='return':return True
+            if node.kind=='if' and self.block_definitely_returns(node.then_body) and self.block_definitely_returns(node.else_body):return True
+            if node.kind=='match' and node.match_arms and all(self.block_definitely_returns(arm.body) for arm in node.match_arms):return True
+            if node.kind=='with_cap' and self.block_definitely_returns(node.nested_body):return True
+        return False
     def check_borrowed_return(self,f):
         params={param.name:param for param in f.params}
         def returns(body):

@@ -280,6 +280,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 Continue alpha-readiness hardening:
 - Define reference-typed local storage and explicit lifetime parameters before allowing borrowed results to escape expressions.
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
+- Preserve definite-return analysis when adding new control-flow constructs.
 
 ## Deliberately deferred
 - specialization
