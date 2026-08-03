@@ -222,9 +222,14 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Project assembly remaps semantic and declaration provenance in place.
 - `Program.spans` and `Program.related_spans` have been removed.
 
+## Typed function declaration checkpoint now available
+- `FunctionDecl` is a typed record with explicit signature, effect, capability, contract, body, and provenance fields.
+- Mapping compatibility keeps existing semantic/backend consumers stable during field migration.
+- HIR serializes function records explicitly instead of exposing internal objects.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace compatibility `FunctionDecl` mappings with typed function fields and mapping serialization.
+- Migrate compiler consumers from function mapping keys to typed fields.
 - Remove tuple compatibility from semantic nodes after MIR/public inspection serialization is explicit.
 - Remove tuple compatibility only after every operand access is typed.
 
@@ -238,7 +243,7 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace function mappings with typed function records.
+1. Migrate function consumers to typed fields and retire mapping mutation.
 2. Add explicit MIR/HIR serialization before removing semantic tuple compatibility.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

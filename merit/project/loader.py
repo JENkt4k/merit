@@ -327,7 +327,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:
-            generated = FunctionDecl(method);generated.provenance=getattr(method,'provenance',NodeProvenance())
+            generated = FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance())
             generated["name"] = _impl_function_name(impl.trait_name, impl.target_type, method["name"])
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root

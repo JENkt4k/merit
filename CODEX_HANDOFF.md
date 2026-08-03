@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III fully embedded provenance checkpoint** of Merit.
+This repository contains the verified **Epoch III typed function declaration checkpoint** of Merit.
 
 Current baseline:
-- 171 tests passing after editable installation
+- 172 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -60,6 +60,7 @@ python -m pytest -q
 - embedded primary/related provenance on every semantic node with project remapping parity
 - direct project remapping of embedded semantic provenance without duplicate ID-map entries
 - embedded declaration/function provenance with external node-ID maps removed
+- typed function declaration fields with mapping compatibility and explicit HIR serialization
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

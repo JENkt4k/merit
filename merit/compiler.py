@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile
+from collections.abc import MutableMapping
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any
@@ -110,7 +111,18 @@ class SemanticTuple(tuple):
     def kind(self):return self[0]
     @property
     def operands(self):return self[1:]
-class FunctionDecl(dict):pass
+@dataclasses.dataclass
+class FunctionDecl(MutableMapping):
+    name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
+    KEYS=('name','params','return','effects','requires_caps','pre','post','body')
+    def __getitem__(self,key):return getattr(self,'return_type' if key=='return' else key)
+    def __setitem__(self,key,value):setattr(self,'return_type' if key=='return' else key,value)
+    def __delitem__(self,key):raise TypeError('function declaration fields cannot be deleted')
+    def __iter__(self):return iter(self.KEYS)
+    def __len__(self):return len(self.KEYS)
+    def to_dict(self):return {key:self[key] for key in self.KEYS}
+    @classmethod
+    def from_mapping(cls,value):return cls(*(value[key] for key in cls.KEYS))
 class AtomNode(SemanticTuple):pass
 class StringNode(AtomNode):pass
 class NumberNode(AtomNode):pass
@@ -345,7 +357,7 @@ class ASTBuilder(Transformer):
             elif tag=='pre':pre.append(val)
             elif tag=='post':post.append(val)
             i+=1
-        return ('function',self.mark(FunctionDecl({'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]}),meta))
+        return ('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
     def start(self,x):
         ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
         def add_symbol(kind,name,node):
@@ -359,7 +371,7 @@ class ASTBuilder(Transformer):
             {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
         for impl in ims:
             for method in impl.methods:
-                generated=FunctionDecl(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
+                generated=FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
         return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
@@ -1914,7 +1926,7 @@ class CGenerator:
             return f'({self.expr(node.left,env,t)} {node.operator} {self.expr(node.right,env,t)})'
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':p.functions}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':[f.to_dict() if isinstance(f,FunctionDecl) else dict(f) for f in p.functions]}
 def mir(p):
     types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
     def lower_function(f):

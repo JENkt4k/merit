@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed function declaration checkpoint
+
+- Replaced dictionary-subclass functions with typed `FunctionDecl` records.
+- Preserved mapping compatibility for incremental consumer migration.
+- Added explicit HIR function serialization and JSON coverage.
+- Increased the regression suite from 171 to 172 tests.
+
 ## Epoch III — Fully embedded provenance checkpoint
 
 - Embedded provenance on declaration dataclasses and `FunctionDecl` records.

@@ -1,9 +1,10 @@
 from pathlib import Path
 import contextlib
 import io
+import json
 import subprocess
 
-from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, IfNode, Interpreter, LetNode, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -122,6 +123,18 @@ fn main() -> i32 { return 0; }''')
     assert semantics["OwnedText"]["drop_strategy"] == "aggregate"
     assert semantics["Buffer"]["drop_strategy"] == "buffer"
     assert semantics["i32"]["copyable"] is True
+
+
+def test_function_declarations_are_typed_and_hir_serializes_explicitly():
+    program = parse('''module typed_function
+fn main() -> i32 { return 0; }''', "typed_function.mrt")
+    function = program.functions[0]
+    assert isinstance(function, FunctionDecl)
+    assert (function.name, function.return_type, function["name"], function["return"]) == ("main", "i32", "main", "i32")
+    assert function.provenance.primary.source_name == "typed_function.mrt"
+    payload = hir(program)
+    assert payload["functions"][0]["name"] == "main"
+    json.dumps(payload)
 
 
 def test_interpreter_recursively_drops_from_shared_metadata():
