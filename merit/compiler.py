@@ -2025,7 +2025,12 @@ class CGenerator:
             env[node.binding_name]=node.declared_type
             return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.initializer,env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {temp}.data.Ok;']
         if kind=='assign':
-            t=self.etype(node.assignment_target,env);return [f'{p}{self.expr(node.assignment_target,env)} = {self.checked(t,self.expr(node.assigned_value,env,t))};']
+            t=self.etype(node.assignment_target,env);index=self.temp_counter;value_temp=f'_merit_assign_value_{index}';address_temp=f'_merit_assign_address_{index}';self.temp_counter+=1
+            return [
+                f'{p}{self.ctype(t)} {value_temp} = {self.checked(t,self.expr(node.assigned_value,env,t))};',
+                f'{p}{self.ctype(t)} *{address_temp} = {self.address_expr(node.assignment_target,env)};',
+                f'{p}*{address_temp} = {value_temp};',
+            ]
         if kind=='replace':
             t=self.etype(node.assignment_target,env);index=self.temp_counter;temp=f'_merit_replace_{index}';address_temp=f'_merit_replace_address_{index}';self.temp_counter+=1
             address=self.address_expr(node.assignment_target,env)

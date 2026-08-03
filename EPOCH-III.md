@@ -36,17 +36,21 @@ Expected output:
 60
 ```
 
-## Still open in Epoch III
+## Remaining Epoch III work
 
-- parameterized generic types and functions
-- traits and coherence
-- generic `Option<T>` and `Result<T, E>`
-- typed I/O errors
-- returned and stored borrows
-- user-defined resource destructors
-- generic collections
-- separate compilation and object caching
-- optimizer passes and LLVM lowering
+The generic type engine, user-defined traits with coherence checks, generic
+`Option<T>`/`Result<T, E>`, typed I/O errors, ephemeral returned borrows,
+custom destructors, generic vectors, and content-addressed object caching are
+implemented and covered by interpreter/native acceptance tests.
+
+Still open:
+
+- stored reference values and explicit lifetime parameters
+- subobject-disjoint borrowing
+- ownership- or capability-changing destructor bodies
+- per-module separate compilation and dependency-granular cache invalidation
+- broader trait features deliberately deferred below
+- production optimizer and LLVM lowering
 
 ## Generic type engine checkpoint
 

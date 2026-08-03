@@ -286,6 +286,7 @@ Continue alpha-readiness hardening:
 - Explicit checked arithmetic shares the same numeric-domain validation.
 - Interpreter destination typing now matches native narrowing without re-evaluating assignment targets.
 - Replacement target addresses are materialized once before drop/install in both runtimes.
+- Copy assignment values and target addresses are sequenced explicitly, preserving interpreter order.
 
 ## Deliberately deferred
 - specialization

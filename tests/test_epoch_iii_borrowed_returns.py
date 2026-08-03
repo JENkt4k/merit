@@ -113,6 +113,17 @@ fn main()->i32 { var value:Value=Value{number:1}; expose_mut(value).number=29; p
     assert parity(source_text,tmp_path) == ('29\n','29\n')
 
 
+def test_assignment_evaluates_value_before_side_effecting_borrowed_target(tmp_path):
+    source_text='''module mutable_borrowed_assignment_order
+stable("v1") struct Value { number:i32; calls:i32; }
+fn expose_mut(borrow_mut value:Value)->borrow_mut Value { value.calls=value.calls+1; return value; }
+fn replacement(borrow_mut value:Value)->i32 { value.calls=value.calls+10; return value.calls; }
+fn main()->i32 { var value:Value=Value{number:1,calls:0}; expose_mut(value).number=replacement(value); print(value.calls); print(value.number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('11\n10\n','11\n10\n')
+    program=parse(source_text);Checker(program).check();c_source=CGenerator(program).generate()
+    assert c_source.index('_merit_assign_value_') < c_source.index('_merit_assign_address_')
+
+
 def test_shared_borrowed_return_rejects_direct_field_assignment():
     source_text=source('borrow value: Value','return value;').replace(
         'fn main() -> i32 { return 0; }',

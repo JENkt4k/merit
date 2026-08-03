@@ -160,7 +160,9 @@ fn alter(borrow_mut s:S)->i32 { s.x=2; return s.x; }
 fn main()->i32 { var s:S=S{x:1}; return alter(s); }'''
     c=CGenerator(checked(src)).generate()
     assert 'merit_alter(merit_S *s)' in c
-    assert 's->x = 2;' in c
+    assert 'int32_t _merit_assign_value_0 = 2;' in c
+    assert 'int32_t *_merit_assign_address_0 = &s->x;' in c
+    assert '*_merit_assign_address_0 = _merit_assign_value_0;' in c
     assert 'merit_alter(&s)' in c
 
 
