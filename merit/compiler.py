@@ -618,7 +618,6 @@ class Checker:
                 self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
             elif tag=='replace':
                 target,value=st[1],st[2]
-                if target[0]!='var': raise CompileError('M5205: replace currently requires a mutable local binding')
                 lt=self.lvalue_type(target,env,True)
                 if not type_needs_drop(lt,self.p): raise CompileError(f'M5203: replace requires owned storage, got {lt}')
                 target_root=self.root_var(target)
@@ -925,18 +924,22 @@ class TrySignal:
     value:TypedValue
 
 class Interpreter:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions}
+    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.call_modes=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
         f=self.fn[n];env={pn:v for (pn,_,_),v in zip(f['params'],args)}
-        for c in f['pre']:
-            if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
-        before={k:self.clone(v) for k,v in env.items()}
-        sig=self.block(f['body'],env); r=sig.value if isinstance(sig,(ReturnSignal,TrySignal)) else TypedValue('void',None)
-        post_env=dict(env); post_env['result']=r; post_env['__old__']=before
-        for c in f['post']:
-            if not self.eval(c,post_env).value:raise RuntimeError(f'postcondition failed in {n}')
-        return r
+        self.call_modes.append({pn:mode for pn,_,mode in f['params']})
+        try:
+            for c in f['pre']:
+                if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
+            before={k:self.clone(v) for k,v in env.items()}
+            sig=self.block(f['body'],env); r=sig.value if isinstance(sig,(ReturnSignal,TrySignal)) else TypedValue('void',None)
+            post_env=dict(env); post_env['result']=r; post_env['__old__']=before
+            for c in f['post']:
+                if not self.eval(c,post_env).value:raise RuntimeError(f'postcondition failed in {n}')
+            return r
+        finally:
+            self.call_modes.pop()
     def block(self,b,env):
         for st in b:
             if st[0]=='let':env[st[1]]=self.eval(st[3],env,st[2])
@@ -972,8 +975,12 @@ class Interpreter:
                     if guard>1000000:raise RuntimeError('loop iteration limit exceeded')
         return None
     def assign(self,e,v,env):
-        if e[0]=='var':env[e[1]]=v;return
-        if e[0]=='field':env[e[1][1]].value[e[2]]=v;return
+        if e[0]=='var':
+            if self.call_modes and self.call_modes[-1].get(e[1])=='borrow_mut':
+                env[e[1]].type_name=v.type_name;env[e[1]].value=v.value
+            else: env[e[1]]=v
+            return
+        if e[0]=='field':self.eval(e[1],env).value[e[2]]=v;return
     def clone(self,v):
         if isinstance(v,TypedValue):
             if isinstance(v.value,dict): return TypedValue(v.type_name,{k:self.clone(x) for k,x in v.value.items()})
@@ -1265,6 +1272,13 @@ class CGenerator:
     def drop_binding_line(self,prefix,name,t):
         stmt=self.drop_field_stmt(name,t)
         return f'{prefix}{stmt}' if stmt else f'{prefix}/* deterministic drop {name} */'
+    def drop_address_line(self,prefix,address,t):
+        if t=='Buffer': stmt=f'merit_buffer_drop({address});'
+        elif t=='I64Vec': stmt=f'merit_i64vec_drop({address});'
+        elif is_vec_type(t): stmt=f'merit_vec_drop__{vec_elem_type(t)}({address});'
+        elif t in self.p.enums or t in self.p.structs: stmt=f'merit_drop_{t}({address});'
+        else: stmt=''
+        return f'{prefix}{stmt}' if stmt else f'{prefix}/* deterministic replacement drop */'
     def enum_drop_runtime(self,e):
         lines=[f'static void merit_drop_{e.name}({self.ctype(e.name)} *v){{','    switch (v->tag) {']
         for variant in e.variants:
@@ -1382,11 +1396,11 @@ class CGenerator:
             t=self.etype(s[1],env);return [f'{p}{self.expr(s[1],env)} = {self.checked(t,self.expr(s[2],env,t))};']
         if s[0]=='replace':
             t=self.etype(s[1],env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
-            target=self.expr(s[1],env)
+            address=self.address_expr(s[1],env)
             return [
                 f'{p}{self.ctype(t)} {temp} = {self.expr(s[2],env,t)};',
-                self.drop_binding_line(p,target,t),
-                f'{p}{target} = {temp};',
+                self.drop_address_line(p,address,t),
+                f'{p}*({address}) = {temp};',
             ]
         if s[0]=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(s[1],env,self.current_return))};',f'{p}goto _merit_epilogue;']
         if s[0]=='print':

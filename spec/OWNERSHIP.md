@@ -13,8 +13,8 @@ Alpha.3 implements the first executable ownership subset.
 - The same root binding cannot be passed to a call through `borrow_mut` and any other loan simultaneously.
 - Borrowed parameters cannot be explicitly dropped.
 - `drop(name)` consumes an owned local.
-- `replace(target, replacement)` evaluates the replacement once, drops the previous value in mutable owned local storage, installs the replacement, and consumes its source.
-- Replacement currently accepts mutable local bindings; owned field replacement is the next extension.
+- `replace(target, replacement)` evaluates the replacement once, drops the previous value in mutable addressable owned storage, installs the replacement, and consumes its source.
+- Replacement accepts mutable locals, fields rooted in mutable aggregates, and mutable borrowed parameters.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 
 ## Deliberate limits

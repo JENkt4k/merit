@@ -49,7 +49,7 @@ def test_replace_lowers_rhs_once_before_drop_and_assignment():
     replacement = "merit_Buffer _merit_replace_0 = replacement;"
     assert c_source.count(replacement) == 1
     assert c_source.index(replacement) < c_source.index("merit_buffer_drop(&current);")
-    assert c_source.index("merit_buffer_drop(&current);") < c_source.index("current = _merit_replace_0;")
+    assert c_source.index("merit_buffer_drop(&current);") < c_source.index("*(&current) = _merit_replace_0;")
 
 
 def test_replace_is_preserved_in_mir():
@@ -90,3 +90,84 @@ fn main() -> i32 {
 }'''
     with pytest.raises(CompileError, match="replace requires owned storage"):
         checked(source)
+
+
+FIELD_REPLACE_PROGRAM = '''module replace_field
+capability allocate;
+
+struct OwnedText {
+    data: Buffer;
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        let initial: Buffer = buffer_from_string(allocator, "field-old");
+        var text: OwnedText = OwnedText { data: initial };
+        let replacement: Buffer = buffer_from_string(allocator, "field-new");
+        replace(text.data, replacement);
+        print(text.data);
+        drop(text);
+    }
+    return 0;
+}'''
+
+
+def test_replace_owned_field_interpreter_and_native_match(tmp_path):
+    program = checked(FIELD_REPLACE_PROGRAM)
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted):
+        Interpreter(program).run()
+
+    source = tmp_path / "replace_field.mrt"
+    executable = tmp_path / "replace_field"
+    source.write_text(FIELD_REPLACE_PROGRAM)
+    compile_file(source, executable)
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
+    assert native.stdout == interpreted.getvalue() == "field-new\n"
+
+
+def test_replace_field_requires_mutable_aggregate():
+    bad = FIELD_REPLACE_PROGRAM.replace("var text: OwnedText", "let text: OwnedText")
+    with pytest.raises(CompileError, match="cannot assign to immutable binding text"):
+        checked(bad)
+
+
+def test_replace_field_rejects_aliasing_source():
+    bad = FIELD_REPLACE_PROGRAM.replace("replace(text.data, replacement);", "replace(text.data, text.data);")
+    with pytest.raises(CompileError, match="replacement source aliases target text.data"):
+        checked(bad)
+
+
+BORROWED_REPLACE_PROGRAM = '''module replace_borrowed
+capability allocate;
+
+fn update(borrow_mut target: Buffer, replacement: Buffer) -> void {
+    replace(target, replacement);
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        var current: Buffer = buffer_from_string(allocator, "borrow-old");
+        let replacement: Buffer = buffer_from_string(allocator, "borrow-new");
+        update(current, replacement);
+        print(current);
+        drop(current);
+    }
+    return 0;
+}'''
+
+
+def test_replace_through_mutable_borrow_interpreter_and_native_match(tmp_path):
+    program = checked(BORROWED_REPLACE_PROGRAM)
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted):
+        Interpreter(program).run()
+
+    source = tmp_path / "replace_borrowed.mrt"
+    executable = tmp_path / "replace_borrowed"
+    source.write_text(BORROWED_REPLACE_PROGRAM)
+    compile_file(source, executable)
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
+    assert native.stdout == interpreted.getvalue() == "borrow-new\n"

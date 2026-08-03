@@ -85,7 +85,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Continue memory model polish:
-- Extend the implemented local `replace(target, replacement)` operation to owned struct fields and other addressable owned storage.
+- Extend the implemented `replace(target, replacement)` operation to owned vector elements with checked indexing.
 - Add partial-move tracking only if the language commits to field-level ownership states.
 - Improve diagnostics with move-origin notes once the checker carries source spans.
 
