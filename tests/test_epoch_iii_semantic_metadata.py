@@ -3,7 +3,7 @@ import contextlib
 import io
 import subprocess
 
-from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, IfNode, Interpreter, LetNode, OwnershipEffects, ReplaceNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, IfNode, Interpreter, LetNode, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -77,6 +77,7 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert program.node(binding.initializer).kind == "call"
     call = program.node(binding.initializer)
     assert isinstance(call.raw, CallNode)
+    assert isinstance(call.raw, DirectCallNode)
     assert (call.callee_name, len(call.arguments)) == ("buffer_from_string", 2)
 
 
@@ -103,7 +104,8 @@ fn main() -> i32 {
     branch = program.node(program.functions[0]["body"][0])
     assert isinstance(branch.raw, IfNode)
     assert branch.kind == "if"
-    assert program.node(branch.condition).kind == "number"
+    assert isinstance(program.node(branch.condition).raw, NumberNode)
+    assert isinstance(branch.then_body[0], ReturnNode)
     assert program.node(branch.then_body[0]).expression[1] == "1"
     assert program.node(branch.else_body[0]).expression[1] == "0"
 

@@ -188,10 +188,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - `CapabilityNode`, `IfNode`, `WhileNode`, and `MatchNode` distinguish control-flow invariants.
 - Per-kind variants retain family inheritance and tuple-compatible serialization.
 
+## Complete per-kind semantic variant checkpoint now available
+- Atom kinds have distinct string, number, and variable variants.
+- Construction and invocation distinguish struct initialization, direct calls, and generic calls.
+- Return, print, expression-statement, and drop effects have distinct variants.
+- Every parser-produced semantic expression and statement now has a concrete per-kind runtime type.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Split call, constructor, field, binary, and effect families into per-kind variants where useful.
-- Move span/provenance storage onto concrete variants before removing external metadata maps.
+- Move primary span and related provenance storage onto concrete variants.
+- Retire external node-id metadata maps after project remapping supports embedded provenance.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -204,8 +210,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Complete remaining per-kind expression/effect variants.
-2. Move span/provenance storage onto variants before removing external metadata maps.
+1. Embed span/provenance on concrete semantic variants.
+2. Retire external node-id metadata maps after project remapping is migrated.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

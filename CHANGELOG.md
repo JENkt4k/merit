@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Complete per-kind semantic variant checkpoint
+
+- Added per-kind variants for string, number, variable, and struct-initializer nodes.
+- Distinguished direct and generic call storage.
+- Added per-kind return, print, expression-statement, and drop variants.
+- Completed concrete runtime typing for every parser-produced semantic expression and statement.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Safety-critical per-kind variant checkpoint
 
 - Added distinct variants for ordinary bindings, `try`, assignment, and replacement.

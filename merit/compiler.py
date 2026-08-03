@@ -107,9 +107,15 @@ class SemanticTuple(tuple):
     @property
     def operands(self):return self[1:]
 class AtomNode(SemanticTuple):pass
+class StringNode(AtomNode):pass
+class NumberNode(AtomNode):pass
+class VariableNode(AtomNode):pass
 class FieldNode(SemanticTuple):pass
 class ConstructorNode(SemanticTuple):pass
+class StructInitNode(ConstructorNode):pass
 class CallNode(SemanticTuple):pass
+class DirectCallNode(CallNode):pass
+class GenericCallNode(CallNode):pass
 class BinaryNode(SemanticTuple):pass
 class BindingNode(SemanticTuple):pass
 class LetNode(BindingNode):pass
@@ -118,16 +124,20 @@ class AssignmentNode(SemanticTuple):pass
 class AssignNode(AssignmentNode):pass
 class ReplaceNode(AssignmentNode):pass
 class EffectStatementNode(SemanticTuple):pass
+class ReturnNode(EffectStatementNode):pass
+class PrintNode(EffectStatementNode):pass
+class ExpressionStatementNode(EffectStatementNode):pass
+class DropNode(EffectStatementNode):pass
 class ControlFlowNode(SemanticTuple):pass
 class CapabilityNode(ControlFlowNode):pass
 class IfNode(ControlFlowNode):pass
 class WhileNode(ControlFlowNode):pass
 class MatchNode(ControlFlowNode):pass
 SEMANTIC_STORAGE_TYPES={
-    'string':AtomNode,'number':AtomNode,'var':AtomNode,'field':FieldNode,
-    'struct_init':ConstructorNode,'call':CallNode,'generic_call':CallNode,'binop':BinaryNode,
+    'string':StringNode,'number':NumberNode,'var':VariableNode,'field':FieldNode,
+    'struct_init':StructInitNode,'call':DirectCallNode,'generic_call':GenericCallNode,'binop':BinaryNode,
     'let':LetNode,'try_let':TryLetNode,'assign':AssignNode,'replace':ReplaceNode,
-    'return':EffectStatementNode,'print':EffectStatementNode,'expr':EffectStatementNode,'drop':EffectStatementNode,
+    'return':ReturnNode,'print':PrintNode,'expr':ExpressionStatementNode,'drop':DropNode,
     'with_cap':CapabilityNode,'if':IfNode,'while':WhileNode,'match':MatchNode,
 }
 @dataclasses.dataclass(frozen=True)
