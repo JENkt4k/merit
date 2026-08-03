@@ -38,6 +38,8 @@ destructor Marker { print(self.number); }
 - `replace(target, replacement)` evaluates the replacement once, drops the previous value in mutable addressable owned storage, installs the replacement, and consumes its source.
 - Replacement accepts mutable locals, fields rooted in mutable aggregates, and mutable borrowed parameters.
 - `vec_replace<T>(vector, index, replacement)` performs the same operation for an owned vector element after checked indexing.
+- `allocator_compatible(left, right)` reports whether storage allocated by one provider may be transferred to and released by the other. Compatibility is provider identity in the current runtime: system is compatible with system, portable with portable, and the two providers are not interchangeable.
+- Future zero-copy collection transfer and merge operations must reject incompatible allocators before moving elements or storage. Element-wise moves that allocate fresh destination storage may cross allocator providers because each allocation remains paired with its originating provider.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 - Concrete types carry shared lifecycle metadata: ownership, copyability, drop requirement, semantic kind, and drop strategy.
 - Function ownership effects identify consumed roots and explicit drops once for MIR and native cleanup lowering.

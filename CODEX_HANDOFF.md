@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 207 tests passing after editable installation
+- 210 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -73,6 +73,7 @@ python -m pytest -q
 - Typed filesystem results with interpreter/native OS-failure parity
 - Allocator-retaining `Vec<T>` growth/drop paths with deterministic layout assertions
 - System and portable allocator providers verified through one interpreter/native vector path
+- Explicit allocator compatibility policy for future zero-copy collection transfers
 - Explicit borrowed-return modes with origin/mutability diagnostics and parity-safe acceptance gating
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
@@ -111,7 +112,7 @@ This design is useful because all instantiated generic code reuses one semantic 
 - trait methods cannot yet declare effects or required capabilities
 - user-defined destructors currently support effect-free `print` and expression bodies; broader ownership-changing destructor contracts remain deferred
 - returned/stored borrows are absent
-- only the system allocator is implemented
+- system and portable allocator identities are implemented over the same host allocation primitives
 - modules merge into one generated C translation unit
 - ownership and project-unit spans are retained, but broader semantic nodes and generic rewrites still need source maps
 - no LLVM backend, package registry, formatter, or LSP

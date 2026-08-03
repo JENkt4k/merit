@@ -703,6 +703,7 @@ VEC_INTRINSICS={
 BUILTIN_SIGS={
     'system_allocator':BuiltinSig((), 'Allocator'),
     'portable_allocator':BuiltinSig((), 'Allocator'),
+    'allocator_compatible':BuiltinSig((('value','Allocator'),('value','Allocator')), 'i32'),
     'string_len':BuiltinSig((('value','String'),), 'i64'),
     'string_byte':BuiltinSig((('value','String'),('value','i64')), 'u8'),
     'buffer_new':BuiltinSig((('value','Allocator'),('value','i64')), 'Buffer', 'allocate', 'allocation'),
@@ -1203,7 +1204,7 @@ class Checker:
                     if op=='replace' and receiver_root in self.referenced_roots(value_arg):
                         raise CompileError(f'M7303: replacement source aliases vector {receiver_root}')
                     at=self.expr_type(value_arg,env,caps,fn)
-                    if at not in (elem,'number'): self.fail(f'M3008: vector value expects {elem}, got {at}',value_arg)
+                    if not self.argument_matches(at,elem): self.fail(f'M3008: vector value expects {elem}, got {at}',value_arg)
                     self.consume_owned_source(value_arg,at,env,f'calling {name}')
                 if op=='drop':
                     root=self.root_var(args[0])
@@ -1217,7 +1218,7 @@ class Checker:
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
                     at=self.expr_type(arg,env,caps,fn)
-                    if at not in (pt,'number'): self.fail(f'M3008: argument {idx} expects {pt}, got {at}',arg)
+                    if not self.argument_matches(at,pt): self.fail(f'M3008: argument {idx} expects {pt}, got {at}',arg)
                     root=self.root_var(arg)
                     if mode in ('borrow','borrow_mut'):
                         if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
@@ -1235,7 +1236,7 @@ class Checker:
             loans=[]
             for arg,param in zip(args,callee.params):
                 at=self.expr_type(arg,env,caps,fn)
-                if at not in (param.type_name,'number'):self.fail(f'M3008: argument {param.name} expects {param.type_name}, got {at}',arg)
+                if not self.argument_matches(at,param.type_name):self.fail(f'M3008: argument {param.name} expects {param.type_name}, got {at}',arg)
                 root=self.root_var(arg)
                 if root and param.mode in ('borrow','borrow_mut'):
                     for previous_root,previous_mode,previous_param in loans:
@@ -1301,6 +1302,8 @@ class Checker:
         elif t in INT_RANGES:
             v=int(Decimal(text));lo,hi=INT_RANGES[t]
             if Decimal(text)!=v or not lo<=v<=hi:raise CompileError(f'M1201: literal {text} invalid for {t}')
+    def argument_matches(self,actual,expected):
+        return actual==expected or (actual=='number' and (expected in INT_RANGES or expected in self.p.decimals or expected in self.p.bounded))
 
 class LayoutEngine:
     SIZES={'i8':(1,1),'u8':(1,1),'i16':(2,2),'u16':(2,2),'i32':(4,4),'u32':(4,4),'i64':(8,8),'u64':(8,8)}
@@ -1490,6 +1493,7 @@ class Interpreter:
                 return self.eval(args[0],old_env)
             if n=='system_allocator': return TypedValue('Allocator','system')
             if n=='portable_allocator': return TypedValue('Allocator','portable')
+            if n=='allocator_compatible': return TypedValue('i32',int(self.eval(args[0],env).value==self.eval(args[1],env).value))
             if n=='string_len': return TypedValue('i64',len(self.eval(args[0],env).value.encode('utf-8')))
             if n=='string_byte':
                 text=self.eval(args[0],env).value.encode('utf-8'); idx=self.eval(args[1],env).value
@@ -1708,6 +1712,7 @@ class CGenerator:
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
               r'''static merit_Allocator merit_portable_allocator(void){return (merit_Allocator){1};}''',
+              r'''static int32_t merit_allocator_compatible(merit_Allocator a,merit_Allocator b){return a.kind==b.kind;}''',
               r'''static void *merit_allocator_realloc(merit_Allocator a,void *p,size_t n){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);return realloc(p,n);}''',
               r'''static void merit_allocator_free(merit_Allocator a,void *p){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);free(p);}''',
               r'''static void merit_buffer_reserve(merit_Buffer *b,size_t need){if(need<=b->cap)return;size_t c=b->cap?b->cap:8;while(c<need)c*=2;void *p=realloc(b->data,c);if(!p)merit_fail("allocation failed",80);b->data=(uint8_t*)p;b->cap=c;}''',
@@ -1989,6 +1994,7 @@ class CGenerator:
             if n=='old':return self.old_map[repr(a[0])]
             if n=='system_allocator': return 'merit_system_allocator()'
             if n=='portable_allocator': return 'merit_portable_allocator()'
+            if n=='allocator_compatible': return f'merit_allocator_compatible({self.expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='string_len': return f'((int64_t){self.expr(a[0],env)}.len)'
             if n=='string_byte': return f'((uint8_t){self.expr(a[0],env)}.data[{self.expr(a[1],env)}])'
             if n=='buffer_new': return f'merit_buffer_new({self.expr(a[0],env)}, {self.expr(a[1],env)})'

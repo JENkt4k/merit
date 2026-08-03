@@ -464,3 +464,27 @@ def test_generic_collections_project_interpreter_and_native(tmp_path):
     _, _, executable = build(project, tmp_path / 'generic_collections')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
     assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n6\n2\n32\n44\n'
+
+
+def test_allocator_compatibility_has_interpreter_native_parity(tmp_path):
+    source_text='''module allocator_compatibility
+fn main()->i32 { let system:Allocator=system_allocator(); let same:Allocator=system_allocator(); let portable:Allocator=portable_allocator(); print(allocator_compatible(system,same)); print(allocator_compatible(system,portable)); return 0; }'''
+    program=parse(source_text);Checker(program).check()
+    interpreted=io.StringIO()
+    with contextlib.redirect_stdout(interpreted):Interpreter(program).run()
+    source=tmp_path/'allocator_compatibility.mrt';executable=tmp_path/'allocator_compatibility'
+    source.write_text(source_text);compile_file(source,executable)
+    native=subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout
+    assert interpreted.getvalue() == native == '1\n0\n'
+
+
+def test_allocator_compatibility_requires_allocator_arguments():
+    source='module invalid_allocator_compatibility\nfn main()->i32 { let allocator:Allocator=system_allocator(); return allocator_compatible(allocator,1); }'
+    with pytest.raises(CompileError,match='argument 1 expects Allocator'):
+        Checker(parse(source)).check()
+
+
+def test_numeric_literal_does_not_coerce_to_nonnumeric_user_parameter():
+    source='module invalid_literal_coercion\nfn use(value:Allocator)->i32 { return 0; }\nfn main()->i32 { return use(1); }'
+    with pytest.raises(CompileError,match='argument value expects Allocator'):
+        Checker(parse(source)).check()

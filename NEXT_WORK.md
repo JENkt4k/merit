@@ -278,7 +278,6 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Continue alpha-readiness hardening:
-- Define allocator compatibility for future collection transfer/merge operations.
 - Lower validated returned borrows with caller lifetime tracking without weakening call-scoped loan checks.
 
 ## Deliberately deferred
@@ -291,8 +290,12 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Specify allocator compatibility at collection-transfer boundaries.
-2. Add caller-side lifetime propagation and matching interpreter/native borrowed-return lowering.
+1. Add caller-side lifetime propagation and matching interpreter/native borrowed-return lowering.
+
+## Allocator compatibility checkpoint now available
+- `allocator_compatible(left, right)` has matching interpreter/native behavior.
+- Compatibility requires matching provider identity; system and portable allocations are not interchangeable.
+- Future zero-copy collection transfers must validate compatibility before moving storage.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.
