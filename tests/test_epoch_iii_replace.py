@@ -218,8 +218,9 @@ def test_vec_replace_drops_old_element_before_assignment():
     start = c_source.rfind("static ", 0, start)
     body = c_source[start:c_source.index("\n", start)]
     assert body.index("merit_buffer_drop(&v->data[i]);") < body.index("v->data[i]=x;")
+    assert c_source.count("_merit_vec_replace_receiver_0 = &values;") == 1
     assert c_source.count("_merit_vec_replace_value_0 = replacement;") == 1
-    assert c_source.index("_merit_vec_replace_index_0 = 0;") < c_source.index("_merit_vec_replace_value_0 = replacement;")
+    assert c_source.index("_merit_vec_replace_receiver_0 = &values;") < c_source.index("_merit_vec_replace_index_0 = 0;") < c_source.index("_merit_vec_replace_value_0 = replacement;")
 
 
 def test_vec_replace_consumes_replacement_source():

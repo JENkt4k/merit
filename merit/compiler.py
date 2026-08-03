@@ -2063,12 +2063,14 @@ class CGenerator:
                 name,args=resolved_call(expression);vec=vec_builtin(name)
                 if vec and vec[0]=='replace':
                     elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
+                    receiver_temp=f'_merit_vec_replace_receiver_{counter}'
                     index_temp=f'_merit_vec_replace_index_{counter}'
                     value_temp=f'_merit_vec_replace_value_{counter}'
                     return [
+                        f'{p}{self.ctype("Vec__"+elem)} *{receiver_temp} = {self.address_expr(args[0],env)};',
                         f'{p}int64_t {index_temp} = {self.expr(args[1],env)};',
                         f'{p}{self.ctype(elem)} {value_temp} = {self.expr(args[2],env,elem)};',
-                        f'{p}merit_vec_replace__{elem}({self.address_expr(args[0],env)}, {index_temp}, {value_temp});',
+                        f'{p}merit_vec_replace__{elem}({receiver_temp}, {index_temp}, {value_temp});',
                     ]
             return [f'{p}(void)({self.expr(expression,env)});']
         if kind=='drop':

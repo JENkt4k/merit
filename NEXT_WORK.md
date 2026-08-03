@@ -287,6 +287,7 @@ Continue alpha-readiness hardening:
 - Interpreter destination typing now matches native narrowing without re-evaluating assignment targets.
 - Replacement target addresses are materialized once before drop/install in both runtimes.
 - Copy assignment values and target addresses are sequenced explicitly, preserving interpreter order.
+- Owned vector replacement sequences receiver, index, and replacement exactly once in language order.
 
 ## Deliberately deferred
 - specialization
