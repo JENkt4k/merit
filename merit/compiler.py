@@ -1131,7 +1131,10 @@ class Checker:
                 if self.p.node(node.expression).kind=='number':self.validate_literal(fn.return_type,self.p.node(node.expression).atom_value)
                 if fn.return_mode=='value' and self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot escape through an owned return',node.expression)
                 if fn.return_mode=='value':self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
-            elif tag in ('print','expr'):self.expr_type(node.expression,env,caps,fn)
+            elif tag in ('print','expr'):
+                expression_type=self.expr_type(node.expression,env,caps,fn)
+                if self.types.get(expression_type).needs_drop and not self.root_var(node.expression):
+                    self.fail(f'M5210: owned temporary {expression_type} must be bound, transferred, or explicitly dropped',node.expression)
             elif tag=='drop':
                 n=node.binding_name
                 if n not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)

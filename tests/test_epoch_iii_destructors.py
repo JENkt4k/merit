@@ -117,6 +117,26 @@ fn main()->i32 { let marker:Marker=Marker{number:19}; let result:Marker=relay(ma
     assert outputs(source,tmp_path) == ('19\n','19\n')
 
 
+def test_discarded_owned_temporary_is_rejected():
+    source='''module discarded_owned_temporary
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn make()->Marker { return Marker{number:23}; }
+fn main()->i32 { make(); return 0; }'''
+    with pytest.raises(CompileError,match='M5210: owned temporary Marker must be bound, transferred, or explicitly dropped'):
+        Checker(parse(source)).check()
+
+
+def test_owned_temporary_can_transfer_directly_to_value_parameter(tmp_path):
+    source='''module transferred_owned_temporary
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn make()->Marker { return Marker{number:29}; }
+fn consume(marker:Marker)->i32 { return marker.number; }
+fn main()->i32 { return consume(make())-29; }'''
+    assert outputs(source,tmp_path) == ('29\n','29\n')
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

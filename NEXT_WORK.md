@@ -292,6 +292,7 @@ Continue alpha-readiness hardening:
 - Preconditions and postconditions admit read-only calls but reject mutable borrows, effects, and capability-gated hazards.
 - `old(...)` snapshots are Copy-only until owned cloning and destruction semantics are specified.
 - Owned value parameters participate in shared implicit cleanup and transfer their obligation exactly once when returned.
+- Discarded owned expression temporaries are rejected; direct transfer into a value-mode owned parameter is accepted and cleaned by the callee.
 
 ## Deliberately deferred
 - specialization
