@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Implement **explicit semantic-node serialization** as described in `NEXT_WORK.md`.
+Migrate **MIR consumers to explicit semantic serialization** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

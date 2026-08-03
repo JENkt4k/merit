@@ -232,10 +232,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Read-only mapping access remains solely as a compatibility surface for external inspection/tests.
 - Generated implementation functions mutate typed fields rather than mapping keys.
 
+## Explicit semantic serialization checkpoint now available
+- HIR function bodies serialize semantic nodes as JSON-safe kind/operand/provenance records.
+- MIR exposes `semantic_blocks` with the same explicit representation alongside compatibility blocks.
+- Primary and related source locations are included without exposing internal node objects.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Remove tuple compatibility from semantic nodes after MIR/public inspection serialization is explicit.
-- Add explicit semantic-node serialization for HIR/MIR and project tooling.
+- Migrate MIR inspection tests/tooling to `semantic_blocks` and retire raw compatibility blocks.
+- Replace tuple-compatible semantic storage with immutable typed sequence records.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -248,8 +253,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Add explicit semantic-node serialization for MIR/HIR/project inspection.
-2. Remove semantic tuple compatibility after all public outputs serialize explicitly.
+1. Migrate MIR consumers to explicit semantic serialization.
+2. Replace tuple-compatible storage with immutable typed records.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

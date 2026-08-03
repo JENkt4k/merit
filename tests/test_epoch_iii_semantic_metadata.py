@@ -134,7 +134,21 @@ fn main() -> i32 { return 0; }''', "typed_function.mrt")
     assert function.provenance.primary.source_name == "typed_function.mrt"
     payload = hir(program)
     assert payload["functions"][0]["name"] == "main"
+    returned = payload["functions"][0]["body"][0]
+    assert returned["kind"] == "return"
+    assert returned["operands"][0]["kind"] == "number"
+    assert returned["provenance"]["primary"]["source_name"] == "typed_function.mrt"
     json.dumps(payload)
+
+
+def test_mir_exposes_explicit_semantic_block_serialization():
+    program = checked()
+    function = mir(program)["functions"][0]
+    semantic_statement = function["semantic_blocks"][0]["statements"][0]
+    assert semantic_statement["kind"] == "with_cap"
+    assert semantic_statement["operands"][0] == "allocate"
+    assert semantic_statement["provenance"]["primary"]["line"] == 5
+    json.dumps(function["semantic_blocks"])
 
 
 def test_interpreter_recursively_drops_from_shared_metadata():

@@ -118,7 +118,9 @@ class FunctionDecl(Mapping):
     def __getitem__(self,key):return getattr(self,'return_type' if key=='return' else key)
     def __iter__(self):return iter(self.KEYS)
     def __len__(self):return len(self.KEYS)
-    def to_dict(self):return {key:self[key] for key in self.KEYS}
+    def to_dict(self,serializer=None):
+        convert=serializer or (lambda value:value)
+        return {key:convert(self[key]) for key in self.KEYS}
     @classmethod
     def from_mapping(cls,value):return cls(*(value[key] for key in cls.KEYS))
 class AtomNode(SemanticTuple):pass
@@ -1923,8 +1925,24 @@ class CGenerator:
             t=expected or self.etype(node.left,env)
             return f'({self.expr(node.left,env,t)} {node.operator} {self.expr(node.right,env,t)})'
 
+def semantic_payload(value,p):
+    if isinstance(value,SemanticTuple):
+        provenance=p.provenance(value)
+        return {
+            'kind':value.kind,
+            'operands':[semantic_payload(item,p) for item in value.operands],
+            'provenance':{
+                'primary':dataclasses.asdict(provenance.primary) if provenance.primary else None,
+                'related':dataclasses.asdict(provenance.related) if provenance.related else None,
+            },
+        }
+    if isinstance(value,list):return [semantic_payload(item,p) for item in value]
+    if isinstance(value,tuple):return [semantic_payload(item,p) for item in value]
+    if isinstance(value,dict):return {key:semantic_payload(item,p) for key,item in value.items()}
+    return value
+
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':[f.to_dict() if isinstance(f,FunctionDecl) else dict(f) for f in p.functions]}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':[f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p) for f in p.functions]}
 def mir(p):
     types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
     def lower_function(f):
@@ -1975,7 +1993,7 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks}
+        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks,'semantic_blocks':semantic_payload(blocks,p)}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 

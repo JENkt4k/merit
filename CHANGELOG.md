@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Explicit semantic serialization checkpoint
+
+- Added JSON-safe kind/operand/provenance serialization for semantic nodes.
+- Migrated HIR function output to explicit semantic serialization.
+- Added explicit MIR `semantic_blocks` alongside compatibility blocks.
+- Increased the regression suite from 172 to 173 tests.
+
 ## Epoch III — Typed function consumer checkpoint
 
 - Migrated semantic, ownership, interpreter, C, MIR, and project consumers to typed function fields.

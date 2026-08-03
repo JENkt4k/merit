@@ -64,6 +64,8 @@ Declaration dataclasses and `FunctionDecl` mappings also embed provenance. Proje
 
 All internal function consumers now use typed fields. `FunctionDecl` exposes only read-only mapping compatibility for external inspection while generated declarations are changed through typed attributes.
 
+HIR function bodies and MIR `semantic_blocks` serialize semantic nodes explicitly as JSON-safe kind/operand/provenance records. MIR retains raw `blocks` for one compatibility checkpoint while consumers migrate.
+
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
 Diagnostic rendering consumes both start and end columns for primary and related spans, producing full-width source underlines rather than point-only carets.
