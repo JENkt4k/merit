@@ -2072,6 +2072,16 @@ class CGenerator:
                         f'{p}{self.ctype(elem)} {value_temp} = {self.expr(args[2],env,elem)};',
                         f'{p}merit_vec_replace__{elem}({receiver_temp}, {index_temp}, {value_temp});',
                     ]
+                if vec and vec[0]=='transfer':
+                    elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
+                    destination_temp=f'_merit_vec_transfer_destination_{counter}'
+                    source_temp=f'_merit_vec_transfer_source_{counter}'
+                    vector_type=self.ctype('Vec__'+elem)
+                    return [
+                        f'{p}{vector_type} *{destination_temp} = {self.address_expr(args[0],env)};',
+                        f'{p}{vector_type} *{source_temp} = {self.address_expr(args[1],env)};',
+                        f'{p}merit_vec_transfer__{elem}({destination_temp}, {source_temp});',
+                    ]
             return [f'{p}(void)({self.expr(expression,env)});']
         if kind=='drop':
             t=self.env_type(env,node.binding_name)

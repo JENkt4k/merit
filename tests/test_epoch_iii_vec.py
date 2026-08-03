@@ -497,6 +497,17 @@ fn main()->i32 { with capability allocate { let allocator:Allocator=system_alloc
     assert run_interpreter_and_native(source,tmp_path,'vector_transfer') == '2\n11\n0\n'
 
 
+def test_vec_transfer_sequences_destination_before_source_in_generated_c():
+    source='''module vector_transfer_order
+capability allocate;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var destination:Vec<i64>=vec_new<i64>(allocator,0); var source:Vec<i64>=vec_new<i64>(allocator,0); vec_transfer<i64>(destination,source); } return 0; }'''
+    program=parse(source);Checker(program).check();generated=CGenerator(program).generate()
+    destination='_merit_vec_transfer_destination_0 = &destination;'
+    source_address='_merit_vec_transfer_source_0 = &source;'
+    call='merit_vec_transfer__i64(_merit_vec_transfer_destination_0, _merit_vec_transfer_source_0);'
+    assert generated.index(destination) < generated.index(source_address) < generated.index(call)
+
+
 def test_vec_transfer_preserves_owned_element_drop_obligations(tmp_path):
     source='''module owned_vector_transfer
 capability allocate;

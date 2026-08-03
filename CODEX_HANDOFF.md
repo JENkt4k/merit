@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 283 tests passing after editable installation
+- 284 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
