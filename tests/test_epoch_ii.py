@@ -47,6 +47,15 @@ fn main()->i32 { return 7; print(99); }''')
     assert [block['id'] for block in blocks] == [0]
     assert blocks[0]['terminator']['kind'] == 'return'
 
+def test_cfg_mir_folds_exact_constant_branches_before_pruning():
+    p=checked('''module x
+fn main()->i32 { if 2 * 3 == 7 { print(1); } else { print(2); } return 0; }''')
+    blocks=mir(p)['functions'][0]['semantic_blocks']
+    assert [block['id'] for block in blocks] == [0, 2, 3]
+    assert blocks[0]['terminator']['kind'] == 'goto'
+    assert blocks[0]['terminator']['target'] == 2
+    assert blocks[0]['terminator']['folded_condition']['kind'] == 'binop'
+
 def test_text_pipeline_project_native_matches():
     project=load_project(ROOT/'examples/projects/text_pipeline/Merit.toml')
     expected=interpret(project)

@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III MIR reachability checkpoint** of Merit.
+This repository contains the verified **Epoch III MIR constant branch checkpoint** of Merit.
 
 Current baseline:
-- 182 tests passing after editable installation
+- 183 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -75,6 +75,7 @@ python -m pytest -q
 - System and portable allocator providers verified through one interpreter/native vector path
 - Explicit borrowed-return modes with origin/mutability diagnostics and parity-safe acceptance gating
 - Canonical MIR reachability pruning after CFG construction
+- Exact constant-condition MIR folding with dead-branch pruning
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

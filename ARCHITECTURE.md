@@ -74,6 +74,7 @@ Every concrete `Vec<T>` retains the allocator passed to `vec_new<T>`; generated 
 `system_allocator()` and `portable_allocator()` provide distinct deterministic allocator identities while sharing the same checked vector lowering and ownership path.
 Borrowed return modes are explicit semantic metadata. Origin and mutability are checked now; acceptance remains gated on completing caller lifetime tracking and equivalent interpreter/native pointer lowering.
 Canonical MIR runs a reachability pass after CFG construction so blocks synthesized after terminal returns do not leak into inspection or later optimization inputs.
+Exact literal/arithmetic/comparison conditions are folded to direct MIR gotos before reachability pruning, with the original condition retained in explicit inspection metadata.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

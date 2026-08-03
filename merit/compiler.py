@@ -2025,6 +2025,26 @@ def reachable_mir_blocks(blocks):
         elif kind=='branch':pending.extend((terminator['then'],terminator['else']))
         elif kind=='switch':pending.extend(arm['target'] for arm in terminator['arms'])
     return [block for block in blocks if block['id'] in reachable]
+def constant_mir_value(p,expression):
+    node=p.node(expression)
+    if node.kind=='number':return Decimal(node.atom_value)
+    if node.kind!='binop':return None
+    left=constant_mir_value(p,node.left);right=constant_mir_value(p,node.right)
+    if left is None or right is None:return None
+    if node.operator=='+':return left+right
+    if node.operator=='-':return left-right
+    if node.operator=='*':return left*right
+    if node.operator=='/':return left/right if right!=0 else None
+    comparisons={'==':left==right,'!=':left!=right,'>=':left>=right,'<=':left<=right,'>':left>right,'<':left<right}
+    return Decimal(int(comparisons[node.operator])) if node.operator in comparisons else None
+def fold_constant_mir_branches(p,blocks):
+    for block in blocks:
+        terminator=block['terminator']
+        if terminator['kind']!='branch':continue
+        value=constant_mir_value(p,terminator['condition'])
+        if value is None:continue
+        block['terminator']={'kind':'goto','target':terminator['then'] if value!=0 else terminator['else'],'folded_condition':terminator['condition']}
+    return blocks
 def mir(p):
     types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
     def lower_function(f):
@@ -2067,7 +2087,7 @@ def mir(p):
             return current
         tail=lower_seq(f.body,entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
-        blocks=reachable_mir_blocks(blocks)
+        blocks=reachable_mir_blocks(fold_constant_mir_branches(p,blocks))
         ownership=ownership_model.function(f)
         locals_order=[name for name,_ in ownership.owned_locals]
         entry['statements'].extend(

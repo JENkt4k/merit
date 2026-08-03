@@ -305,6 +305,11 @@ Continue alpha-readiness hardening:
 - Synthetic continuation blocks after terminal returns are removed from canonical MIR.
 - Explicit semantic serialization contains only reachable blocks.
 
+## MIR constant-branch checkpoint now available
+- Exact numeric, arithmetic, and comparison conditions fold to direct gotos.
+- The original folded condition remains available in explicit semantic MIR.
+- Dead branch blocks are removed by the shared reachability pass.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

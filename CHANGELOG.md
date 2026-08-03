@@ -1,5 +1,11 @@
 # Changelog
 
+## Epoch III — MIR constant branch checkpoint
+
+- Folded exact literal/arithmetic/comparison branch conditions to direct MIR gotos.
+- Preserved folded conditions in explicit MIR and pruned dead successor blocks.
+- Increased the regression suite from 182 to 183 tests.
+
 ## Epoch III — MIR reachability checkpoint
 
 - Added entry-rooted reachability analysis after MIR CFG construction.
