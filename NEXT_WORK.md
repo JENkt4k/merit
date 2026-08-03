@@ -174,7 +174,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Recursive expression walkers traverse the typed operand collection.
 
 ## Concrete semantic storage checkpoint now available
-- The parser creates `SemanticTuple` storage for every semantic expression and statement.
+- The parser creates typed semantic-node storage for every semantic expression and statement.
 - Semantic nodes are distinguishable from incidental tuples while retaining equality/index compatibility during migration.
 - `SemanticNodeView` remains the typed accessor and provenance facade over concrete storage.
 
@@ -206,7 +206,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - The diagnostic renderer uses span end columns to underline full primary and related ranges.
 
 ## Embedded semantic-node provenance checkpoint now available
-- Every `SemanticTuple` carries typed primary and related `NodeProvenance` directly.
+- Every semantic node carries typed primary and related `NodeProvenance` directly.
 - `Program.provenance()` prefers embedded locations and falls back to legacy declaration maps.
 - Project merging refreshes embedded provenance after remapping both locations to owning units.
 - Semantic-node diagnostics remain source-aware after legacy maps are cleared.
@@ -252,10 +252,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Project visibility analysis traverses typed semantic views.
 - Literal validation uses typed atom accessors.
 
+## Semantic naming and match-arm checkpoint now available
+- The semantic storage base is named `SemanticNode`; the obsolete tuple name has been removed.
+- Match arms are immutable typed records across checking, interpretation, C lowering, and MIR lowering.
+- Explicit HIR serialization covers match-arm records without fallback string conversion.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Rename the legacy `SemanticTuple` base now that it no longer has tuple behavior.
-- Replace compact non-node tuple records such as match arms with typed records.
+- Replace compact parameter tuples with immutable typed parameter records.
+- Replace remaining parser declaration-tag tuples with typed declaration records.
 
 ## Deliberately deferred
 - specialization
@@ -267,8 +272,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Rename the legacy semantic storage base and remove obsolete compatibility naming.
-2. Replace compact non-node tuple special cases with typed records.
+1. Replace compact parameter tuples with immutable typed records.
+2. Replace parser declaration-tag tuples with typed records.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

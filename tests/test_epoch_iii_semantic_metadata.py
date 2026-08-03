@@ -5,7 +5,7 @@ import json
 import subprocess
 import pytest
 
-from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, MatchArm, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticNode, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -61,7 +61,7 @@ def test_shared_ownership_effects_record_direct_move():
 def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     program = parse(DIRECT_MOVE_PROGRAM, "semantic_nodes.mrt")
     capability_statement = program.functions[0]["body"][0]
-    assert isinstance(capability_statement, SemanticTuple)
+    assert isinstance(capability_statement, SemanticNode)
     assert isinstance(capability_statement, ControlFlowNode)
     assert isinstance(capability_statement, CapabilityNode)
     assert not isinstance(capability_statement, tuple)
@@ -152,6 +152,22 @@ def test_mir_exposes_explicit_semantic_block_serialization():
     assert semantic_statement["operands"][0] == "allocate"
     assert semantic_statement["provenance"]["primary"]["line"] == 5
     json.dumps(function["semantic_blocks"])
+
+
+def test_match_arms_are_typed_and_serialize_without_tuple_fallback():
+    program = parse('''module typed_match
+enum Result { Ok(i32), Err(i32) }
+fn main() -> i32 {
+    let value: Result = Ok(4);
+    match(value) { Ok(number) => { return number; } Err(code) => { return code; } }
+}''')
+    match_node = program.node(program.functions[0].body[1])
+    assert all(isinstance(arm, MatchArm) for arm in match_node.match_arms)
+    assert match_node.match_arms[0].variant == "Ok"
+    payload = hir(program)
+    serialized_arms = payload["functions"][0]["body"][1]["operands"][1]
+    assert serialized_arms[0]["binding"] == "number"
+    json.dumps(payload)
 
 
 def test_interpreter_recursively_drops_from_shared_metadata():

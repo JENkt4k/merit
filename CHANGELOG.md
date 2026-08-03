@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Semantic naming and typed match-arm checkpoint
+
+- Renamed the typed semantic storage base from `SemanticTuple` to `SemanticNode`.
+- Replaced compact match-arm tuples with immutable `MatchArm` records.
+- Added explicit recursive serialization and parity coverage for typed match arms.
+- Increased the regression suite from 173 to 174 tests.
+
 ## Epoch III — Named semantic access checkpoint
 
 - Removed indexed sequence compatibility from semantic nodes.

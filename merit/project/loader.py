@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import CompileError, FunctionDecl, NodeProvenance, Program, SemanticTuple, SourceSpan, parse, _impl_function_name
+from merit.compiler import CompileError, FunctionDecl, NodeProvenance, Program, SemanticNode, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -142,12 +142,12 @@ def _check_graph(units: Iterable[SourceUnit], entry_module: str) -> None:
 
 
 def _walk_expr(expr):
-    if not isinstance(expr, (SemanticTuple, tuple)):
+    if not isinstance(expr, (SemanticNode, tuple)):
         return
     yield expr
-    values = expr.operands if isinstance(expr, SemanticTuple) else expr[1:]
+    values = expr.operands if isinstance(expr, SemanticNode) else expr[1:]
     for value in values:
-        if isinstance(value, (SemanticTuple, tuple)):
+        if isinstance(value, (SemanticNode, tuple)):
             yield from _walk_expr(value)
         elif isinstance(value, list):
             for item in value:
@@ -166,7 +166,7 @@ def _walk_statements(body, program):
         elif node.kind == "if":
             yield from _walk_statements(node.then_body, program); yield from _walk_statements(node.else_body, program)
         elif node.kind == "match":
-            for arm in node.match_arms: yield from _walk_statements(arm[2], program)
+            for arm in node.match_arms: yield from _walk_statements(arm.body, program)
 
 
 def _split_generic_params(text: str) -> list[str]:
@@ -248,7 +248,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                     require(statement_node.declared_type, f"binding {statement_node.binding_name}")
                 exprs=[]
                 for value in statement_node.operands:
-                    if isinstance(value, (SemanticTuple, tuple)): exprs.append(value)
+                    if isinstance(value, (SemanticNode, tuple)): exprs.append(value)
                 for expr in exprs:
                     for expression in _walk_expr(expr):
                         node = unit.program.node(expression)
@@ -316,9 +316,9 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     semantic_nodes = {}
     for function in merged.functions:
         for expression in (*function.pre, *function.post):
-            semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticTuple))
+            semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticNode))
         for statement in _walk_statements(function.body, merged):
-            semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
+            semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticNode))
     for node_id, node in semantic_nodes.items():
         object.__setattr__(node, "provenance", NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related)))
     declarations = [*merged.decimals.values(), *merged.bounded.values(), *merged.structs.values(), *merged.enums.values(), *merged.traits.values(), *merged.impls, *merged.functions]

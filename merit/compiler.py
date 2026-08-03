@@ -104,7 +104,10 @@ class SourceSpan:
 @dataclasses.dataclass(frozen=True)
 class NodeProvenance:
     primary:SourceSpan|None=None; related:SourceSpan|None=None
-class SemanticTuple:
+@dataclasses.dataclass(frozen=True)
+class MatchArm:
+    variant:str; binding:str|None; body:list
+class SemanticNode:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
         object.__setattr__(self,'kind',kind)
@@ -124,29 +127,29 @@ class FunctionDecl(Mapping):
         return {key:convert(self[key]) for key in self.KEYS}
     @classmethod
     def from_mapping(cls,value):return cls(*(value[key] for key in cls.KEYS))
-class AtomNode(SemanticTuple):pass
+class AtomNode(SemanticNode):pass
 class StringNode(AtomNode):pass
 class NumberNode(AtomNode):pass
 class VariableNode(AtomNode):pass
-class FieldNode(SemanticTuple):pass
-class ConstructorNode(SemanticTuple):pass
+class FieldNode(SemanticNode):pass
+class ConstructorNode(SemanticNode):pass
 class StructInitNode(ConstructorNode):pass
-class CallNode(SemanticTuple):pass
+class CallNode(SemanticNode):pass
 class DirectCallNode(CallNode):pass
 class GenericCallNode(CallNode):pass
-class BinaryNode(SemanticTuple):pass
-class BindingNode(SemanticTuple):pass
+class BinaryNode(SemanticNode):pass
+class BindingNode(SemanticNode):pass
 class LetNode(BindingNode):pass
 class TryLetNode(BindingNode):pass
-class AssignmentNode(SemanticTuple):pass
+class AssignmentNode(SemanticNode):pass
 class AssignNode(AssignmentNode):pass
 class ReplaceNode(AssignmentNode):pass
-class EffectStatementNode(SemanticTuple):pass
+class EffectStatementNode(SemanticNode):pass
 class ReturnNode(EffectStatementNode):pass
 class PrintNode(EffectStatementNode):pass
 class ExpressionStatementNode(EffectStatementNode):pass
 class DropNode(EffectStatementNode):pass
-class ControlFlowNode(SemanticTuple):pass
+class ControlFlowNode(SemanticNode):pass
 class CapabilityNode(ControlFlowNode):pass
 class IfNode(ControlFlowNode):pass
 class WhileNode(ControlFlowNode):pass
@@ -160,7 +163,7 @@ SEMANTIC_STORAGE_TYPES={
 }
 @dataclasses.dataclass(frozen=True)
 class SemanticNodeView:
-    raw:SemanticTuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
+    raw:SemanticNode; span:SourceSpan|None=None; related_span:SourceSpan|None=None
     @property
     def kind(self)->str:return self.raw.kind
     @property
@@ -224,7 +227,7 @@ class Program:
         return embedded if embedded is not None else NodeProvenance()
     def span(self,node):return self.provenance(node).primary
     def node(self,raw):
-        if not isinstance(raw,SemanticTuple):return None
+        if not isinstance(raw,SemanticNode):return None
         provenance=self.provenance(raw)
         return SemanticNodeView(raw,provenance.primary,provenance.related)
 
@@ -240,7 +243,7 @@ class ASTBuilder(Transformer):
         if meta.line in self.related_line_map:
             related=self.related_line_map[meta.line]
             related_span=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
-        if isinstance(node,(SemanticTuple,FunctionDecl)) or dataclasses.is_dataclass(node):object.__setattr__(node,'provenance',NodeProvenance(primary,related_span))
+        if isinstance(node,(SemanticNode,FunctionDecl)) or dataclasses.is_dataclass(node):object.__setattr__(node,'provenance',NodeProvenance(primary,related_span))
         return node
     def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])
@@ -342,7 +345,7 @@ class ASTBuilder(Transformer):
     def if_stmt(self,meta,x): return self.mark(self.semantic('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else []),meta)
     @v_args(meta=True)
     def while_stmt(self,meta,x): return self.mark(self.semantic('while',x[0],x[1]),meta)
-    def match_arm(self,x): return (str(x[0]), str(x[1]) if len(x)==3 and x[1] is not None else None, x[-1])
+    def match_arm(self,x): return MatchArm(str(x[0]), str(x[1]) if len(x)==3 and x[1] is not None else None, x[-1])
     @v_args(meta=True)
     def match_stmt(self,meta,x): return self.mark(self.semantic('match',x[0],list(x[1:])),meta)
     @v_args(meta=True)
@@ -644,7 +647,7 @@ class TypeTable:
                 if node.kind in ('with_cap','while'):yield from statements(node.nested_body)
                 elif node.kind=='if':yield from statements(node.then_body);yield from statements(node.else_body)
                 elif node.kind=='match':
-                    for arm in node.match_arms:yield from statements(arm[2])
+                    for arm in node.match_arms:yield from statements(arm.body)
         for function in self.p.functions:
             names.add(function.return_type);names.update(type_name for _,type_name,_ in function.params)
             names.update(self.p.node(statement).declared_type for statement in statements(function.body) if self.p.node(statement).kind in ('let','try_let'))
@@ -808,7 +811,7 @@ class OwnershipEffects:
             elif kind=='if':
                 yield from self.statements(node.then_body);yield from self.statements(node.else_body)
             elif kind=='match':
-                for arm in node.match_arms:yield from self.statements(arm[2])
+                for arm in node.match_arms:yield from self.statements(arm.body)
     def expression_type(self,e,env):
         node=self.p.node(e);kind=node.kind
         if kind=='var':return env.get(node.atom_value)
@@ -990,18 +993,18 @@ class Checker:
             elif tag=='match':
                 subject_t=self.expr_type(node.expression,env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
-                arms=node.match_arms; names=[a[0] for a in arms]; expected=[v.name for v in enum.variants]
+                arms=node.match_arms; names=[arm.variant for arm in arms]; expected=[v.name for v in enum.variants]
                 if len(names)!=len(set(names)): self.fail('M6101: duplicate match arm',st)
                 missing=set(expected)-set(names); extra=set(names)-set(expected)
                 if missing or extra: self.fail(f'M6102: non-exhaustive match; missing={sorted(missing)} extra={sorted(extra)}',st)
                 states=[]
                 for variant in enum.variants:
-                    arm=next(a for a in arms if a[0]==variant.name); local={k:dataclasses.replace(v) for k,v in env.items()}
-                    binding=arm[1]
+                    arm=next(arm for arm in arms if arm.variant==variant.name); local={k:dataclasses.replace(v) for k,v in env.items()}
+                    binding=arm.binding
                     if variant.payload_type is None and binding is not None: self.fail(f'M6103: variant {variant.name} has no payload',st)
                     if variant.payload_type is not None and binding is None: self.fail(f'M6104: variant {variant.name} requires payload binding',st)
                     if binding is not None: local[binding]=VarState(variant.payload_type,False)
-                    self.block(arm[2],local,caps,fn); states.append(local)
+                    self.block(arm.body,local,caps,fn); states.append(local)
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
@@ -1202,12 +1205,12 @@ class Checker:
         while node and node.kind=='field':e=node.field_base;node=self.p.node(e)
         return node.operand(0) if node and node.kind=='var' else None
     def referenced_roots(self,e):
-        if not isinstance(e,SemanticTuple): return set()
+        if not isinstance(e,SemanticNode): return set()
         root=self.root_var(e)
         if root: return {root}
         roots=set()
         for part in self.p.node(e).operands:
-            if isinstance(part,SemanticTuple): roots |= self.referenced_roots(part)
+            if isinstance(part,SemanticNode): roots |= self.referenced_roots(part)
             elif isinstance(part,list):
                 for item in part: roots |= self.referenced_roots(item)
             elif isinstance(part,dict):
@@ -1339,9 +1342,9 @@ class Interpreter:
             elif kind=='drop': self.drop_value(env.pop(node.binding_name,None))
             elif kind=='match':
                 value=self.eval(node.expression,env); variant=value.value['variant']
-                arm=next(a for a in node.match_arms if a[0]==variant)
-                if arm[1] is not None: env[arm[1]]=value.value['payload']
-                r=self.block(arm[2],env)
+                arm=next(arm for arm in node.match_arms if arm.variant==variant)
+                if arm.binding is not None: env[arm.binding]=value.value['payload']
+                r=self.block(arm.body,env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
             elif kind=='with_cap':
                 r=self.block(node.nested_body,env)
@@ -1704,12 +1707,12 @@ class CGenerator:
         lines.append('')
         return lines
     def walk_old(self,e,out):
-        if not isinstance(e,SemanticTuple):return
+        if not isinstance(e,SemanticNode):return
         node=self.p.node(e)
         if node.kind=='call' and node.callee_name=='old':
             key=repr(node.arguments[0]);out.setdefault(key,node.arguments[0]);return
         for x in node.operands:
-            if isinstance(x,SemanticTuple):self.walk_old(x,out)
+            if isinstance(x,SemanticNode):self.walk_old(x,out)
             elif isinstance(x,list):
                 for y in x:self.walk_old(y,out)
     def walk_statements(self, body):
@@ -1721,7 +1724,7 @@ class CGenerator:
             elif node.kind=='if':
                 yield from self.walk_statements(node.then_body); yield from self.walk_statements(node.else_body)
             elif node.kind=='match':
-                for arm in node.match_arms: yield from self.walk_statements(arm[2])
+                for arm in node.match_arms: yield from self.walk_statements(arm.body)
     def owned_buffer_cleanup(self, f):
         ownership=self.ownership.function(f)
         return [
@@ -1810,11 +1813,11 @@ class CGenerator:
             o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.expression,env)};',f'{p}switch ({temp}.tag) {{']
             enum=self.p.enums[enum_t]
             for arm in node.match_arms:
-                variant=next(v for v in enum.variants if v.name==arm[0]);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
+                variant=next(v for v in enum.variants if v.name==arm.variant);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
                 local=dict(env)
-                if arm[1] is not None:
-                    local[arm[1]]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm[1]} = {temp}.data.{variant.name};');o.append(f'{p}    (void){arm[1]};')
-                for z in arm[2]:o+=self.stmt(z,local,i+1)
+                if arm.binding is not None:
+                    local[arm.binding]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm.binding} = {temp}.data.{variant.name};');o.append(f'{p}    (void){arm.binding};')
+                for z in arm.body:o+=self.stmt(z,local,i+1)
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
         if kind=='with_cap':
@@ -1929,7 +1932,7 @@ class CGenerator:
             return f'({self.expr(node.left,env,t)} {node.operator} {self.expr(node.right,env,t)})'
 
 def semantic_payload(value,p):
-    if isinstance(value,SemanticTuple):
+    if isinstance(value,SemanticNode):
         provenance=p.provenance(value)
         return {
             'kind':value.kind,
@@ -1942,6 +1945,7 @@ def semantic_payload(value,p):
     if isinstance(value,list):return [semantic_payload(item,p) for item in value]
     if isinstance(value,tuple):return [semantic_payload(item,p) for item in value]
     if isinstance(value,dict):return {key:semantic_payload(item,p) for key,item in value.items()}
+    if dataclasses.is_dataclass(value):return {field.name:semantic_payload(getattr(value,field.name),p) for field in dataclasses.fields(value)}
     return value
 
 def hir(p):
@@ -1976,8 +1980,8 @@ def mir(p):
                 elif kind=='match':
                     arm_blocks=[]; join_b=new_block()
                     for arm in node.match_arms:
-                        b=new_block(); arm_blocks.append({'variant':arm[0],'binding':arm[1],'target':b['id']})
-                        end_arm=lower_seq(arm[2],b)
+                        b=new_block(); arm_blocks.append({'variant':arm.variant,'binding':arm.binding,'target':b['id']})
+                        end_arm=lower_seq(arm.body,b)
                         if end_arm['terminator']['kind']=='fallthrough': end_arm['terminator']={'kind':'goto','target':join_b['id']}
                     current['terminator']={'kind':'switch','subject':node.expression,'arms':arm_blocks}
                     current=join_b

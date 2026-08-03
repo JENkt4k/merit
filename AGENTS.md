@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Remove **legacy semantic tuple naming and compact non-node tuple records** as described in `NEXT_WORK.md`.
+Replace **compact parameter tuples with immutable typed records** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

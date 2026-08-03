@@ -44,7 +44,7 @@ Semantic statement consumers use named operands for declarations, `try`, assignm
 
 Semantic expression consumers likewise use named atom, field, constructor, call, and binary operands. Recursive ownership and contract walkers traverse the view's operand collection, leaving concrete tuple storage isolated behind the adapter.
 
-The parser now constructs `SemanticTuple` for every expression and statement. This makes semantic storage distinct from incidental tuples while preserving compatibility for MIR inspection and existing serialization during the per-kind variant migration.
+The parser constructs immutable `SemanticNode` subclasses for every expression and statement. Public HIR/MIR inspection uses explicit serialization, and compiler consumers access nodes through named semantic views.
 
 Concrete semantic storage is further classified into atom, field, constructor, call, binary, binding, assignment, effect-statement, and control-flow families. These runtime types provide a stable intermediate step toward per-kind variants without duplicating backend paths.
 
