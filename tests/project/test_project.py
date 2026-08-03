@@ -60,6 +60,34 @@ def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     assert shared.merit_increment(41) == 42
 
 
+@pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
+def test_shared_library_stable_struct_abi_matches_foreign_caller(tmp_path):
+    project_root = tmp_path / "shared_struct_api"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "shared_struct_api"\nentry = "src/main.mrt"\nsources = ["src/*.mrt"]\n'
+    )
+    (project_root / "src" / "main.mrt").write_text(
+        "module shared_struct_api\n"
+        'pub stable("point-v1") struct Point { x:i32; y:i32; }\n'
+        "pub fn point_sum(point:Point)->i32 { return checked_add(point.x,point.y); }\n"
+        "fn main()->i32 { return 0; }\n"
+    )
+    project = load_project(project_root / "Merit.toml")
+    _, header, library = build_shared(project, project_root / "build" / "libshared_struct_api")
+    generated_header = header.read_text()
+    assert "Merit layout struct Point hash" in generated_header
+    assert 'sizeof(merit_Point) == 8' in generated_header
+
+    class Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_int32), ("y", ctypes.c_int32)]
+
+    shared = ctypes.CDLL(str(library))
+    shared.merit_point_sum.argtypes = [Point]
+    shared.merit_point_sum.restype = ctypes.c_int32
+    assert shared.merit_point_sum(Point(19, 23)) == 42
+
+
 def test_missing_import_is_diagnostic(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "Merit.toml").write_text('[package]\nname="bad"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n')

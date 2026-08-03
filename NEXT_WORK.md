@@ -313,6 +313,7 @@ Continue alpha-readiness hardening:
 ## C shared-library acceptance checkpoint now available
 - Project builds emit PIC `.so`, generated C, and a matching header.
 - A foreign caller loads the library and invokes a generated primitive ABI function.
+- A foreign caller passes a stable-layout Merit struct by value and observes matching field layout.
 - Consumer headers preserve project `pub` function filtering; cross-platform suffix policy remains deliberately deferred.
 
 ## Acceptance gates

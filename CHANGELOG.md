@@ -6,6 +6,8 @@
 - Emitted PIC shared objects alongside generated C headers.
 - Added a foreign-caller smoke test for a generated primitive ABI function.
 - Preserved merged-project `pub` exports and filtered private functions from consumer headers.
+- Added foreign-caller acceptance for stable-layout structs passed by value.
+- Increased the regression suite from 185 to 186 tests.
 - Increased the regression suite from 184 to 185 tests.
 
 ## Epoch III — MIR constant branch checkpoint
