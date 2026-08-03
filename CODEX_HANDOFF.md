@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III typed expression-operand checkpoint** of Merit.
+This repository contains the verified **Epoch III concrete semantic storage checkpoint** of Merit.
 
 Current baseline:
 - 171 tests passing after editable installation
@@ -50,6 +50,7 @@ python -m pytest -q
 - typed dispatch throughout semantic helper paths with no direct tuple-tag reads for expressions or statements
 - named statement operands across checker, ownership, MIR, interpreter, and C lowering
 - named expression operands across ownership, checking, interpretation, and C lowering with no direct positional reads
+- concrete tuple-compatible semantic node storage produced uniformly by the parser
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

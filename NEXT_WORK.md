@@ -173,10 +173,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Ownership analysis, checker, interpreter, and C lowering no longer read semantic expression operands positionally.
 - Recursive expression walkers traverse the typed operand collection.
 
+## Concrete semantic storage checkpoint now available
+- The parser creates `SemanticTuple` storage for every semantic expression and statement.
+- Semantic nodes are distinguishable from incidental tuples while retaining equality/index compatibility during migration.
+- `SemanticNodeView` remains the typed accessor and provenance facade over concrete storage.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Introduce concrete typed node storage behind the now-complete semantic accessor surface.
-- Move span/provenance storage onto concrete nodes before removing tuple compatibility.
+- Introduce per-kind typed variants over `SemanticTuple` storage.
+- Move span/provenance storage onto concrete variants before removing external metadata maps.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -189,8 +194,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Introduce concrete typed node storage with compatibility serialization.
-2. Move span/provenance storage onto concrete nodes before removing tuple compatibility.
+1. Introduce per-kind typed variants with compatibility serialization.
+2. Move span/provenance storage onto variants before removing external metadata maps.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

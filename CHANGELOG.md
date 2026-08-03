@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Concrete semantic storage checkpoint
+
+- Added tuple-compatible `SemanticTuple` storage with explicit kind and operand surfaces.
+- Migrated parser construction for every semantic expression and statement.
+- Kept `SemanticNodeView` as the typed accessor and provenance facade.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Typed expression-operand checkpoint
 
 - Migrated atom, field, constructor, call, generic-call, and binary operands to named accessors.

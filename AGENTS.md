@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Implement **concrete typed semantic node storage** as described in `NEXT_WORK.md`.
+Implement **per-kind typed semantic variants** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

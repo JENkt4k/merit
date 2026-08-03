@@ -100,6 +100,12 @@ class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 @dataclasses.dataclass(frozen=True)
 class SourceSpan:
     line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
+class SemanticTuple(tuple):
+    def __new__(cls,kind,*operands):return super().__new__(cls,(kind,*operands))
+    @property
+    def kind(self):return self[0]
+    @property
+    def operands(self):return self[1:]
 @dataclasses.dataclass(frozen=True)
 class SemanticNodeView:
     raw:tuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
@@ -176,6 +182,7 @@ class ASTBuilder(Transformer):
         self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
         if meta.line in self.related_line_map:self.related_spans[id(node)]=SourceSpan(self.related_line_map[meta.line],1,self.related_line_map[meta.line],1,self.source_name)
         return node
+    def semantic(self,kind,*operands):return SemanticTuple(kind,*operands)
     def module_decl(self,x): return str(x[0])
     @v_args(meta=True)
     def enum_variant(self,meta,x): return self.mark(EnumVariant(str(x[0]), x[1] if len(x)>1 else None),meta)
@@ -216,68 +223,68 @@ class ASTBuilder(Transformer):
     def precontract(self,x): return ('pre',x[0])
     def postcontract(self,x): return ('post',x[0])
     @v_args(meta=True)
-    def string(self,meta,x): return self.mark(('string',json.loads(str(x[0]))),meta)
+    def string(self,meta,x): return self.mark(self.semantic('string',json.loads(str(x[0]))),meta)
     @v_args(meta=True)
-    def number(self,meta,x): return self.mark(('number',str(x[0])),meta)
+    def number(self,meta,x): return self.mark(self.semantic('number',str(x[0])),meta)
     @v_args(meta=True)
-    def variable(self,meta,x): return self.mark(('var',str(x[0])),meta)
+    def variable(self,meta,x): return self.mark(self.semantic('var',str(x[0])),meta)
     def args(self,x): return list(x)
     def field_init(self,x): return (str(x[0]),x[1])
     def field_inits(self,x): return list(x)
     @v_args(meta=True)
-    def struct_init(self,meta,x): return self.mark(('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {}),meta)
+    def struct_init(self,meta,x): return self.mark(self.semantic('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {}),meta)
     @v_args(meta=True)
-    def call(self,meta,x): return self.mark(('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else []),meta)
+    def call(self,meta,x): return self.mark(self.semantic('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else []),meta)
     @v_args(meta=True)
     def generic_call(self,meta,x):
         head=str(x[0])
         match=re.fullmatch(r'([A-Za-z_]\w*)<\s*([A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>',head)
-        return self.mark(('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else []),meta)
+        return self.mark(self.semantic('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else []),meta)
     @v_args(meta=True)
     def postfix(self,meta,x):
         node=x[0]
-        for f in x[1:]: node=('field',node,str(f))
+        for f in x[1:]: node=self.semantic('field',node,str(f))
         return self.mark(node,meta)
     @v_args(meta=True)
-    def comparison(self,meta,x): return self.mark(x[0] if len(x)==1 else ('binop',str(x[1]),x[0],x[2]),meta)
+    def comparison(self,meta,x): return self.mark(x[0] if len(x)==1 else self.semantic('binop',str(x[1]),x[0],x[2]),meta)
     @v_args(meta=True)
     def sum(self,meta,x):
         n=x[0]
-        for i in range(1,len(x),2): n=('binop',str(x[i]),n,x[i+1])
+        for i in range(1,len(x),2): n=self.semantic('binop',str(x[i]),n,x[i+1])
         return self.mark(n,meta)
     @v_args(meta=True)
     def product(self,meta,x):
         n=x[0]
-        for i in range(1,len(x),2): n=('binop',str(x[i]),n,x[i+1])
+        for i in range(1,len(x),2): n=self.semantic('binop',str(x[i]),n,x[i+1])
         return self.mark(n,meta)
     @v_args(meta=True)
-    def let_stmt(self,meta,x): return self.mark(('let',str(x[0]),x[1],x[2],False),meta)
+    def let_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],False),meta)
     @v_args(meta=True)
-    def var_stmt(self,meta,x): return self.mark(('let',str(x[0]),x[1],x[2],True),meta)
+    def var_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],True),meta)
     @v_args(meta=True)
-    def try_let_stmt(self,meta,x): return self.mark(('try_let',str(x[0]),x[1],x[2]),meta)
+    def try_let_stmt(self,meta,x): return self.mark(self.semantic('try_let',str(x[0]),x[1],x[2]),meta)
     @v_args(meta=True)
-    def assign_stmt(self,meta,x): return self.mark(('assign',x[0],x[1]),meta)
+    def assign_stmt(self,meta,x): return self.mark(self.semantic('assign',x[0],x[1]),meta)
     @v_args(meta=True)
-    def replace_stmt(self,meta,x): return self.mark(('replace',x[0],x[1]),meta)
+    def replace_stmt(self,meta,x): return self.mark(self.semantic('replace',x[0],x[1]),meta)
     @v_args(meta=True)
-    def return_stmt(self,meta,x): return self.mark(('return',x[0]),meta)
+    def return_stmt(self,meta,x): return self.mark(self.semantic('return',x[0]),meta)
     @v_args(meta=True)
-    def print_stmt(self,meta,x): return self.mark(('print',x[0]),meta)
+    def print_stmt(self,meta,x): return self.mark(self.semantic('print',x[0]),meta)
     @v_args(meta=True)
-    def expr_stmt(self,meta,x): return self.mark(('expr',x[0]),meta)
+    def expr_stmt(self,meta,x): return self.mark(self.semantic('expr',x[0]),meta)
     @v_args(meta=True)
-    def drop_stmt(self,meta,x): return self.mark(('drop',str(x[0])),meta)
+    def drop_stmt(self,meta,x): return self.mark(self.semantic('drop',str(x[0])),meta)
     def block(self,x): return list(x)
     @v_args(meta=True)
-    def with_capability(self,meta,x): return self.mark(('with_cap',str(x[0]),x[1]),meta)
+    def with_capability(self,meta,x): return self.mark(self.semantic('with_cap',str(x[0]),x[1]),meta)
     @v_args(meta=True)
-    def if_stmt(self,meta,x): return self.mark(('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else []),meta)
+    def if_stmt(self,meta,x): return self.mark(self.semantic('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else []),meta)
     @v_args(meta=True)
-    def while_stmt(self,meta,x): return self.mark(('while',x[0],x[1]),meta)
+    def while_stmt(self,meta,x): return self.mark(self.semantic('while',x[0],x[1]),meta)
     def match_arm(self,x): return (str(x[0]), str(x[1]) if len(x)==3 and x[1] is not None else None, x[-1])
     @v_args(meta=True)
-    def match_stmt(self,meta,x): return self.mark(('match',x[0],list(x[1:])),meta)
+    def match_stmt(self,meta,x): return self.mark(self.semantic('match',x[0],list(x[1:])),meta)
     @v_args(meta=True)
     def function_decl(self,meta,x):
         name=str(x[0]); i=1; params=[]

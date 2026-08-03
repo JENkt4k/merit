@@ -3,7 +3,7 @@ import contextlib
 import io
 import subprocess
 
-from merit.compiler import CGenerator, Checker, Interpreter, OwnershipEffects, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import CGenerator, Checker, Interpreter, OwnershipEffects, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -59,6 +59,8 @@ def test_shared_ownership_effects_record_direct_move():
 def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     program = parse(DIRECT_MOVE_PROGRAM, "semantic_nodes.mrt")
     capability_statement = program.functions[0]["body"][0]
+    assert isinstance(capability_statement, SemanticTuple)
+    assert isinstance(capability_statement, tuple)
     capability = program.node(capability_statement)
     assert capability.kind == "with_cap"
     assert capability.operand(0) == "allocate"

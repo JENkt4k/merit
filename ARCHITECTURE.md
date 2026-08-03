@@ -44,6 +44,8 @@ Semantic statement consumers use named operands for declarations, `try`, assignm
 
 Semantic expression consumers likewise use named atom, field, constructor, call, and binary operands. Recursive ownership and contract walkers traverse the view's operand collection, leaving concrete tuple storage isolated behind the adapter.
 
+The parser now constructs `SemanticTuple` for every expression and statement. This makes semantic storage distinct from incidental tuples while preserving compatibility for MIR inspection and existing serialization during the per-kind variant migration.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.
