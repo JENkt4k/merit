@@ -182,6 +182,47 @@ fn main()->i32 { return id(1); }'''
         checked(src)
 
 
+@pytest.mark.parametrize('clause',["requires mutate(value) > 0;","ensures mutate(value) > 0;"])
+def test_contracts_reject_mutating_calls(clause):
+    src=f'''module contract_purity
+stable("v1") struct Value {{ number:i32; }}
+fn mutate(borrow_mut value:Value)->i32 {{ value.number=value.number+1; return value.number; }}
+fn inspect(borrow_mut value:Value)->i32 {clause} {{ return value.number; }}
+fn main()->i32 {{ var value:Value=Value{{number:1}}; return inspect(value); }}'''
+    with pytest.raises(CompileError,match='M3203: .*condition cannot call impure function mutate'):
+        checked(src)
+
+
+def test_contracts_reject_hazardous_builtin_calls():
+    src='''module contract_hazard
+capability allocate;
+fn create(allocator:Allocator)->i32 requires buffer_len(buffer_new(allocator,1)) == 0; { return 0; }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); return create(allocator); } }'''
+    with pytest.raises(CompileError,match='M3203: precondition cannot call mutating or hazardous operation buffer_new'):
+        checked(src)
+
+
+def test_contracts_reject_mutating_vector_intrinsics():
+    src='''module contract_vector_mutation
+capability allocate;
+fn inspect(borrow_mut values:Vec<i64>)->i32 requires vec_push<i64>(values,1) == 0; { return 0; }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var values:Vec<i64>=vec_new<i64>(allocator,0); return inspect(values); } }'''
+    with pytest.raises(CompileError,match='M3203: precondition cannot call mutating or hazardous operation vec_push'):
+        checked(src)
+
+
+def test_contracts_allow_read_only_function_calls(tmp_path):
+    src='''module contract_observation
+fn positive(value:i32)->i32 { return value > 0; }
+fn identity(value:i32)->i32 requires positive(value) == 1; ensures positive(result) == 1; { return value; }
+fn main()->i32 { return identity(7); }'''
+    program=checked(src)
+    assert Interpreter(program).run().value==7
+    source=tmp_path/'contract_observation.mrt';executable=tmp_path/'contract_observation'
+    source.write_text(src);compile_file(source,executable)
+    assert subprocess.run([str(executable)]).returncode==7
+
+
 def test_old_is_postcondition_only():
     pre='''module x
 fn id(x:i32)->i32 requires old(x) == x; { return x; }

@@ -289,6 +289,7 @@ Continue alpha-readiness hardening:
 - Copy assignment values and target addresses are sequenced explicitly, preserving interpreter order.
 - Owned vector replacement sequences receiver, index, and replacement exactly once in language order.
 - Zero-copy vector transfer sequences destination before source and materializes both addresses once.
+- Preconditions and postconditions admit read-only calls but reject mutable borrows, effects, and capability-gated hazards.
 
 ## Deliberately deferred
 - specialization

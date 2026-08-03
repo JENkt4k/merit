@@ -1236,6 +1236,8 @@ class Checker:
             vec=vec_builtin(name)
             if vec:
                 op,elem=vec; spec=VEC_INTRINSICS[op]; vec_t='Vec__'+elem; self.ensure_type(vec_t)
+                if self.contract_phase and (spec.capability or spec.receiver_mode=='borrow_mut'):
+                    self.fail(f'M3203: {self.contract_phase}condition cannot call mutating or hazardous operation {name}',e)
                 if len(args)!=spec.arity: self.fail(f'M3005: {name} expects {spec.arity} arguments',e)
                 if spec.capability:
                     if spec.capability not in caps: self.fail(f'M2003: call to {name} requires capabilities [{spec.capability}]',e)
@@ -1278,6 +1280,8 @@ class Checker:
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
                 required=set(((cap,) if cap else ()) + sig.additional_capabilities);missing=required-caps
+                if self.contract_phase and (required or any(mode=='borrow_mut' for mode,_ in params)):
+                    self.fail(f'M3203: {self.contract_phase}condition cannot call mutating or hazardous operation {name}',e)
                 if missing: self.fail(f'M2003: call to {name} requires capabilities {sorted(missing)}',e)
                 for capability in sorted(required):
                     hazard=sig.hazard if capability==cap else capability_policy(capability)['hazard_class']
@@ -1301,6 +1305,8 @@ class Checker:
                 return ret
             if name not in self.fn:self.fail(f'M3004: unknown function {name}',e)
             callee=self.fn[name];missing=set(callee.requires_caps)-caps
+            if self.contract_phase and (callee.effects or callee.requires_caps or any(param.mode=='borrow_mut' for param in callee.params)):
+                self.fail(f'M3203: {self.contract_phase}condition cannot call impure function {name}',e)
             self.call_edges.append({'caller':fn.name,'callee':name,'required':callee.requires_caps})
             if missing:self.fail(f"M2003: call to {name} requires capabilities {sorted(missing)}",e)
             if len(args)!=len(callee.params):self.fail(f"M3005: {name} expects {len(callee.params)} arguments",e)
