@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Broad semantic diagnostics checkpoint
+
+- Preserved spans for literals, constructors, calls, arithmetic, declarations, assignments, replacement, returns, capability regions, and control flow.
+- Attached actionable primary locations to type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics.
+- Added rendered diagnostic regression tests for the principal semantic error families.
+- Increased the regression suite from 154 to 158 tests.
+
 ## Epoch III — Project semantic diagnostics checkpoint
 
 - Remapped merged-project semantic spans to their owning source units.

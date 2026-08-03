@@ -108,11 +108,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Multi-module ownership failures identify the correct non-entry source file.
 - The single-source CLI uses the same structured semantic renderer.
 
+## Broad semantic span checkpoint now available
+- Literals, constructors, calls, arithmetic, declarations, assignments, replacement, returns, capability regions, and control-flow nodes retain spans.
+- Type, capability, replacement, match-exhaustiveness, constructor, field, and call diagnostics select actionable primary locations.
+- Regression tests verify rendered file, line, and source excerpts for the principal semantic diagnostic families.
+
 ## Recommended next epic
-Expand semantic span coverage:
-- Retain spans for declarations, statements, calls, constructors, and control-flow nodes.
-- Attach primary spans to type, capability, replacement, and exhaustiveness diagnostics.
-- Add source maps for generated generic instantiations.
+Add source maps for generated generic instantiations:
+- Track each generated declaration and expression back to its generic source template and instantiation site.
+- Preserve original source identity when monomorphization changes line structure.
+- Render useful primary and related locations for diagnostics inside instantiated code.
 
 ## Deliberately deferred
 - specialization
@@ -124,8 +129,8 @@ Expand semantic span coverage:
 - concurrency
 
 ## Suggested implementation order
-1. Cover remaining semantic AST nodes and diagnostic families with spans.
-2. Preserve original-source maps through generic instantiation.
+1. Preserve original-source maps through generic instantiation.
+2. Cover declaration-level diagnostics with precise spans.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

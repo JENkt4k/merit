@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Expand **semantic span coverage and generic source mapping** as described in `NEXT_WORK.md`.
+Implement **generic instantiation source mapping** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

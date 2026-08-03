@@ -141,49 +141,69 @@ class ASTBuilder(Transformer):
     def requires_caps(self,x): return ('requires_caps',x[0] if x else [])
     def precontract(self,x): return ('pre',x[0])
     def postcontract(self,x): return ('post',x[0])
-    def string(self,x): return ('string',json.loads(str(x[0])))
-    def number(self,x): return ('number',str(x[0]))
+    @v_args(meta=True)
+    def string(self,meta,x): return self.mark(('string',json.loads(str(x[0]))),meta)
+    @v_args(meta=True)
+    def number(self,meta,x): return self.mark(('number',str(x[0])),meta)
     @v_args(meta=True)
     def variable(self,meta,x): return self.mark(('var',str(x[0])),meta)
     def args(self,x): return list(x)
     def field_init(self,x): return (str(x[0]),x[1])
     def field_inits(self,x): return list(x)
-    def struct_init(self,x): return ('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {})
-    def call(self,x): return ('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else [])
-    def generic_call(self,x):
+    @v_args(meta=True)
+    def struct_init(self,meta,x): return self.mark(('struct_init',str(x[0]),dict(x[1]) if len(x)>1 else {}),meta)
+    @v_args(meta=True)
+    def call(self,meta,x): return self.mark(('call',str(x[0]),x[1] if len(x)>1 and x[1] is not None else []),meta)
+    @v_args(meta=True)
+    def generic_call(self,meta,x):
         head=str(x[0])
         match=re.fullmatch(r'([A-Za-z_]\w*)<\s*([A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>',head)
-        return ('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else [])
+        return self.mark(('generic_call',match.group(1),match.group(2),x[1] if len(x)>1 and x[1] is not None else []),meta)
     @v_args(meta=True)
     def postfix(self,meta,x):
         node=x[0]
         for f in x[1:]: node=('field',node,str(f))
         return self.mark(node,meta)
-    def comparison(self,x): return x[0] if len(x)==1 else ('binop',str(x[1]),x[0],x[2])
-    def sum(self,x):
+    @v_args(meta=True)
+    def comparison(self,meta,x): return self.mark(x[0] if len(x)==1 else ('binop',str(x[1]),x[0],x[2]),meta)
+    @v_args(meta=True)
+    def sum(self,meta,x):
         n=x[0]
         for i in range(1,len(x),2): n=('binop',str(x[i]),n,x[i+1])
-        return n
-    def product(self,x):
+        return self.mark(n,meta)
+    @v_args(meta=True)
+    def product(self,meta,x):
         n=x[0]
         for i in range(1,len(x),2): n=('binop',str(x[i]),n,x[i+1])
-        return n
-    def let_stmt(self,x): return ('let',str(x[0]),x[1],x[2],False)
-    def var_stmt(self,x): return ('let',str(x[0]),x[1],x[2],True)
-    def try_let_stmt(self,x): return ('try_let',str(x[0]),x[1],x[2])
-    def assign_stmt(self,x): return ('assign',x[0],x[1])
-    def replace_stmt(self,x): return ('replace',x[0],x[1])
-    def return_stmt(self,x): return ('return',x[0])
-    def print_stmt(self,x): return ('print',x[0])
-    def expr_stmt(self,x): return ('expr',x[0])
+        return self.mark(n,meta)
+    @v_args(meta=True)
+    def let_stmt(self,meta,x): return self.mark(('let',str(x[0]),x[1],x[2],False),meta)
+    @v_args(meta=True)
+    def var_stmt(self,meta,x): return self.mark(('let',str(x[0]),x[1],x[2],True),meta)
+    @v_args(meta=True)
+    def try_let_stmt(self,meta,x): return self.mark(('try_let',str(x[0]),x[1],x[2]),meta)
+    @v_args(meta=True)
+    def assign_stmt(self,meta,x): return self.mark(('assign',x[0],x[1]),meta)
+    @v_args(meta=True)
+    def replace_stmt(self,meta,x): return self.mark(('replace',x[0],x[1]),meta)
+    @v_args(meta=True)
+    def return_stmt(self,meta,x): return self.mark(('return',x[0]),meta)
+    @v_args(meta=True)
+    def print_stmt(self,meta,x): return self.mark(('print',x[0]),meta)
+    @v_args(meta=True)
+    def expr_stmt(self,meta,x): return self.mark(('expr',x[0]),meta)
     @v_args(meta=True)
     def drop_stmt(self,meta,x): return self.mark(('drop',str(x[0])),meta)
     def block(self,x): return list(x)
-    def with_capability(self,x): return ('with_cap',str(x[0]),x[1])
-    def if_stmt(self,x): return ('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else [])
-    def while_stmt(self,x): return ('while',x[0],x[1])
+    @v_args(meta=True)
+    def with_capability(self,meta,x): return self.mark(('with_cap',str(x[0]),x[1]),meta)
+    @v_args(meta=True)
+    def if_stmt(self,meta,x): return self.mark(('if',x[0],x[1],x[2] if len(x)>2 and x[2] is not None else []),meta)
+    @v_args(meta=True)
+    def while_stmt(self,meta,x): return self.mark(('while',x[0],x[1]),meta)
     def match_arm(self,x): return (str(x[0]), str(x[1]) if len(x)==3 and x[1] is not None else None, x[-1])
-    def match_stmt(self,x): return ('match',x[0],list(x[1:]))
+    @v_args(meta=True)
+    def match_stmt(self,meta,x): return self.mark(('match',x[0],list(x[1:])),meta)
     def function_decl(self,x):
         name=str(x[0]); i=1; params=[]
         if i<len(x) and x[i] is None:i+=1
@@ -651,6 +671,8 @@ class OwnershipEffects:
 
 class Checker:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
+    def fail(self,text,node=None,notes=()):
+        raise CompileError(text,self.p.span(node) if node is not None else None,notes)
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
@@ -737,7 +759,7 @@ class Checker:
             tag=st[0]
             if tag=='let':
                 _,n,t,e,mut=st;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
-                if et not in (t,'number'):raise CompileError(f'M3001: cannot assign {et} to {t} in {n}')
+                if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if e[0]=='number':self.validate_literal(t,e[1])
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
@@ -745,58 +767,58 @@ class Checker:
                 _,n,t,e=st; self.ensure_type(t)
                 et=self.expr_type(e,env,caps,fn); enum=self.p.enums.get(et)
                 if not enum or [v.name for v in enum.variants] != ['Ok','Err']:
-                    raise CompileError('M6200: try requires an enum with Ok and Err variants')
+                    self.fail('M6200: try requires an enum with Ok and Err variants',st)
                 ok=enum.variants[0]
-                if ok.payload_type != t: raise CompileError(f'M6201: try Ok payload is {ok.payload_type}, binding expects {t}')
+                if ok.payload_type != t: self.fail(f'M6201: try Ok payload is {ok.payload_type}, binding expects {t}',st)
                 ret_enum=self.p.enums.get(fn['return'])
                 if not ret_enum or [v.name for v in ret_enum.variants] != ['Ok','Err']:
-                    raise CompileError('M6202: function using try must return a Result-style enum')
+                    self.fail('M6202: function using try must return a Result-style enum',st)
                 if ret_enum.variants[1].payload_type != enum.variants[1].payload_type:
-                    raise CompileError('M6203: try error payload does not match function return error type')
+                    self.fail('M6203: try error payload does not match function return error type',st)
                 env[n]=VarState(t,False)
             elif tag=='assign':
                 lt=self.lvalue_type(st[1],env,True);rt=self.expr_type(st[2],env,caps,fn)
-                if rt not in (lt,'number'):raise CompileError(f'M3006: cannot assign {rt} to {lt}')
-                if self.types.get(lt).needs_drop: raise CompileError(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner')
+                if rt not in (lt,'number'):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
+                if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner',st)
                 self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
             elif tag=='replace':
                 target,value=st[1],st[2]
                 lt=self.lvalue_type(target,env,True)
-                if not self.types.get(lt).needs_drop: raise CompileError(f'M5203: replace requires owned storage, got {lt}')
+                if not self.types.get(lt).needs_drop: self.fail(f'M5203: replace requires owned storage, got {lt}',st)
                 target_root=self.root_var(target)
                 rt=self.expr_type(value,env,caps,fn)
-                if rt not in (lt,'number'): raise CompileError(f'M5204: replacement type {rt} does not match {lt}')
+                if rt not in (lt,'number'): self.fail(f'M5204: replacement type {rt} does not match {lt}',st)
                 value_root=self.root_var(value)
                 if value_root==target_root or env[target_root].moved or env[target_root].dropped:
-                    raise CompileError(f'M5202: replacement source aliases target {self.expr_path(target)}')
+                    self.fail(f'M5202: replacement source aliases target {self.expr_path(target)}',st)
                 self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
                 et=self.expr_type(st[1],env,caps,fn)
-                if et not in (fn['return'],'number'):raise CompileError(f"M3002: return type {et} does not match {fn['return']}")
+                if et not in (fn['return'],'number'):self.fail(f"M3002: return type {et} does not match {fn['return']}",st)
                 self.consume_owned_source(st[1],et,env,f'returning from {fn["name"]}')
             elif tag in ('print','expr'):self.expr_type(st[1],env,caps,fn)
             elif tag=='drop':
                 n=st[1]
-                if n not in env: raise CompileError(f'M5100: cannot drop unknown binding {n}')
+                if n not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)
                 if env[n].moved or env[n].dropped:
                     origin=env[n].move_origin or env[n].drop_origin
                     note='value moved here' if env[n].moved else 'value previously dropped here'
                     raise CompileError(f'M5101: binding {n} already consumed',self.p.span(st),(DiagnosticNote(note,origin),))
-                if env[n].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot drop borrowed parameter {n}')
+                if env[n].mode in ('borrow','borrow_mut'): self.fail(f'M5102: cannot drop borrowed parameter {n}',st)
                 env[n].dropped=True;env[n].drop_origin=self.p.span(st)
             elif tag=='match':
                 subject_t=self.expr_type(st[1],env,caps,fn); enum=self.p.enums.get(subject_t)
-                if not enum: raise CompileError(f'M6100: match requires enum value, got {subject_t}')
+                if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
                 arms=st[2]; names=[a[0] for a in arms]; expected=[v.name for v in enum.variants]
-                if len(names)!=len(set(names)): raise CompileError('M6101: duplicate match arm')
+                if len(names)!=len(set(names)): self.fail('M6101: duplicate match arm',st)
                 missing=set(expected)-set(names); extra=set(names)-set(expected)
-                if missing or extra: raise CompileError(f'M6102: non-exhaustive match; missing={sorted(missing)} extra={sorted(extra)}')
+                if missing or extra: self.fail(f'M6102: non-exhaustive match; missing={sorted(missing)} extra={sorted(extra)}',st)
                 states=[]
                 for variant in enum.variants:
                     arm=next(a for a in arms if a[0]==variant.name); local={k:dataclasses.replace(v) for k,v in env.items()}
                     binding=arm[1]
-                    if variant.payload_type is None and binding is not None: raise CompileError(f'M6103: variant {variant.name} has no payload')
-                    if variant.payload_type is not None and binding is None: raise CompileError(f'M6104: variant {variant.name} requires payload binding')
+                    if variant.payload_type is None and binding is not None: self.fail(f'M6103: variant {variant.name} has no payload',st)
+                    if variant.payload_type is not None and binding is None: self.fail(f'M6104: variant {variant.name} requires payload binding',st)
                     if binding is not None: local[binding]=VarState(variant.payload_type,False)
                     self.block(arm[2],local,caps,fn); states.append(local)
                 for k in env:
@@ -807,12 +829,12 @@ class Checker:
                     env[root].moved=True;env[root].move_origin=self.p.span(st[1]);env[root].move_context='matching owned enum subject'
             elif tag=='with_cap':
                 cap=st[1]
-                if cap not in self.p.capabilities:raise CompileError(f'M2002: undeclared capability {cap}')
+                if cap not in self.p.capabilities:self.fail(f'M2002: undeclared capability {cap}',st)
                 self.audit_sites.append({'function':fn['name'],'capability':cap})
                 self.block(st[2],env,caps|{cap},fn)
             elif tag=='if':
                 ct=self.expr_type(st[1],env,caps,fn)
-                if ct not in ('i32','number'): raise CompileError('M3300: if condition must be boolean/comparison')
+                if ct not in ('i32','number'): self.fail('M3300: if condition must be boolean/comparison',st)
                 left={k:dataclasses.replace(v) for k,v in env.items()}; right={k:dataclasses.replace(v) for k,v in env.items()}
                 self.block(st[2],left,caps,fn); self.block(st[3],right,caps,fn)
                 for k in env:
@@ -823,7 +845,7 @@ class Checker:
                     env[k].drop_origin=left[k].drop_origin or right[k].drop_origin
             elif tag=='while':
                 ct=self.expr_type(st[1],env,caps,fn)
-                if ct not in ('i32','number'): raise CompileError('M3301: while condition must be boolean/comparison')
+                if ct not in ('i32','number'): self.fail('M3301: while condition must be boolean/comparison',st)
                 loop={k:dataclasses.replace(v) for k,v in env.items()}; self.block(st[2],loop,caps,fn)
                 for k in env:
                     env[k].moved=env[k].moved or loop[k].moved
@@ -834,20 +856,20 @@ class Checker:
     def lvalue_type(self,e,env,write=False):
         if e[0]=='var':
             n=e[1]
-            if n not in env:raise CompileError(f'M3003: unknown variable {n}')
+            if n not in env:self.fail(f'M3003: unknown variable {n}',e)
             if env[n].moved:
                 context=f' ({env[n].move_context})' if env[n].move_context else ''
                 raise CompileError(f'M5001: use of moved value {n}',self.p.span(e),(DiagnosticNote(f'value moved here{context}',env[n].move_origin),))
             if env[n].dropped:raise CompileError(f'M5103: use of dropped value {n}',self.p.span(e),(DiagnosticNote('value dropped here',env[n].drop_origin),))
-            if write and not env[n].mutable:raise CompileError(f'M5002: cannot assign to immutable binding {n}')
+            if write and not env[n].mutable:self.fail(f'M5002: cannot assign to immutable binding {n}',e)
             return env[n].type_name
         if e[0]=='field':
             base=e[1];bt=self.lvalue_type(base,env,write);s=self.p.structs.get(bt)
-            if not s:raise CompileError(f'M4002: {bt} has no fields')
+            if not s:self.fail(f'M4002: {bt} has no fields',e)
             for fld in s.fields:
                 if fld.name==e[2]:return fld.type_name
-            raise CompileError(f'M4003: unknown field {e[2]} on {bt}')
-        raise CompileError('M3007: invalid assignment target')
+            self.fail(f'M4003: unknown field {e[2]} on {bt}',e)
+        self.fail('M3007: invalid assignment target',e)
     def expr_type(self,e,env,caps,fn):
         tag=e[0]
         if tag=='string':return 'String'
@@ -856,12 +878,12 @@ class Checker:
         if tag=='field':return self.lvalue_type(e,env)
         if tag=='struct_init':
             name,vals=e[1],e[2];s=self.p.structs.get(name)
-            if not s:raise CompileError(f'M4004: unknown struct {name}')
+            if not s:self.fail(f'M4004: unknown struct {name}',e)
             expected={f.name:f for f in s.fields}
-            if set(vals)!=set(expected):raise CompileError(f'M4005: {name} fields must be {sorted(expected)}')
+            if set(vals)!=set(expected):self.fail(f'M4005: {name} fields must be {sorted(expected)}',e)
             for n,x in vals.items():
                 t=self.expr_type(x,env,caps,fn)
-                if t not in (expected[n].type_name,'number'):raise CompileError(f'M4006: field {n} expects {expected[n].type_name}, got {t}')
+                if t not in (expected[n].type_name,'number'):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
                 if x[0]=='number':self.validate_literal(expected[n].type_name,x[1])
                 self.consume_owned_source(x,t,env,f'initializing field {name}.{n}')
             return name
@@ -869,19 +891,19 @@ class Checker:
             name,args=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:
-                if len(variants)>1: raise CompileError(f'M6002: ambiguous enum constructor {name}')
+                if len(variants)>1: self.fail(f'M6002: ambiguous enum constructor {name}',e)
                 enum,variant=variants[0]
                 expected_count=0 if variant.payload_type is None else 1
-                if len(args)!=expected_count: raise CompileError(f'M6003: {name} expects {expected_count} arguments')
+                if len(args)!=expected_count: self.fail(f'M6003: {name} expects {expected_count} arguments',e)
                 if expected_count:
                     at=self.expr_type(args[0],env,caps,fn)
-                    if at not in (variant.payload_type,'number'): raise CompileError(f'M6004: {name} expects {variant.payload_type}, got {at}')
+                    if at not in (variant.payload_type,'number'): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
                     if args[0][0]=='number': self.validate_literal(variant.payload_type,args[0][1])
                     self.consume_owned_source(args[0],at,env,f'constructing {enum.name}::{variant.name}')
                 return enum.name
             if name=='old':
-                if self.contract_phase!='post': raise CompileError('M3201: old() is only valid in postconditions')
-                if len(args)!=1: raise CompileError('M3200: old expects one argument')
+                if self.contract_phase!='post': self.fail('M3201: old() is only valid in postconditions',e)
+                if len(args)!=1: self.fail('M3200: old expects one argument',e)
                 return self.expr_type(args[0],env,caps,fn)
             if name in ('checked_add','checked_sub','checked_mul','decimal_div'):
                 if name=='decimal_div' and len(args)!=2:raise CompileError('M1301: decimal_div expects 2 arguments')
@@ -896,9 +918,9 @@ class Checker:
             if vec:
                 op,elem=vec; spec=VEC_INTRINSICS[op]; vec_t='Vec__'+elem; self.ensure_type(vec_t)
                 if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
-                if len(args)!=spec.arity: raise CompileError(f'M3005: {name} expects {spec.arity} arguments')
+                if len(args)!=spec.arity: self.fail(f'M3005: {name} expects {spec.arity} arguments',e)
                 if spec.capability:
-                    if spec.capability not in caps: raise CompileError(f'M2003: call to {name} requires capabilities [{spec.capability}]')
+                    if spec.capability not in caps: self.fail(f'M2003: call to {name} requires capabilities [{spec.capability}]',e)
                     self.hazardous_operations.append(hazard_entry(fn['name'],name,spec.capability,spec.hazard))
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
@@ -922,7 +944,7 @@ class Checker:
                     if op=='replace' and receiver_root in self.referenced_roots(value_arg):
                         raise CompileError(f'M7303: replacement source aliases vector {receiver_root}')
                     at=self.expr_type(value_arg,env,caps,fn)
-                    if at not in (elem,'number'): raise CompileError(f'M3008: vector value expects {elem}, got {at}')
+                    if at not in (elem,'number'): self.fail(f'M3008: vector value expects {elem}, got {at}',value_arg)
                     self.consume_owned_source(value_arg,at,env,f'calling {name}')
                 if op=='drop':
                     root=self.root_var(args[0])
@@ -930,13 +952,13 @@ class Checker:
                 return vec_return_type(op,elem)
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
-                if cap and cap not in caps: raise CompileError(f'M2003: call to {name} requires capabilities {[cap]}')
+                if cap and cap not in caps: self.fail(f'M2003: call to {name} requires capabilities {[cap]}',e)
                 if cap: self.hazardous_operations.append(hazard_entry(fn['name'],name,cap,sig.hazard))
-                if len(args)!=len(params): raise CompileError(f'M3005: {name} expects {len(params)} arguments')
+                if len(args)!=len(params): self.fail(f'M3005: {name} expects {len(params)} arguments',e)
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
                     at=self.expr_type(arg,env,caps,fn)
-                    if at not in (pt,'number'): raise CompileError(f'M3008: argument {idx} expects {pt}, got {at}')
+                    if at not in (pt,'number'): self.fail(f'M3008: argument {idx} expects {pt}, got {at}',arg)
                     root=self.root_var(arg)
                     if mode in ('borrow','borrow_mut'):
                         if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
@@ -946,15 +968,15 @@ class Checker:
                         loans.append((root,mode))
                     if mode=='value': self.consume_owned_source(arg,at,env,f'passing argument {idx} to {name}')
                 return ret
-            if name not in self.fn:raise CompileError(f'M3004: unknown function {name}')
+            if name not in self.fn:self.fail(f'M3004: unknown function {name}',e)
             callee=self.fn[name];missing=set(callee['requires_caps'])-caps
             self.call_edges.append({'caller':fn['name'],'callee':name,'required':callee['requires_caps']})
-            if missing:raise CompileError(f"M2003: call to {name} requires capabilities {sorted(missing)}")
-            if len(args)!=len(callee['params']):raise CompileError(f"M3005: {name} expects {len(callee['params'])} arguments")
+            if missing:self.fail(f"M2003: call to {name} requires capabilities {sorted(missing)}",e)
+            if len(args)!=len(callee['params']):self.fail(f"M3005: {name} expects {len(callee['params'])} arguments",e)
             loans=[]
             for arg,(pn,pt,mode) in zip(args,callee['params']):
                 at=self.expr_type(arg,env,caps,fn)
-                if at not in (pt,'number'):raise CompileError(f'M3008: argument {pn} expects {pt}, got {at}')
+                if at not in (pt,'number'):self.fail(f'M3008: argument {pn} expects {pt}, got {at}',arg)
                 root=self.root_var(arg)
                 if root and mode in ('borrow','borrow_mut'):
                     for previous_root,previous_mode,previous_param in loans:
@@ -971,9 +993,9 @@ class Checker:
             if e[1] in ('==','!=','>=','<=','>','<'):return 'i32'
             if a=='number':return b
             if b=='number':return a
-            if a!=b:raise CompileError(f'M3102: arithmetic operands differ: {a} and {b}')
+            if a!=b:self.fail(f'M3102: arithmetic operands differ: {a} and {b}',e)
             return a
-        raise CompileError(f'M3999: unsupported expression {e}')
+        self.fail(f'M3999: unsupported expression {e}',e)
     def check_vec_receiver(self,arg,env,caps,fn,vec_t,mode):
         at=self.expr_type(arg,env,caps,fn)
         if at!=vec_t: raise CompileError(f'M3008: vector argument expects {vec_t}, got {at}')

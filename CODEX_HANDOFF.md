@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III project semantic diagnostics checkpoint** of Merit.
+This repository contains the verified **Epoch III broad semantic diagnostics checkpoint** of Merit.
 
 Current baseline:
-- 154 tests passing after editable installation
+- 158 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -38,6 +38,7 @@ python -m pytest -q
 - shared typed lifecycle metadata and function ownership effects across checker, MIR, interpreter, and C cleanup
 - source-aware move/drop state with primary diagnostics, origin notes, and MIR consumption locations
 - source-mapped structured semantic errors across single-source and multi-module project workflows
+- actionable primary spans for type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

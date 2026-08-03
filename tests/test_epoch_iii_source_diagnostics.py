@@ -28,6 +28,12 @@ def move_error(source=MOVE_SOURCE, source_name="move_origin.mrt"):
     return caught.value
 
 
+def semantic_error(source, source_name="semantic_error.mrt"):
+    with pytest.raises(CompileError) as caught:
+        Checker(parse(source, source_name)).check()
+    return caught.value
+
+
 def test_use_after_move_carries_primary_and_origin_spans():
     error = move_error()
     assert error.code == "M5001"
@@ -161,3 +167,42 @@ pub fn broken() -> i32 {
     error = capsys.readouterr().err
     assert f" --> {worker}:8:26" in error
     assert f" --> {worker}:7:35" in error
+
+
+@pytest.mark.parametrize(
+    ("source", "code", "line", "excerpt"),
+    [
+        (
+            'module typed\nfn main() -> i32 {\n    let value: i32 = "text";\n    return 0;\n}',
+            "M3001",
+            3,
+            'let value: i32 = "text";',
+        ),
+        (
+            'module caps\ncapability allocate;\nfn main() -> i32 {\n    let allocator: Allocator = system_allocator();\n    let value: Buffer = buffer_from_string(allocator, "text");\n    return 0;\n}',
+            "M2003",
+            5,
+            'buffer_from_string(allocator, "text")',
+        ),
+        (
+            'module replacement\nfn main() -> i32 {\n    var value: i64 = 1;\n    replace(value, 2);\n    return 0;\n}',
+            "M5203",
+            4,
+            "replace(value, 2);",
+        ),
+        (
+            'module matches\nenum Maybe { Some(i32), None }\nfn main() -> i32 {\n    let value: Maybe = None();\n    match (value) { None => { print(0); } }\n    return 0;\n}',
+            "M6102",
+            5,
+            "match (value)",
+        ),
+    ],
+)
+def test_major_semantic_errors_have_actionable_primary_spans(source, code, line, excerpt):
+    error = semantic_error(source)
+    assert error.code == code
+    assert (error.span.line, error.span.source_name) == (line, "semantic_error.mrt")
+    rendered = render_exception(error, Path("semantic_error.mrt"), source)
+    assert f"error[{code}]" in rendered
+    assert f" --> semantic_error.mrt:{line}:" in rendered
+    assert excerpt in rendered
