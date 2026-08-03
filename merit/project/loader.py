@@ -236,11 +236,11 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
         for trait in unit.program.traits.values():
             for method in trait.methods:
                 if method.return_type not in primitive and method.return_type != "Self": require(method.return_type, f"trait {trait.name}.{method.name}")
-                for _, type_name, _ in method.params:
-                    if type_name not in primitive and type_name != "Self": require(type_name, f"trait {trait.name}.{method.name}")
+                for param in method.params:
+                    if param.type_name not in primitive and param.type_name != "Self": require(param.type_name, f"trait {trait.name}.{method.name}")
         for function in unit.program.functions:
-            for _, type_name, _ in function.params:
-                if type_name not in primitive: require(type_name, f"function {function.name}")
+            for param in function.params:
+                if param.type_name not in primitive: require(param.type_name, f"function {function.name}")
             if function.return_type not in primitive: require(function.return_type, f"function {function.name}")
             for statement in _walk_statements(function.body, unit.program):
                 statement_node = unit.program.node(statement)

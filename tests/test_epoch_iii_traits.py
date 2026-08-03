@@ -109,7 +109,7 @@ def test_trait_declaration_check_accepts_self_signatures():
     Checker(program).check()
     trait = program.traits['Ordered']
     assert [method.name for method in trait.methods] == ['compare', 'identity']
-    assert trait.methods[0].params[0] == ('left', 'Self', 'value')
+    assert (trait.methods[0].params[0].name, trait.methods[0].params[0].type_name, trait.methods[0].params[0].mode) == ('left', 'Self', 'value')
     assert trait.methods[1].return_type == 'Self'
 
 

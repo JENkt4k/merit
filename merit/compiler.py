@@ -89,7 +89,10 @@ class EnumVariant: name:str; payload_type:str|None=None
 @dataclasses.dataclass(frozen=True)
 class EnumType: name:str; variants:tuple[EnumVariant,...]
 @dataclasses.dataclass(frozen=True)
-class TraitMethod: name:str; params:tuple[tuple[str,str,str],...]; return_type:str
+class Parameter:
+    name:str; type_name:str; mode:str='value'
+@dataclasses.dataclass(frozen=True)
+class TraitMethod: name:str; params:tuple[Parameter,...]; return_type:str
 @dataclasses.dataclass(frozen=True)
 class TraitType: name:str; methods:tuple[TraitMethod,...]
 @dataclasses.dataclass(frozen=True)
@@ -276,9 +279,9 @@ class ASTBuilder(Transformer):
         abi=None; i=0
         if x and str(x[0]).startswith('"'): abi=str(x[0])[1:-1]; i=1
         name=str(x[i]); return ('struct',self.mark(StructType(name,tuple(x[i+1:]),abi),meta))
-    def param_borrow_mut(self,x): return (str(x[0]),x[1],'borrow_mut')
-    def param_borrow(self,x): return (str(x[0]),x[1],'borrow')
-    def param_value(self,x): return (str(x[0]),x[1],'value')
+    def param_borrow_mut(self,x): return Parameter(str(x[0]),x[1],'borrow_mut')
+    def param_borrow(self,x): return Parameter(str(x[0]),x[1],'borrow')
+    def param_value(self,x): return Parameter(str(x[0]),x[1],'value')
     def params(self,x): return list(x)
     def name_list(self,x): return [str(v) for v in x]
     def effects(self,x): return ('effects',x[0] if x else [])
@@ -649,7 +652,7 @@ class TypeTable:
                 elif node.kind=='match':
                     for arm in node.match_arms:yield from statements(arm.body)
         for function in self.p.functions:
-            names.add(function.return_type);names.update(type_name for _,type_name,_ in function.params)
+            names.add(function.return_type);names.update(param.type_name for param in function.params)
             names.update(self.p.node(statement).declared_type for statement in statements(function.body) if self.p.node(statement).kind in ('let','try_let'))
         names.discard('void')
         return sorted(names)
@@ -797,8 +800,8 @@ class OwnershipEffects:
                     if mode=='value':sites.update(self.consume_sites(arg,type_name))
                 return sites
             if name in self.fn:
-                for arg,(_,type_name,mode) in zip(args,self.fn[name].params):
-                    if mode=='value':sites.update(self.consume_sites(arg,type_name))
+                for arg,param in zip(args,self.fn[name].params):
+                    if param.mode=='value':sites.update(self.consume_sites(arg,param.type_name))
             return sites
         if node.kind=='binop':
             sites.update(self.effect_sites(node.left));sites.update(self.effect_sites(node.right));return sites
@@ -829,7 +832,7 @@ class OwnershipEffects:
             if name in self.fn:return self.fn[name].return_type
         return None
     def function(self,f):
-        env={name:type_name for name,type_name,_ in f.params};owned=[];explicit=set();consumed_sites={}
+        env={param.name:param.type_name for param in f.params};owned=[];explicit=set();consumed_sites={}
         for statement in self.statements(f.body):
             node=self.p.node(statement);tag=node.kind
             if tag=='let':
@@ -878,7 +881,7 @@ class Checker:
                 if method.name in seen_methods: self.fail(f'M7101: duplicate method {method.name} in trait {t.name}',method)
                 seen_methods.add(method.name)
                 self.ensure_trait_signature_type(method.return_type,method)
-                for _, type_name, _ in method.params: self.ensure_trait_signature_type(type_name,method)
+                for param in method.params: self.ensure_trait_signature_type(param.type_name,method)
         seen_impls=set()
         for impl in self.p.impls:
             trait=self.p.traits.get(impl.trait_name)
@@ -909,7 +912,7 @@ class Checker:
         self.ensure_type(f.return_type,f)
         missing=set(f.requires_caps)-self.p.capabilities
         if missing:self.fail(f"M2001: function {f.name} requires undeclared capabilities: {sorted(missing)}",f)
-        env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f.params}
+        env={param.name:VarState(param.type_name,param.mode=='borrow_mut',False,False,param.mode) for param in f.params}
         for e in f.pre:self.check_contract_expr(e,env,set(f.requires_caps),f,'pre')
         self.block(f.body,env,set(f.requires_caps),f)
         post_env=dict(env); post_env['result']=VarState(f.return_type,False)
@@ -931,8 +934,8 @@ class Checker:
         def subst(type_name): return impl.target_type if type_name=='Self' else type_name
         for name,method in expected.items():
             candidate=actual[name]
-            expected_params=[(subst(t),mode) for _,t,mode in method.params]
-            actual_params=[(t,mode) for _,t,mode in candidate.params]
+            expected_params=[(subst(param.type_name),param.mode) for param in method.params]
+            actual_params=[(param.type_name,param.mode) for param in candidate.params]
             if actual_params!=expected_params or candidate.return_type!=subst(method.return_type):
                 self.fail(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}',candidate)
             if candidate.effects or candidate.requires_caps:
@@ -1161,19 +1164,19 @@ class Checker:
             if missing:self.fail(f"M2003: call to {name} requires capabilities {sorted(missing)}",e)
             if len(args)!=len(callee.params):self.fail(f"M3005: {name} expects {len(callee.params)} arguments",e)
             loans=[]
-            for arg,(pn,pt,mode) in zip(args,callee.params):
+            for arg,param in zip(args,callee.params):
                 at=self.expr_type(arg,env,caps,fn)
-                if at not in (pt,'number'):self.fail(f'M3008: argument {pn} expects {pt}, got {at}',arg)
+                if at not in (param.type_name,'number'):self.fail(f'M3008: argument {param.name} expects {param.type_name}, got {at}',arg)
                 root=self.root_var(arg)
-                if root and mode in ('borrow','borrow_mut'):
+                if root and param.mode in ('borrow','borrow_mut'):
                     for previous_root,previous_mode,previous_param in loans:
-                        if root==previous_root and ('borrow_mut' in (mode,previous_mode)):
-                            raise CompileError(f'M5003: conflicting loans of {root} for {previous_param} and {pn}')
-                    loans.append((root,mode,pn))
-                if mode=='borrow_mut':
-                    if not root: raise CompileError(f'M5004: borrow_mut argument {pn} must be an addressable binding')
+                        if root==previous_root and ('borrow_mut' in (param.mode,previous_mode)):
+                            raise CompileError(f'M5003: conflicting loans of {root} for {previous_param} and {param.name}')
+                    loans.append((root,param.mode,param.name))
+                if param.mode=='borrow_mut':
+                    if not root: raise CompileError(f'M5004: borrow_mut argument {param.name} must be an addressable binding')
                     if not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
-                if mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {pn} to {name}')
+                if param.mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {param.name} to {name}')
             return callee.return_type
         if tag=='binop':
             a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
@@ -1248,7 +1251,7 @@ class LayoutEngine:
                 if v.payload_type: add(v.payload_type)
         for f in self.p.functions:
             add(f.return_type)
-            for _,t,_ in f.params: add(t)
+            for param in f.params: add(param.type_name)
             for st in CGenerator(self.p).walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
@@ -1312,8 +1315,8 @@ class Interpreter:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
-        f=self.fn[n];env={pn:v for (pn,_,_),v in zip(f.params,args)}
-        self.call_modes.append({pn:mode for pn,_,mode in f.params})
+        f=self.fn[n];env={param.name:v for param,v in zip(f.params,args)}
+        self.call_modes.append({param.name:param.mode for param in f.params})
         try:
             for c in f.pre:
                 if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
@@ -1478,7 +1481,7 @@ class Interpreter:
                 second=self.eval(args[1],env,first.type_name)
                 return self.arith('div' if n=='decimal_div' else n[8:],first,second)
             callee=self.fn[n]
-            vals=[self.eval(x,env,t) for x,(_,t,_) in zip(args,callee.params)]
+            vals=[self.eval(x,env,param.type_name) for x,param in zip(args,callee.params)]
             return self.call(n,vals)
         if kind=='binop':
             a=self.eval(node.left,env);b=self.eval(node.right,env,a.type_name)
@@ -1527,7 +1530,7 @@ class CGenerator:
                 if v.payload_type: add(v.payload_type)
         for f in self.p.functions:
             add(f.return_type)
-            for _,t,_ in f.params: add(t)
+            for param in f.params: add(param.type_name)
             for st in self.walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
@@ -1607,7 +1610,7 @@ class CGenerator:
                 o.extend(self.vec_typedef_lines(vt))
         for f in self.p.functions:
             if f.name=='main':continue
-            params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f.params) or 'void'
+            params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void'
             o.append(f'{self.ctype(f.return_type)} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
@@ -1735,7 +1738,7 @@ class CGenerator:
             and name not in ownership.consumed_roots
         ]
     def fn_c(self,f):
-        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f.params) or 'void';env={n:(t,m) for n,t,m in f.params};o=[f'{self.ctype(f.return_type)} {name}({params}) {{']
+        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};o=[f'{self.ctype(f.return_type)} {name}({params}) {{']
         old={}
         for c in f.post:self.walk_old(c,old)
         self.old_map={}
@@ -1924,8 +1927,8 @@ class CGenerator:
                     return f'merit_round_div((__int128)({left}) * ({right}), {scale}, {mode})' if n=='checked_mul' else f'merit_round_div((__int128)({left}) * {scale}, ({right}), {mode})'
                 return f'({left} * {right})' if n=='checked_mul' else f'({left} / {right})'
             callee=self.fn[n];rendered=[]
-            for x,(_,t,m) in zip(a,callee.params):
-                ex=self.expr(x,env,t);rendered.append(('&'+ex) if m in ('borrow','borrow_mut') else ex)
+            for x,param in zip(a,callee.params):
+                ex=self.expr(x,env,param.type_name);rendered.append(('&'+ex) if param.mode in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
             t=expected or self.etype(node.left,env)
@@ -2000,7 +2003,7 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
+        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 

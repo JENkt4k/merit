@@ -1,5 +1,11 @@
 # Changelog
 
+## Epoch III — Typed parameter checkpoint
+
+- Added immutable `Parameter` records shared by functions and trait methods.
+- Migrated semantic, ownership, interpreter, native, MIR, and project consumers to named parameter fields.
+- Added explicit JSON-safe parameter serialization to MIR output.
+
 ## Epoch III — Semantic naming and typed match-arm checkpoint
 
 - Renamed the typed semantic storage base from `SemanticTuple` to `SemanticNode`.

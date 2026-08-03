@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III semantic naming and typed match-arm checkpoint** of Merit.
+This repository contains the verified **Epoch III typed parameter checkpoint** of Merit.
 
 Current baseline:
 - 174 tests passing after editable installation
@@ -67,6 +67,7 @@ python -m pytest -q
 - Immutable typed semantic storage with controlled provenance attachment
 - Named semantic access throughout compiler/project consumers with no indexed node compatibility
 - Typed `SemanticNode` and `MatchArm` records with explicit inspection serialization
+- Typed `Parameter` records across semantic, ownership, interpreter, native, MIR, and project paths
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

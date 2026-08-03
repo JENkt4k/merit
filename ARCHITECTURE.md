@@ -66,6 +66,7 @@ All internal function consumers now use typed fields. `FunctionDecl` exposes onl
 
 HIR function bodies and MIR `semantic_blocks` serialize semantic nodes explicitly as JSON-safe kind/operand/provenance records. MIR no longer exposes internal tuple-compatible nodes.
 Compiler semantic nodes use immutable typed storage with named semantic views and no indexed sequence compatibility; source provenance is attached only through controlled parser/project-loader paths.
+Function and trait-method parameters share an immutable `Parameter` record consumed by checking, ownership, interpretation, C lowering, MIR, and project visibility.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

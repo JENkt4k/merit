@@ -257,10 +257,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Match arms are immutable typed records across checking, interpretation, C lowering, and MIR lowering.
 - Explicit HIR serialization covers match-arm records without fallback string conversion.
 
+## Typed parameter checkpoint now available
+- Function and trait-method parameters use immutable `Parameter` records.
+- Ownership, checking, interpretation, C lowering, MIR, and project visibility use named parameter fields.
+- HIR and MIR serialize parameters explicitly as JSON-safe records.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace compact parameter tuples with immutable typed parameter records.
 - Replace remaining parser declaration-tag tuples with typed declaration records.
+- Replace field-initializer tuples with typed records.
 
 ## Deliberately deferred
 - specialization
@@ -272,8 +277,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace compact parameter tuples with immutable typed records.
-2. Replace parser declaration-tag tuples with typed records.
+1. Replace parser declaration-tag tuples with typed records.
+2. Replace field-initializer tuples with typed records.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
