@@ -358,7 +358,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticNode))
     for node_id, node in semantic_nodes.items():
         object.__setattr__(node, "provenance", NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related)))
-    declarations = [*merged.decimals.values(), *merged.bounded.values(), *merged.structs.values(), *merged.enums.values(), *merged.traits.values(), *merged.impls, *merged.functions]
+    declarations = [*merged.decimals.values(), *merged.bounded.values(), *merged.structs.values(), *merged.enums.values(), *merged.traits.values(), *merged.impls, *merged.functions, *merged.destructors.values()]
     declarations.extend(field for struct in merged.structs.values() for field in struct.fields)
     declarations.extend(variant for enum in merged.enums.values() for variant in enum.variants)
     declarations.extend(method for trait in merged.traits.values() for method in trait.methods)
@@ -374,7 +374,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.exports)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.exports, merged.destructors)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:

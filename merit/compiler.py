@@ -11,7 +11,7 @@ from lark.exceptions import VisitError
 GRAMMAR=r'''
 start: module_decl declaration*
 module_decl: "module" CNAME
-?declaration: enum_decl | trait_decl | impl_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | function_decl
+?declaration: enum_decl | trait_decl | impl_decl | decimal_decl | bounded_decl | capability_decl | struct_decl | destructor_decl | function_decl
 enum_decl: "enum" CNAME "{" enum_variant ("," enum_variant)* [","] "}"
 enum_variant: CNAME ["(" type_ref ")"]
 trait_decl: "trait" CNAME "{" trait_method* "}"
@@ -22,6 +22,7 @@ decimal_decl: "decimal" CNAME "(" INT "," INT "," CNAME ")" ";"
 bounded_decl: "bounded" CNAME "(" BASE_INT "," SIGNED_NUMBER "," SIGNED_NUMBER ")" ";"
 capability_decl: "capability" CNAME ";"
 struct_decl: ["stable" "(" ESCAPED_STRING ")"] "struct" CNAME "{" field_decl* "}"
+destructor_decl: "destructor" CNAME block
 field_decl: CNAME ":" type_ref ";"
 function_decl: "fn" CNAME "(" [params] ")" "->" return_ref effects? requires_caps? contract* block
 return_ref: "borrow_mut" type_ref -> return_borrow_mut
@@ -130,6 +131,9 @@ class FunctionClause:
 @dataclasses.dataclass(frozen=True)
 class ReturnSpec:
     type_name:str; mode:str='value'
+@dataclasses.dataclass(frozen=True)
+class DestructorDecl:
+    type_name:str; body:list; provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
 class SemanticNode:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
@@ -244,7 +248,7 @@ class SemanticNodeView:
     def match_arms(self):self.require('match');return self.operand(1)
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); exports:set[str]=dataclasses.field(default_factory=set)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); exports:set[str]=dataclasses.field(default_factory=set); destructors:dict[str,DestructorDecl]=dataclasses.field(default_factory=dict)
     def provenance(self,node):
         embedded=getattr(node,'provenance',None)
         return embedded if embedded is not None else NodeProvenance()
@@ -302,6 +306,8 @@ class ASTBuilder(Transformer):
         abi=None; i=0
         if x and str(x[0]).startswith('"'): abi=str(x[0])[1:-1]; i=1
         name=str(x[i]); return DeclarationEntry('struct',self.mark(StructType(name,tuple(x[i+1:]),abi),meta))
+    @v_args(meta=True)
+    def destructor_decl(self,meta,x): return DeclarationEntry('destructor',self.mark(DestructorDecl(str(x[0]),x[1]),meta))
     def param_borrow_mut(self,x): return Parameter(str(x[0]),x[1],'borrow_mut')
     def param_borrow(self,x): return Parameter(str(x[0]),x[1],'borrow')
     def param_value(self,x): return Parameter(str(x[0]),x[1],'value')
@@ -389,7 +395,7 @@ class ASTBuilder(Transformer):
             i+=1
         return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret.type_name,effects,caps,pre,post,x[-1],return_mode=ret.mode),meta))
     def start(self,x):
-        ds={};bs={};cs=set();ss={};es=dict(FS_BUILTIN_ENUMS);ts={};fs=[];ims=[];symbols={name:'builtin' for name in FS_BUILTIN_ENUMS}
+        ds={};bs={};cs=set();ss={};es=dict(FS_BUILTIN_ENUMS);ts={};fs=[];ims=[];destructors={};symbols={name:'builtin' for name in FS_BUILTIN_ENUMS}
         def add_symbol(kind,name,node):
             if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',getattr(node,'provenance',NodeProvenance()).primary)
             symbols[name]=kind
@@ -399,13 +405,14 @@ class ASTBuilder(Transformer):
                 add_symbol(k,v.name,v)
             elif k=='function':
                 add_symbol(k,v['name'],v)
-            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
+            elif k=='destructor' and v.type_name in destructors:raise CompileError(f'M5500: duplicate destructor for {v.type_name}',v.provenance.primary)
+            {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v),'destructor':lambda:destructors.__setitem__(v.type_name,v)}[k]()
         for impl in ims:
             for method in impl.methods:
                 generated=FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated.name=_impl_function_name(impl.trait_name,impl.target_type,method.name)
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
-        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims,destructors=destructors)
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0
@@ -652,8 +659,8 @@ class TypeTable:
         elif is_vec_type(t): result=TypeSemantics(True,True,False,'vector','vector','vector')
         elif self.p is not None and t in self.p.structs:
             child=[self.get(field.type_name,active|{t}) for field in self.p.structs[t].fields]
-            needs=any(x.needs_drop for x in child)
-            result=TypeSemantics(True,needs,False,'struct with owned fields' if needs else 'struct','struct','aggregate' if needs else 'none')
+            custom=t in self.p.destructors;needs=custom or any(x.needs_drop for x in child)
+            result=TypeSemantics(True,needs,False,'struct with custom destructor' if custom else ('struct with owned fields' if needs else 'struct'),'struct','aggregate' if needs else 'none')
         elif self.p is not None and t in self.p.enums:
             child=[self.get(v.payload_type,active|{t}) for v in self.p.enums[t].variants if v.payload_type is not None]
             needs=any(x.needs_drop for x in child)
@@ -923,10 +930,26 @@ class Checker:
                 self.ensure_type(fld.type_name,fld)
                 if fld.name in seen:self.fail(f'M4001: duplicate field {fld.name} in {s.name}',fld)
                 seen.add(fld.name)
+        for destructor in self.p.destructors.values():self.check_destructor(destructor)
         for f in self.p.functions: self.check_function_body(f)
         for impl in self.p.impls:
             for f in impl.methods: self.check_function_body(f)
         return self
+    def check_destructor(self,destructor):
+        if destructor.type_name not in self.p.structs:self.fail(f'M5501: destructor target must be a struct, got {destructor.type_name}',destructor)
+        def statements(body):
+            for statement in body:
+                yield statement
+                node=self.p.node(statement)
+                if node.kind in ('with_cap','while'):yield from statements(node.nested_body)
+                elif node.kind=='if':yield from statements(node.then_body);yield from statements(node.else_body)
+                elif node.kind=='match':
+                    for arm in node.match_arms:yield from statements(arm.body)
+        for statement in statements(destructor.body):
+            if self.p.node(statement).kind not in ('print','expr'):
+                self.fail('M5502: destructor bodies currently allow only print and expression statements',statement)
+        function=FunctionDecl(f'__destructor_{destructor.type_name}',[Parameter('self',destructor.type_name,'borrow_mut')],'void',[],[],[],[],destructor.body)
+        self.check_function_body(function)
     def ensure_type(self,t,node=None):
         if is_vec_type(t):
             self.ensure_type(vec_elem_type(t),node); return
@@ -1373,6 +1396,10 @@ class Interpreter:
             post_env=dict(env); post_env['result']=r; post_env['__old__']=before
             for c in f.post:
                 if not self.eval(c,post_env).value:raise RuntimeError(f'postcondition failed in {n}')
+            ownership=OwnershipEffects(self.p,self.types).function(f)
+            for name,type_name in reversed(ownership.owned_locals):
+                if name in env and name not in ownership.explicit_drops and name not in ownership.consumed_roots:
+                    self.drop_value(env.pop(name))
             return r
         finally:
             self.call_modes.pop()
@@ -1435,6 +1462,8 @@ class Interpreter:
             for element in v.value:self.drop_value(element)
             v.value=[];return
         if semantics.kind=='struct':
+            destructor=self.p.destructors.get(v.type_name)
+            if destructor is not None:self.block(destructor.body,{'self':v})
             for field in self.p.structs[v.type_name].fields:self.drop_value(v.value[field.name])
             return
         if semantics.kind=='enum':
@@ -1766,9 +1795,13 @@ class CGenerator:
         lines.extend(['    }','}',''])
         return lines
     def struct_drop_runtime(self,s):
-        lines=[f'static void merit_drop_{s.name}({self.ctype(s.name)} *v){{']
+        lines=[f'static void merit_drop_{s.name}({self.ctype(s.name)} *self){{']
+        destructor=self.p.destructors.get(s.name)
+        if destructor is not None:
+            env={'self':(s.name,'borrow_mut')}
+            for statement in destructor.body:lines.extend(self.stmt(statement,env,1))
         for field in s.fields:
-            stmt=self.drop_field_stmt(f'v->{field.name}',field.type_name)
+            stmt=self.drop_field_stmt(f'self->{field.name}',field.type_name)
             if stmt: lines.append(f'    {stmt}')
         lines.append('}')
         lines.append('')
@@ -2017,7 +2050,7 @@ def semantic_payload(value,p):
     return value
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':[f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p) for f in p.functions]}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'destructors':[{'type':d.type_name,'body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p) for f in p.functions]}
 def reachable_mir_blocks(blocks):
     by_id={block['id']:block for block in blocks}; reachable=set(); pending=[0]
     while pending:
@@ -2100,7 +2133,7 @@ def mir(p):
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
         return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
-    return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
+    return {'module':p.module,'destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 
 
 def compile_file(path,out=None):

@@ -1,5 +1,14 @@
 # Changelog
 
+## Epoch III — User-defined destructor checkpoint
+
+- Added custom struct destructor declarations with implicit borrowed `self`.
+- Integrated custom destructors into shared type lifecycle metadata and recursive cleanup.
+- Matched explicit/implicit destructor execution in interpreter and generated C.
+- Added explicit JSON-safe destructor representation to HIR and MIR.
+- Added target/body diagnostics for the parity-safe destructor subset.
+- Increased the regression suite from 196 to 201 tests.
+
 ## Epoch III — Structured diagnostic checkpoint
 
 - Added stable structured diagnostic payloads with source ranges and related notes.

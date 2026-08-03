@@ -80,6 +80,7 @@ Merged projects preserve `pub` exports so consumer headers expose public functio
 Project executable/shared builds use a content-addressed object cache for the merged generated-C translation unit, separating compilation from linking as the first step toward per-module objects.
 Project preprocessing resolves explicit `module.symbol` qualification for imported public functions, types, and constructors while preserving source columns for downstream diagnostics.
 Compiler diagnostics have a stable structured payload; both source and project CLIs can emit JSON containing codes, source ranges, excerpts, and related notes while retaining text output by default.
+Custom struct destructors participate in shared lifecycle metadata. Interpreter and C cleanup invoke the custom body once before recursive field destruction; the accepted body subset excludes ownership-changing statements.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

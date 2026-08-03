@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III structured diagnostic checkpoint** of Merit.
+This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 196 tests passing after editable installation
+- 201 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -85,6 +85,7 @@ python -m pytest -q
 - Stable JSON diagnostics from compiler/project CLIs with related source notes
 - Stable project-system diagnostic codes and qualified-import source ranges
 - Atomic object-cache publication with failed-compilation cleanup
+- Custom struct destructors with exact-once interpreter/native cleanup parity
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

@@ -336,6 +336,13 @@ Continue alpha-readiness hardening:
 - Syntax and project-system failures also honor structured output mode.
 - Project-system failures use stable `M8000` codes; qualification errors include precise source ranges.
 
+## User-defined destructor checkpoint now available
+- Structs accept one `destructor Type { ... }` declaration with implicit borrowed `self`.
+- Explicit and implicit drops run the custom body exactly once before recursive field cleanup.
+- Interpreter function-exit cleanup now consumes the shared ownership-effects model.
+- HIR and MIR expose JSON-safe destructor bodies and provenance explicitly.
+- Ownership-changing destructor statements remain rejected pending a broader destructor contract.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 
