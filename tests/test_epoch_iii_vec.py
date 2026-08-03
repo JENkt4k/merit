@@ -571,3 +571,13 @@ def test_file_read_buffer_retains_requested_allocator(tmp_path):
 capability file_read;
 fn main()->i32 {{ let portable:Allocator=portable_allocator(); with capability file_read {{ let result:FileReadResult=file_read(portable,"{payload}"); match (result) {{ ReadOk(data)=>{{ print(allocator_compatible(buffer_allocator(data),portable)); print(buffer_len(data)); drop(data); }} ReadErr(error)=>{{ print(0); }} }} }} return 0; }}'''
     assert run_interpreter_and_native(source,tmp_path,'file_buffer_allocator') == '1\n3\n'
+
+
+def test_legacy_i64vec_retains_and_dispatches_through_allocator(tmp_path):
+    source='''module i64vec_allocator_identity
+capability allocate;
+fn main()->i32 { with capability allocate { let portable:Allocator=portable_allocator(); let system:Allocator=system_allocator(); var values:I64Vec=i64vec_new(portable,1); i64vec_push(values,61); print(allocator_compatible(i64vec_allocator(values),portable)); print(allocator_compatible(i64vec_allocator(values),system)); print(i64vec_get(values,0)); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'i64vec_allocator_identity') == '1\n0\n61\n'
+    generated=CGenerator(parse(source)).generate()
+    assert 'merit_allocator_realloc(v->allocator' in generated
+    assert 'merit_allocator_free(v->allocator' in generated
