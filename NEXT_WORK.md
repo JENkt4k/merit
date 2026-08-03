@@ -129,6 +129,11 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Duplicate symbols and members, unknown declaration types, invalid numeric declarations, trait/implementation errors, and function capability errors point to their declarations.
 - Compile errors raised during AST transformation are unwrapped for consistent structured rendering.
 
+## Generic expansion diagnostic checkpoint now available
+- Generic arity and trait-bound failures point to the concrete application line.
+- Expansion errors retain structured spans through merged-project loading and remap to the calling unit.
+- Ambiguous trait-method expansion can report the template as primary with the instantiation as a related location.
+
 ## Recommended next epic
 Decompose semantic nodes without changing behavior:
 - Introduce typed expression and statement node interfaces alongside the tuple compatibility layer.

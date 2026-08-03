@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import Program, SourceSpan, parse, _impl_function_name
+from merit.compiler import CompileError, Program, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -295,6 +295,16 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         source_ranges.append((start_line, start_line + declaration.count("\n"), unit.path))
     try:
         merged = parse(combined_source, str(manifest.root / "<merged-project>"))
+    except CompileError as exc:
+        def remap(span):
+            if span is None: return None
+            owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
+            if not owner: return span
+            start, _, path = owner
+            return SourceSpan(span.line-start+1,span.column,span.end_line-start+1,span.end_column,str(path))
+        exc.span=remap(exc.span)
+        exc.notes=tuple(type(note)(note.message,remap(note.span)) for note in exc.notes)
+        raise
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
     seen_functions = {function["name"]: manifest.root for function in merged.functions}

@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Generic expansion diagnostics checkpoint
+
+- Added source locations to generic arity and trait-bound expansion errors.
+- Preserved structured expansion errors through merged-project loading.
+- Remapped project expansion failures to the concrete calling unit.
+- Added single-source and cross-project expansion diagnostic coverage.
+- Increased the regression suite from 165 to 168 tests.
+
 ## Epoch III — Declaration diagnostics checkpoint
 
 - Preserved spans for type, field, trait, implementation, and function declarations.

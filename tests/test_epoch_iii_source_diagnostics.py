@@ -296,3 +296,50 @@ def test_declaration_errors_carry_precise_source_spans(source, code, line):
     assert (error.span.line, error.span.source_name) == (line, "declaration_error.mrt")
     rendered = render_exception(error, Path("declaration_error.mrt"), source)
     assert f" --> declaration_error.mrt:{line}:" in rendered
+
+
+@pytest.mark.parametrize(
+    ("source", "code", "line", "excerpt"),
+    [
+        (
+            "module generic_arity\nstruct Pair<T, U> { first: T; second: U; }\nfn main() -> i32 {\n    let pair: Pair<i64> = Pair<i64> { first: 1 };\n    return 0;\n}",
+            "M7001",
+            4,
+            "Pair<i64>",
+        ),
+        (
+            "module generic_bound\nfn identity<T: Copy>(value: T) -> T { return value; }\nfn main() -> i32 {\n    return identity<Buffer>(0);\n}",
+            "M7002",
+            4,
+            "identity<Buffer>(0)",
+        ),
+    ],
+)
+def test_generic_expansion_errors_point_to_instantiation(source, code, line, excerpt):
+    error = semantic_error(source, "generic_expansion.mrt")
+    assert error.code == code
+    assert (error.span.line, error.span.source_name) == (line, "generic_expansion.mrt")
+    rendered = render_exception(error, Path("generic_expansion.mrt"), source)
+    assert f" --> generic_expansion.mrt:{line}:1" in rendered
+    assert excerpt in rendered
+
+
+def test_project_generic_bound_error_points_to_calling_unit(tmp_path, capsys):
+    root = tmp_path / "generic_bound_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="generic_bound_project"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n'
+    )
+    main_source = root / "src" / "main.mrt"
+    main_source.write_text('''module generic_bound_project
+import worker;
+fn main() -> i32 {
+    return identity<Buffer>(0);
+}''')
+    (root / "src" / "worker.mrt").write_text('''module worker
+pub fn identity<T: Copy>(value: T) -> T { return value; }''')
+    assert project_cli_main(["check", str(root)]) == 1
+    error = capsys.readouterr().err
+    assert "error[M7002]: type Buffer does not satisfy generic bound Copy" in error
+    assert f" --> {main_source}:4:1" in error
+    assert "4 |     return identity<Buffer>(0);" in error

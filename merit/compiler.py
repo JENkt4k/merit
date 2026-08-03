@@ -348,7 +348,7 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
     if trait in ('Copy','Eq','Ord','Display'): return type_name in scalar
     return (trait,type_name) in impls
 
-def expand_generics(source: str, with_source_map: bool=False):
+def expand_generics(source: str, with_source_map: bool=False, source_name=None):
     source,templates=_extract_generic_templates(source)
     source=_replace_builtin_vec_types(source)
     if not templates:
@@ -360,14 +360,22 @@ def expand_generics(source: str, with_source_map: bool=False):
     trait_impls=_extract_trait_impl_registry(source)
     trait_methods=_extract_trait_methods(source)
     generated=[]; generated_origins=[];generated_requests=[]; done=set()
+    def expansion_error(text,name,args,template_primary=False):
+        request_line=request_lines.get((name,args))
+        template_line=templates[name]['line']
+        primary_line=template_line if template_primary else request_line or template_line
+        notes=()
+        if template_primary and request_line is not None:
+            notes=(DiagnosticNote('generic instantiated here',SourceSpan(request_line,1,request_line,1,source_name)),)
+        raise CompileError(text,SourceSpan(primary_line,1,primary_line,1,source_name),notes)
     while True:
         pending=[x for x in requested if x not in done]
         if not pending: break
         name,args=pending[0]; done.add((name,args)); t=templates[name]
-        if len(args)!=len(t['params']): raise CompileError(f'M7001: {name} expects {len(t["params"])} type arguments')
+        if len(args)!=len(t['params']): expansion_error(f'M7001: {name} expects {len(t["params"])} type arguments',name,args)
         for param,arg in zip(t['params'],args):
             for trait in t['bounds'].get(param,[]):
-                if not _generic_trait_satisfied(arg,trait,trait_impls): raise CompileError(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}')
+                if not _generic_trait_satisfied(arg,trait,trait_impls): expansion_error(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}',name,args)
         text=t['text']
         # Rewrite declaration header and substitute type parameters token-wise.
         text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
@@ -380,7 +388,7 @@ def expand_generics(source: str, with_source_map: bool=False):
                     for method in sorted(trait_methods.get(trait,set()),key=len,reverse=True):
                         target=_impl_function_name(trait,arg,method)
                         if method in rewrite_targets and rewrite_targets[method]!=target:
-                            raise CompileError(f'M7003: ambiguous trait method {method} in generic {name}')
+                            expansion_error(f'M7003: ambiguous trait method {method} in generic {name}',name,args,True)
                         rewrite_targets[method]=target
             for method,target in rewrite_targets.items():
                 text=re.sub(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
@@ -403,7 +411,7 @@ def expand_generics(source: str, with_source_map: bool=False):
     return expanded,line_map,related_line_map
 
 def parse(s:str,source_name=None)->Program:
-    expanded,line_map,related_line_map=expand_generics(s,True)
+    expanded,line_map,related_line_map=expand_generics(s,True,source_name)
     try:return ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
     except VisitError as exc:
         if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
