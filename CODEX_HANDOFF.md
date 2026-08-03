@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 281 tests passing after editable installation
+- 282 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -95,6 +95,7 @@ python -m pytest -q
 - Numeric-only operator domains and destination-independent comparison lowering
 - Numeric-only explicit checked arithmetic built-ins
 - Destination-typed interpreter expressions with exactly-once target evaluation
+- Exactly-once side-effecting replacement targets in interpreter and native C
 - Trap-aware MIR constant folding for arithmetic conditions
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning

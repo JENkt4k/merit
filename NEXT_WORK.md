@@ -285,6 +285,7 @@ Continue alpha-readiness hardening:
 - Keep operator-domain validation ahead of MIR/interpreter/native lowering.
 - Explicit checked arithmetic shares the same numeric-domain validation.
 - Interpreter destination typing now matches native narrowing without re-evaluating assignment targets.
+- Replacement target addresses are materialized once before drop/install in both runtimes.
 
 ## Deliberately deferred
 - specialization

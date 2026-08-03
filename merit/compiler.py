@@ -1505,7 +1505,7 @@ class Interpreter:
                 env[node.binding_name]=value.value['payload']
             elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env)),env)
             elif kind=='replace':
-                replacement=self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env));current=self.eval(node.assignment_target,env);self.drop_value(current);self.assign(node.assignment_target,replacement,env)
+                replacement=self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env));self.replace_value(node.assignment_target,replacement,env)
             elif kind=='print':print(self.format(self.eval(node.expression,env)))
             elif kind=='return':return ReturnSignal(self.eval(node.expression,env,self.call_return_types[-1]))
             elif kind=='expr':self.eval(node.expression,env)
@@ -1531,6 +1531,17 @@ class Interpreter:
                     guard+=1
                     if guard>1000000:raise RuntimeError('loop iteration limit exceeded')
         return None
+    def replace_value(self,e,replacement,env):
+        node=self.p.node(e)
+        if node.kind=='var':
+            current=env[node.atom_value];self.drop_value(current)
+            if self.call_modes and self.call_modes[-1].get(node.atom_value)=='borrow_mut':
+                current.type_name=replacement.type_name;current.value=replacement.value;current.allocator=replacement.allocator
+            else:env[node.atom_value]=replacement
+            return
+        if node.kind=='field':
+            base=self.eval(node.field_base,env);current=base.value[node.field_name];self.drop_value(current);base.value[node.field_name]=replacement;return
+        raise RuntimeError('invalid replacement target')
     def value_type(self,e,env):
         node=self.p.node(e)
         if node.kind=='var':return env[node.atom_value].type_name
@@ -2016,12 +2027,13 @@ class CGenerator:
         if kind=='assign':
             t=self.etype(node.assignment_target,env);return [f'{p}{self.expr(node.assignment_target,env)} = {self.checked(t,self.expr(node.assigned_value,env,t))};']
         if kind=='replace':
-            t=self.etype(node.assignment_target,env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
+            t=self.etype(node.assignment_target,env);index=self.temp_counter;temp=f'_merit_replace_{index}';address_temp=f'_merit_replace_address_{index}';self.temp_counter+=1
             address=self.address_expr(node.assignment_target,env)
             return [
                 f'{p}{self.ctype(t)} {temp} = {self.expr(node.assigned_value,env,t)};',
-                self.drop_address_line(p,address,t),
-                f'{p}*({address}) = {temp};',
+                f'{p}{self.ctype(t)} *{address_temp} = {address};',
+                self.drop_address_line(p,address_temp,t),
+                f'{p}*{address_temp} = {temp};',
             ]
         if kind=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(node.expression,env,self.current_return))};',f'{p}goto _merit_epilogue;']
         if kind=='print':

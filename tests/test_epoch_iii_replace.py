@@ -48,8 +48,11 @@ def test_replace_lowers_rhs_once_before_drop_and_assignment():
     c_source = CGenerator(checked()).generate()
     replacement = "merit_Buffer _merit_replace_0 = replacement;"
     assert c_source.count(replacement) == 1
-    assert c_source.index(replacement) < c_source.index("merit_buffer_drop(&current);")
-    assert c_source.index("merit_buffer_drop(&current);") < c_source.index("*(&current) = _merit_replace_0;")
+    address = "merit_Buffer *_merit_replace_address_0 = &current;"
+    assert c_source.count(address) == 1
+    assert c_source.index(replacement) < c_source.index(address)
+    assert c_source.index(address) < c_source.index("merit_buffer_drop(_merit_replace_address_0);")
+    assert c_source.index("merit_buffer_drop(_merit_replace_address_0);") < c_source.index("*_merit_replace_address_0 = _merit_replace_0;")
 
 
 def test_replace_is_preserved_in_mir():

@@ -177,3 +177,12 @@ stable("v1") struct Value { number:i32; }
 fn expose_mut(borrow_mut value:Value)->borrow_mut Value { print(1); return value; }
 fn main()->i32 { var value:Value=Value{number:0}; expose_mut(value).number=71; print(value.number); return 0; }'''
     assert parity(source_text,tmp_path) == ('1\n71\n','1\n71\n')
+
+
+def test_borrowed_return_replacement_evaluates_target_call_once(tmp_path):
+    source_text='''module borrowed_replace_once
+capability allocate;
+struct Resource { data:Buffer; }
+fn expose_mut(borrow_mut value:Resource)->borrow_mut Resource { print(1); return value; }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var resource:Resource=Resource{data:buffer_from_string(allocator,"old")}; let replacement:Buffer=buffer_from_string(allocator,"replacement"); replace(expose_mut(resource).data,replacement); print(buffer_len(resource.data)); } return 0; }'''
+    assert parity(source_text,tmp_path) == ('1\n11\n','1\n11\n')
