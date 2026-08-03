@@ -305,6 +305,7 @@ Continue alpha-readiness hardening:
 - Callers may use them ephemerally or pass them to compatible borrow parameters.
 - Mutable results are valid lvalues for direct field assignment and owned-field replacement.
 - `borrowed_views` verifies public cross-module shared/mutable returned borrows in both execution paths.
+- Shared-library consumers observe borrowed stable-layout results as usable C pointers.
 - Owned storage/value transfer and shared-to-mutable escalation are rejected.
 
 ## MIR reachability checkpoint now available

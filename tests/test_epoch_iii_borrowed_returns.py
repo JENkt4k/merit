@@ -1,4 +1,5 @@
 import contextlib
+import ctypes
 import io
 import subprocess
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from merit.compiler import Checker, CompileError, Interpreter, compile_file, hir, parse
-from merit.project.build import build, check, interpret
+from merit.project.build import build, build_shared, check, interpret
 from merit.project.loader import load_project
 
 
@@ -137,3 +138,19 @@ def test_borrowed_views_project_preserves_interpreter_native_parity(tmp_path):
     _,_,executable=build(project,tmp_path/'borrowed_views')
     native=subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout
     assert native == '5\n8\n'
+
+
+def test_borrowed_views_are_stable_shared_library_pointers(tmp_path):
+    project=load_project(Path('examples/projects/borrowed_views/Merit.toml'))
+    _,_,library_path=build_shared(project,tmp_path/'libborrowed_views')
+    class Record(ctypes.Structure):
+        _fields_=[('number',ctypes.c_int32)]
+    library=ctypes.CDLL(str(library_path))
+    for name in ('merit_view_record','merit_edit_record'):
+        function=getattr(library,name)
+        function.argtypes=[ctypes.POINTER(Record)]
+        function.restype=ctypes.POINTER(Record)
+    record=Record(31)
+    assert library.merit_view_record(ctypes.byref(record)).contents.number == 31
+    library.merit_edit_record(ctypes.byref(record)).contents.number=37
+    assert record.number == 37
