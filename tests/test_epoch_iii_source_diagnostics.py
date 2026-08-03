@@ -263,3 +263,36 @@ pub fn convert<T>(value: T) -> i32 {
     assert f" --> {worker}:3:5" in error
     assert "note: generic instantiated here" in error
     assert f" --> {main_source}:4:1" in error
+
+
+@pytest.mark.parametrize(
+    ("source", "code", "line"),
+    [
+        (
+            "module duplicate\nfn main() -> i32 { return 0; }\nfn main() -> i32 { return 1; }",
+            "M0002",
+            3,
+        ),
+        (
+            "module field_type\nstruct Broken {\n    value: Missing;\n}\nfn main() -> i32 { return 0; }",
+            "M3000",
+            3,
+        ),
+        (
+            "module trait_methods\ntrait Broken {\n    fn show(value: Self) -> i32;\n    fn show(value: Self) -> i32;\n}\nfn main() -> i32 { return 0; }",
+            "M7101",
+            4,
+        ),
+        (
+            "module function_caps\nfn main() -> i32 requires_caps [missing] {\n    return 0;\n}",
+            "M2001",
+            2,
+        ),
+    ],
+)
+def test_declaration_errors_carry_precise_source_spans(source, code, line):
+    error = semantic_error(source, "declaration_error.mrt")
+    assert error.code == code
+    assert (error.span.line, error.span.source_name) == (line, "declaration_error.mrt")
+    rendered = render_exception(error, Path("declaration_error.mrt"), source)
+    assert f" --> declaration_error.mrt:{line}:" in rendered

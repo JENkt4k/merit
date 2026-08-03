@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_C
 from pathlib import Path
 from typing import Any
 from lark import Lark, Transformer, v_args
+from lark.exceptions import VisitError
 
 GRAMMAR=r'''
 start: module_decl declaration*
@@ -115,26 +116,35 @@ class ASTBuilder(Transformer):
         if meta.line in self.related_line_map:self.related_spans[id(node)]=SourceSpan(self.related_line_map[meta.line],1,self.related_line_map[meta.line],1,self.source_name)
         return node
     def module_decl(self,x): return str(x[0])
-    def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
-    def enum_decl(self,x): return ('enum', EnumType(str(x[0]), tuple(x[1:])))
-    def trait_method(self,x):
+    @v_args(meta=True)
+    def enum_variant(self,meta,x): return self.mark(EnumVariant(str(x[0]), x[1] if len(x)>1 else None),meta)
+    @v_args(meta=True)
+    def enum_decl(self,meta,x): return ('enum', self.mark(EnumType(str(x[0]), tuple(x[1:])),meta))
+    @v_args(meta=True)
+    def trait_method(self,meta,x):
         name=str(x[0]); i=1; params=[]
         if i<len(x) and x[i] is None:i+=1
         elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
-        return TraitMethod(name, tuple(params), x[i])
-    def trait_decl(self,x): return ('trait', TraitType(str(x[0]), tuple(x[1:])))
+        return self.mark(TraitMethod(name, tuple(params), x[i]),meta)
+    @v_args(meta=True)
+    def trait_decl(self,meta,x): return ('trait', self.mark(TraitType(str(x[0]), tuple(x[1:])),meta))
     def impl_method(self,x): return x[0][1]
-    def impl_decl(self,x): return ('impl', TraitImpl(str(x[0]), x[1], tuple(x[2:])))
-    def decimal_decl(self,x): return ('decimal',DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])))
-    def bounded_decl(self,x): return ('bounded',BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))))
+    @v_args(meta=True)
+    def impl_decl(self,meta,x): return ('impl', self.mark(TraitImpl(str(x[0]), x[1], tuple(x[2:])),meta))
+    @v_args(meta=True)
+    def decimal_decl(self,meta,x): return ('decimal',self.mark(DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])),meta))
+    @v_args(meta=True)
+    def bounded_decl(self,meta,x): return ('bounded',self.mark(BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))),meta))
     def capability_decl(self,x): return ('capability',str(x[0]))
     def type_ref(self,x): return str(x[0]) if x else 'void'
-    def field_decl(self,x): return Field(str(x[0]),x[1])
-    def struct_decl(self,x):
+    @v_args(meta=True)
+    def field_decl(self,meta,x): return self.mark(Field(str(x[0]),x[1]),meta)
+    @v_args(meta=True)
+    def struct_decl(self,meta,x):
         x=[v for v in x if v is not None]
         abi=None; i=0
         if x and str(x[0]).startswith('"'): abi=str(x[0])[1:-1]; i=1
-        name=str(x[i]); return ('struct',StructType(name,tuple(x[i+1:]),abi))
+        name=str(x[i]); return ('struct',self.mark(StructType(name,tuple(x[i+1:]),abi),meta))
     def param_borrow_mut(self,x): return (str(x[0]),x[1],'borrow_mut')
     def param_borrow(self,x): return (str(x[0]),x[1],'borrow')
     def param_value(self,x): return (str(x[0]),x[1],'value')
@@ -207,7 +217,8 @@ class ASTBuilder(Transformer):
     def match_arm(self,x): return (str(x[0]), str(x[1]) if len(x)==3 and x[1] is not None else None, x[-1])
     @v_args(meta=True)
     def match_stmt(self,meta,x): return self.mark(('match',x[0],list(x[1:])),meta)
-    def function_decl(self,x):
+    @v_args(meta=True)
+    def function_decl(self,meta,x):
         name=str(x[0]); i=1; params=[]
         if i<len(x) and x[i] is None:i+=1
         elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
@@ -219,17 +230,17 @@ class ASTBuilder(Transformer):
             elif tag=='pre':pre.append(val)
             elif tag=='post':post.append(val)
             i+=1
-        return ('function',{'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]})
+        return ('function',self.mark({'name':name,'params':params,'return':ret,'effects':effects,'requires_caps':caps,'pre':pre,'post':post,'body':x[-1]},meta))
     def start(self,x):
         ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
-        def add_symbol(kind,name):
-            if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}')
+        def add_symbol(kind,name,node):
+            if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',self.spans.get(id(node)))
             symbols[name]=kind
         for k,v in x[1:]:
             if k in ('decimal','bounded','struct','enum','trait'):
-                add_symbol(k,v.name)
+                add_symbol(k,v.name,v)
             elif k=='function':
-                add_symbol(k,v['name'])
+                add_symbol(k,v['name'],v)
             {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
         for impl in ims:
             for method in impl.methods:
@@ -393,7 +404,10 @@ def expand_generics(source: str, with_source_map: bool=False):
 
 def parse(s:str,source_name=None)->Program:
     expanded,line_map,related_line_map=expand_generics(s,True)
-    return ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
+    try:return ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
+    except VisitError as exc:
+        if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
+        raise
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
@@ -695,56 +709,56 @@ class Checker:
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
-            if d.precision<1 or d.scale<0 or d.scale>d.precision:raise CompileError(f'M1001: invalid decimal {d.name}')
-            if d.rounding not in ROUNDING:raise CompileError(f'M1002: unsupported rounding policy {d.rounding}')
+            if d.precision<1 or d.scale<0 or d.scale>d.precision:self.fail(f'M1001: invalid decimal {d.name}',d)
+            if d.rounding not in ROUNDING:self.fail(f'M1002: unsupported rounding policy {d.rounding}',d)
         for b in self.p.bounded.values():
             lo,hi=INT_RANGES[b.base]
-            if not(lo<=b.minimum<=b.maximum<=hi):raise CompileError(f'M1101: bounds for {b.name} exceed {b.base}')
+            if not(lo<=b.minimum<=b.maximum<=hi):self.fail(f'M1101: bounds for {b.name} exceed {b.base}',b)
         for e in self.p.enums.values():
-            if not e.variants: raise CompileError(f'M6000: enum {e.name} requires at least one variant')
+            if not e.variants: self.fail(f'M6000: enum {e.name} requires at least one variant',e)
             seen_variants=set()
             for variant in e.variants:
-                if variant.name in seen_variants: raise CompileError(f'M6001: duplicate variant {variant.name} in {e.name}')
+                if variant.name in seen_variants: self.fail(f'M6001: duplicate variant {variant.name} in {e.name}',variant)
                 seen_variants.add(variant.name)
-                if variant.payload_type is not None: self.ensure_type(variant.payload_type)
+                if variant.payload_type is not None: self.ensure_type(variant.payload_type,variant)
         for t in self.p.traits.values():
-            if not t.methods: raise CompileError(f'M7100: trait {t.name} requires at least one method')
+            if not t.methods: self.fail(f'M7100: trait {t.name} requires at least one method',t)
             seen_methods=set()
             for method in t.methods:
-                if method.name in seen_methods: raise CompileError(f'M7101: duplicate method {method.name} in trait {t.name}')
+                if method.name in seen_methods: self.fail(f'M7101: duplicate method {method.name} in trait {t.name}',method)
                 seen_methods.add(method.name)
-                self.ensure_trait_signature_type(method.return_type)
-                for _, type_name, _ in method.params: self.ensure_trait_signature_type(type_name)
+                self.ensure_trait_signature_type(method.return_type,method)
+                for _, type_name, _ in method.params: self.ensure_trait_signature_type(type_name,method)
         seen_impls=set()
         for impl in self.p.impls:
             trait=self.p.traits.get(impl.trait_name)
-            if not trait: raise CompileError(f'M7200: unknown trait {impl.trait_name}')
-            if impl.target_type=='void': raise CompileError('M7201: cannot implement trait for void')
-            self.ensure_type(impl.target_type)
+            if not trait: self.fail(f'M7200: unknown trait {impl.trait_name}',impl)
+            if impl.target_type=='void': self.fail('M7201: cannot implement trait for void',impl)
+            self.ensure_type(impl.target_type,impl)
             key=(impl.trait_name,impl.target_type)
-            if key in seen_impls: raise CompileError(f'M7202: duplicate impl {impl.trait_name} for {impl.target_type}')
+            if key in seen_impls: self.fail(f'M7202: duplicate impl {impl.trait_name} for {impl.target_type}',impl)
             seen_impls.add(key)
             self.check_impl_signature(impl,trait)
         for s in self.p.structs.values():
             seen=set()
             for fld in s.fields:
-                self.ensure_type(fld.type_name)
-                if fld.name in seen:raise CompileError(f'M4001: duplicate field {fld.name} in {s.name}')
+                self.ensure_type(fld.type_name,fld)
+                if fld.name in seen:self.fail(f'M4001: duplicate field {fld.name} in {s.name}',fld)
                 seen.add(fld.name)
         for f in self.p.functions: self.check_function_body(f)
         for impl in self.p.impls:
             for f in impl.methods: self.check_function_body(f)
         return self
-    def ensure_type(self,t):
+    def ensure_type(self,t,node=None):
         if is_vec_type(t):
-            self.ensure_type(vec_elem_type(t)); return
-        if t not in INT_RANGES and t not in self.p.decimals and t not in self.p.bounded and t not in self.p.structs and t not in self.p.enums and t not in BUILTIN_TYPES and t!='void':raise CompileError(f'M3000: unknown type {t}')
-    def ensure_trait_signature_type(self,t):
-        if t!='Self': self.ensure_type(t)
+            self.ensure_type(vec_elem_type(t),node); return
+        if t not in INT_RANGES and t not in self.p.decimals and t not in self.p.bounded and t not in self.p.structs and t not in self.p.enums and t not in BUILTIN_TYPES and t!='void':self.fail(f'M3000: unknown type {t}',node)
+    def ensure_trait_signature_type(self,t,node=None):
+        if t!='Self': self.ensure_type(t,node)
     def check_function_body(self,f):
-        self.ensure_type(f['return'])
+        self.ensure_type(f['return'],f)
         missing=set(f['requires_caps'])-self.p.capabilities
-        if missing:raise CompileError(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}")
+        if missing:self.fail(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}",f)
         env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f['params']}
         for e in f['pre']:self.check_contract_expr(e,env,set(f['requires_caps']),f,'pre')
         self.block(f['body'],env,set(f['requires_caps']),f)
@@ -762,17 +776,17 @@ class Checker:
     def check_impl_signature(self,impl,trait):
         expected={m.name:m for m in trait.methods}
         actual={m['name']:m for m in impl.methods}
-        if len(actual)!=len(impl.methods): raise CompileError(f'M7203: duplicate method in impl {impl.trait_name} for {impl.target_type}')
-        if set(actual)!=set(expected): raise CompileError(f'M7204: impl {impl.trait_name} for {impl.target_type} does not match trait methods')
+        if len(actual)!=len(impl.methods): self.fail(f'M7203: duplicate method in impl {impl.trait_name} for {impl.target_type}',impl)
+        if set(actual)!=set(expected): self.fail(f'M7204: impl {impl.trait_name} for {impl.target_type} does not match trait methods',impl)
         def subst(type_name): return impl.target_type if type_name=='Self' else type_name
         for name,method in expected.items():
             candidate=actual[name]
             expected_params=[(subst(t),mode) for _,t,mode in method.params]
             actual_params=[(t,mode) for _,t,mode in candidate['params']]
             if actual_params!=expected_params or candidate['return']!=subst(method.return_type):
-                raise CompileError(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}')
+                self.fail(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}',candidate)
             if candidate['effects'] or candidate['requires_caps']:
-                raise CompileError(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them')
+                self.fail(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them',candidate)
     def block(self,body,env,caps,fn):
         for st in body:
             tag=st[0]

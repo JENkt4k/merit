@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Declaration diagnostics checkpoint
+
+- Preserved spans for type, field, trait, implementation, and function declarations.
+- Added precise locations to duplicate, unknown-type, numeric-policy, trait-signature, and declaration capability errors.
+- Unwrapped compiler errors raised by AST transformation for consistent structured rendering.
+- Added four declaration diagnostic regression cases.
+- Increased the regression suite from 161 to 165 tests.
+
 ## Epoch III — Cross-project generic provenance checkpoint
 
 - Recorded concrete instantiation locations for generated generic semantic nodes.

@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III cross-project generic provenance checkpoint** of Merit.
+This repository contains the verified **Epoch III declaration diagnostics checkpoint** of Merit.
 
 Current baseline:
-- 161 tests passing after editable installation
+- 165 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -41,6 +41,7 @@ python -m pytest -q
 - actionable primary spans for type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics
 - original-template semantic spans for locally monomorphized generic bodies without shifting following declarations
 - cross-module generic diagnostics linking template errors to instantiation sites with per-file excerpts
+- precise declaration spans for type, trait, implementation, field, function, and declaration-policy errors
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

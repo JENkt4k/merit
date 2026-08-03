@@ -124,11 +124,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Diagnostic notes load excerpts from their own source files rather than reusing primary-source text.
 - Project source preprocessing preserves line numbers while removing module and import declarations.
 
+## Declaration diagnostic checkpoint now available
+- Enum, variant, trait, trait-method, implementation, decimal, bounded, struct, field, and function declarations retain spans.
+- Duplicate symbols and members, unknown declaration types, invalid numeric declarations, trait/implementation errors, and function capability errors point to their declarations.
+- Compile errors raised during AST transformation are unwrapped for consistent structured rendering.
+
 ## Recommended next epic
-Add precise declaration-level diagnostics:
-- Retain spans for type, trait, implementation, field, and function declarations.
-- Attach primary locations to duplicate, unknown-type, invalid-layout, trait-signature, and declaration capability errors.
-- Preserve declaration locations across project merging.
+Decompose semantic nodes without changing behavior:
+- Introduce typed expression and statement node interfaces alongside the tuple compatibility layer.
+- Move span and provenance ownership onto typed nodes.
+- Migrate one semantic/backend path at a time while preserving interpreter/native equivalence.
 
 ## Deliberately deferred
 - specialization
@@ -140,8 +145,8 @@ Add precise declaration-level diagnostics:
 - concurrency
 
 ## Suggested implementation order
-1. Cover declaration-level diagnostics with precise spans.
-2. Replace compact tuple-AST special cases with typed nodes.
+1. Introduce typed semantic node interfaces and adapters.
+2. Migrate checker and ownership analysis before backend lowering.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates
