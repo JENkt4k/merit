@@ -85,8 +85,11 @@ def render_exception(exc: Exception, path: Path, source: str) -> str:
             note_span = getattr(note, "span", None)
             note_line = getattr(note_span, "line", None)
             note_column = getattr(note_span, "column", None)
-            note_source = rows[note_line - 1] if note_line is not None and 1 <= note_line <= len(rows) else None
             note_path = Path(note_span.source_name) if note_span is not None and getattr(note_span, "source_name", None) else diagnostic_path
+            note_rows = rows
+            if note_path != diagnostic_path and note_path.is_file():
+                note_rows = note_path.read_text().splitlines()
+            note_source = note_rows[note_line - 1] if note_line is not None and 1 <= note_line <= len(note_rows) else None
             notes.append(DiagnosticNote(note.message, note_line, note_column, note_source, note_path))
         return Diagnostic(exc.code, exc.message, diagnostic_path, line, column, source_line, tuple(notes)).render()
     return Diagnostic("M0000", str(exc), path).render()

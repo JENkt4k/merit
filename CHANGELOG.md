@@ -1,5 +1,14 @@
 # Changelog
 
+## Epoch III — Cross-project generic provenance checkpoint
+
+- Recorded concrete instantiation locations for generated generic semantic nodes.
+- Remapped template and related instantiation spans to their owning project units.
+- Rendered related notes from their own source files.
+- Preserved source lines while preprocessing module and import declarations.
+- Added a cross-module template/instantiation diagnostic regression test.
+- Increased the regression suite from 160 to 161 tests.
+
 ## Epoch III — Local generic source-map checkpoint
 
 - Preserved original line structure while extracting generic templates.

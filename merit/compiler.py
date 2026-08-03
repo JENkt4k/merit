@@ -101,17 +101,19 @@ class SourceSpan:
     line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
 @dataclasses.dataclass
 class Program:
-    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
+    module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
     def span(self,node):return self.spans.get(id(node))
 
 def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> str:
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
 
 class ASTBuilder(Transformer):
-    def __init__(self,source_name=None,line_map=None):super().__init__();self.spans={};self.source_name=source_name;self.line_map=line_map or {}
+    def __init__(self,source_name=None,line_map=None,related_line_map=None):super().__init__();self.spans={};self.related_spans={};self.source_name=source_name;self.line_map=line_map or {};self.related_line_map=related_line_map or {}
     def mark(self,node,meta):
         line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
-        self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name);return node
+        self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
+        if meta.line in self.related_line_map:self.related_spans[id(node)]=SourceSpan(self.related_line_map[meta.line],1,self.related_line_map[meta.line],1,self.source_name)
+        return node
     def module_decl(self,x): return str(x[0])
     def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
     def enum_decl(self,x): return ('enum', EnumType(str(x[0]), tuple(x[1:])))
@@ -234,7 +236,7 @@ class ASTBuilder(Transformer):
                 generated=dict(method); generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
-        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims,dict(self.spans))
+        return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims,dict(self.spans),dict(self.related_spans))
 
 def _split_generic_args(text: str) -> list[str]:
     args=[]; depth=0; start=0
@@ -287,7 +289,7 @@ def _extract_generic_templates(source: str):
     for a,b in reversed(spans): source=source[:a]+''.join('\n' if ch=='\n' else ' ' for ch in source[a:b])+source[b:]
     return source,templates
 
-def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]]) -> str:
+def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]], request_lines=None, base_line=1) -> str:
     # Qualified enum variants are rewritten before ordinary applications.
     changed=True
     while changed:
@@ -296,14 +298,16 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
             pat=re.compile(r'\b'+re.escape(name)+r'<([^<>]+)>::([A-Za-z_]\w*)')
             def qrepl(m):
                 nonlocal changed
-                args=_split_generic_args(m.group(1)); requested.add((name,tuple(args))); changed=True
+                args=_split_generic_args(m.group(1)); key=(name,tuple(args));requested.add(key);changed=True
+                if request_lines is not None:request_lines.setdefault(key,base_line+text.count('\n',0,m.start()))
                 return _mangle_generic(name,args)+'__'+m.group(2)
             text=pat.sub(qrepl,text)
         for name in templates:
             pat=re.compile(r'\b'+re.escape(name)+r'<([^<>]+)>')
             def repl(m):
                 nonlocal changed
-                args=_split_generic_args(m.group(1)); requested.add((name,tuple(args))); changed=True
+                args=_split_generic_args(m.group(1));key=(name,tuple(args));requested.add(key);changed=True
+                if request_lines is not None:request_lines.setdefault(key,base_line+text.count('\n',0,m.start()))
                 return _mangle_generic(name,args)
             text=pat.sub(repl,text)
     return text
@@ -338,12 +342,13 @@ def expand_generics(source: str, with_source_map: bool=False):
     source=_replace_builtin_vec_types(source)
     if not templates:
         expanded=_replace_builtin_vec_types(source)
-        return (expanded,{}) if with_source_map else expanded
+        return (expanded,{},{}) if with_source_map else expanded
     requested=set()
-    source=_replace_applications(source,templates,requested)
+    request_lines={}
+    source=_replace_applications(source,templates,requested,request_lines)
     trait_impls=_extract_trait_impl_registry(source)
     trait_methods=_extract_trait_methods(source)
-    generated=[]; generated_origins=[]; done=set()
+    generated=[]; generated_origins=[];generated_requests=[]; done=set()
     while True:
         pending=[x for x in requested if x not in done]
         if not pending: break
@@ -374,19 +379,21 @@ def expand_generics(source: str, with_source_map: bool=False):
             variants=re.findall(r'\b([A-Za-z_]\w*)\s*(?:\(|,|\})', body+',')
             for variant in sorted(set(variants),key=len,reverse=True):
                 text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
-        text=_replace_applications(text,templates,requested)
-        generated.append(text);generated_origins.append(t['line'])
+        text=_replace_applications(text,templates,requested,request_lines,t['line'])
+        generated.append(text);generated_origins.append(t['line']);generated_requests.append(request_lines.get((name,args)))
     expanded=_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
     if not with_source_map:return expanded
-    line_map={}; expanded_line=source.count('\n')+2
-    for text,origin in zip(generated,generated_origins):
+    line_map={};related_line_map={}; expanded_line=source.count('\n')+2
+    for text,origin,request_line in zip(generated,generated_origins,generated_requests):
         for offset in range(text.count('\n')+1):line_map[expanded_line+offset]=origin+offset
+        if request_line is not None:
+            for offset in range(text.count('\n')+1):related_line_map[expanded_line+offset]=request_line
         expanded_line+=text.count('\n')+1
-    return expanded,line_map
+    return expanded,line_map,related_line_map
 
 def parse(s:str,source_name=None)->Program:
-    expanded,line_map=expand_generics(s,True)
-    return ASTBuilder(source_name,line_map).transform(PARSER.parse(expanded))
+    expanded,line_map,related_line_map=expand_generics(s,True)
+    return ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
@@ -682,6 +689,8 @@ class OwnershipEffects:
 class Checker:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
     def fail(self,text,node=None,notes=()):
+        related=self.p.related_spans.get(id(node)) if node is not None else None
+        if related:notes=tuple(notes)+(DiagnosticNote('generic instantiated here',related),)
         raise CompileError(text,self.p.span(node) if node is not None else None,notes)
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')

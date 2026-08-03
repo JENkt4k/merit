@@ -118,11 +118,17 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Generated monomorphized bodies map semantic nodes back to their original template lines.
 - Single-source diagnostics inside instantiated functions render the original template excerpt.
 
+## Cross-project generic provenance checkpoint now available
+- Generated semantic nodes retain their concrete generic instantiation line as related provenance.
+- Merged projects remap both template and instantiation spans to their owning source units.
+- Diagnostic notes load excerpts from their own source files rather than reusing primary-source text.
+- Project source preprocessing preserves line numbers while removing module and import declarations.
+
 ## Recommended next epic
-Extend generic provenance across project units:
-- Retain the owning template source when generic preludes are assembled from imported modules.
-- Track the instantiation site as a related diagnostic location.
-- Render template and instantiation excerpts for cross-module generic failures.
+Add precise declaration-level diagnostics:
+- Retain spans for type, trait, implementation, field, and function declarations.
+- Attach primary locations to duplicate, unknown-type, invalid-layout, trait-signature, and declaration capability errors.
+- Preserve declaration locations across project merging.
 
 ## Deliberately deferred
 - specialization
@@ -134,8 +140,8 @@ Extend generic provenance across project units:
 - concurrency
 
 ## Suggested implementation order
-1. Preserve template ownership and instantiation locations across project units.
-2. Cover declaration-level diagnostics with precise spans.
+1. Cover declaration-level diagnostics with precise spans.
+2. Replace compact tuple-AST special cases with typed nodes.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

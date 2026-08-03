@@ -219,8 +219,11 @@ fn main() -> i32 {
     error = semantic_error(source, "generic_origin.mrt")
     assert error.code == "M3002"
     assert (error.span.line, error.span.column, error.span.source_name) == (3, 5, "generic_origin.mrt")
+    assert error.notes[0].message == "generic instantiated here"
+    assert (error.notes[0].span.line, error.notes[0].span.source_name) == (6, "generic_origin.mrt")
     rendered = render_exception(error, Path("generic_origin.mrt"), source)
     assert "3 |     return value;" in rendered
+    assert "6 |     return convert<i64>(1);" in rendered
 
 
 def test_generic_template_removal_does_not_shift_following_source_spans():
@@ -235,3 +238,28 @@ fn main() -> i32 {
     error = semantic_error(source, "generic_following.mrt")
     assert error.code == "M3001"
     assert (error.span.line, error.span.source_name) == (6, "generic_following.mrt")
+
+
+def test_project_generic_diagnostic_links_template_and_instantiation_units(tmp_path, capsys):
+    root = tmp_path / "generic_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="generic_project"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n'
+    )
+    main_source = root / "src" / "main.mrt"
+    main_source.write_text('''module generic_project
+import worker;
+fn main() -> i32 {
+    return convert<i64>(1);
+}''')
+    worker = root / "src" / "worker.mrt"
+    worker.write_text('''module worker
+pub fn convert<T>(value: T) -> i32 {
+    return value;
+}''')
+    assert project_cli_main(["check", str(root)]) == 1
+    error = capsys.readouterr().err
+    assert "error[M3002]: return type i64 does not match i32" in error
+    assert f" --> {worker}:3:5" in error
+    assert "note: generic instantiated here" in error
+    assert f" --> {main_source}:4:1" in error

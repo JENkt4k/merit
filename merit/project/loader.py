@@ -46,7 +46,13 @@ def _discover(manifest: Manifest) -> list[Path]:
 
 
 def _strip_module(source: str) -> str:
-    return re.sub(r"^\s*module\s+[A-Za-z_][A-Za-z0-9_]*\s*$", "", source, count=1, flags=re.MULTILINE)
+    return re.sub(
+        r"^[ \t]*module[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*$",
+        "",
+        source,
+        count=1,
+        flags=re.MULTILINE,
+    )
 
 
 def _extract_block_declarations(source: str, header: re.Pattern) -> list[str]:
@@ -87,7 +93,7 @@ def _extract_generic_context_declarations(source: str) -> str:
 def _parse_unit(path: Path, generic_prelude: str = "") -> SourceUnit:
     source = path.read_text()
     imports = tuple(IMPORT_RE.findall(source))
-    imports_source = IMPORT_RE.sub("", source)
+    imports_source = IMPORT_RE.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     exports = frozenset(match.group(2) for match in PUB_RE.finditer(imports_source))
     parser_source = PUB_RE.sub(r"\1", imports_source)
     try:
@@ -303,6 +309,17 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 span.end_column,
                 str(path),
             )
+    for node_id, span in list(merged.related_spans.items()):
+        owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
+        if owner:
+            start, _, path = owner
+            merged.related_spans[node_id] = SourceSpan(
+                span.line - start + 1,
+                span.column,
+                span.end_line - start + 1,
+                span.end_column,
+                str(path),
+            )
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:
@@ -311,7 +328,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)
-    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.spans)
+    return Program(manifest.name, merged.decimals, merged.bounded, merged.capabilities, merged.structs, functions, merged.enums, merged.traits, merged.impls, merged.spans, merged.related_spans)
 
 
 def load_project(manifest_path: Path) -> LoadedProject:
