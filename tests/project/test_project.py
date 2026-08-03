@@ -8,12 +8,24 @@ import subprocess
 import pytest
 
 from merit.compiler import CompileError
-from merit.project.build import build, build_shared, check, interpret
+from merit.project.build import build, build_shared, check, interpret, shared_library_policy
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "examples" / "projects" / "ledger_app" / "Merit.toml"
+
+
+@pytest.mark.parametrize(
+    ('platform','expected'),
+    [
+        ('linux',('.so',('-shared',),True)),
+        ('darwin',('.dylib',('-dynamiclib',),True)),
+        ('win32',('.dll',('-shared',),False)),
+    ],
+)
+def test_shared_library_policy_is_platform_specific(platform,expected):
+    assert shared_library_policy(platform) == expected
 
 
 def test_loads_and_checks_multimodule_project():

@@ -329,7 +329,8 @@ Continue alpha-readiness hardening:
 - Project builds emit PIC `.so`, generated C, and a matching header.
 - A foreign caller loads the library and invokes a generated primitive ABI function.
 - A foreign caller passes a stable-layout Merit struct by value and observes matching field layout.
-- Consumer headers preserve project `pub` function filtering; cross-platform suffix policy remains deliberately deferred.
+- Consumer headers preserve project `pub` function filtering.
+- Shared builds select `.so`/`.dylib`/`.dll`, linker mode, and PIC policy from the host platform.
 - Public ABI declarations reject private-type leakage and consumer headers omit private structs/enums.
 
 ## Object-cache checkpoint now available

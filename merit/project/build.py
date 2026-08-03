@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from merit.compiler import CGenerator, Checker, Interpreter
@@ -64,19 +65,29 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     return c_path, h_path, output
 
 
+def shared_library_policy(platform: str | None = None) -> tuple[str, tuple[str, ...], bool]:
+    platform = platform or sys.platform
+    if platform == "darwin":
+        return ".dylib", ("-dynamiclib",), True
+    if platform.startswith("win"):
+        return ".dll", ("-shared",), False
+    return ".so", ("-shared",), True
+
+
 def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     check(project)
+    suffix,link_flags,pic=shared_library_policy()
     library = output.resolve()
-    if library.suffix != ".so":
-        library = library.with_suffix(".so")
+    if library.suffix != suffix:
+        library = library.with_suffix(suffix)
     library.parent.mkdir(parents=True, exist_ok=True)
     c_path = library.with_suffix(".c")
     h_path = library.with_suffix(".h")
     generator = CGenerator(project.program)
     c_path.write_text(generator.generate())
     h_path.write_text(generator.header())
-    object_path = compile_cached_object(project, c_path, library.parent, pic=True)
-    command = [os.environ.get("CC", "cc"), "-shared", str(object_path), *project.manifest.c_flags, "-o", str(library)]
+    object_path = compile_cached_object(project, c_path, library.parent, pic=pic)
+    command = [os.environ.get("CC", "cc"), *link_flags, str(object_path), *project.manifest.c_flags, "-o", str(library)]
     subprocess.run(command, check=True)
     return c_path, h_path, library
 
