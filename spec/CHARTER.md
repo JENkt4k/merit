@@ -20,3 +20,9 @@ Merit is a small native compiled language for deterministic, numerically exact, 
 - Typed interpreter
 - Native compilation
 - Compile-time rejection of implicit precision loss
+
+## Contract observations
+
+- Preconditions and postconditions may call read-only functions and operations.
+- Calls with mutable-borrow parameters, declared effects, or capability-gated hazards are rejected in contracts.
+- `old(expression)` is postcondition-only and currently requires a Copy result. Owned snapshots remain unavailable until their allocator, cloning, and destruction policy is explicit.

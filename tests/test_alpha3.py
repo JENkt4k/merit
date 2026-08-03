@@ -235,6 +235,14 @@ fn main()->i32 { return old(1); }'''
         checked(body)
 
 
+def test_old_rejects_shallow_snapshots_of_owned_values():
+    src='''module owned_old_snapshot
+fn length(borrow value:Buffer)->i64 ensures buffer_len(old(value)) == result; { return buffer_len(value); }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M3204: old\\(\\) requires a Copy value, got Buffer'):
+        checked(src)
+
+
 def test_contract_failure_interpreter_and_native_are_deterministic(tmp_path):
     src='''module x
 fn inc(x:i32)->i32 ensures result == old(x) + 2; { return x + 1; }

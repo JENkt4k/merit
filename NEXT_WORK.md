@@ -290,6 +290,7 @@ Continue alpha-readiness hardening:
 - Owned vector replacement sequences receiver, index, and replacement exactly once in language order.
 - Zero-copy vector transfer sequences destination before source and materializes both addresses once.
 - Preconditions and postconditions admit read-only calls but reject mutable borrows, effects, and capability-gated hazards.
+- `old(...)` snapshots are Copy-only until owned cloning and destruction semantics are specified.
 
 ## Deliberately deferred
 - specialization

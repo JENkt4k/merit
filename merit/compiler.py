@@ -1221,7 +1221,10 @@ class Checker:
             if name=='old':
                 if self.contract_phase!='post': self.fail('M3201: old() is only valid in postconditions',e)
                 if len(args)!=1: self.fail('M3200: old expects one argument',e)
-                return self.expr_type(args[0],env,caps,fn)
+                old_type=self.expr_type(args[0],env,caps,fn)
+                if old_type!='number' and not self.types.get(old_type).copyable:
+                    self.fail(f'M3204: old() requires a Copy value, got {old_type}',e)
+                return old_type
             if name in ('checked_add','checked_sub','checked_mul','decimal_div'):
                 if name=='decimal_div' and len(args)!=2:raise CompileError('M1301: decimal_div expects 2 arguments')
                 if name!='decimal_div' and len(args)!=2:raise CompileError(f'M3100: {name} expects 2 arguments')
