@@ -137,6 +137,34 @@ fn main()->i32 { return consume(make())-29; }'''
     assert outputs(source,tmp_path) == ('29\n','29\n')
 
 
+def test_owned_match_payload_must_be_consumed_in_its_arm():
+    source='''module unconsumed_match_payload
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum MaybeMarker { SomeMarker(Marker), NoMarker }
+fn main()->i32 { let marker:Marker=Marker{number:31}; let maybe:MaybeMarker=SomeMarker(marker); match (maybe) { SomeMarker(value)=>{ print(value.number); } NoMarker=>{} } return 0; }'''
+    with pytest.raises(CompileError,match='M5211: owned match payload value must be moved or dropped in arm SomeMarker'):
+        Checker(parse(source)).check()
+
+
+def test_owned_match_payload_can_transfer_through_return(tmp_path):
+    source='''module returned_match_payload
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum MaybeMarker { SomeMarker(Marker), NoMarker }
+fn unwrap(maybe:MaybeMarker)->Marker { match (maybe) { SomeMarker(value)=>{ return value; } NoMarker=>{ return Marker{number:0}; } } }
+fn main()->i32 { let marker:Marker=Marker{number:37}; let maybe:MaybeMarker=SomeMarker(marker); let result:Marker=unwrap(maybe); drop(result); return 0; }'''
+    assert outputs(source,tmp_path) == ('37\n','37\n')
+
+
+def test_c_composite_definitions_follow_by_value_dependencies(tmp_path):
+    source='''module composite_definition_order
+enum State { Ready }
+struct Holder { state:State; }
+fn main()->i32 { let holder:Holder=Holder{state:Ready()}; match (holder.state) { Ready=>{} } return 0; }'''
+    assert outputs(source,tmp_path) == ('','')
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

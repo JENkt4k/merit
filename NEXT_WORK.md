@@ -293,6 +293,8 @@ Continue alpha-readiness hardening:
 - `old(...)` snapshots are Copy-only until owned cloning and destruction semantics are specified.
 - Owned value parameters participate in shared implicit cleanup and transfer their obligation exactly once when returned.
 - Discarded owned expression temporaries are rejected; direct transfer into a value-mode owned parameter is accepted and cleaned by the callee.
+- Owned match payload bindings must discharge their obligation inside each arm, including before early return.
+- Generated C orders struct and enum definitions by their acyclic by-value dependencies.
 
 ## Deliberately deferred
 - specialization

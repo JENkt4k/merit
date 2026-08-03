@@ -1158,7 +1158,10 @@ class Checker:
                     if variant.payload_type is None and binding is not None: self.fail(f'M6103: variant {variant.name} has no payload',st)
                     if variant.payload_type is not None and binding is None: self.fail(f'M6104: variant {variant.name} requires payload binding',st)
                     if binding is not None: local[binding]=VarState(variant.payload_type,False)
-                    self.block(arm.body,local,caps,fn); states.append(local)
+                    self.block(arm.body,local,caps,fn)
+                    if binding is not None and self.types.get(variant.payload_type).needs_drop and not (local[binding].moved or local[binding].dropped):
+                        self.fail(f'M5211: owned match payload {binding} must be moved or dropped in arm {variant.name}',arm)
+                    states.append(local)
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
@@ -1834,48 +1837,60 @@ class CGenerator:
     def vec_can_define_before_composites(self,vt):
         elem=vec_elem_type(vt)
         return not is_vec_type(elem) and elem not in self.p.structs and elem not in self.p.enums
+    def composite_order(self):
+        names=list(self.p.structs)+list(self.p.enums);known=set(names);ordered=[];active=set();done=set()
+        def dependencies(name):
+            if name in self.p.structs:return [field.type_name for field in self.p.structs[name].fields if field.type_name in known]
+            return [variant.payload_type for variant in self.p.enums[name].variants if variant.payload_type in known]
+        def visit(name):
+            if name in done:return
+            if name in active:raise CompileError(f'M4007: recursive by-value aggregate dependency involving {name}')
+            active.add(name)
+            for dependency in dependencies(name):visit(dependency)
+            active.remove(name);done.add(name);ordered.append(name)
+        for name in names:visit(name)
+        return ordered
+    def enum_typedef_lines(self,enum,layout):
+        o=[f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */',f'typedef enum merit_{enum.name}_tag {{']
+        for idx,variant in enumerate(enum.variants):o.append(f'    merit_{enum.name}_{variant.name} = {idx},')
+        o.extend([f'}} merit_{enum.name}_tag;',f'typedef struct merit_{enum.name} {{',f'    merit_{enum.name}_tag tag;'])
+        payloads=[variant for variant in enum.variants if variant.payload_type is not None]
+        if payloads:
+            o.append('    union {')
+            for variant in payloads:o.append(f'        {self.ctype(variant.payload_type)} {variant.name};')
+            o.append('    } data;')
+        o.extend([f'}} merit_{enum.name};',f'_Static_assert(__builtin_offsetof(merit_{enum.name}, tag) == 0, "Merit enum layout mismatch: {enum.name}.tag");'])
+        if payloads:
+            o.extend([f'_Static_assert(__builtin_offsetof(merit_{enum.name}, data) >= sizeof(merit_{enum.name}_tag), "Merit enum layout mismatch: {enum.name}.data");',f'_Static_assert(sizeof(merit_{enum.name}) >= __builtin_offsetof(merit_{enum.name}, data), "Merit enum size mismatch: {enum.name}");'])
+        for variant in enum.variants:
+            params='void' if variant.payload_type is None else f'{self.ctype(variant.payload_type)} value';init=f'(merit_{enum.name}){{.tag=merit_{enum.name}_{variant.name}'
+            if variant.payload_type is not None:init+=f',.data.{variant.name}=value'
+            o.append(f'static inline merit_{enum.name} merit_make_{enum.name}_{variant.name}({params}){{return {init}'+'};}')
+        o.append('');return o
+    def struct_typedef_lines(self,struct,layout):
+        o=[]
+        if struct.stable_abi:o.append(f'/* Merit layout struct {struct.name} hash {layout["layout_hash"]} */')
+        o.append(f'typedef struct merit_{struct.name} {{')
+        for field in struct.fields:o.append(f'    {self.ctype(field.type_name)} {field.name};')
+        o.append(f'}} merit_{struct.name};')
+        if struct.stable_abi:
+            o.append(f'_Static_assert(sizeof(merit_{struct.name}) == {layout["size"]}, "Merit ABI size mismatch: {struct.name}");')
+            for field in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{struct.name}, {field["name"]}) == {field["offset"]}, "Merit ABI offset mismatch: {struct.name}.{field["name"]}");')
+        o.append('');return o
     def header(self,include_private=False):
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { uint8_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_Buffer;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;', '']
         early_vecs=[vt for vt in self.vec_types() if self.vec_can_define_before_composites(vt)]
         for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
-        for enum in self.p.enums.values():
-            if self.p.exports and not include_private and enum.name not in self.p.exports and enum.name not in FS_BUILTIN_ENUMS:continue
-            layout=le.enum_layout(enum)
-            o.append(f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */')
-            o.append(f'typedef enum merit_{enum.name}_tag {{')
-            for idx,variant in enumerate(enum.variants): o.append(f'    merit_{enum.name}_{variant.name} = {idx},')
-            o.append(f'}} merit_{enum.name}_tag;')
-            o.append(f'typedef struct merit_{enum.name} {{')
-            o.append(f'    merit_{enum.name}_tag tag;')
-            payloads=[v for v in enum.variants if v.payload_type is not None]
-            if payloads:
-                o.append('    union {')
-                for variant in payloads:o.append(f'        {self.ctype(variant.payload_type)} {variant.name};')
-                o.append('    } data;')
-            o.append(f'}} merit_{enum.name};')
-            o.append(f'_Static_assert(__builtin_offsetof(merit_{enum.name}, tag) == 0, "Merit enum layout mismatch: {enum.name}.tag");')
-            if payloads:
-                o.append(f'_Static_assert(__builtin_offsetof(merit_{enum.name}, data) >= sizeof(merit_{enum.name}_tag), "Merit enum layout mismatch: {enum.name}.data");')
-                o.append(f'_Static_assert(sizeof(merit_{enum.name}) >= __builtin_offsetof(merit_{enum.name}, data), "Merit enum size mismatch: {enum.name}");')
-            for variant in enum.variants:
-                params='void' if variant.payload_type is None else f'{self.ctype(variant.payload_type)} value'
-                init=f'(merit_{enum.name}){{.tag=merit_{enum.name}_{variant.name}'
-                if variant.payload_type is not None:init+=f',.data.{variant.name}=value'
-                init+='}'
-                o.append(f'static inline merit_{enum.name} merit_make_{enum.name}_{variant.name}({params}){{return {init};}}')
-            o.append('')
-        for s in self.p.structs.values():
-            if self.p.exports and not include_private and s.name not in self.p.exports:continue
-            if s.stable_abi:
-                layout=le.layout(s);o.append(f'/* Merit layout struct {s.name} hash {layout["layout_hash"]} */')
-            o.append(f'typedef struct merit_{s.name} {{')
-            for f in s.fields:o.append(f'    {self.ctype(f.type_name)} {f.name};')
-            o.append(f'}} merit_{s.name};')
-            if s.stable_abi:
-                o.append(f'_Static_assert(sizeof(merit_{s.name}) == {layout["size"]}, "Merit ABI size mismatch: {s.name}");')
-                for fld in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{s.name}, {fld["name"]}) == {fld["offset"]}, "Merit ABI offset mismatch: {s.name}.{fld["name"]}");')
-            o.append('')
+        for name in self.composite_order():
+            if name in self.p.structs:
+                struct=self.p.structs[name]
+                if self.p.exports and not include_private and name not in self.p.exports:continue
+                o.extend(self.struct_typedef_lines(struct,le.layout(struct) if struct.stable_abi else None))
+            else:
+                enum=self.p.enums[name]
+                if self.p.exports and not include_private and name not in self.p.exports and name not in FS_BUILTIN_ENUMS:continue
+                o.extend(self.enum_typedef_lines(enum,le.enum_layout(enum)))
         for vt in self.vec_types():
             if vt not in early_vecs:
                 o.extend(self.vec_typedef_lines(vt))

@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 296 tests passing after editable installation
+- 299 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -102,6 +102,8 @@ python -m pytest -q
 - Transitive contract-purity checking does not trust omitted effect annotations
 - Exact-once implicit cleanup for owned value parameters, including return handoff
 - Discarded owned temporaries rejected while direct value-parameter transfer remains valid
+- Owned match payloads require explicit drop or move within each arm
+- Dependency-ordered C definitions for structs and payload enums
 - Trap-aware MIR constant folding for arithmetic conditions
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
