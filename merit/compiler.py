@@ -1040,6 +1040,35 @@ class Checker:
             self.contract_phase=previous
         if t not in ('i32','number'):
             raise CompileError(f'M3202: {phase}condition must be boolean/comparison, got {t}')
+    def contract_function_is_pure(self,callee,visiting=None):
+        visiting=set() if visiting is None else set(visiting)
+        if callee.name in visiting:return True
+        if callee.effects or callee.requires_caps or any(param.mode=='borrow_mut' or self.types.get(param.type_name).needs_drop for param in callee.params):return False
+        if self.ownership.function(callee).owned_locals:return False
+        visiting.add(callee.name)
+        def expression_is_pure(value):
+            if isinstance(value,SemanticNode):
+                node=self.p.node(value)
+                if node.kind in ('print','drop','replace'):return False
+                if node.kind in ('call','generic_call'):
+                    name,_=resolved_call(node);vector=vec_builtin(name)
+                    if vector:
+                        spec=VEC_INTRINSICS[vector[0]]
+                        if spec.capability or spec.receiver_mode=='borrow_mut':return False
+                    elif name in BUILTIN_SIGS:
+                        sig=BUILTIN_SIGS[name]
+                        if sig.capability or sig.additional_capabilities or any(mode=='borrow_mut' for mode,_ in sig.params):return False
+                    elif name not in ('old',) and name in self.fn and not self.contract_function_is_pure(self.fn[name],visiting):return False
+                return all(expression_is_pure(part) for part in node.operands)
+            if isinstance(value,(list,tuple)):return all(expression_is_pure(part) for part in value)
+            if isinstance(value,dict):return all(expression_is_pure(part) for part in value.values())
+            if isinstance(value,MatchArm):return expression_is_pure(value.body)
+            return True
+        for statement in callee.body:
+            node=self.p.node(statement)
+            if node.kind in ('print','drop','replace'):return False
+            if not expression_is_pure(statement):return False
+        return True
     def check_impl_signature(self,impl,trait):
         expected={m.name:m for m in trait.methods}
         actual={m['name']:m for m in impl.methods}
@@ -1308,7 +1337,7 @@ class Checker:
                 return ret
             if name not in self.fn:self.fail(f'M3004: unknown function {name}',e)
             callee=self.fn[name];missing=set(callee.requires_caps)-caps
-            if self.contract_phase and (callee.effects or callee.requires_caps or any(param.mode=='borrow_mut' for param in callee.params)):
+            if self.contract_phase and not self.contract_function_is_pure(callee):
                 self.fail(f'M3203: {self.contract_phase}condition cannot call impure function {name}',e)
             self.call_edges.append({'caller':fn.name,'callee':name,'required':callee.requires_caps})
             if missing:self.fail(f"M2003: call to {name} requires capabilities {sorted(missing)}",e)

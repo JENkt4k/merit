@@ -223,6 +223,27 @@ fn main()->i32 { return identity(7); }'''
     assert subprocess.run([str(executable)]).returncode==7
 
 
+def test_contracts_reject_transitively_impure_unannotated_helpers():
+    src='''module contract_transitive_impurity
+fn noisy(value:i32)->i32 { print(value); return value; }
+fn wrapper(value:i32)->i32 { return noisy(value); }
+fn identity(value:i32)->i32 requires wrapper(value) > 0; { return value; }
+fn main()->i32 { return identity(1); }'''
+    with pytest.raises(CompileError,match='M3203: precondition cannot call impure function wrapper'):
+        checked(src)
+
+
+def test_contracts_reject_helpers_with_observable_owned_cleanup():
+    src='''module contract_cleanup_impurity
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn observe(value:i32)->i32 { let marker:Marker=Marker{number:value}; return value; }
+fn identity(value:i32)->i32 requires observe(value) > 0; { return value; }
+fn main()->i32 { return identity(1); }'''
+    with pytest.raises(CompileError,match='M3203: precondition cannot call impure function observe'):
+        checked(src)
+
+
 def test_old_is_postcondition_only():
     pre='''module x
 fn id(x:i32)->i32 requires old(x) == x; { return x; }
