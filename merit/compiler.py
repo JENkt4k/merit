@@ -100,6 +100,9 @@ class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 @dataclasses.dataclass(frozen=True)
 class SourceSpan:
     line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
+@dataclasses.dataclass(frozen=True)
+class NodeProvenance:
+    primary:SourceSpan|None=None; related:SourceSpan|None=None
 class SemanticTuple(tuple):
     def __new__(cls,kind,*operands):return super().__new__(cls,(kind,*operands))
     @property
@@ -201,10 +204,12 @@ class SemanticNodeView:
 @dataclasses.dataclass
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
-    def span(self,node):return self.spans.get(id(node))
+    def provenance(self,node):return NodeProvenance(self.spans.get(id(node)),self.related_spans.get(id(node)))
+    def span(self,node):return self.provenance(node).primary
     def node(self,raw):
         if not isinstance(raw,tuple) or not raw:return None
-        return SemanticNodeView(raw,self.span(raw),self.related_spans.get(id(raw)))
+        provenance=self.provenance(raw)
+        return SemanticNodeView(raw,provenance.primary,provenance.related)
 
 def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> str:
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
@@ -819,9 +824,9 @@ class OwnershipEffects:
 class Checker:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
     def fail(self,text,node=None,notes=()):
-        related=self.p.related_spans.get(id(node)) if node is not None else None
-        if related:notes=tuple(notes)+(DiagnosticNote('generic instantiated here',related),)
-        raise CompileError(text,self.p.span(node) if node is not None else None,notes)
+        provenance=self.p.provenance(node) if node is not None else NodeProvenance()
+        if provenance.related:notes=tuple(notes)+(DiagnosticNote('generic instantiated here',provenance.related),)
+        raise CompileError(text,provenance.primary,notes)
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():

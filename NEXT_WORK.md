@@ -194,10 +194,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Return, print, expression-statement, and drop effects have distinct variants.
 - Every parser-produced semantic expression and statement now has a concrete per-kind runtime type.
 
+## Typed provenance boundary now available
+- `NodeProvenance` groups primary and related spans behind one typed value.
+- `Program.provenance()` is the only semantic lookup boundary used by node views and checker diagnostics.
+- Existing project remapping remains compatible while embedded storage is implemented next.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
 - Move primary span and related provenance storage onto concrete variants.
-- Retire external node-id metadata maps after project remapping supports embedded provenance.
+- Retire external node-id metadata maps behind `Program.provenance()` after project remapping supports embedded provenance.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred

@@ -52,6 +52,8 @@ Ownership-sensitive binding/assignment/replacement statements and capability/bra
 
 Atoms, struct initialization, direct/generic calls, and effect statements also have per-kind variants. Every semantic expression and statement produced by the parser is therefore concrete and typed while remaining tuple-compatible; provenance remains in external maps for the next migration slice.
 
+`NodeProvenance` groups primary and related locations, and `Program.provenance()` is the single lookup boundary used by semantic views and checker diagnostics. This isolates the current external maps so embedded node provenance can replace them without changing consumers.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.

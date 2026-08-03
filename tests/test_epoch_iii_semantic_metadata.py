@@ -70,6 +70,9 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert capability.nested_body is capability_statement[2]
     assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
     assert capability.related_span is None
+    provenance = program.provenance(capability_statement)
+    assert provenance.primary == capability.span
+    assert provenance.related is None
     binding = program.node(capability.operand(1)[1])
     assert isinstance(binding.raw, BindingNode)
     assert isinstance(binding.raw, LetNode)

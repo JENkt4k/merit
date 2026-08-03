@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed semantic provenance boundary checkpoint
+
+- Added `NodeProvenance` for typed primary and related source locations.
+- Centralized semantic provenance lookup in `Program.provenance()`.
+- Migrated semantic views and checker diagnostics off direct metadata-map access.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Complete per-kind semantic variant checkpoint
 
 - Added per-kind variants for string, number, variable, and struct-initializer nodes.
