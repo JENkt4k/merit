@@ -209,6 +209,23 @@ fn main()->i32 { return 0; }'''
         Checker(parse(source)).check()
 
 
+def test_scoped_owned_local_must_be_consumed_before_if_exit():
+    source='''module scoped_owned_leak
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { if 1 { let marker:Marker=Marker{number:53}; } else {} return 0; }'''
+    with pytest.raises(CompileError,match='M5212: scoped owned binding marker must be moved or dropped before leaving if branch'):
+        Checker(parse(source)).check()
+
+
+def test_explicit_scoped_cleanup_matches_interpreter_and_native(tmp_path):
+    source='''module scoped_owned_cleanup
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { if 1 { let marker:Marker=Marker{number:59}; drop(marker); } else {} return 0; }'''
+    assert outputs(source,tmp_path) == ('59\n','59\n')
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

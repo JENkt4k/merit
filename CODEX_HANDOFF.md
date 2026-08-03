@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 306 tests passing after editable installation
+- 308 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -108,6 +108,7 @@ python -m pytest -q
 - Forward-declared composite/vector C types support aggregates owning `Vec<Struct>`
 - Owned Result-style `try` consumes its source and transfers `Ok`/`Err` obligations once
 - Owned match subjects move before arm checking; owned-field partial matches are rejected
+- Lexically scoped owned locals require move/drop before branch, loop, or match-arm exit
 - Trap-aware MIR constant folding for arithmetic conditions
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning

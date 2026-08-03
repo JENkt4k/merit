@@ -299,6 +299,7 @@ Continue alpha-readiness hardening:
 - Opaque C forward declarations allow by-value aggregates to contain vectors of composite elements without definition-order failures.
 - `try` participates in shared owned-source consumption for exact-once `Ok` binding and `Err` propagation.
 - Owned match subjects become unavailable before arm checking, and partial moves from aggregate fields remain rejected.
+- Branch-, loop-, and arm-scoped owned locals must discharge their obligation before lexical scope exit.
 
 ## Deliberately deferred
 - specialization

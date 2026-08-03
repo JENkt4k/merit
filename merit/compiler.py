@@ -1055,6 +1055,10 @@ class Checker:
             self.contract_phase=previous
         if t not in ('i32','number'):
             raise CompileError(f'M3202: {phase}condition must be boolean/comparison, got {t}')
+    def require_scoped_owned_cleanup(self,local,outer_names,context,node):
+        for name,state in local.items():
+            if name not in outer_names and self.types.get(state.type_name).needs_drop and not (state.moved or state.dropped):
+                self.fail(f'M5212: scoped owned binding {name} must be moved or dropped before leaving {context}',node)
     def contract_function_is_pure(self,callee,visiting=None):
         visiting=set() if visiting is None else set(visiting)
         if callee.name in visiting:return True
@@ -1178,6 +1182,7 @@ class Checker:
                     self.block(arm.body,local,caps,fn)
                     if binding is not None and self.types.get(variant.payload_type).needs_drop and not (local[binding].moved or local[binding].dropped):
                         self.fail(f'M5211: owned match payload {binding} must be moved or dropped in arm {variant.name}',arm)
+                    self.require_scoped_owned_cleanup(local,set(env),f'match arm {variant.name}',arm)
                     states.append(local)
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
@@ -1192,6 +1197,7 @@ class Checker:
                 if ct not in ('i32','number'): self.fail('M3300: if condition must be boolean/comparison',st)
                 left={k:dataclasses.replace(v) for k,v in env.items()}; right={k:dataclasses.replace(v) for k,v in env.items()}
                 self.block(node.then_body,left,caps,fn); self.block(node.else_body,right,caps,fn)
+                self.require_scoped_owned_cleanup(left,set(env),'if branch',st);self.require_scoped_owned_cleanup(right,set(env),'else branch',st)
                 for k in env:
                     env[k].moved=left[k].moved or right[k].moved
                     env[k].dropped=left[k].dropped or right[k].dropped
@@ -1202,6 +1208,7 @@ class Checker:
                 ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3301: while condition must be boolean/comparison',st)
                 loop={k:dataclasses.replace(v) for k,v in env.items()}; self.block(node.nested_body,loop,caps,fn)
+                self.require_scoped_owned_cleanup(loop,set(env),'while body',st)
                 for k in env:
                     env[k].moved=env[k].moved or loop[k].moved
                     env[k].dropped=env[k].dropped or loop[k].dropped
