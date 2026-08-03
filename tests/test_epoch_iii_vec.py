@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, LayoutEngine, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, compile_file, is_copyable_type, parse, type_needs_drop, type_semantics, vec_return_type
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, LayoutEngine, VEC_INTRINSICS, VECTOR_INTRINSIC_NAMES, capability_requirements, compile_file, is_copyable_type, parse, type_needs_drop, type_semantics, vec_return_type
 from merit.project.build import build, check, interpret
 from merit.project.loader import load_project
 
@@ -581,3 +581,25 @@ fn main()->i32 { with capability allocate { let portable:Allocator=portable_allo
     generated=CGenerator(parse(source)).generate()
     assert 'merit_allocator_realloc(v->allocator' in generated
     assert 'merit_allocator_free(v->allocator' in generated
+
+
+@pytest.mark.parametrize(
+    'declaration_and_push',
+    [
+        'var value:Buffer=buffer_new(allocator,1); } buffer_push(value,1);',
+        'var value:I64Vec=i64vec_new(allocator,1); } i64vec_push(value,1);',
+        'var value:Vec<i64>=vec_new<i64>(allocator,1); } vec_push<i64>(value,1);',
+    ],
+)
+def test_growable_container_push_requires_allocate_capability(declaration_and_push):
+    source=f'''module push_capability
+capability allocate;
+fn main()->i32 {{ with capability allocate {{ let allocator:Allocator=system_allocator(); {declaration_and_push} return 0; }}'''
+    with pytest.raises(CompileError,match='M2003: call to .*push.* requires capabilities'):
+        Checker(parse(source)).check()
+
+
+def test_push_operations_are_reported_as_allocation_hazards():
+    program=parse('module push_audit\ncapability allocate;\nfn main()->i32 { return 0; }')
+    operations={entry['operation'] for entry in capability_requirements(program) if entry['hazard']=='allocation'}
+    assert {'buffer_push','i64vec_push','vec_push<T>'} <= operations

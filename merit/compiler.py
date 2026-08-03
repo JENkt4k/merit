@@ -691,7 +691,7 @@ class TypeTable:
 
 VEC_INTRINSICS={
     'new':VecIntrinsic(2,'vec',requires_allocate=True,capability='allocate',hazard='allocation'),
-    'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1),
+    'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1,requires_allocate=True,capability='allocate',hazard='allocation'),
     'len':VecIntrinsic(1,'i64',receiver_mode='borrow'),
     'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,element_policy='copy_result'),
     'set':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,element_policy='copy_replace'),
@@ -710,7 +710,7 @@ BUILTIN_SIGS={
     'string_byte':BuiltinSig((('value','String'),('value','i64')), 'u8'),
     'buffer_new':BuiltinSig((('value','Allocator'),('value','i64')), 'Buffer', 'allocate', 'allocation'),
     'buffer_from_string':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'allocate', 'allocation'),
-    'buffer_push':BuiltinSig((('borrow_mut','Buffer'),('value','u8')), 'void'),
+    'buffer_push':BuiltinSig((('borrow_mut','Buffer'),('value','u8')), 'void', 'allocate', 'allocation'),
     'buffer_len':BuiltinSig((('borrow','Buffer'),), 'i64'),
     'buffer_get':BuiltinSig((('borrow','Buffer'),('value','i64')), 'i64'),
     'buffer_slice':BuiltinSig((('borrow','Buffer'),('value','i64'),('value','i64')), 'ByteSlice'),
@@ -718,7 +718,7 @@ BUILTIN_SIGS={
     'slice_len':BuiltinSig((('value','ByteSlice'),), 'i64'),
     'slice_get':BuiltinSig((('value','ByteSlice'),('value','i64')), 'i64'),
     'i64vec_new':BuiltinSig((('value','Allocator'),('value','i64')), 'I64Vec', 'allocate', 'allocation'),
-    'i64vec_push':BuiltinSig((('borrow_mut','I64Vec'),('value','i64')), 'void'),
+    'i64vec_push':BuiltinSig((('borrow_mut','I64Vec'),('value','i64')), 'void', 'allocate', 'allocation'),
     'i64vec_len':BuiltinSig((('borrow','I64Vec'),), 'i64'),
     'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
     'i64vec_allocator':BuiltinSig((('borrow','I64Vec'),), 'Allocator'),
@@ -1237,6 +1237,7 @@ class Checker:
                 if spec.capability:
                     if spec.capability not in caps: self.fail(f'M2003: call to {name} requires capabilities [{spec.capability}]',e)
                     self.hazardous_operations.append(hazard_entry(fn.name,name,spec.capability,spec.hazard))
+                if op=='new':
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')

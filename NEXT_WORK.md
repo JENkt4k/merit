@@ -305,6 +305,7 @@ Continue alpha-readiness hardening:
 - Nested `Vec<Vec<T>>` values preserve move/pop ownership and recursively destroy owned leaves once.
 - Buffers now retain allocator identity across growth, filesystem reads, and drop; `buffer_allocator` exposes it.
 - Legacy `I64Vec` also retains and exposes its provider, closing the growable-container allocator gap.
+- Every potentially growing push operation now requires and audits the lexical `allocate` capability.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.

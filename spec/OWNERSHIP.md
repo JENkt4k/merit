@@ -47,6 +47,7 @@ destructor Marker { print(self.number); }
 - `vec_allocator<T>(vector)` returns the retained allocator identity so transfer compatibility can be checked before attempting the operation.
 - `Buffer` retains its allocator as part of its 32-byte runtime layout. Growth, filesystem-populated buffers, and destruction dispatch through that provider; `buffer_allocator(buffer)` exposes the retained identity.
 - Legacy `I64Vec` follows the same 32-byte allocator-retaining contract and exposes `i64vec_allocator(vector)`.
+- `buffer_push`, `i64vec_push`, and `vec_push<T>` require the lexical `allocate` capability because they may grow storage. Reserved capacity does not grant authority for later allocation attempts.
 - Vectors may contain vectors. Moving an inner vector into an outer vector transfers its storage and recursive drop obligation; popping it transfers that obligation back to the destination binding.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 - Concrete types carry shared lifecycle metadata: ownership, copyability, drop requirement, semantic kind, and drop strategy.
