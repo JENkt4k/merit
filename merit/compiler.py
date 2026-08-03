@@ -108,9 +108,10 @@ def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> 
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
 
 class ASTBuilder(Transformer):
-    def __init__(self,source_name=None):super().__init__();self.spans={};self.source_name=source_name
+    def __init__(self,source_name=None,line_map=None):super().__init__();self.spans={};self.source_name=source_name;self.line_map=line_map or {}
     def mark(self,node,meta):
-        self.spans[id(node)]=SourceSpan(meta.line,meta.column,meta.end_line,meta.end_column,self.source_name);return node
+        line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
+        self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name);return node
     def module_decl(self,x): return str(x[0])
     def enum_variant(self,x): return EnumVariant(str(x[0]), x[1] if len(x)>1 else None)
     def enum_decl(self,x): return ('enum', EnumType(str(x[0]), tuple(x[1:])))
@@ -281,9 +282,9 @@ def _extract_generic_templates(source: str):
         for raw in _split_generic_args(m.group(3)):
             pieces=raw.split(':',1); param=pieces[0].strip(); params.append(param)
             bounds[param]=[x.strip() for x in pieces[1].split('+')] if len(pieces)>1 else []
-        templates[m.group(2)]={'kind':m.group(1),'name':m.group(2),'params':params,'bounds':bounds,'text':source[m.start():end]}
+        templates[m.group(2)]={'kind':m.group(1),'name':m.group(2),'params':params,'bounds':bounds,'text':source[m.start():end],'line':source.count('\n',0,m.start())+1}
         spans.append((m.start(),end)); pos=end
-    for a,b in reversed(spans): source=source[:a]+source[b:]
+    for a,b in reversed(spans): source=source[:a]+''.join('\n' if ch=='\n' else ' ' for ch in source[a:b])+source[b:]
     return source,templates
 
 def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]]) -> str:
@@ -332,15 +333,17 @@ def _generic_trait_satisfied(type_name: str, trait: str, impls: set[tuple[str,st
     if trait in ('Copy','Eq','Ord','Display'): return type_name in scalar
     return (trait,type_name) in impls
 
-def expand_generics(source: str) -> str:
+def expand_generics(source: str, with_source_map: bool=False):
     source,templates=_extract_generic_templates(source)
     source=_replace_builtin_vec_types(source)
-    if not templates: return _replace_builtin_vec_types(source)
+    if not templates:
+        expanded=_replace_builtin_vec_types(source)
+        return (expanded,{}) if with_source_map else expanded
     requested=set()
     source=_replace_applications(source,templates,requested)
     trait_impls=_extract_trait_impl_registry(source)
     trait_methods=_extract_trait_methods(source)
-    generated=[]; done=set()
+    generated=[]; generated_origins=[]; done=set()
     while True:
         pending=[x for x in requested if x not in done]
         if not pending: break
@@ -372,11 +375,18 @@ def expand_generics(source: str) -> str:
             for variant in sorted(set(variants),key=len,reverse=True):
                 text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
         text=_replace_applications(text,templates,requested)
-        generated.append(text)
-    return _replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
+        generated.append(text);generated_origins.append(t['line'])
+    expanded=_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
+    if not with_source_map:return expanded
+    line_map={}; expanded_line=source.count('\n')+2
+    for text,origin in zip(generated,generated_origins):
+        for offset in range(text.count('\n')+1):line_map[expanded_line+offset]=origin+offset
+        expanded_line+=text.count('\n')+1
+    return expanded,line_map
 
 def parse(s:str,source_name=None)->Program:
-    return ASTBuilder(source_name).transform(PARSER.parse(expand_generics(s)))
+    expanded,line_map=expand_generics(s,True)
+    return ASTBuilder(source_name,line_map).transform(PARSER.parse(expanded))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}

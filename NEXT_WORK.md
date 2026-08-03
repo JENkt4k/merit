@@ -113,11 +113,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Type, capability, replacement, match-exhaustiveness, constructor, field, and call diagnostics select actionable primary locations.
 - Regression tests verify rendered file, line, and source excerpts for the principal semantic diagnostic families.
 
+## Local generic source-map checkpoint now available
+- Generic template removal preserves the original line structure of following declarations.
+- Generated monomorphized bodies map semantic nodes back to their original template lines.
+- Single-source diagnostics inside instantiated functions render the original template excerpt.
+
 ## Recommended next epic
-Add source maps for generated generic instantiations:
-- Track each generated declaration and expression back to its generic source template and instantiation site.
-- Preserve original source identity when monomorphization changes line structure.
-- Render useful primary and related locations for diagnostics inside instantiated code.
+Extend generic provenance across project units:
+- Retain the owning template source when generic preludes are assembled from imported modules.
+- Track the instantiation site as a related diagnostic location.
+- Render template and instantiation excerpts for cross-module generic failures.
 
 ## Deliberately deferred
 - specialization
@@ -129,7 +134,7 @@ Add source maps for generated generic instantiations:
 - concurrency
 
 ## Suggested implementation order
-1. Preserve original-source maps through generic instantiation.
+1. Preserve template ownership and instantiation locations across project units.
 2. Cover declaration-level diagnostics with precise spans.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

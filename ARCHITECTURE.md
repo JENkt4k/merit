@@ -32,6 +32,8 @@ Semantic expression and statement nodes retain source spans in the program metad
 
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
+Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines, allowing single-source semantic failures in instantiated bodies to render against the original source. Cross-unit generic preludes still require explicit template ownership and instantiation-site provenance.
+
 ## Planned decomposition
 
 The next architectural slice moves AST/HIR/MIR structures into dedicated packages without changing semantics. Subsequent slices add enums and typed errors, buffers and allocators, then a real basic-block MIR.

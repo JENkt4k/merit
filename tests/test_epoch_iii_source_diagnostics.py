@@ -206,3 +206,32 @@ def test_major_semantic_errors_have_actionable_primary_spans(source, code, line,
     assert f"error[{code}]" in rendered
     assert f" --> semantic_error.mrt:{line}:" in rendered
     assert excerpt in rendered
+
+
+def test_generated_generic_body_diagnostic_maps_to_template_source():
+    source = '''module generic_origin
+fn convert<T>(value: T) -> i32 {
+    return value;
+}
+fn main() -> i32 {
+    return convert<i64>(1);
+}'''
+    error = semantic_error(source, "generic_origin.mrt")
+    assert error.code == "M3002"
+    assert (error.span.line, error.span.column, error.span.source_name) == (3, 5, "generic_origin.mrt")
+    rendered = render_exception(error, Path("generic_origin.mrt"), source)
+    assert "3 |     return value;" in rendered
+
+
+def test_generic_template_removal_does_not_shift_following_source_spans():
+    source = '''module generic_following
+fn identity<T>(value: T) -> T {
+    return value;
+}
+fn main() -> i32 {
+    let bad: i32 = "still line six";
+    return 0;
+}'''
+    error = semantic_error(source, "generic_following.mrt")
+    assert error.code == "M3001"
+    assert (error.span.line, error.span.source_name) == (6, "generic_following.mrt")

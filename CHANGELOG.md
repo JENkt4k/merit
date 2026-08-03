@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Local generic source-map checkpoint
+
+- Preserved original line structure while extracting generic templates.
+- Mapped semantic nodes in monomorphized bodies back to their template lines.
+- Added diagnostics for generated-body failures and for ordinary declarations following templates.
+- Increased the regression suite from 158 to 160 tests.
+
 ## Epoch III — Broad semantic diagnostics checkpoint
 
 - Preserved spans for literals, constructors, calls, arithmetic, declarations, assignments, replacement, returns, capability regions, and control flow.
