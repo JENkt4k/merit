@@ -152,10 +152,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Interpreter and C lowering use the same accessors for initialization, replacement ordering, returns, printing, and drops.
 - Accessor tests cover source provenance, owned initialization, and replacement operands.
 
+## Call and control-flow accessor checkpoint now available
+- Typed accessors cover calls, generic type arguments, fields, constructors, binary operands, conditions, branches, nested bodies, and match arms.
+- Call resolution uses the typed view for both ordinary and generic intrinsic calls.
+- Checker, interpreter, and MIR control-flow paths use named branch and match operands.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Add typed accessors for calls, constructors, fields, and control-flow nodes.
-- Introduce typed statement/expression variants behind `SemanticNodeView` after accessors stabilize.
+- Introduce typed statement/expression variants behind `SemanticNodeView` now that accessors are stable.
+- Migrate remaining helper-level raw operand reads before removing tuple compatibility.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -168,8 +173,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Add typed call, constructor, field, and control-flow accessors.
-2. Introduce typed statement/expression variants before removing compatibility tuples.
+1. Introduce typed statement/expression variants.
+2. Migrate remaining helper-level raw operand reads before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

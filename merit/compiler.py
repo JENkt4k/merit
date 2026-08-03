@@ -122,6 +122,36 @@ class SemanticNodeView:
     def assigned_value(self):self.require('assign','replace');return self.operand(1)
     @property
     def expression(self):self.require('return','print','expr','match');return self.operand(0)
+    @property
+    def callee_name(self):self.require('call','generic_call');return self.operand(0)
+    @property
+    def type_argument(self):self.require('generic_call');return self.operand(1)
+    @property
+    def arguments(self):self.require('call','generic_call');return self.operand(1 if self.kind=='call' else 2)
+    @property
+    def field_base(self):self.require('field');return self.operand(0)
+    @property
+    def field_name(self):self.require('field');return self.operand(1)
+    @property
+    def constructed_type(self):self.require('struct_init');return self.operand(0)
+    @property
+    def field_values(self):self.require('struct_init');return self.operand(1)
+    @property
+    def operator(self):self.require('binop');return self.operand(0)
+    @property
+    def left(self):self.require('binop');return self.operand(1)
+    @property
+    def right(self):self.require('binop');return self.operand(2)
+    @property
+    def condition(self):self.require('if','while');return self.operand(0)
+    @property
+    def then_body(self):self.require('if');return self.operand(1)
+    @property
+    def else_body(self):self.require('if');return self.operand(2)
+    @property
+    def nested_body(self):self.require('with_cap','while');return self.operand(1)
+    @property
+    def match_arms(self):self.require('match');return self.operand(1)
 @dataclasses.dataclass
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
@@ -638,12 +668,13 @@ def generic_vec_call_name(base: str, type_arg: str) -> str|None:
     return f'vec_{op}__{type_arg}'
 
 def resolved_call(e) -> tuple[str,list]:
-    if e[0]=='call': return e[1],e[2]
-    if e[0]=='generic_call':
-        name=generic_vec_call_name(e[1],e[2])
-        if name: return name,e[3]
-        raise CompileError(f'M3010: unsupported generic call {e[1]}<{e[2]}>')
-    raise CompileError(f'M3011: expected call expression, got {e[0]}')
+    node=e if isinstance(e,SemanticNodeView) else SemanticNodeView(e)
+    if node.kind=='call': return node.callee_name,node.arguments
+    if node.kind=='generic_call':
+        name=generic_vec_call_name(node.callee_name,node.type_argument)
+        if name: return name,node.arguments
+        raise CompileError(f'M3010: unsupported generic call {node.callee_name}<{node.type_argument}>')
+    raise CompileError(f'M3011: expected call expression, got {node.kind}')
 
 class OwnershipEffects:
     def __init__(self,p,types=None): self.p=p;self.types=types or TypeTable(p);self.fn={f['name']:f for f in p.functions}
@@ -880,7 +911,7 @@ class Checker:
             elif tag=='match':
                 subject_t=self.expr_type(node.expression,env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
-                arms=st[2]; names=[a[0] for a in arms]; expected=[v.name for v in enum.variants]
+                arms=node.match_arms; names=[a[0] for a in arms]; expected=[v.name for v in enum.variants]
                 if len(names)!=len(set(names)): self.fail('M6101: duplicate match arm',st)
                 missing=set(expected)-set(names); extra=set(names)-set(expected)
                 if missing or extra: self.fail(f'M6102: non-exhaustive match; missing={sorted(missing)} extra={sorted(extra)}',st)
@@ -904,10 +935,10 @@ class Checker:
                 self.audit_sites.append({'function':fn['name'],'capability':cap})
                 self.block(st[2],env,caps|{cap},fn)
             elif tag=='if':
-                ct=self.expr_type(st[1],env,caps,fn)
+                ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3300: if condition must be boolean/comparison',st)
                 left={k:dataclasses.replace(v) for k,v in env.items()}; right={k:dataclasses.replace(v) for k,v in env.items()}
-                self.block(st[2],left,caps,fn); self.block(st[3],right,caps,fn)
+                self.block(node.then_body,left,caps,fn); self.block(node.else_body,right,caps,fn)
                 for k in env:
                     env[k].moved=left[k].moved or right[k].moved
                     env[k].dropped=left[k].dropped or right[k].dropped
@@ -915,9 +946,9 @@ class Checker:
                     env[k].move_context=left[k].move_context or right[k].move_context
                     env[k].drop_origin=left[k].drop_origin or right[k].drop_origin
             elif tag=='while':
-                ct=self.expr_type(st[1],env,caps,fn)
+                ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3301: while condition must be boolean/comparison',st)
-                loop={k:dataclasses.replace(v) for k,v in env.items()}; self.block(st[2],loop,caps,fn)
+                loop={k:dataclasses.replace(v) for k,v in env.items()}; self.block(node.nested_body,loop,caps,fn)
                 for k in env:
                     env[k].moved=env[k].moved or loop[k].moved
                     env[k].dropped=env[k].dropped or loop[k].dropped
@@ -1223,22 +1254,22 @@ class Interpreter:
             elif kind=='expr':self.eval(node.expression,env)
             elif kind=='drop': self.drop_value(env.pop(node.binding_name,None))
             elif kind=='match':
-                value=self.eval(st[1],env); variant=value.value['variant']
-                arm=next(a for a in st[2] if a[0]==variant)
+                value=self.eval(node.expression,env); variant=value.value['variant']
+                arm=next(a for a in node.match_arms if a[0]==variant)
                 if arm[1] is not None: env[arm[1]]=value.value['payload']
                 r=self.block(arm[2],env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
             elif kind=='with_cap':
-                r=self.block(st[2],env)
+                r=self.block(node.nested_body,env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
             elif kind=='if':
-                branch=st[2] if self.eval(st[1],env).value else st[3]
+                branch=node.then_body if self.eval(node.condition,env).value else node.else_body
                 r=self.block(branch,env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
             elif kind=='while':
                 guard=0
-                while self.eval(st[1],env).value:
-                    r=self.block(st[2],env)
+                while self.eval(node.condition,env).value:
+                    r=self.block(node.nested_body,env)
                     if isinstance(r,(ReturnSignal,TrySignal)):return r
                     guard+=1
                     if guard>1000000:raise RuntimeError('loop iteration limit exceeded')
@@ -1821,31 +1852,31 @@ def mir(p):
         entry=new_block()
         def lower_seq(body,current):
             for st in body:
-                kind=p.node(st).kind
+                node=p.node(st);kind=node.kind
                 if kind=='if':
                     then_b=new_block(); else_b=new_block(); join_b=new_block()
-                    current['terminator']={'kind':'branch','condition':st[1],'then':then_b['id'],'else':else_b['id']}
-                    end_then=lower_seq(st[2],then_b); end_else=lower_seq(st[3],else_b)
+                    current['terminator']={'kind':'branch','condition':node.condition,'then':then_b['id'],'else':else_b['id']}
+                    end_then=lower_seq(node.then_body,then_b); end_else=lower_seq(node.else_body,else_b)
                     if end_then['terminator']['kind']=='fallthrough': end_then['terminator']={'kind':'goto','target':join_b['id']}
                     if end_else['terminator']['kind']=='fallthrough': end_else['terminator']={'kind':'goto','target':join_b['id']}
                     current=join_b
                 elif kind=='while':
                     cond_b=new_block(); body_b=new_block(); exit_b=new_block()
                     current['terminator']={'kind':'goto','target':cond_b['id']}
-                    cond_b['terminator']={'kind':'branch','condition':st[1],'then':body_b['id'],'else':exit_b['id']}
-                    end_body=lower_seq(st[2],body_b)
+                    cond_b['terminator']={'kind':'branch','condition':node.condition,'then':body_b['id'],'else':exit_b['id']}
+                    end_body=lower_seq(node.nested_body,body_b)
                     if end_body['terminator']['kind']=='fallthrough': end_body['terminator']={'kind':'goto','target':cond_b['id']}
                     current=exit_b
                 elif kind=='match':
                     arm_blocks=[]; join_b=new_block()
-                    for arm in st[2]:
+                    for arm in node.match_arms:
                         b=new_block(); arm_blocks.append({'variant':arm[0],'binding':arm[1],'target':b['id']})
                         end_arm=lower_seq(arm[2],b)
                         if end_arm['terminator']['kind']=='fallthrough': end_arm['terminator']={'kind':'goto','target':join_b['id']}
-                    current['terminator']={'kind':'switch','subject':st[1],'arms':arm_blocks}
+                    current['terminator']={'kind':'switch','subject':node.expression,'arms':arm_blocks}
                     current=join_b
                 elif kind=='return':
-                    current['terminator']={'kind':'return','value':st[1]}; current=new_block()
+                    current['terminator']={'kind':'return','value':node.expression}; current=new_block()
                 else:
                     current['statements'].append(st)
             return current

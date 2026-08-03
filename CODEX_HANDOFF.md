@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III ownership-sensitive node accessor checkpoint** of Merit.
+This repository contains the verified **Epoch III call and control-flow accessor checkpoint** of Merit.
 
 Current baseline:
-- 170 tests passing after editable installation
+- 171 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -46,6 +46,7 @@ python -m pytest -q
 - typed semantic-node views used by checking and shared ownership analysis over the backend-compatible tuple representation
 - typed node dispatch across MIR, interpreter, and native C lowering with unchanged parity
 - named typed operands for ownership-sensitive initialization, assignment, replacement, return, and drop paths
+- typed call, constructor, field, binary-expression, and control-flow accessors used by semantic and runtime paths
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

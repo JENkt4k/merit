@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Call and control-flow accessor checkpoint
+
+- Added typed accessors for calls, generic arguments, fields, constructors, binary expressions, and control flow.
+- Migrated call resolution to the typed semantic view.
+- Migrated checker, interpreter, and MIR branch/match paths to named operands.
+- Added call and control-flow accessor coverage.
+- Increased the regression suite from 170 to 171 tests.
+
 ## Epoch III — Ownership-sensitive node accessor checkpoint
 
 - Added named typed accessors for bindings, initializers, assignment/replacement operands, statement expressions, and drops.

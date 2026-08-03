@@ -63,11 +63,14 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert capability.kind == "with_cap"
     assert capability.operand(0) == "allocate"
     assert capability.operands[1] is capability_statement[2]
+    assert capability.nested_body is capability_statement[2]
     assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
     assert capability.related_span is None
     binding = program.node(capability.operand(1)[1])
     assert (binding.kind, binding.binding_name, binding.declared_type) == ("let", "source", "Buffer")
     assert program.node(binding.initializer).kind == "call"
+    call = program.node(binding.initializer)
+    assert (call.callee_name, len(call.arguments)) == ("buffer_from_string", 2)
 
 
 def test_ownership_sensitive_accessors_cover_replacement_operands():
@@ -81,6 +84,18 @@ fn main() -> i32 {
     assert replacement.kind == "replace"
     assert program.node(replacement.assignment_target).kind == "var"
     assert program.node(replacement.assigned_value).kind == "number"
+
+
+def test_control_flow_accessors_expose_named_branches():
+    program = parse('''module semantic_control
+fn main() -> i32 {
+    if 1 { return 1; } else { return 0; }
+}''')
+    branch = program.node(program.functions[0]["body"][0])
+    assert branch.kind == "if"
+    assert program.node(branch.condition).kind == "number"
+    assert program.node(branch.then_body[0]).expression[1] == "1"
+    assert program.node(branch.else_body[0]).expression[1] == "0"
 
 
 def test_hir_exposes_shared_type_semantics():
