@@ -99,6 +99,24 @@ fn main()->i32 { let marker:Marker=make(); drop(marker); return 0; }'''
     assert outputs(source,tmp_path) == ('11\n','11\n')
 
 
+def test_owned_value_parameter_receives_implicit_cleanup(tmp_path):
+    source='''module destructor_parameter
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn consume(marker:Marker)->i32 { return marker.number; }
+fn main()->i32 { let marker:Marker=Marker{number:17}; return consume(marker)-17; }'''
+    assert outputs(source,tmp_path) == ('17\n','17\n')
+
+
+def test_returned_owned_parameter_transfers_cleanup_obligation(tmp_path):
+    source='''module destructor_parameter_return
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn relay(marker:Marker)->Marker { return marker; }
+fn main()->i32 { let marker:Marker=Marker{number:19}; let result:Marker=relay(marker); drop(result); return 0; }'''
+    assert outputs(source,tmp_path) == ('19\n','19\n')
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

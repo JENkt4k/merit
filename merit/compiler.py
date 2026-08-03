@@ -870,7 +870,7 @@ class OwnershipEffects:
             if name in self.fn:return self.fn[name].return_type
         return None
     def function(self,f):
-        env={param.name:param.type_name for param in f.params};owned=[];explicit=set();consumed_sites={}
+        env={param.name:param.type_name for param in f.params};owned=[(param.name,param.type_name) for param in f.params if param.mode=='value' and self.types.get(param.type_name).owned];explicit=set();consumed_sites={}
         for statement in self.statements(f.body):
             node=self.p.node(statement);tag=node.kind
             if tag=='let':

@@ -291,6 +291,7 @@ Continue alpha-readiness hardening:
 - Zero-copy vector transfer sequences destination before source and materializes both addresses once.
 - Preconditions and postconditions admit read-only calls but reject mutable borrows, effects, and capability-gated hazards.
 - `old(...)` snapshots are Copy-only until owned cloning and destruction semantics are specified.
+- Owned value parameters participate in shared implicit cleanup and transfer their obligation exactly once when returned.
 
 ## Deliberately deferred
 - specialization
