@@ -65,6 +65,22 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert capability.operands[1] is capability_statement[2]
     assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
     assert capability.related_span is None
+    binding = program.node(capability.operand(1)[1])
+    assert (binding.kind, binding.binding_name, binding.declared_type) == ("let", "source", "Buffer")
+    assert program.node(binding.initializer).kind == "call"
+
+
+def test_ownership_sensitive_accessors_cover_replacement_operands():
+    program = parse('''module semantic_replace
+fn main() -> i32 {
+    var value: i64 = 1;
+    replace(value, 2);
+    return 0;
+}''')
+    replacement = program.node(program.functions[0]["body"][1])
+    assert replacement.kind == "replace"
+    assert program.node(replacement.assignment_target).kind == "var"
+    assert program.node(replacement.assigned_value).kind == "number"
 
 
 def test_hir_exposes_shared_type_semantics():

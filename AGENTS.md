@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Continue **typed semantic node decomposition** with ownership-sensitive accessors as described in `NEXT_WORK.md`.
+Continue **typed semantic node decomposition** with call and control-flow accessors as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

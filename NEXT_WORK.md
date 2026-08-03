@@ -146,10 +146,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - C statement, expression-type, and expression lowering uses the typed node boundary.
 - Tuple operands remain temporarily compatible while typed ownership-sensitive accessors are introduced.
 
+## Ownership-sensitive node accessor checkpoint now available
+- Typed accessors cover binding names/types/initializers, assignment and replacement targets/values, and statement expressions.
+- Checker and ownership analysis use named operands for ownership-sensitive operations.
+- Interpreter and C lowering use the same accessors for initialization, replacement ordering, returns, printing, and drops.
+- Accessor tests cover source provenance, owned initialization, and replacement operands.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace positional operands with typed accessors for high-risk ownership and replacement nodes.
-- Introduce typed statement/expression variants behind `SemanticNodeView`.
+- Add typed accessors for calls, constructors, fields, and control-flow nodes.
+- Introduce typed statement/expression variants behind `SemanticNodeView` after accessors stabilize.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -162,7 +168,7 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Add typed accessors for ownership-sensitive nodes.
+1. Add typed call, constructor, field, and control-flow accessors.
 2. Introduce typed statement/expression variants before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

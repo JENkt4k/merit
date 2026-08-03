@@ -108,6 +108,20 @@ class SemanticNodeView:
     @property
     def operands(self)->tuple:return self.raw[1:]
     def operand(self,index:int):return self.raw[index+1]
+    def require(self,*kinds):
+        if self.kind not in kinds:raise ValueError(f'{self.kind} node does not support this accessor')
+    @property
+    def binding_name(self):self.require('let','try_let','drop');return self.operand(0)
+    @property
+    def declared_type(self):self.require('let','try_let');return self.operand(1)
+    @property
+    def initializer(self):self.require('let','try_let');return self.operand(2)
+    @property
+    def assignment_target(self):self.require('assign','replace');return self.operand(0)
+    @property
+    def assigned_value(self):self.require('assign','replace');return self.operand(1)
+    @property
+    def expression(self):self.require('return','print','expr','match');return self.operand(0)
 @dataclasses.dataclass
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
@@ -704,23 +718,23 @@ class OwnershipEffects:
     def function(self,f):
         env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed_sites={}
         for statement in self.statements(f['body']):
-            tag=self.p.node(statement).kind
+            node=self.p.node(statement);tag=node.kind
             if tag=='let':
-                consumed_sites.update(self.consume_sites(statement[3],statement[2]));env[statement[1]]=statement[2]
-                if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
+                consumed_sites.update(self.consume_sites(node.initializer,node.declared_type));env[node.binding_name]=node.declared_type
+                if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
             elif tag=='try_let':
-                consumed_sites.update(self.effect_sites(statement[3]));env[statement[1]]=statement[2]
-                if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
-            elif tag=='assign':consumed_sites.update(self.effect_sites(statement[2]))
+                consumed_sites.update(self.effect_sites(node.initializer));env[node.binding_name]=node.declared_type
+                if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
+            elif tag=='assign':consumed_sites.update(self.effect_sites(node.assigned_value))
             elif tag=='replace':
-                target_type=self.expression_type(statement[1],env)
-                if target_type:consumed_sites.update(self.consume_sites(statement[2],target_type))
-            elif tag=='return':consumed_sites.update(self.consume_sites(statement[1],f['return']))
+                target_type=self.expression_type(node.assignment_target,env)
+                if target_type:consumed_sites.update(self.consume_sites(node.assigned_value,target_type))
+            elif tag=='return':consumed_sites.update(self.consume_sites(node.expression,f['return']))
             elif tag=='match':
-                subject_type=self.expression_type(statement[1],env)
-                if subject_type:consumed_sites.update(self.consume_sites(statement[1],subject_type))
-            elif tag in ('expr','print'):consumed_sites.update(self.effect_sites(statement[1]))
-            elif tag=='drop':explicit.add(statement[1])
+                subject_type=self.expression_type(node.expression,env)
+                if subject_type:consumed_sites.update(self.consume_sites(node.expression,subject_type))
+            elif tag in ('expr','print'):consumed_sites.update(self.effect_sites(node.expression))
+            elif tag=='drop':explicit.add(node.binding_name)
         return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed_sites),tuple(sorted(consumed_sites.items())))
 
 class Checker:
@@ -812,15 +826,15 @@ class Checker:
                 self.fail(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them',candidate)
     def block(self,body,env,caps,fn):
         for st in body:
-            tag=self.p.node(st).kind
+            node=self.p.node(st);tag=node.kind
             if tag=='let':
-                _,n,t,e,mut=st;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
+                n=node.binding_name;t=node.declared_type;e=node.initializer;mut=st[4];self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if e[0]=='number':self.validate_literal(t,e[1])
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
             elif tag=='try_let':
-                _,n,t,e=st; self.ensure_type(t)
+                n=node.binding_name;t=node.declared_type;e=node.initializer; self.ensure_type(t)
                 et=self.expr_type(e,env,caps,fn); enum=self.p.enums.get(et)
                 if not enum or [v.name for v in enum.variants] != ['Ok','Err']:
                     self.fail('M6200: try requires an enum with Ok and Err variants',st)
@@ -833,12 +847,13 @@ class Checker:
                     self.fail('M6203: try error payload does not match function return error type',st)
                 env[n]=VarState(t,False)
             elif tag=='assign':
-                lt=self.lvalue_type(st[1],env,True);rt=self.expr_type(st[2],env,caps,fn)
+                target=node.assignment_target;value=node.assigned_value
+                lt=self.lvalue_type(target,env,True);rt=self.expr_type(value,env,caps,fn)
                 if rt not in (lt,'number'):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
-                if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner',st)
-                self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
+                if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(target)}; drop and create a new owner',st)
+                self.consume_owned_source(value,rt,env,f'assigning {self.expr_path(target)}')
             elif tag=='replace':
-                target,value=st[1],st[2]
+                target,value=node.assignment_target,node.assigned_value
                 lt=self.lvalue_type(target,env,True)
                 if not self.types.get(lt).needs_drop: self.fail(f'M5203: replace requires owned storage, got {lt}',st)
                 target_root=self.root_var(target)
@@ -849,12 +864,12 @@ class Checker:
                     self.fail(f'M5202: replacement source aliases target {self.expr_path(target)}',st)
                 self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
-                et=self.expr_type(st[1],env,caps,fn)
+                et=self.expr_type(node.expression,env,caps,fn)
                 if et not in (fn['return'],'number'):self.fail(f"M3002: return type {et} does not match {fn['return']}",st)
-                self.consume_owned_source(st[1],et,env,f'returning from {fn["name"]}')
-            elif tag in ('print','expr'):self.expr_type(st[1],env,caps,fn)
+                self.consume_owned_source(node.expression,et,env,f'returning from {fn["name"]}')
+            elif tag in ('print','expr'):self.expr_type(node.expression,env,caps,fn)
             elif tag=='drop':
-                n=st[1]
+                n=node.binding_name
                 if n not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)
                 if env[n].moved or env[n].dropped:
                     origin=env[n].move_origin or env[n].drop_origin
@@ -863,7 +878,7 @@ class Checker:
                 if env[n].mode in ('borrow','borrow_mut'): self.fail(f'M5102: cannot drop borrowed parameter {n}',st)
                 env[n].dropped=True;env[n].drop_origin=self.p.span(st)
             elif tag=='match':
-                subject_t=self.expr_type(st[1],env,caps,fn); enum=self.p.enums.get(subject_t)
+                subject_t=self.expr_type(node.expression,env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
                 arms=st[2]; names=[a[0] for a in arms]; expected=[v.name for v in enum.variants]
                 if len(names)!=len(set(names)): self.fail('M6101: duplicate match arm',st)
@@ -880,9 +895,9 @@ class Checker:
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
-                root=self.root_var(st[1])
+                root=self.root_var(node.expression)
                 if root and self.types.get(subject_t).needs_drop:
-                    env[root].moved=True;env[root].move_origin=self.p.span(st[1]);env[root].move_context='matching owned enum subject'
+                    env[root].moved=True;env[root].move_origin=self.p.span(node.expression);env[root].move_context='matching owned enum subject'
             elif tag=='with_cap':
                 cap=st[1]
                 if cap not in self.p.capabilities:self.fail(f'M2002: undeclared capability {cap}',st)
@@ -1194,19 +1209,19 @@ class Interpreter:
             self.call_modes.pop()
     def block(self,b,env):
         for st in b:
-            kind=self.p.node(st).kind
-            if kind=='let':env[st[1]]=self.eval(st[3],env,st[2])
+            node=self.p.node(st);kind=node.kind
+            if kind=='let':env[node.binding_name]=self.eval(node.initializer,env,node.declared_type)
             elif kind=='try_let':
                 value=self.eval(st[3],env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
                 env[st[1]]=value.value['payload']
-            elif kind=='assign':self.assign(st[1],self.eval(st[2],env),env)
+            elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env),env)
             elif kind=='replace':
-                replacement=self.eval(st[2],env);self.drop_value(self.eval(st[1],env));self.assign(st[1],replacement,env)
-            elif kind=='print':print(self.format(self.eval(st[1],env)))
-            elif kind=='return':return ReturnSignal(self.eval(st[1],env))
-            elif kind=='expr':self.eval(st[1],env)
-            elif kind=='drop': self.drop_value(env.pop(st[1],None))
+                replacement=self.eval(node.assigned_value,env);self.drop_value(self.eval(node.assignment_target,env));self.assign(node.assignment_target,replacement,env)
+            elif kind=='print':print(self.format(self.eval(node.expression,env)))
+            elif kind=='return':return ReturnSignal(self.eval(node.expression,env))
+            elif kind=='expr':self.eval(node.expression,env)
+            elif kind=='drop': self.drop_value(env.pop(node.binding_name,None))
             elif kind=='match':
                 value=self.eval(st[1],env); variant=value.value['variant']
                 arm=next(a for a in st[2] if a[0]==variant)
@@ -1620,26 +1635,26 @@ class CGenerator:
         return x
     def stmt(self,s,env,i):
         p='    '*i
-        kind=self.p.node(s).kind
-        if kind=='let':env[s[1]]=s[2];return [f'{p}{self.ctype(s[2])} {s[1]} = {self.checked(s[2],self.expr(s[3],env,s[2]))};']
+        node=self.p.node(s);kind=node.kind
+        if kind=='let':env[node.binding_name]=node.declared_type;return [f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {self.checked(node.declared_type,self.expr(node.initializer,env,node.declared_type))};']
         if kind=='try_let':
             enum_t=self.etype(s[3],env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
             env[s[1]]=s[2]
             return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[3],env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(s[2])} {s[1]} = {temp}.data.Ok;']
         if kind=='assign':
-            t=self.etype(s[1],env);return [f'{p}{self.expr(s[1],env)} = {self.checked(t,self.expr(s[2],env,t))};']
+            t=self.etype(node.assignment_target,env);return [f'{p}{self.expr(node.assignment_target,env)} = {self.checked(t,self.expr(node.assigned_value,env,t))};']
         if kind=='replace':
-            t=self.etype(s[1],env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
-            address=self.address_expr(s[1],env)
+            t=self.etype(node.assignment_target,env);temp=f'_merit_replace_{self.temp_counter}';self.temp_counter+=1
+            address=self.address_expr(node.assignment_target,env)
             return [
-                f'{p}{self.ctype(t)} {temp} = {self.expr(s[2],env,t)};',
+                f'{p}{self.ctype(t)} {temp} = {self.expr(node.assigned_value,env,t)};',
                 self.drop_address_line(p,address,t),
                 f'{p}*({address}) = {temp};',
             ]
-        if kind=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(s[1],env,self.current_return))};',f'{p}goto _merit_epilogue;']
+        if kind=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(node.expression,env,self.current_return))};',f'{p}goto _merit_epilogue;']
         if kind=='print':
-            t=self.etype(s[1],env);x=self.expr(s[1],env)
+            t=self.etype(node.expression,env);x=self.expr(node.expression,env)
             temp=f'_merit_print_{self.temp_counter}';self.temp_counter+=1
             lines=[f'{p}{self.ctype(t)} {temp} = {x};']
             if t=='String':
@@ -1655,7 +1670,7 @@ class CGenerator:
                 lines.append(f'{p}printf("%lld\\n",(long long)({temp}));')
             return lines
         if kind=='expr':
-            expression=s[1]
+            expression=node.expression
             if expression[0] in ('call','generic_call'):
                 name,args=resolved_call(expression);vec=vec_builtin(name)
                 if vec and vec[0]=='replace':
@@ -1669,8 +1684,8 @@ class CGenerator:
                     ]
             return [f'{p}(void)({self.expr(expression,env)});']
         if kind=='drop':
-            t=self.env_type(env,s[1])
-            return [self.drop_binding_line(p,s[1],t)]
+            t=self.env_type(env,node.binding_name)
+            return [self.drop_binding_line(p,node.binding_name,t)]
         if kind=='match':
             enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
             o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[1],env)};',f'{p}switch ({temp}.tag) {{']

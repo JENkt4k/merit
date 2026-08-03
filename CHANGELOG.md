@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Ownership-sensitive node accessor checkpoint
+
+- Added named typed accessors for bindings, initializers, assignment/replacement operands, statement expressions, and drops.
+- Migrated ownership-sensitive checker and shared analysis paths off positional operands.
+- Migrated corresponding interpreter and C lowering paths while preserving replacement ordering.
+- Added semantic accessor and replacement operand coverage.
+- Increased the regression suite from 169 to 170 tests.
+
 ## Epoch III — Typed backend-dispatch checkpoint
 
 - Migrated MIR control-flow dispatch to `SemanticNodeView`.
