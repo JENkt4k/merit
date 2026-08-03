@@ -300,6 +300,7 @@ Continue alpha-readiness hardening:
 - `vec_transfer<T>` now performs that checked zero-copy handoff into an empty destination.
 - `vec_allocator<T>` exposes retained provider identity for compatibility preflight.
 - The source remains valid and empty; owned element drop obligations transfer without intermediate destruction.
+- Nested `Vec<Vec<T>>` values preserve move/pop ownership and recursively destroy owned leaves once.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.

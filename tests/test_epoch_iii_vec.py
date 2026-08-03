@@ -537,3 +537,19 @@ def test_vec_allocator_allows_transfer_compatibility_preflight(tmp_path):
 capability allocate;
 fn main()->i32 { with capability allocate { let system:Allocator=system_allocator(); let portable:Allocator=portable_allocator(); var left:Vec<i64>=vec_new<i64>(system,0); var same:Vec<i64>=vec_new<i64>(system,0); var other:Vec<i64>=vec_new<i64>(portable,0); print(allocator_compatible(vec_allocator<i64>(left),vec_allocator<i64>(same))); print(allocator_compatible(vec_allocator<i64>(left),vec_allocator<i64>(other))); } return 0; }'''
     assert run_interpreter_and_native(source,tmp_path,'vector_allocator_preflight') == '1\n0\n'
+
+
+def test_nested_vectors_preserve_move_and_pop_semantics(tmp_path):
+    source='''module nested_vectors
+capability allocate;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var inner:Vec<i64>=vec_new<i64>(allocator,1); vec_push<i64>(inner,47); var outer:Vec<Vec<i64>>=vec_new<Vec<i64>>(allocator,1); vec_push<Vec<i64>>(outer,inner); print(vec_len<Vec<i64>>(outer)); let restored:Vec<i64>=vec_pop<Vec<i64>>(outer); print(vec_get<i64>(restored,0)); print(vec_len<Vec<i64>>(outer)); drop(restored); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'nested_vectors') == '1\n47\n0\n'
+
+
+def test_nested_vector_cleanup_drops_owned_elements_once(tmp_path):
+    source='''module nested_vector_cleanup
+capability allocate;
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var inner:Vec<Marker>=vec_new<Marker>(allocator,1); let marker:Marker=Marker{number:53}; vec_push<Marker>(inner,marker); var outer:Vec<Vec<Marker>>=vec_new<Vec<Marker>>(allocator,1); vec_push<Vec<Marker>>(outer,inner); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'nested_vector_cleanup') == '53\n'

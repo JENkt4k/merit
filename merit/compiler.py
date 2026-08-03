@@ -1221,7 +1221,6 @@ class Checker:
             vec=vec_builtin(name)
             if vec:
                 op,elem=vec; spec=VEC_INTRINSICS[op]; vec_t='Vec__'+elem; self.ensure_type(vec_t)
-                if is_vec_type(elem): raise CompileError(f'M7300: Vec<{elem}> element drop is not implemented')
                 if len(args)!=spec.arity: self.fail(f'M3005: {name} expects {spec.arity} arguments',e)
                 if spec.capability:
                     if spec.capability not in caps: self.fail(f'M2003: call to {name} requires capabilities [{spec.capability}]',e)
@@ -1390,7 +1389,7 @@ class LayoutEngine:
             for st in CGenerator(self.p).walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
-        return sorted(found)
+        return sorted(found,key=lambda name:(name.count('Vec__'),name))
     def size_align(self,t):
         if t in self.SIZES:return self.SIZES[t]
         if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
@@ -1691,7 +1690,7 @@ class CGenerator:
             for st in self.walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
-        return sorted(found)
+        return sorted(found,key=lambda name:(name.count('Vec__'),name))
     def ctype(self,t):
         if t in self.p.decimals:return 'int64_t'
         if t in self.p.bounded:return self.ctype(self.p.bounded[t].base)
