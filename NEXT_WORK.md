@@ -323,6 +323,11 @@ Continue alpha-readiness hardening:
 - Repeated identical builds reuse the merged-project object without rewriting it.
 - Per-module objects and dependency-granular invalidation remain deliberately deferred.
 
+## Qualified import checkpoint now available
+- Imported public functions, types, and constructors accept explicit `module.symbol` spelling.
+- Qualification preprocessing preserves source columns.
+- Qualified access without an explicit import is rejected at project load time.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

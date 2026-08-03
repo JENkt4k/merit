@@ -78,6 +78,7 @@ Exact literal/arithmetic/comparison conditions are folded to direct MIR gotos be
 Project builds can emit a PIC shared object and matching generated header from the same checked merged program used for executable builds.
 Merged projects preserve `pub` exports so consumer headers expose public functions while generated implementation C retains private internal prototypes.
 Project executable/shared builds use a content-addressed object cache for the merged generated-C translation unit, separating compilation from linking as the first step toward per-module objects.
+Project preprocessing resolves explicit `module.symbol` qualification for imported public functions, types, and constructors while preserving source columns for downstream diagnostics.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

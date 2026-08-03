@@ -38,7 +38,7 @@ import ledger_types;
 import ledger_operations;
 ```
 
-Application Foundation A deliberately uses a flat global symbol namespace after module-graph validation. Qualified names and visibility are reserved for the next slice. This keeps the implementation honest while allowing real multi-file native programs now.
+Project symbols retain explicit visibility while lowering through the current merged semantic program. Imported public functions, types, and constructors may use `module.symbol` qualification; qualification does not replace the requirement for an explicit import and preserves source columns during preprocessing.
 
 ## Validation
 
@@ -53,4 +53,4 @@ The loader rejects:
 
 ## Compilation
 
-All validated units are merged into one typed program before existing semantic, ownership, contract, capability, interpreter, and C-backend passes execute. Separate object compilation is a later milestone.
+All validated units are merged into one typed program before existing semantic, ownership, contract, capability, interpreter, and C-backend passes execute. The merged generated-C translation unit uses content-addressed object caching; per-module object compilation is a later milestone.

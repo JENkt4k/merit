@@ -131,6 +131,41 @@ def test_missing_import_is_diagnostic(tmp_path):
         load_project(tmp_path / "Merit.toml")
 
 
+def test_qualified_imported_function_resolves_and_preserves_parity(tmp_path):
+    project_root = tmp_path / "qualified_import"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "qualified_import"\nentry = "src/main.mrt"\nsources = ["src/*.mrt"]\n'
+    )
+    (project_root / "src" / "domain.mrt").write_text(
+        'module domain\npub stable("point-v1") struct Point { x:i32; }\n'
+        "pub fn score(point:Point)->i32 { return point.x; }\n"
+    )
+    (project_root / "src" / "main.mrt").write_text(
+        "module main\nimport domain;\nfn main()->i32 { let point:domain.Point=domain.Point{x:42}; print(domain.score(point)); return 0; }\n"
+    )
+    project = load_project(project_root / "Merit.toml")
+    assert interpret(project) == "42\n"
+    _,_,executable = build(project, project_root / "build" / "qualified_import")
+    assert subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout == "42\n"
+
+
+def test_qualified_name_requires_explicit_import(tmp_path):
+    project_root = tmp_path / "unimported_qualified"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "unimported_qualified"\nentry = "src/main.mrt"\nsources = ["src/*.mrt"]\n'
+    )
+    (project_root / "src" / "domain.mrt").write_text(
+        "module domain\npub fn answer()->i32 { return 42; }\n"
+    )
+    (project_root / "src" / "main.mrt").write_text(
+        "module main\nfn main()->i32 { print(domain.answer()); return 0; }\n"
+    )
+    with pytest.raises(ProjectError,match="module main uses qualified name domain.answer without importing domain"):
+        load_project(project_root / "Merit.toml")
+
+
 def test_cycle_is_rejected(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "Merit.toml").write_text('[package]\nname="cycle"\nentry="src/a.mrt"\nsources=["src/**/*.mrt"]\n')

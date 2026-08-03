@@ -90,12 +90,24 @@ def _extract_generic_context_declarations(source: str) -> str:
     return "\n".join(declarations)
 
 
-def _parse_unit(path: Path, generic_prelude: str = "") -> SourceUnit:
+def _resolve_qualified_names(source: str, module: str, imports: tuple[str, ...], module_names: set[str]) -> str:
+    def replace(match: re.Match) -> str:
+        qualifier,symbol=match.group(1),match.group(2)
+        if qualifier not in module_names:return match.group(0)
+        if qualifier != module and qualifier not in imports:
+            raise ProjectError(f"module {module} uses qualified name {qualifier}.{symbol} without importing {qualifier}")
+        return " " * (len(qualifier)+1) + symbol
+    return re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b",replace,source)
+
+
+def _parse_unit(path: Path, module_names: set[str], generic_prelude: str = "") -> SourceUnit:
     source = path.read_text()
     imports = tuple(IMPORT_RE.findall(source))
     imports_source = IMPORT_RE.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     exports = frozenset(match.group(2) for match in PUB_RE.finditer(imports_source))
     parser_source = PUB_RE.sub(r"\1", imports_source)
+    module = re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)", parser_source, re.MULTILINE).group(1)
+    parser_source = _resolve_qualified_names(parser_source,module,imports,module_names)
     try:
         program = parse(parser_source, str(path))
     except Exception as exc:
@@ -366,7 +378,8 @@ def load_project(manifest_path: Path) -> LoadedProject:
     paths = _discover(manifest)
     raw_sources = {path: path.read_text() for path in paths}
     generic_contexts = {path: _extract_generic_context_declarations(PUB_RE.sub(r"\1", IMPORT_RE.sub("", source))) for path, source in raw_sources.items()}
-    units = tuple(_parse_unit(path, "\n".join(text for other, text in generic_contexts.items() if other != path)) for path in paths)
+    module_names={re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)",source,re.MULTILINE).group(1) for source in raw_sources.values()}
+    units = tuple(_parse_unit(path, module_names, "\n".join(text for other, text in generic_contexts.items() if other != path)) for path in paths)
     entry = next((u for u in units if u.path.resolve() == manifest.entry_path.resolve()), None)
     if entry is None:
         raise ProjectError("entry module was not loaded")

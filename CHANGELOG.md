@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Qualified import checkpoint
+
+- Added explicit `module.symbol` resolution for imported functions, types, and constructors.
+- Preserved source columns during project qualification preprocessing.
+- Added missing-import diagnostics and interpreter/native parity coverage.
+- Increased the regression suite from 188 to 190 tests.
+
 ## Epoch III — Content-addressed object-cache checkpoint
 
 - Split project C compilation from executable/shared linking.
