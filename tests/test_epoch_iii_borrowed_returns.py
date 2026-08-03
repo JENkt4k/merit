@@ -161,3 +161,11 @@ def test_generated_c_signatures_preserve_borrow_constness():
     mutable=parse(source('borrow_mut value: Value','return value;').replace('-> borrow Value','-> borrow_mut Value'))
     assert 'const merit_Value * merit_expose(const merit_Value *value);' in CGenerator(shared).header()
     assert 'merit_Value * merit_expose(merit_Value *value);' in CGenerator(mutable).header()
+
+
+def test_borrowed_return_postcondition_uses_pointer_result(tmp_path):
+    source_text='''module borrowed_return_contract
+stable("v1") struct Value { number:i32; }
+fn expose(borrow value:Value)->borrow Value ensures result.number == value.number; { return value; }
+fn main()->i32 { let value:Value=Value{number:67}; print(expose(value).number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('67\n','67\n')

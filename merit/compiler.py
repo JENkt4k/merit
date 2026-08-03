@@ -1963,7 +1963,7 @@ class CGenerator:
             else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
-        postenv=dict(env);postenv['result']=(f.return_type,'__result__')
+        postenv=dict(env);postenv['result']=(f.return_type,f.return_mode if f.return_mode!='value' else '__result__')
         for c in f.post:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f.name}",73);')
         for name,t in self.owned_buffer_cleanup(f):
             o.append(self.drop_binding_line('    ',name,t))
@@ -2095,7 +2095,7 @@ class CGenerator:
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
             if expected=='u64' and value==INT_RANGES['u64'][1]:return 'UINT64_MAX'
             return str(value)
-        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else node.atom_value
+        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get('result'),tuple) and env['result'][1] in ('__result__','borrow','borrow_mut') else node.atom_value
         if kind=='field':
             base=node.field_base; op='.'
             base_node=self.p.node(base)

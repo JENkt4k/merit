@@ -316,6 +316,7 @@ Continue alpha-readiness hardening:
 - `borrowed_views` verifies public cross-module shared/mutable returned borrows in both execution paths.
 - Shared-library consumers observe borrowed stable-layout results as usable C pointers.
 - Generated headers preserve shared-vs-mutable borrow constness.
+- Borrowed-return postconditions observe `result` without converting it into an owned value.
 - Owned storage/value transfer and shared-to-mutable escalation are rejected.
 
 ## MIR reachability checkpoint now available
