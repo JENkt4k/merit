@@ -282,6 +282,7 @@ Continue alpha-readiness hardening:
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
 - Preserve definite-return analysis when adding new control-flow constructs.
 - Preserve the completed type-specific native arithmetic policy when adding numeric types or operators.
+- Keep operator-domain validation ahead of MIR/interpreter/native lowering.
 
 ## Deliberately deferred
 - specialization

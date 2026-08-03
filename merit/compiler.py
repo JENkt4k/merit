@@ -1322,7 +1322,12 @@ class Checker:
             return callee.return_type
         if tag=='binop':
             a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
-            if node.operator in ('==','!=','>=','<=','>','<'):return 'i32'
+            numeric=lambda value:value=='number' or value in INT_RANGES or value in self.p.decimals or value in self.p.bounded
+            if node.operator in ('==','!=','>=','<=','>','<'):
+                if not numeric(a) or not numeric(b):self.fail(f'M3104: operator {node.operator} requires numeric operands, got {a} and {b}',e)
+                if a!='number' and b!='number' and a!=b:self.fail(f'M3102: comparison operands differ: {a} and {b}',e)
+                return 'i32'
+            if not numeric(a) or not numeric(b):self.fail(f'M3103: arithmetic operator {node.operator} requires numeric operands, got {a} and {b}',e)
             if a=='number':return b
             if b=='number':return a
             if a!=b:self.fail(f'M3102: arithmetic operands differ: {a} and {b}',e)
@@ -2169,7 +2174,8 @@ class CGenerator:
                 ex=self.expr(x,env,param.type_name);rendered.append(self.address_expr(x,env) if param.mode in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
-            t=expected or self.etype(node.left,env);left=self.expr(node.left,env,t);right=self.expr(node.right,env,t)
+            comparison=node.operator in ('==','!=','>=','<=','>','<');t=self.etype(node.left,env) if comparison else (expected or self.etype(node.left,env));left=self.expr(node.left,env,t);right=self.expr(node.right,env,t)
+            if comparison:return f'({left} {node.operator} {right})'
             operations={'+':'add','-':'sub','*':'mul','/':'div'}
             if node.operator in operations:
                 operation=operations[node.operator]

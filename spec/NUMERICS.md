@@ -14,6 +14,8 @@ Signed integer division truncates toward zero in both execution paths. Division 
 
 Primitive signed and unsigned integer operators and `checked_add`, `checked_sub`, and `checked_mul` use type-specific native helpers. Narrow overflow, unsigned underflow, multiplication overflow, bounded-domain overflow, and division failures therefore match interpreter behavior instead of relying on C wrapping or undefined behavior.
 
+Built-in arithmetic and comparison operators accept numeric domains only. Distinct nominal numeric types do not compare implicitly, and comparison operands retain their numeric type even though the result is `i32`.
+
 ## Domain boundary rule
 
 Lossy numeric conversions are not yet implemented. When introduced, exact-to-approximate and approximate-to-exact conversion will require explicit operations and policies. No implicit decimal/float conversion will be added.

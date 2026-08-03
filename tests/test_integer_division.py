@@ -96,3 +96,13 @@ def test_checked_builtin_uses_narrow_type_overflow_policy(tmp_path):
     native=subprocess.run([str(compile_program(source,tmp_path,'checked_narrow_overflow'))],text=True,capture_output=True)
     assert native.returncode == 70
     assert 'i8 addition overflow' in native.stderr
+
+
+def test_decimal_comparison_uses_operand_type_when_stored_as_i32(tmp_path):
+    source='''module decimal_comparison
+decimal Money(6,2,half_even);
+fn main()->i32 { let value:Money=1.25; let greater:i32=value>1.20; print(greater); return 0; }'''
+    program=parse(source);Checker(program).check();interpreted=io.StringIO()
+    with contextlib.redirect_stdout(interpreted):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,'decimal_comparison'))],check=True,text=True,capture_output=True).stdout
+    assert interpreted.getvalue() == native == '1\n'

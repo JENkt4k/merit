@@ -34,3 +34,16 @@ bounded Count(i32,0,2);
 fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var values:Vec<Count>=vec_new<Count>(allocator,1); vec_push<Count>(values,3); } return 0; }'''
     with pytest.raises(CompileError,match='M1103: 3 outside Count range 0..2'):
         Checker(parse(source)).check()
+
+
+@pytest.mark.parametrize(
+    ('source','message'),
+    [
+        ('module allocator_arithmetic\nfn main()->i32 { let allocator:Allocator=system_allocator(); print(allocator+1); return 0; }','M3103: arithmetic operator'),
+        ('module string_comparison\nfn main()->i32 { let text:String="x"; print(text=="x"); return 0; }','M3104: operator == requires numeric operands'),
+        ('module mixed_comparison\nfn main()->i32 { let narrow:i32=1; let wide:i64=1; print(narrow==wide); return 0; }','M3102: comparison operands differ'),
+    ],
+)
+def test_builtin_operators_reject_unsupported_domains(source,message):
+    with pytest.raises(CompileError,match=message):
+        Checker(parse(source)).check()
