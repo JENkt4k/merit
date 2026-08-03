@@ -227,10 +227,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Mapping compatibility keeps existing semantic/backend consumers stable during field migration.
 - HIR serializes function records explicitly instead of exposing internal objects.
 
+## Typed function consumer checkpoint now available
+- Type discovery, ownership analysis, checking, interpretation, C lowering, MIR, and project loading use typed function fields.
+- Read-only mapping access remains solely as a compatibility surface for external inspection/tests.
+- Generated implementation functions mutate typed fields rather than mapping keys.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Migrate compiler consumers from function mapping keys to typed fields.
 - Remove tuple compatibility from semantic nodes after MIR/public inspection serialization is explicit.
+- Add explicit semantic-node serialization for HIR/MIR and project tooling.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -243,8 +248,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Migrate function consumers to typed fields and retire mapping mutation.
-2. Add explicit MIR/HIR serialization before removing semantic tuple compatibility.
+1. Add explicit semantic-node serialization for MIR/HIR/project inspection.
+2. Remove semantic tuple compatibility after all public outputs serialize explicitly.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile
-from collections.abc import MutableMapping
+from collections.abc import Mapping
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any
@@ -112,12 +112,10 @@ class SemanticTuple(tuple):
     @property
     def operands(self):return self[1:]
 @dataclasses.dataclass
-class FunctionDecl(MutableMapping):
+class FunctionDecl(Mapping):
     name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
     KEYS=('name','params','return','effects','requires_caps','pre','post','body')
     def __getitem__(self,key):return getattr(self,'return_type' if key=='return' else key)
-    def __setitem__(self,key,value):setattr(self,'return_type' if key=='return' else key,value)
-    def __delitem__(self,key):raise TypeError('function declaration fields cannot be deleted')
     def __iter__(self):return iter(self.KEYS)
     def __len__(self):return len(self.KEYS)
     def to_dict(self):return {key:self[key] for key in self.KEYS}
@@ -371,7 +369,7 @@ class ASTBuilder(Transformer):
             {'decimal':lambda:ds.__setitem__(v.name,v),'bounded':lambda:bs.__setitem__(v.name,v),'capability':lambda:cs.add(v),'struct':lambda:ss.__setitem__(v.name,v),'enum':lambda:es.__setitem__(v.name,v),'trait':lambda:ts.__setitem__(v.name,v),'impl':lambda:ims.append(v),'function':lambda:fs.append(v)}[k]()
         for impl in ims:
             for method in impl.methods:
-                generated=FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated['name']=_impl_function_name(impl.trait_name,impl.target_type,method['name'])
+                generated=FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance());generated.name=_impl_function_name(impl.trait_name,impl.target_type,method.name)
                 if generated['name'] in symbols: raise CompileError(f'M0002: duplicate top-level symbol {generated["name"]}')
                 fs.append(generated)
         return Program(x[0],ds,bs,cs,ss,fs,es,ts,ims)
@@ -645,8 +643,8 @@ class TypeTable:
                 elif node.kind=='match':
                     for arm in node.match_arms:yield from statements(arm[2])
         for function in self.p.functions:
-            names.add(function['return']);names.update(type_name for _,type_name,_ in function['params'])
-            names.update(self.p.node(statement).declared_type for statement in statements(function['body']) if self.p.node(statement).kind in ('let','try_let'))
+            names.add(function.return_type);names.update(type_name for _,type_name,_ in function.params)
+            names.update(self.p.node(statement).declared_type for statement in statements(function.body) if self.p.node(statement).kind in ('let','try_let'))
         names.discard('void')
         return sorted(names)
     def all(self):return {name:dataclasses.asdict(self.get(name)) for name in self.known_types()}
@@ -721,9 +719,9 @@ def capability_requirements(p):
             entry.update({'kind':'vector_intrinsic','operation':f'vec_{name}<T>','capability':spec.capability,'hazard':spec.hazard or spec.capability})
             requirements.append(entry)
     for f in p.functions:
-        for cap in f['requires_caps']:
+        for cap in f.requires_caps:
             entry=capability_policy(cap)
-            entry.update({'kind':'function','operation':f['name'],'capability':cap,'hazard':'user_declared'})
+            entry.update({'kind':'function','operation':f.name,'capability':cap,'hazard':'user_declared'})
             requirements.append(entry)
     return sorted(requirements,key=lambda x:(x['kind'],x['operation'],x['capability']))
 
@@ -755,7 +753,7 @@ def resolved_call(e) -> tuple[str,list]:
     raise CompileError(f'M3011: expected call expression, got {node.kind}')
 
 class OwnershipEffects:
-    def __init__(self,p,types=None): self.p=p;self.types=types or TypeTable(p);self.fn={f['name']:f for f in p.functions}
+    def __init__(self,p,types=None): self.p=p;self.types=types or TypeTable(p);self.fn={f.name:f for f in p.functions}
     def root(self,e):
         node=self.p.node(e)
         while node and node.kind=='field':e=node.operand(0);node=self.p.node(e)
@@ -793,7 +791,7 @@ class OwnershipEffects:
                     if mode=='value':sites.update(self.consume_sites(arg,type_name))
                 return sites
             if name in self.fn:
-                for arg,(_,type_name,mode) in zip(args,self.fn[name]['params']):
+                for arg,(_,type_name,mode) in zip(args,self.fn[name].params):
                     if mode=='value':sites.update(self.consume_sites(arg,type_name))
             return sites
         if node.kind=='binop':
@@ -822,11 +820,11 @@ class OwnershipEffects:
             if name in BUILTIN_SIGS:return BUILTIN_SIGS[name].return_type
             vec=vec_builtin(name)
             if vec:return vec_return_type(*vec)
-            if name in self.fn:return self.fn[name]['return']
+            if name in self.fn:return self.fn[name].return_type
         return None
     def function(self,f):
-        env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed_sites={}
-        for statement in self.statements(f['body']):
+        env={name:type_name for name,type_name,_ in f.params};owned=[];explicit=set();consumed_sites={}
+        for statement in self.statements(f.body):
             node=self.p.node(statement);tag=node.kind
             if tag=='let':
                 consumed_sites.update(self.consume_sites(node.initializer,node.declared_type));env[node.binding_name]=node.declared_type
@@ -838,7 +836,7 @@ class OwnershipEffects:
             elif tag=='replace':
                 target_type=self.expression_type(node.assignment_target,env)
                 if target_type:consumed_sites.update(self.consume_sites(node.assigned_value,target_type))
-            elif tag=='return':consumed_sites.update(self.consume_sites(node.expression,f['return']))
+            elif tag=='return':consumed_sites.update(self.consume_sites(node.expression,f.return_type))
             elif tag=='match':
                 subject_type=self.expression_type(node.expression,env)
                 if subject_type:consumed_sites.update(self.consume_sites(node.expression,subject_type))
@@ -847,7 +845,7 @@ class OwnershipEffects:
         return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed_sites),tuple(sorted(consumed_sites.items())))
 
 class Checker:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
     def fail(self,text,node=None,notes=()):
         provenance=self.p.provenance(node) if node is not None else NodeProvenance()
         if provenance.related:notes=tuple(notes)+(DiagnosticNote('generic instantiated here',provenance.related),)
@@ -902,14 +900,14 @@ class Checker:
     def ensure_trait_signature_type(self,t,node=None):
         if t!='Self': self.ensure_type(t,node)
     def check_function_body(self,f):
-        self.ensure_type(f['return'],f)
-        missing=set(f['requires_caps'])-self.p.capabilities
-        if missing:self.fail(f"M2001: function {f['name']} requires undeclared capabilities: {sorted(missing)}",f)
-        env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f['params']}
-        for e in f['pre']:self.check_contract_expr(e,env,set(f['requires_caps']),f,'pre')
-        self.block(f['body'],env,set(f['requires_caps']),f)
-        post_env=dict(env); post_env['result']=VarState(f['return'],False)
-        for e in f['post']:self.check_contract_expr(e,post_env,set(f['requires_caps']),f,'post')
+        self.ensure_type(f.return_type,f)
+        missing=set(f.requires_caps)-self.p.capabilities
+        if missing:self.fail(f"M2001: function {f.name} requires undeclared capabilities: {sorted(missing)}",f)
+        env={n:VarState(t,mode=='borrow_mut',False,False,mode) for n,t,mode in f.params}
+        for e in f.pre:self.check_contract_expr(e,env,set(f.requires_caps),f,'pre')
+        self.block(f.body,env,set(f.requires_caps),f)
+        post_env=dict(env); post_env['result']=VarState(f.return_type,False)
+        for e in f.post:self.check_contract_expr(e,post_env,set(f.requires_caps),f,'post')
     def check_contract_expr(self,e,env,caps,fn,phase):
         previous=self.contract_phase
         self.contract_phase=phase
@@ -928,10 +926,10 @@ class Checker:
         for name,method in expected.items():
             candidate=actual[name]
             expected_params=[(subst(t),mode) for _,t,mode in method.params]
-            actual_params=[(t,mode) for _,t,mode in candidate['params']]
-            if actual_params!=expected_params or candidate['return']!=subst(method.return_type):
+            actual_params=[(t,mode) for _,t,mode in candidate.params]
+            if actual_params!=expected_params or candidate.return_type!=subst(method.return_type):
                 self.fail(f'M7205: method {name} does not match trait {impl.trait_name} signature for {impl.target_type}',candidate)
-            if candidate['effects'] or candidate['requires_caps']:
+            if candidate.effects or candidate.requires_caps:
                 self.fail(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them',candidate)
     def block(self,body,env,caps,fn):
         for st in body:
@@ -949,7 +947,7 @@ class Checker:
                     self.fail('M6200: try requires an enum with Ok and Err variants',st)
                 ok=enum.variants[0]
                 if ok.payload_type != t: self.fail(f'M6201: try Ok payload is {ok.payload_type}, binding expects {t}',st)
-                ret_enum=self.p.enums.get(fn['return'])
+                ret_enum=self.p.enums.get(fn.return_type)
                 if not ret_enum or [v.name for v in ret_enum.variants] != ['Ok','Err']:
                     self.fail('M6202: function using try must return a Result-style enum',st)
                 if ret_enum.variants[1].payload_type != enum.variants[1].payload_type:
@@ -974,8 +972,8 @@ class Checker:
                 self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
                 et=self.expr_type(node.expression,env,caps,fn)
-                if et not in (fn['return'],'number'):self.fail(f"M3002: return type {et} does not match {fn['return']}",st)
-                self.consume_owned_source(node.expression,et,env,f'returning from {fn["name"]}')
+                if et not in (fn.return_type,'number'):self.fail(f"M3002: return type {et} does not match {fn.return_type}",st)
+                self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
             elif tag in ('print','expr'):self.expr_type(node.expression,env,caps,fn)
             elif tag=='drop':
                 n=node.binding_name
@@ -1010,7 +1008,7 @@ class Checker:
             elif tag=='with_cap':
                 cap=node.capability_name
                 if cap not in self.p.capabilities:self.fail(f'M2002: undeclared capability {cap}',st)
-                self.audit_sites.append({'function':fn['name'],'capability':cap})
+                self.audit_sites.append({'function':fn.name,'capability':cap})
                 self.block(node.nested_body,env,caps|{cap},fn)
             elif tag=='if':
                 ct=self.expr_type(node.condition,env,caps,fn)
@@ -1102,7 +1100,7 @@ class Checker:
                 if len(args)!=spec.arity: self.fail(f'M3005: {name} expects {spec.arity} arguments',e)
                 if spec.capability:
                     if spec.capability not in caps: self.fail(f'M2003: call to {name} requires capabilities [{spec.capability}]',e)
-                    self.hazardous_operations.append(hazard_entry(fn['name'],name,spec.capability,spec.hazard))
+                    self.hazardous_operations.append(hazard_entry(fn.name,name,spec.capability,spec.hazard))
                     if self.expr_type(args[0],env,caps,fn)!='Allocator': raise CompileError(f'M3008: argument 0 expects Allocator')
                     cap_t=self.expr_type(args[1],env,caps,fn)
                     if cap_t not in ('i64','number'): raise CompileError(f'M3008: argument 1 expects i64, got {cap_t}')
@@ -1134,7 +1132,7 @@ class Checker:
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
                 if cap and cap not in caps: self.fail(f'M2003: call to {name} requires capabilities {[cap]}',e)
-                if cap: self.hazardous_operations.append(hazard_entry(fn['name'],name,cap,sig.hazard))
+                if cap: self.hazardous_operations.append(hazard_entry(fn.name,name,cap,sig.hazard))
                 if len(args)!=len(params): self.fail(f'M3005: {name} expects {len(params)} arguments',e)
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
@@ -1150,12 +1148,12 @@ class Checker:
                     if mode=='value': self.consume_owned_source(arg,at,env,f'passing argument {idx} to {name}')
                 return ret
             if name not in self.fn:self.fail(f'M3004: unknown function {name}',e)
-            callee=self.fn[name];missing=set(callee['requires_caps'])-caps
-            self.call_edges.append({'caller':fn['name'],'callee':name,'required':callee['requires_caps']})
+            callee=self.fn[name];missing=set(callee.requires_caps)-caps
+            self.call_edges.append({'caller':fn.name,'callee':name,'required':callee.requires_caps})
             if missing:self.fail(f"M2003: call to {name} requires capabilities {sorted(missing)}",e)
-            if len(args)!=len(callee['params']):self.fail(f"M3005: {name} expects {len(callee['params'])} arguments",e)
+            if len(args)!=len(callee.params):self.fail(f"M3005: {name} expects {len(callee.params)} arguments",e)
             loans=[]
-            for arg,(pn,pt,mode) in zip(args,callee['params']):
+            for arg,(pn,pt,mode) in zip(args,callee.params):
                 at=self.expr_type(arg,env,caps,fn)
                 if at not in (pt,'number'):self.fail(f'M3008: argument {pn} expects {pt}, got {at}',arg)
                 root=self.root_var(arg)
@@ -1168,7 +1166,7 @@ class Checker:
                     if not root: raise CompileError(f'M5004: borrow_mut argument {pn} must be an addressable binding')
                     if not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
                 if mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {pn} to {name}')
-            return callee['return']
+            return callee.return_type
         if tag=='binop':
             a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
             if node.operator in ('==','!=','>=','<=','>','<'):return 'i32'
@@ -1241,9 +1239,9 @@ class LayoutEngine:
             for v in e.variants:
                 if v.payload_type: add(v.payload_type)
         for f in self.p.functions:
-            add(f['return'])
-            for _,t,_ in f['params']: add(t)
-            for st in CGenerator(self.p).walk_statements(f['body']):
+            add(f.return_type)
+            for _,t,_ in f.params: add(t)
+            for st in CGenerator(self.p).walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
         return sorted(found)
@@ -1303,18 +1301,18 @@ class TrySignal:
     value:TypedValue
 
 class Interpreter:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f['name']:f for f in p.functions};self.call_modes=[]
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
-        f=self.fn[n];env={pn:v for (pn,_,_),v in zip(f['params'],args)}
-        self.call_modes.append({pn:mode for pn,_,mode in f['params']})
+        f=self.fn[n];env={pn:v for (pn,_,_),v in zip(f.params,args)}
+        self.call_modes.append({pn:mode for pn,_,mode in f.params})
         try:
-            for c in f['pre']:
+            for c in f.pre:
                 if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
             before={k:self.clone(v) for k,v in env.items()}
-            sig=self.block(f['body'],env); r=sig.value if isinstance(sig,(ReturnSignal,TrySignal)) else TypedValue('void',None)
+            sig=self.block(f.body,env); r=sig.value if isinstance(sig,(ReturnSignal,TrySignal)) else TypedValue('void',None)
             post_env=dict(env); post_env['result']=r; post_env['__old__']=before
-            for c in f['post']:
+            for c in f.post:
                 if not self.eval(c,post_env).value:raise RuntimeError(f'postcondition failed in {n}')
             return r
         finally:
@@ -1472,7 +1470,7 @@ class Interpreter:
                 second=self.eval(args[1],env,first.type_name)
                 return self.arith('div' if n=='decimal_div' else n[8:],first,second)
             callee=self.fn[n]
-            vals=[self.eval(x,env,t) for x,(_,t,_) in zip(args,callee['params'])]
+            vals=[self.eval(x,env,t) for x,(_,t,_) in zip(args,callee.params)]
             return self.call(n,vals)
         if kind=='binop':
             a=self.eval(node.left,env);b=self.eval(node.right,env,a.type_name)
@@ -1508,7 +1506,7 @@ class Interpreter:
         return str(v.value)
 
 class CGenerator:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
     def vec_types(self):
         found=set()
         def add(t):
@@ -1520,9 +1518,9 @@ class CGenerator:
             for v in e.variants:
                 if v.payload_type: add(v.payload_type)
         for f in self.p.functions:
-            add(f['return'])
-            for _,t,_ in f['params']: add(t)
-            for st in self.walk_statements(f['body']):
+            add(f.return_type)
+            for _,t,_ in f.params: add(t)
+            for st in self.walk_statements(f.body):
                 node=self.p.node(st)
                 if node.kind in ('let','try_let'): add(node.declared_type)
         return sorted(found)
@@ -1600,9 +1598,9 @@ class CGenerator:
             if vt not in early_vecs:
                 o.extend(self.vec_typedef_lines(vt))
         for f in self.p.functions:
-            if f['name']=='main':continue
-            params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void'
-            o.append(f'{self.ctype(f["return"])} merit_{f["name"]}({params});')
+            if f.name=='main':continue
+            params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f.params) or 'void'
+            o.append(f'{self.ctype(f.return_type)} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
         o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
@@ -1729,22 +1727,22 @@ class CGenerator:
             and name not in ownership.consumed_roots
         ]
     def fn_c(self,f):
-        name='main' if f['name']=='main' else 'merit_'+f['name'];params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void';env={n:(t,m) for n,t,m in f['params']};o=[f'{self.ctype(f["return"])} {name}({params}) {{']
+        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f.params) or 'void';env={n:(t,m) for n,t,m in f.params};o=[f'{self.ctype(f.return_type)} {name}({params}) {{']
         old={}
-        for c in f['post']:self.walk_old(c,old)
+        for c in f.post:self.walk_old(c,old)
         self.old_map={}
         for idx,(key,e) in enumerate(old.items()):
             t=self.etype(e,env);v=f'_merit_old_{idx}';self.old_map[key]=v;o.append(f'    {self.ctype(t)} {v} = {self.expr(e,env)};')
-        for c in f['pre']:o.append(f'    if(!({self.expr(c,env)})) merit_fail("precondition failed in {f["name"]}",71);')
-        self.current_return=f['return']
-        if f['return']!='void':o.append(f'    {self.ctype(f["return"])} _merit_result = {{0}};' if f['return'] in self.p.enums or f['return'] in self.p.structs or f['return'] in BUILTIN_TYPES else f'    {self.ctype(f["return"])} _merit_result = 0;')
-        for st in f['body']:o+=self.stmt(st,env,1)
+        for c in f.pre:o.append(f'    if(!({self.expr(c,env)})) merit_fail("precondition failed in {f.name}",71);')
+        self.current_return=f.return_type
+        if f.return_type!='void':o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
+        for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
-        postenv=dict(env);postenv['result']=(f['return'],'__result__')
-        for c in f['post']:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f["name"]}",73);')
+        postenv=dict(env);postenv['result']=(f.return_type,'__result__')
+        for c in f.post:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f.name}",73);')
         for name,t in self.owned_buffer_cleanup(f):
             o.append(self.drop_binding_line('    ',name,t))
-        if f['return']!='void':o.append('    return _merit_result;')
+        if f.return_type!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
     def checked(self,t,x):
         if t in self.p.bounded or t in self.p.decimals:return f'merit_check_{t}({x})'
@@ -1918,7 +1916,7 @@ class CGenerator:
                     return f'merit_round_div((__int128)({left}) * ({right}), {scale}, {mode})' if n=='checked_mul' else f'merit_round_div((__int128)({left}) * {scale}, ({right}), {mode})'
                 return f'({left} * {right})' if n=='checked_mul' else f'({left} / {right})'
             callee=self.fn[n];rendered=[]
-            for x,(_,t,m) in zip(a,callee['params']):
+            for x,(_,t,m) in zip(a,callee.params):
                 ex=self.expr(x,env,t);rendered.append(('&'+ex) if m in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
@@ -1967,7 +1965,7 @@ def mir(p):
                 else:
                     current['statements'].append(st)
             return current
-        tail=lower_seq(f['body'],entry)
+        tail=lower_seq(f.body,entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
         ownership=ownership_model.function(f)
         locals_order=[name for name,_ in ownership.owned_locals]
@@ -1977,7 +1975,7 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks}
+        return {'name':f.name,'params':f.params,'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'blocks':blocks}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed function consumer checkpoint
+
+- Migrated semantic, ownership, interpreter, C, MIR, and project consumers to typed function fields.
+- Made mapping compatibility read-only.
+- Migrated generated implementation naming to typed field mutation.
+- Preserved the 172-test interpreter/native parity baseline.
+
 ## Epoch III — Typed function declaration checkpoint
 
 - Replaced dictionary-subclass functions with typed `FunctionDecl` records.

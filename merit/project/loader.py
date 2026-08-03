@@ -191,7 +191,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     variants: dict[str, SourceUnit] = {}
     for unit in units:
         symbols = set(unit.program.decimals) | set(unit.program.bounded) | set(unit.program.structs) | set(unit.program.enums) | set(unit.program.traits)
-        symbols |= {f["name"] for f in unit.program.functions}
+        symbols |= {f.name for f in unit.program.functions}
         symbols |= {match.group(1) for match in re.finditer(r"\b(?:enum|struct|fn)\s+([A-Za-z_][A-Za-z0-9_]*)\s*<", unit.parser_source)}
         for symbol in symbols: owner[symbol] = unit
         for enum in unit.program.enums.values():
@@ -238,18 +238,18 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                 for _, type_name, _ in method.params:
                     if type_name not in primitive and type_name != "Self": require(type_name, f"trait {trait.name}.{method.name}")
         for function in unit.program.functions:
-            for _, type_name, _ in function["params"]:
-                if type_name not in primitive: require(type_name, f"function {function['name']}")
-            if function["return"] not in primitive: require(function["return"], f"function {function['name']}")
-            for statement in _walk_statements(function["body"]):
+            for _, type_name, _ in function.params:
+                if type_name not in primitive: require(type_name, f"function {function.name}")
+            if function.return_type not in primitive: require(function.return_type, f"function {function.name}")
+            for statement in _walk_statements(function.body):
                 if statement[0] in ("let", "try_let") and statement[2] not in primitive: require(statement[2], f"binding {statement[1]}")
                 exprs=[]
                 for value in statement[1:]:
                     if isinstance(value, tuple): exprs.append(value)
                 for expr in exprs:
                     for node in _walk_expr(expr):
-                        if node[0] == "call" and node[1] not in builtins: require(node[1], f"call in {function['name']}")
-                        elif node[0] == "struct_init": require(node[1], f"construction in {function['name']}")
+                        if node[0] == "call" and node[1] not in builtins: require(node[1], f"call in {function.name}")
+                        elif node[0] == "struct_init": require(node[1], f"construction in {function.name}")
 
 
 def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str) -> Program:
@@ -277,7 +277,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         capabilities.update(unit.program.capabilities)
         impls.extend(unit.program.impls)
         for function in unit.program.functions:
-            name = function["name"]
+            name = function.name
             if name.startswith("impl__"):
                 continue
             if name == "main" and unit.module != entry_module:
@@ -307,12 +307,12 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         raise
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
-    seen_functions = {function["name"]: manifest.root for function in merged.functions}
+    seen_functions = {function.name: manifest.root for function in merged.functions}
     semantic_nodes = {}
     for function in merged.functions:
-        for expression in (*function["pre"], *function["post"]):
+        for expression in (*function.pre, *function.post):
             semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticTuple))
-        for statement in _walk_statements(function["body"]):
+        for statement in _walk_statements(function.body):
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
     for node_id, node in semantic_nodes.items():
         node.provenance = NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related))
@@ -328,7 +328,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     for impl in merged.impls:
         for method in impl.methods:
             generated = FunctionDecl.from_mapping(method);generated.provenance=getattr(method,'provenance',NodeProvenance())
-            generated["name"] = _impl_function_name(impl.trait_name, impl.target_type, method["name"])
+            generated.name = _impl_function_name(impl.trait_name, impl.target_type, method.name)
             if generated["name"] not in seen_functions:
                 seen_functions[generated["name"]] = manifest.root
                 functions.append(generated)

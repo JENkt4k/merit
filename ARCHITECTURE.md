@@ -60,7 +60,9 @@ Semantic nodes are no longer inserted into the external ID maps. Those maps now 
 
 Declaration dataclasses and `FunctionDecl` mappings also embed provenance. Project assembly remaps both semantic and declaration locations in place, and `Program` no longer exposes node-ID span maps.
 
-`FunctionDecl` is now a typed mutable-mapping record with explicit fields for its signature, effects, required capabilities, contracts, body, and provenance. Mapping compatibility remains during consumer migration; HIR converts records through explicit serialization.
+`FunctionDecl` is now a typed record with explicit fields for its signature, effects, required capabilities, contracts, body, and provenance. Read-only mapping compatibility remains during consumer migration; HIR converts records through explicit serialization.
+
+All internal function consumers now use typed fields. `FunctionDecl` exposes only read-only mapping compatibility for external inspection while generated declarations are changed through typed attributes.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
