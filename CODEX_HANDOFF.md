@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III typed filesystem error checkpoint** of Merit.
+This repository contains the verified **Epoch III allocator-retaining generic collections checkpoint** of Merit.
 
 Current baseline:
-- 175 tests passing after editable installation
+- 176 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -71,6 +71,7 @@ python -m pytest -q
 - Typed parser declaration records through symbol-table assembly
 - Typed field-initializer and function-clause parser records
 - Typed filesystem results with interpreter/native OS-failure parity
+- Allocator-retaining `Vec<T>` growth/drop paths with deterministic layout assertions
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

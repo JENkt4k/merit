@@ -45,6 +45,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - `Vec<OwnedStruct>` supports structs with owned fields through pop/drop semantics and generated element destructors.
 - Generated C marks expected unused helpers and match bindings so project verification output stays signal-focused.
 - Generated headers emit static layout assertions for every concrete `Vec<T>`.
+- Concrete vector layout includes the allocator identity used for growth and destruction.
 - Generated headers emit conservative static layout assertions for enum tag and payload placement.
 - `merit layout` and `merit-project layout` report layout hashes for stable structs, generated vectors, and enums.
 - Generated headers include layout hash identity comments for stable structs, generated vectors, and enums.
@@ -275,9 +276,9 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Program semantic storage remains unchanged after typed parser assembly.
 
 ## Recommended next epic
-Begin the next alpha-readiness feature slice:
-- Add allocator parameters to generic collection APIs without creating a second vector execution path.
-- Preserve exact ownership/drop behavior across allocator selection.
+Continue the allocator-polymorphism feature slice:
+- Add a second deterministic allocator implementation for parity testing.
+- Reject or diagnose incompatible allocator transfer without creating a second vector execution path.
 
 ## Deliberately deferred
 - specialization
@@ -289,8 +290,8 @@ Begin the next alpha-readiness feature slice:
 - concurrency
 
 ## Suggested implementation order
-1. Specify allocator identity and compatibility rules for `Vec<T>`.
-2. Thread allocator selection through existing vector lowering and runtime storage.
+1. Add a bounded deterministic allocator provider and construction API.
+2. Verify growth/drop dispatch and interpreter/native parity across providers.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
@@ -327,7 +328,7 @@ The checkpoint is complete only when all of these pass:
 ### Regression
 - all existing tests remain green.
 - simple examples, text pipeline, binary packet, generic result, trait bounds, and generic collections projects still verify natively without expected helper-warning noise.
-- generated `Vec<T>` headers assert pointer/length/capacity layout at C compile time.
+- generated `Vec<T>` headers assert pointer/length/capacity/allocator layout at C compile time.
 - generated enum headers assert tag offset and payload placement at C compile time.
 - source and project layout commands report hashes for generated vectors and enums.
 - contract precondition failures produce matching interpreter/native diagnostics.

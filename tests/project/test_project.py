@@ -59,7 +59,7 @@ def test_project_layout_command_reports_generated_types(capsys):
     assert layouts["Vec__Buffer"]["kind"] == "vector"
     assert len(layouts["Vec__Buffer"]["layout_hash"]) == 24
     assert layouts["Option__Vec__i64"]["kind"] == "enum"
-    assert layouts["Result__Vec__i64__Error"]["payload_size"] == 24
+    assert layouts["Result__Vec__i64__Error"]["payload_size"] == 32
 
 
 def test_project_audit_command_reports_hazards(capsys):

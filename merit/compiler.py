@@ -583,7 +583,7 @@ class CompileError(Exception):
         match=re.match(r'^(M\d+):\s*(.*)$',text)
         self.code=match.group(1) if match else 'M0000';self.message=match.group(2) if match else text
 @dataclasses.dataclass
-class TypedValue: type_name:str; value:Any
+class TypedValue: type_name:str; value:Any; allocator:Any=None
 @dataclasses.dataclass
 class VarState:
     type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"; move_origin:SourceSpan|None=None; move_context:str|None=None; drop_origin:SourceSpan|None=None
@@ -1276,7 +1276,8 @@ class LayoutEngine:
         if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
         if t in self.p.bounded:return self.size_align(self.p.bounded[t].base)
         if t in ('String','ByteSlice'): return (16,8)
-        if t in ('Buffer','I64Vec') or is_vec_type(t): return (24,8)
+        if t in ('Buffer','I64Vec'): return (24,8)
+        if is_vec_type(t): return (32,8)
         if t=='Allocator': return (4,4)
         if t in self.p.structs:
             x=self.struct_layout(self.p.structs[t]);return x['size'],x['alignment']
@@ -1294,10 +1295,11 @@ class LayoutEngine:
     def layout(self,s): return self.struct_layout(s)
     def vec_layout(self,t):
         elem=vec_elem_type(t)
-        data={'name':t,'element_type':elem,'size':24,'alignment':8,'fields':[
+        data={'name':t,'element_type':elem,'size':32,'alignment':8,'fields':[
             {'name':'data','type':elem+'*','offset':0,'size':8,'alignment':8},
             {'name':'len','type':'usize','offset':8,'size':8,'alignment':8},
             {'name':'cap','type':'usize','offset':16,'size':8,'alignment':8},
+            {'name':'allocator','type':'Allocator','offset':24,'size':4,'alignment':4},
         ]}
         return {'kind':'vector',**data,'layout_hash':self.hash_layout('vector',data)}
     def enum_layout(self,e):
@@ -1389,8 +1391,8 @@ class Interpreter:
         if node.kind=='field':self.eval(node.field_base,env).value[node.field_name]=v;return
     def clone(self,v):
         if isinstance(v,TypedValue):
-            if isinstance(v.value,dict): return TypedValue(v.type_name,{k:self.clone(x) for k,x in v.value.items()})
-            return TypedValue(v.type_name,v.value)
+            if isinstance(v.value,dict): return TypedValue(v.type_name,{k:self.clone(x) for k,x in v.value.items()},v.allocator)
+            return TypedValue(v.type_name,v.value,v.allocator)
         return v
     def drop_value(self,v):
         if not isinstance(v,TypedValue):return
@@ -1461,7 +1463,7 @@ class Interpreter:
             vec=vec_builtin(n)
             if vec:
                 op,elem=vec; vec_t='Vec__'+elem
-                if op=='new': return TypedValue(vec_t,[])
+                if op=='new': return TypedValue(vec_t,[],self.eval(args[0],env).value)
                 if op=='push':
                     self.eval(args[0],env).value.append(self.clone(self.eval(args[1],env,elem))); return TypedValue('void',None)
                 if op=='len': return TypedValue('i64',len(self.eval(args[0],env).value))
@@ -1576,11 +1578,13 @@ class CGenerator:
             f'    {self.ctype(vec_elem_type(vt))} *data;',
             '    size_t len;',
             '    size_t cap;',
+            '    merit_Allocator allocator;',
             f'}} merit_{vt};',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, data) == 0, "Merit Vec layout mismatch: {vt}.data");',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, len) == sizeof(void *), "Merit Vec layout mismatch: {vt}.len");',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, cap) == sizeof(void *) + sizeof(size_t), "Merit Vec layout mismatch: {vt}.cap");',
-            f'_Static_assert(sizeof(merit_{vt}) == sizeof(void *) + sizeof(size_t) * 2, "Merit Vec size mismatch: {vt}");',
+            f'_Static_assert(__builtin_offsetof(merit_{vt}, allocator) == sizeof(void *) + sizeof(size_t) * 2, "Merit Vec layout mismatch: {vt}.allocator");',
+            f'_Static_assert(sizeof(merit_{vt}) == 32, "Merit Vec size mismatch: {vt}");',
             ''
         ]
     def vec_can_define_before_composites(self,vt):
@@ -1639,6 +1643,8 @@ class CGenerator:
         o.append(self.header().replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
+              r'''static void *merit_allocator_realloc(merit_Allocator a,void *p,size_t n){if(a.kind!=0)merit_fail("unsupported allocator",89);return realloc(p,n);}''',
+              r'''static void merit_allocator_free(merit_Allocator a,void *p){if(a.kind!=0)merit_fail("unsupported allocator",89);free(p);}''',
               r'''static void merit_buffer_reserve(merit_Buffer *b,size_t need){if(need<=b->cap)return;size_t c=b->cap?b->cap:8;while(c<need)c*=2;void *p=realloc(b->data,c);if(!p)merit_fail("allocation failed",80);b->data=(uint8_t*)p;b->cap=c;}''',
               r'''static merit_Buffer merit_buffer_new(merit_Allocator a,int64_t cap){(void)a;merit_Buffer b={0};if(cap<0)merit_fail("negative capacity",81);merit_buffer_reserve(&b,(size_t)cap);return b;}''',
               r'''static merit_Buffer merit_buffer_from_string(merit_Allocator a,merit_String s){merit_Buffer b=merit_buffer_new(a,(int64_t)s.len);if(s.len){memcpy(b.data,s.data,s.len);b.len=s.len;}return b;}''',
@@ -1687,15 +1693,15 @@ class CGenerator:
         elem_drop=self.drop_field_stmt('v->data[i]',elem)
         drop_live=f'for(size_t i=0;i<v->len;i++){elem_drop}' if elem_drop else ''
         return [
-            f'static void merit_vec_reserve__{suffix}({vct} *v,size_t need){{if(need<=v->cap)return;size_t c=v->cap?v->cap:8;while(c<need)c*=2;void *p=realloc(v->data,c*sizeof({ct}));if(!p)merit_fail("allocation failed",80);v->data=({ct}*)p;v->cap=c;}}',
-            f'static {vct} merit_vec_new__{suffix}(merit_Allocator a,int64_t cap){{(void)a;{vct} v={{0}};if(cap<0)merit_fail("negative capacity",81);merit_vec_reserve__{suffix}(&v,(size_t)cap);return v;}}',
+            f'static void merit_vec_reserve__{suffix}({vct} *v,size_t need){{if(need<=v->cap)return;size_t c=v->cap?v->cap:8;while(c<need)c*=2;void *p=merit_allocator_realloc(v->allocator,v->data,c*sizeof({ct}));if(!p)merit_fail("allocation failed",80);v->data=({ct}*)p;v->cap=c;}}',
+            f'static {vct} merit_vec_new__{suffix}(merit_Allocator a,int64_t cap){{{vct} v={{0}};v.allocator=a;if(cap<0)merit_fail("negative capacity",81);merit_vec_reserve__{suffix}(&v,(size_t)cap);return v;}}',
             f'static void merit_vec_push__{suffix}({vct} *v,{ct} x){{merit_vec_reserve__{suffix}(v,v->len+1);v->data[v->len++]=x;}}',
             f'static int64_t merit_vec_len__{suffix}(const {vct} *v){{return (int64_t)v->len;}}',
             f'static {ct} merit_vec_get__{suffix}(const {vct} *v,int64_t i){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}}',
             f'static void merit_vec_set__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);v->data[i]=x;}}',
             f'static void merit_vec_replace__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);{self.drop_field_stmt("v->data[i]",elem)}v->data[i]=x;}}',
             f'static {ct} merit_vec_pop__{suffix}({vct} *v){{if(!v->len)merit_fail("vector pop from empty",86);return v->data[--v->len];}}',
-            f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}free(v->data);v->data=NULL;v->len=0;v->cap=0;}}',
+            f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}merit_allocator_free(v->allocator,v->data);v->data=NULL;v->len=0;v->cap=0;}}',
             ''
         ]
     def drop_field_stmt(self,base,t):

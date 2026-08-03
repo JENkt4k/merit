@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Allocator-retaining generic collections checkpoint
+
+- Added allocator identity to concrete `Vec<T>` runtime and layout records.
+- Routed vector growth and destruction through the allocator stored at construction.
+- Added interpreter metadata and generated-C assertions for allocator retention.
+- Increased the regression suite from 175 to 176 tests.
+
 ## Epoch III — Typed filesystem error checkpoint
 
 - Changed `file_read` and `file_write` to return built-in nominal result enums.

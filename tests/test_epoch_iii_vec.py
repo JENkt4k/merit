@@ -315,15 +315,35 @@ def test_vec_headers_include_layout_assertions():
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, data) == 0' in header
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, len) == sizeof(void *)' in header
     assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, cap) == sizeof(void *) + sizeof(size_t)' in header
-    assert '_Static_assert(sizeof(merit_Vec__OwnedText) == sizeof(void *) + sizeof(size_t) * 2' in header
+    assert '_Static_assert(__builtin_offsetof(merit_Vec__OwnedText, allocator) == sizeof(void *) + sizeof(size_t) * 2' in header
+    assert '_Static_assert(sizeof(merit_Vec__OwnedText) == 32' in header
+
+
+def test_vec_runtime_retains_and_dispatches_through_allocator():
+    program = parse('''module allocator_identity
+capability allocate;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); let values:Vec<i64>=vec_new<i64>(allocator,2); drop(values); } return 0; }''')
+    Checker(program).check()
+    capability = program.node(program.functions[0].body[0])
+    allocator_binding = program.node(capability.nested_body[0])
+    vector_binding = program.node(capability.nested_body[1])
+    interpreter = Interpreter(program)
+    allocator = interpreter.eval(allocator_binding.initializer, {})
+    vector = interpreter.eval(vector_binding.initializer, {"allocator": allocator})
+    assert vector.allocator == "system"
+    generated = CGenerator(program).generate()
+    assert "v.allocator=a" in generated
+    assert "merit_allocator_realloc(v->allocator" in generated
+    assert "merit_allocator_free(v->allocator" in generated
 
 
 def test_vec_layout_report_includes_hashes():
     layouts = {entry['name']: entry for entry in LayoutEngine(parse(VEC_OWNED_STRUCT_PROGRAM)).all()}
     vector = layouts['Vec__OwnedText']
     assert vector['kind'] == 'vector'
-    assert vector['size'] == 24
-    assert [field['offset'] for field in vector['fields']] == [0, 8, 16]
+    assert vector['size'] == 32
+    assert [field['offset'] for field in vector['fields']] == [0, 8, 16, 24]
+    assert vector['fields'][-1]['name'] == 'allocator'
     assert len(vector['layout_hash']) == 24
 
 
@@ -344,9 +364,9 @@ def test_enum_layout_report_includes_payload_hashes():
     assert option['kind'] == 'enum'
     assert option['tag']['offset'] == 0
     assert option['payload_offset'] == 8
-    assert option['payload_size'] == 24
+    assert option['payload_size'] == 32
     assert len(option['layout_hash']) == 24
-    assert result['payload_size'] == 24
+    assert result['payload_size'] == 32
 
 
 def test_enum_vec_interpreter_and_native_agree(tmp_path):
