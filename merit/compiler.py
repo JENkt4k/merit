@@ -689,6 +689,20 @@ class TypeTable:
         return sorted(names)
     def all(self):return {name:dataclasses.asdict(self.get(name)) for name in self.known_types()}
 
+def aggregate_definition_order(p):
+    names=list(p.structs)+list(p.enums);known=set(names);ordered=[];active=set();done=set()
+    def dependencies(name):
+        if name in p.structs:return [field.type_name for field in p.structs[name].fields if field.type_name in known]
+        return [variant.payload_type for variant in p.enums[name].variants if variant.payload_type in known]
+    def visit(name):
+        if name in done:return
+        if name in active:raise CompileError(f'M4007: recursive by-value aggregate dependency involving {name}')
+        active.add(name)
+        for dependency in dependencies(name):visit(dependency)
+        active.remove(name);done.add(name);ordered.append(name)
+    for name in names:visit(name)
+    return ordered
+
 VEC_INTRINSICS={
     'new':VecIntrinsic(2,'vec',requires_allocate=True,capability='allocate',hazard='allocation'),
     'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1,requires_allocate=True,capability='allocate',hazard='allocation'),
@@ -936,6 +950,7 @@ class Checker:
                 self.ensure_type(fld.type_name,fld)
                 if fld.name in seen:self.fail(f'M4001: duplicate field {fld.name} in {s.name}',fld)
                 seen.add(fld.name)
+        aggregate_definition_order(self.p)
         for destructor in self.p.destructors.values():self.check_destructor(destructor)
         for f in self.p.functions: self.check_function_body(f)
         for impl in self.p.impls:
@@ -1838,18 +1853,7 @@ class CGenerator:
         elem=vec_elem_type(vt)
         return not is_vec_type(elem) and elem not in self.p.structs and elem not in self.p.enums
     def composite_order(self):
-        names=list(self.p.structs)+list(self.p.enums);known=set(names);ordered=[];active=set();done=set()
-        def dependencies(name):
-            if name in self.p.structs:return [field.type_name for field in self.p.structs[name].fields if field.type_name in known]
-            return [variant.payload_type for variant in self.p.enums[name].variants if variant.payload_type in known]
-        def visit(name):
-            if name in done:return
-            if name in active:raise CompileError(f'M4007: recursive by-value aggregate dependency involving {name}')
-            active.add(name)
-            for dependency in dependencies(name):visit(dependency)
-            active.remove(name);done.add(name);ordered.append(name)
-        for name in names:visit(name)
-        return ordered
+        return aggregate_definition_order(self.p)
     def enum_typedef_lines(self,enum,layout):
         o=[f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */',f'typedef enum merit_{enum.name}_tag {{']
         for idx,variant in enumerate(enum.variants):o.append(f'    merit_{enum.name}_{variant.name} = {idx},')

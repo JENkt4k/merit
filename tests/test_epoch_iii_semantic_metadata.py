@@ -5,7 +5,7 @@ import json
 import subprocess
 import pytest
 
-from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, MatchArm, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticNode, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, CompileError, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, MatchArm, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticNode, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -221,3 +221,15 @@ fn main() -> i32 {
     generated = CGenerator(program).generate()
     main = generated[generated.index("int32_t main"):]
     assert "merit_buffer_drop(&source);" not in main
+
+
+@pytest.mark.parametrize('declarations',[
+    'struct Recursive { child:Recursive; }',
+    'struct Wrapper { value:Cycle; }\nenum Cycle { Again(Wrapper), Done }',
+])
+def test_checker_rejects_recursive_by_value_aggregate_cycles(declarations):
+    program=parse(f'''module recursive_aggregate
+{declarations}
+fn main()->i32 {{ return 0; }}''')
+    with pytest.raises(CompileError,match='M4007: recursive by-value aggregate dependency'):
+        Checker(program).check()

@@ -295,6 +295,7 @@ Continue alpha-readiness hardening:
 - Discarded owned expression temporaries are rejected; direct transfer into a value-mode owned parameter is accepted and cleaned by the callee.
 - Owned match payload bindings must discharge their obligation inside each arm, including before early return.
 - Generated C orders struct and enum definitions by their acyclic by-value dependencies.
+- Recursive by-value aggregate cycles are rejected during semantic checking before backend generation.
 
 ## Deliberately deferred
 - specialization
