@@ -99,3 +99,29 @@ fn choose(borrow left:Value,borrow right:Value)->borrow Value { if left.number {
 fn main()->i32 { return 0; }'''
     with pytest.raises(CompileError,match='M5305: borrowed return must have one consistent parameter origin'):
         Checker(parse(source_text)).check()
+
+
+def test_mutable_borrowed_return_supports_direct_field_assignment(tmp_path):
+    source_text='''module mutable_borrowed_lvalue
+stable("v1") struct Value { number:i32; }
+fn expose_mut(borrow_mut value:Value)->borrow_mut Value { return value; }
+fn main()->i32 { var value:Value=Value{number:1}; expose_mut(value).number=29; print(value.number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('29\n','29\n')
+
+
+def test_shared_borrowed_return_rejects_direct_field_assignment():
+    source_text=source('borrow value: Value','return value;').replace(
+        'fn main() -> i32 { return 0; }',
+        'fn main() -> i32 { var value:Value=Value{number:1}; expose(value).number=2; return 0; }',
+    )
+    with pytest.raises(CompileError,match='M5306: shared borrowed return cannot be mutated'):
+        Checker(parse(source_text)).check()
+
+
+def test_mutable_borrowed_return_supports_owned_field_replacement(tmp_path):
+    source_text='''module mutable_borrowed_replace
+capability allocate;
+struct Resource { data:Buffer; }
+fn expose_mut(borrow_mut value:Resource)->borrow_mut Resource { return value; }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var resource:Resource=Resource{data:buffer_from_string(allocator,"old")}; let replacement:Buffer=buffer_from_string(allocator,"new-value"); replace(expose_mut(resource).data,replacement); print(buffer_len(resource.data)); } return 0; }'''
+    assert parity(source_text,tmp_path) == ('9\n','9\n')

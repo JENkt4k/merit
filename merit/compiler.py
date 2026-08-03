@@ -1005,6 +1005,17 @@ class Checker:
         if node.kind not in ('call','generic_call'):return None
         name,_=resolved_call(node);callee=self.fn.get(name)
         return callee.return_mode if callee and callee.return_mode!='value' else None
+    def borrowed_field_target_type(self,e,env,caps,fn):
+        node=self.p.node(e)
+        if node.kind!='field' or not self.borrowed_call_mode(node.field_base):return None
+        if self.borrowed_call_mode(node.field_base)!='borrow_mut':self.fail('M5306: shared borrowed return cannot be mutated',node.field_base)
+        base_type=self.expr_type(node.field_base,env,caps,fn);struct=self.p.structs.get(base_type)
+        if not struct:self.fail(f'M4002: {base_type} has no fields',e)
+        field=next((field for field in struct.fields if field.name==node.field_name),None)
+        if not field:self.fail(f'M4003: unknown field {node.field_name} on {base_type}',e)
+        root=self.root_var(node.field_base)
+        if not root or not env[root].mutable:self.fail(f'M5005: borrow_mut argument {root or "<expression>"} is not mutable',node.field_base)
+        return field.type_name
     def check_contract_expr(self,e,env,caps,fn,phase):
         previous=self.contract_phase
         self.contract_phase=phase
@@ -1054,13 +1065,13 @@ class Checker:
             elif tag=='assign':
                 target=node.assignment_target;value=node.assigned_value
                 if self.borrowed_call_mode(value):self.fail('M5304: borrowed return cannot be stored in owned storage',value)
-                lt=self.lvalue_type(target,env,True);rt=self.expr_type(value,env,caps,fn)
+                lt=self.borrowed_field_target_type(target,env,caps,fn) or self.lvalue_type(target,env,True);rt=self.expr_type(value,env,caps,fn)
                 if rt not in (lt,'number'):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
                 if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(target)}; drop and create a new owner',st)
                 self.consume_owned_source(value,rt,env,f'assigning {self.expr_path(target)}')
             elif tag=='replace':
                 target,value=node.assignment_target,node.assigned_value
-                lt=self.lvalue_type(target,env,True)
+                lt=self.borrowed_field_target_type(target,env,caps,fn) or self.lvalue_type(target,env,True)
                 if not self.types.get(lt).needs_drop: self.fail(f'M5203: replace requires owned storage, got {lt}',st)
                 target_root=self.root_var(target)
                 rt=self.expr_type(value,env,caps,fn)
