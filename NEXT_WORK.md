@@ -326,6 +326,7 @@ Continue alpha-readiness hardening:
 - Exact numeric, arithmetic, and comparison conditions fold to direct gotos.
 - The original folded condition remains available in explicit semantic MIR.
 - Dead branch blocks are removed by the shared reachability pass.
+- Overflowing and divide-by-zero constant expressions remain branches so optimization cannot erase runtime traps.
 
 ## C shared-library acceptance checkpoint now available
 - Project builds emit PIC `.so`, generated C, and a matching header.

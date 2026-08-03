@@ -2205,10 +2205,13 @@ def constant_mir_value(p,expression):
     if node.kind!='binop':return None
     left=constant_mir_value(p,node.left);right=constant_mir_value(p,node.right)
     if left is None or right is None:return None
-    if node.operator=='+':return left+right
-    if node.operator=='-':return left-right
-    if node.operator=='*':return left*right
-    if node.operator=='/':return int(Decimal(left)/Decimal(right)) if right!=0 else None
+    if node.operator in ('+','-','*','/'):
+        if node.operator=='+':value=left+right
+        elif node.operator=='-':value=left-right
+        elif node.operator=='*':value=left*right
+        elif right==0:return None
+        else:value=int(Decimal(left)/Decimal(right))
+        return value if INT_RANGES['i64'][0]<=value<=INT_RANGES['i64'][1] else None
     comparisons={'==':left==right,'!=':left!=right,'>=':left>=right,'<=':left<=right,'>':left>right,'<':left<right}
     return int(comparisons[node.operator]) if node.operator in comparisons else None
 def fold_constant_mir_branches(p,blocks):

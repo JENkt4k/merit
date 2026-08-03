@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess, tempfile
+import pytest
 from merit.compiler import Checker, Interpreter, CGenerator, mir, parse
 from merit.project.loader import load_project
 from merit.project.build import interpret, build
@@ -62,6 +63,15 @@ fn main()->i32 { if 0.5 { print(1); } else { print(2); } return 0; }''')
     blocks=mir(p)['functions'][0]['semantic_blocks']
     assert [block['id'] for block in blocks] == [0, 2, 3]
     assert blocks[0]['terminator']['target'] == 2
+
+
+@pytest.mark.parametrize('condition',['9223372036854775807 + 1 > 0','1 / 0 == 0'])
+def test_cfg_mir_does_not_fold_trapping_constant_conditions(condition):
+    p=checked(f'''module trapping_constant
+fn main()->i32 {{ if {condition} {{ print(1); }} else {{ print(2); }} return 0; }}''')
+    blocks=mir(p)['functions'][0]['semantic_blocks']
+    assert blocks[0]['terminator']['kind'] == 'branch'
+    assert 'folded_condition' not in blocks[0]['terminator']
 
 def test_text_pipeline_project_native_matches():
     project=load_project(ROOT/'examples/projects/text_pipeline/Merit.toml')
