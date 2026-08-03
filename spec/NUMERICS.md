@@ -10,7 +10,9 @@ Signed integer division truncates toward zero in both execution paths. Division 
 
 ## Bounded values
 
-`bounded Name(base, minimum, maximum);` creates a semantic integer subtype. Literal construction is checked statically. Runtime arithmetic results are range checked by the interpreter; complete native runtime range checks remain a tracked limitation.
+`bounded Name(base, minimum, maximum);` creates a semantic integer subtype. Literal construction is checked statically. Runtime arithmetic results are range checked in both execution paths.
+
+Primitive signed and unsigned integer operators and `checked_add`, `checked_sub`, and `checked_mul` use type-specific native helpers. Narrow overflow, unsigned underflow, multiplication overflow, bounded-domain overflow, and division failures therefore match interpreter behavior instead of relying on C wrapping or undefined behavior.
 
 ## Domain boundary rule
 

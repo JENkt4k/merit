@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 251 tests passing after editable installation
+- 259 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -86,6 +86,7 @@ python -m pytest -q
 - Platform-aware shared-library suffix, linker, and PIC policy
 - Definite-return analysis for non-void control-flow paths
 - Checked, truncating signed integer division with deterministic failure parity
+- Type-specific checked primitive, bounded, and decimal operator lowering
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
 - PIC C shared-library builds with generated headers and foreign-caller acceptance

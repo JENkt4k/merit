@@ -39,3 +39,60 @@ def test_integer_division_overflow_fails_deterministically(tmp_path):
     native=subprocess.run([str(compile_program(source,tmp_path,'division_overflow'))],text=True,capture_output=True)
     assert native.returncode == 70
     assert 'Merit division overflow' in native.stderr
+
+
+@pytest.mark.parametrize(
+    ('type_name','left','operator','right','interpreter_error','native_error'),
+    [
+        ('i8','127','+','1','integer overflow in i8','i8 addition overflow'),
+        ('u8','0','-','1','integer overflow in u8','u8 subtraction overflow'),
+        ('i32','50000','*','50000','integer overflow in i32','i32 multiplication overflow'),
+        ('u64','18446744073709551615','+','1','integer overflow in u64','u64 addition overflow'),
+    ],
+)
+def test_primitive_arithmetic_overflow_matches_native(tmp_path,type_name,left,operator,right,interpreter_error,native_error):
+    source=f'''module primitive_overflow
+fn main()->i32 {{ let left:{type_name}={left}; let right:{type_name}={right}; print(left{operator}right); return 0; }}'''
+    program=parse(source);Checker(program).check()
+    with pytest.raises(RuntimeError,match=interpreter_error):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,f'{type_name}_overflow'))],text=True,capture_output=True)
+    assert native.returncode == 70
+    assert native_error in native.stderr
+
+
+def test_narrow_integer_arithmetic_success_matches_native(tmp_path):
+    source='module narrow_arithmetic\nfn main()->i32 { let left:i8=120; let right:i8=7; print(left+right); return 0; }'
+    program=parse(source);Checker(program).check();interpreted=io.StringIO()
+    with contextlib.redirect_stdout(interpreted):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,'narrow_arithmetic'))],check=True,text=True,capture_output=True).stdout
+    assert interpreted.getvalue() == native == '127\n'
+
+
+def test_decimal_operator_multiplication_uses_declared_rounding(tmp_path):
+    source='''module decimal_operator_rounding
+decimal Money(6,2,half_up);
+fn main()->i32 { let left:Money=1.25; let right:Money=1.25; print(left*right); return 0; }'''
+    program=parse(source);Checker(program).check();interpreted=io.StringIO()
+    with contextlib.redirect_stdout(interpreted):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,'decimal_operator_rounding'))],check=True,text=True,capture_output=True).stdout
+    assert interpreted.getvalue() == native == '1.56\n'
+
+
+def test_bounded_operator_overflow_matches_native(tmp_path):
+    source='''module bounded_operator_overflow
+bounded Count(i32,0,10);
+fn main()->i32 { let left:Count=8; let right:Count=5; print(left+right); return 0; }'''
+    program=parse(source);Checker(program).check()
+    with pytest.raises(RuntimeError,match='bounded overflow in Count'):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,'bounded_operator_overflow'))],text=True,capture_output=True)
+    assert native.returncode == 70
+    assert 'bounded range violation: Count' in native.stderr
+
+
+def test_checked_builtin_uses_narrow_type_overflow_policy(tmp_path):
+    source='module checked_narrow_overflow\nfn main()->i32 { let left:i8=127; let right:i8=1; print(checked_add(left,right)); return 0; }'
+    program=parse(source);Checker(program).check()
+    with pytest.raises(RuntimeError,match='integer overflow in i8'):Interpreter(program).run()
+    native=subprocess.run([str(compile_program(source,tmp_path,'checked_narrow_overflow'))],text=True,capture_output=True)
+    assert native.returncode == 70
+    assert 'i8 addition overflow' in native.stderr

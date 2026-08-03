@@ -1665,7 +1665,10 @@ class Interpreter:
     def arith(self,op,a,b):
         if op=='add':v=a.value+b.value
         elif op=='sub':v=a.value-b.value
-        elif op=='mul':v=(a.value*b.value)//(10**self.p.decimals[a.type_name].scale) if a.type_name in self.p.decimals else a.value*b.value
+        elif op=='mul':
+            if a.type_name in self.p.decimals:
+                d=self.p.decimals[a.type_name];v=int((Decimal(a.value)*Decimal(b.value)/Decimal(10**d.scale)).quantize(Decimal(1),rounding=ROUNDING[d.rounding]))
+            else:v=a.value*b.value
         elif op=='div':
             if b.value==0:raise RuntimeError('division by zero')
             if a.type_name in self.p.decimals:
@@ -1825,6 +1828,14 @@ class CGenerator:
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_div(int64_t a,int64_t b){if(!b)merit_fail("Merit division by zero",72);if(a==INT64_MIN&&b==-1)merit_fail("Merit division overflow",70);return a/b;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
+        for type_name,(minimum,maximum) in INT_RANGES.items():
+            signed=type_name.startswith('i');ctype=self.ctype(type_name);wide='__int128' if signed else 'unsigned __int128';minimum_literal='INT64_MIN' if type_name=='i64' else str(minimum);maximum_literal='UINT64_MAX' if type_name=='u64' else str(maximum);limit=f'({wide}){maximum_literal}';range_test=(f'z<({wide}){minimum_literal}||' if signed else '')+f'z>{limit}';sub_guard='' if signed else f'if(a<b)merit_fail("{type_name} subtraction overflow",70);'
+            o.extend([
+                f'static {ctype} merit_add_{type_name}({ctype} a,{ctype} b){{{wide} z=({wide})a+({wide})b;if({range_test})merit_fail("{type_name} addition overflow",70);return ({ctype})z;}}',
+                f'static {ctype} merit_sub_{type_name}({ctype} a,{ctype} b){{{sub_guard}{wide} z=({wide})a-({wide})b;if({range_test})merit_fail("{type_name} subtraction overflow",70);return ({ctype})z;}}',
+                f'static {ctype} merit_mul_{type_name}({ctype} a,{ctype} b){{{wide} z=({wide})a*({wide})b;if({range_test})merit_fail("{type_name} multiplication overflow",70);return ({ctype})z;}}',
+                f'static {ctype} merit_div_{type_name}({ctype} a,{ctype} b){{if(!b)merit_fail("Merit division by zero",72);{wide} z=({wide})a/({wide})b;if({range_test})merit_fail("Merit division overflow",70);return ({ctype})z;}}',
+            ])
         for e in self.p.enums.values():
             if self.types.get(e.name).needs_drop:
                 o.append(f'static void merit_drop_{e.name}({self.ctype(e.name)} *v);')
@@ -2070,7 +2081,11 @@ class CGenerator:
         node=self.p.node(e);kind=node.kind
         if kind=='string':
             raw=json.dumps(node.atom_value); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
-        if kind=='number':return str(int(Decimal(node.atom_value)*(10**self.p.decimals[expected].scale))) if expected in self.p.decimals else str(int(Decimal(node.atom_value)))
+        if kind=='number':
+            value=int(Decimal(node.atom_value)*(10**self.p.decimals[expected].scale)) if expected in self.p.decimals else int(Decimal(node.atom_value))
+            if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
+            if expected=='u64' and value==INT_RANGES['u64'][1]:return 'UINT64_MAX'
+            return str(value)
         if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else node.atom_value
         if kind=='field':
             base=node.field_base; op='.'
@@ -2126,19 +2141,33 @@ class CGenerator:
                 if op=='transfer': return f'(merit_vec_transfer__{elem}({self.address_expr(a[0],env)}, {self.address_expr(a[1],env)}), 0)'
             if n in ('checked_add','checked_sub','checked_mul','decimal_div'):
                 t=self.etype(a[0],env);left=self.expr(a[0],env,t);right=self.expr(a[1],env,t)
-                if n=='checked_add':return f'merit_add({left}, {right})'
-                if n=='checked_sub':return f'merit_sub({left}, {right})'
                 if t in self.p.decimals:
                     d=self.p.decimals[t];scale=10**d.scale;mode={'half_even':0,'half_up':1,'down':2,'ceiling':3,'floor':4}[d.rounding]
-                    return f'merit_round_div((__int128)({left}) * ({right}), {scale}, {mode})' if n=='checked_mul' else f'merit_round_div((__int128)({left}) * {scale}, ({right}), {mode})'
-                return f'({left} * {right})' if n=='checked_mul' else f'({left} / {right})'
+                    if n=='checked_add':return self.checked(t,f'merit_add({left}, {right})')
+                    if n=='checked_sub':return self.checked(t,f'merit_sub({left}, {right})')
+                    rendered=f'merit_round_div((__int128)({left}) * ({right}), {scale}, {mode})' if n=='checked_mul' else f'merit_round_div((__int128)({left}) * {scale}, ({right}), {mode})'
+                    return self.checked(t,rendered)
+                operation={'checked_add':'add','checked_sub':'sub','checked_mul':'mul','decimal_div':'div'}[n]
+                base=self.p.bounded[t].base if t in self.p.bounded else t
+                return self.checked(t,f'merit_{operation}_{base}({left}, {right})')
             callee=self.fn[n];rendered=[]
             for x,param in zip(a,callee.params):
                 ex=self.expr(x,env,param.type_name);rendered.append(self.address_expr(x,env) if param.mode in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
             t=expected or self.etype(node.left,env);left=self.expr(node.left,env,t);right=self.expr(node.right,env,t)
-            if node.operator=='/' and t not in self.p.decimals:return self.checked(t,f'merit_div({left}, {right})')
+            operations={'+':'add','-':'sub','*':'mul','/':'div'}
+            if node.operator in operations:
+                operation=operations[node.operator]
+                if t in self.p.decimals:
+                    decimal=self.p.decimals[t];scale=10**decimal.scale;mode={'half_even':0,'half_up':1,'down':2,'ceiling':3,'floor':4}[decimal.rounding]
+                    if operation=='add':rendered=f'merit_add({left}, {right})'
+                    elif operation=='sub':rendered=f'merit_sub({left}, {right})'
+                    elif operation=='mul':rendered=f'merit_round_div((__int128)({left}) * ({right}), {scale}, {mode})'
+                    else:rendered=f'merit_round_div((__int128)({left}) * {scale}, ({right}), {mode})'
+                    return self.checked(t,rendered)
+                base=self.p.bounded[t].base if t in self.p.bounded else t
+                if base in INT_RANGES:return self.checked(t,f'merit_{operation}_{base}({left}, {right})')
             return f'({left} {node.operator} {right})'
 
 def semantic_payload(value,p):

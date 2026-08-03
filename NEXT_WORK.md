@@ -281,7 +281,7 @@ Continue alpha-readiness hardening:
 - Define reference-typed local storage and explicit lifetime parameters before allowing borrowed results to escape expressions.
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
 - Preserve definite-return analysis when adding new control-flow constructs.
-- Extend checked native arithmetic beyond the completed signed-division path, especially narrow and unsigned overflow.
+- Preserve the completed type-specific native arithmetic policy when adding numeric types or operators.
 
 ## Deliberately deferred
 - specialization
