@@ -1836,12 +1836,12 @@ class CGenerator:
         layout=LayoutEngine(self.p).vec_layout(vt)
         return [
             f'/* Merit layout vector {vt} hash {layout["layout_hash"]} */',
-            f'typedef struct merit_{vt} {{',
+            f'struct merit_{vt} {{',
             f'    {self.ctype(vec_elem_type(vt))} *data;',
             '    size_t len;',
             '    size_t cap;',
             '    merit_Allocator allocator;',
-            f'}} merit_{vt};',
+            '};',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, data) == 0, "Merit Vec layout mismatch: {vt}.data");',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, len) == sizeof(void *), "Merit Vec layout mismatch: {vt}.len");',
             f'_Static_assert(__builtin_offsetof(merit_{vt}, cap) == sizeof(void *) + sizeof(size_t), "Merit Vec layout mismatch: {vt}.cap");',
@@ -1857,13 +1857,13 @@ class CGenerator:
     def enum_typedef_lines(self,enum,layout):
         o=[f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */',f'typedef enum merit_{enum.name}_tag {{']
         for idx,variant in enumerate(enum.variants):o.append(f'    merit_{enum.name}_{variant.name} = {idx},')
-        o.extend([f'}} merit_{enum.name}_tag;',f'typedef struct merit_{enum.name} {{',f'    merit_{enum.name}_tag tag;'])
+        o.extend([f'}} merit_{enum.name}_tag;',f'struct merit_{enum.name} {{',f'    merit_{enum.name}_tag tag;'])
         payloads=[variant for variant in enum.variants if variant.payload_type is not None]
         if payloads:
             o.append('    union {')
             for variant in payloads:o.append(f'        {self.ctype(variant.payload_type)} {variant.name};')
             o.append('    } data;')
-        o.extend([f'}} merit_{enum.name};',f'_Static_assert(__builtin_offsetof(merit_{enum.name}, tag) == 0, "Merit enum layout mismatch: {enum.name}.tag");'])
+        o.extend(['};',f'_Static_assert(__builtin_offsetof(merit_{enum.name}, tag) == 0, "Merit enum layout mismatch: {enum.name}.tag");'])
         if payloads:
             o.extend([f'_Static_assert(__builtin_offsetof(merit_{enum.name}, data) >= sizeof(merit_{enum.name}_tag), "Merit enum layout mismatch: {enum.name}.data");',f'_Static_assert(sizeof(merit_{enum.name}) >= __builtin_offsetof(merit_{enum.name}, data), "Merit enum size mismatch: {enum.name}");'])
         for variant in enum.variants:
@@ -1874,19 +1874,23 @@ class CGenerator:
     def struct_typedef_lines(self,struct,layout):
         o=[]
         if struct.stable_abi:o.append(f'/* Merit layout struct {struct.name} hash {layout["layout_hash"]} */')
-        o.append(f'typedef struct merit_{struct.name} {{')
+        o.append(f'struct merit_{struct.name} {{')
         for field in struct.fields:o.append(f'    {self.ctype(field.type_name)} {field.name};')
-        o.append(f'}} merit_{struct.name};')
+        o.append('};')
         if struct.stable_abi:
             o.append(f'_Static_assert(sizeof(merit_{struct.name}) == {layout["size"]}, "Merit ABI size mismatch: {struct.name}");')
             for field in layout['fields']:o.append(f'_Static_assert(__builtin_offsetof(merit_{struct.name}, {field["name"]}) == {field["offset"]}, "Merit ABI offset mismatch: {struct.name}.{field["name"]}");')
         o.append('');return o
     def header(self,include_private=False):
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { uint8_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_Buffer;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;', '']
-        early_vecs=[vt for vt in self.vec_types() if self.vec_can_define_before_composites(vt)]
-        for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
+        composite_order=self.composite_order()
+        visible_composites=[name for name in composite_order if include_private or not self.p.exports or name in self.p.exports or name in FS_BUILTIN_ENUMS]
+        for name in visible_composites:o.append(f'typedef struct merit_{name} merit_{name};')
+        for vt in self.vec_types():o.append(f'typedef struct merit_{vt} merit_{vt};')
+        if visible_composites or self.vec_types():o.append('')
+        for vt in self.vec_types():o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
-        for name in self.composite_order():
+        for name in composite_order:
             if name in self.p.structs:
                 struct=self.p.structs[name]
                 if self.p.exports and not include_private and name not in self.p.exports:continue
@@ -1895,9 +1899,6 @@ class CGenerator:
                 enum=self.p.enums[name]
                 if self.p.exports and not include_private and name not in self.p.exports and name not in FS_BUILTIN_ENUMS:continue
                 o.extend(self.enum_typedef_lines(enum,le.enum_layout(enum)))
-        for vt in self.vec_types():
-            if vt not in early_vecs:
-                o.extend(self.vec_typedef_lines(vt))
         for f in self.p.functions:
             if f.name=='main':continue
             if self.p.exports and not include_private and f.name not in self.p.exports:continue

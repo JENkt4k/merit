@@ -296,6 +296,7 @@ Continue alpha-readiness hardening:
 - Owned match payload bindings must discharge their obligation inside each arm, including before early return.
 - Generated C orders struct and enum definitions by their acyclic by-value dependencies.
 - Recursive by-value aggregate cycles are rejected during semantic checking before backend generation.
+- Opaque C forward declarations allow by-value aggregates to contain vectors of composite elements without definition-order failures.
 
 ## Deliberately deferred
 - specialization

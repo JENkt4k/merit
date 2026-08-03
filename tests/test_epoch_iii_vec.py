@@ -517,6 +517,16 @@ fn main()->i32 { with capability allocate { let allocator:Allocator=system_alloc
     assert run_interpreter_and_native(source,tmp_path,'owned_vector_transfer') == '41\n'
 
 
+def test_struct_can_own_vector_of_composite_elements(tmp_path):
+    source='''module aggregate_composite_vector
+capability allocate;
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+struct Bag { values:Vec<Marker>; }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var values:Vec<Marker>=vec_new<Marker>(allocator,1); let marker:Marker=Marker{number:43}; vec_push<Marker>(values,marker); let bag:Bag=Bag{values:values}; } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'aggregate_composite_vector') == '43\n'
+
+
 def test_vec_transfer_rejects_aliasing_at_compile_time():
     source='''module aliased_vector_transfer
 capability allocate;
