@@ -42,6 +42,7 @@ destructor Marker { print(self.number); }
 - Future zero-copy collection transfer and merge operations must reject incompatible allocators before moving elements or storage. Element-wise moves that allocate fresh destination storage may cross allocator providers because each allocation remains paired with its originating provider.
 - `vec_transfer<T>(destination, source)` is the zero-copy transfer primitive. Both vectors must be distinct mutable bindings, the destination must be empty, and their allocators must be compatible. It steals the source allocation, leaves the source valid and empty, and transfers every owned-element destruction obligation without running a destructor during the transfer.
 - `vec_allocator<T>(vector)` returns the retained allocator identity so transfer compatibility can be checked before attempting the operation.
+- `Buffer` retains its allocator as part of its 32-byte runtime layout. Growth, filesystem-populated buffers, and destruction dispatch through that provider; `buffer_allocator(buffer)` exposes the retained identity.
 - Vectors may contain vectors. Moving an inner vector into an outer vector transfers its storage and recursive drop obligation; popping it transfers that obligation back to the destination binding.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 - Concrete types carry shared lifecycle metadata: ownership, copyability, drop requirement, semantic kind, and drop strategy.

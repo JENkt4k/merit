@@ -714,6 +714,7 @@ BUILTIN_SIGS={
     'buffer_len':BuiltinSig((('borrow','Buffer'),), 'i64'),
     'buffer_get':BuiltinSig((('borrow','Buffer'),('value','i64')), 'i64'),
     'buffer_slice':BuiltinSig((('borrow','Buffer'),('value','i64'),('value','i64')), 'ByteSlice'),
+    'buffer_allocator':BuiltinSig((('borrow','Buffer'),), 'Allocator'),
     'slice_len':BuiltinSig((('value','ByteSlice'),), 'i64'),
     'slice_get':BuiltinSig((('value','ByteSlice'),('value','i64')), 'i64'),
     'i64vec_new':BuiltinSig((('value','Allocator'),('value','i64')), 'I64Vec', 'allocate', 'allocation'),
@@ -1395,7 +1396,8 @@ class LayoutEngine:
         if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
         if t in self.p.bounded:return self.size_align(self.p.bounded[t].base)
         if t in ('String','ByteSlice'): return (16,8)
-        if t in ('Buffer','I64Vec'): return (24,8)
+        if t=='Buffer': return (32,8)
+        if t=='I64Vec': return (24,8)
         if is_vec_type(t): return (32,8)
         if t=='Allocator': return (4,4)
         if t in self.p.structs:
@@ -1561,8 +1563,8 @@ class Interpreter:
                 text=self.eval(args[0],env).value.encode('utf-8'); idx=self.eval(args[1],env).value
                 if idx<0 or idx>=len(text): raise RuntimeError('string index out of bounds')
                 return TypedValue('u8',text[idx])
-            if n=='buffer_new': return TypedValue('Buffer',bytearray())
-            if n=='buffer_from_string': return TypedValue('Buffer',bytearray(self.eval(args[1],env).value.encode('utf-8')))
+            if n=='buffer_new': return TypedValue('Buffer',bytearray(),self.eval(args[0],env).value)
+            if n=='buffer_from_string': return TypedValue('Buffer',bytearray(self.eval(args[1],env).value.encode('utf-8')),self.eval(args[0],env).value)
             if n=='buffer_push':
                 buf=self.eval(args[0],env); buf.value.append(self.eval(args[1],env).value); return TypedValue('void',None)
             if n=='buffer_len': return TypedValue('i64',len(self.eval(args[0],env).value))
@@ -1574,6 +1576,7 @@ class Interpreter:
                 buf=self.eval(args[0],env).value; start=self.eval(args[1],env).value; length=self.eval(args[2],env).value
                 if start<0 or length<0 or start+length>len(buf): raise RuntimeError('slice out of bounds')
                 return TypedValue('ByteSlice',memoryview(buf)[start:start+length])
+            if n=='buffer_allocator': return TypedValue('Allocator',self.eval(args[0],env).allocator)
             if n=='slice_len': return TypedValue('i64',len(self.eval(args[0],env).value))
             if n=='slice_get':
                 view=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
@@ -1620,8 +1623,8 @@ class Interpreter:
                     if destination.value:raise RuntimeError('vector transfer destination is not empty')
                     destination.value=source.value;source.value=[];return TypedValue('void',None)
             if n=='file_read':
-                path=self.eval(args[1],env).value
-                try:return TypedValue('FileReadResult',{'variant':'ReadOk','payload':TypedValue('Buffer',bytearray(Path(path).read_bytes()))})
+                allocator=self.eval(args[0],env).value;path=self.eval(args[1],env).value
+                try:return TypedValue('FileReadResult',{'variant':'ReadOk','payload':TypedValue('Buffer',bytearray(Path(path).read_bytes()),allocator)})
                 except FileNotFoundError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsNotFound','payload':None})})
                 except PermissionError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsPermissionDenied','payload':None})})
                 except OSError:return TypedValue('FileReadResult',{'variant':'ReadErr','payload':TypedValue('FsError',{'variant':'FsIoError','payload':None})})
@@ -1724,7 +1727,7 @@ class CGenerator:
         elem=vec_elem_type(vt)
         return not is_vec_type(elem) and elem not in self.p.structs and elem not in self.p.enums
     def header(self,include_private=False):
-        o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { uint8_t *data; size_t len; size_t cap; } merit_Buffer;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; } merit_I64Vec;', '']
+        o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { uint8_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_Buffer;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; } merit_I64Vec;', '']
         early_vecs=[vt for vt in self.vec_types() if self.vec_can_define_before_composites(vt)]
         for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
@@ -1784,13 +1787,14 @@ class CGenerator:
               r'''static int32_t merit_allocator_compatible(merit_Allocator a,merit_Allocator b){return a.kind==b.kind;}''',
               r'''static void *merit_allocator_realloc(merit_Allocator a,void *p,size_t n){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);return realloc(p,n);}''',
               r'''static void merit_allocator_free(merit_Allocator a,void *p){if(a.kind!=0&&a.kind!=1)merit_fail("unsupported allocator",89);free(p);}''',
-              r'''static void merit_buffer_reserve(merit_Buffer *b,size_t need){if(need<=b->cap)return;size_t c=b->cap?b->cap:8;while(c<need)c*=2;void *p=realloc(b->data,c);if(!p)merit_fail("allocation failed",80);b->data=(uint8_t*)p;b->cap=c;}''',
-              r'''static merit_Buffer merit_buffer_new(merit_Allocator a,int64_t cap){(void)a;merit_Buffer b={0};if(cap<0)merit_fail("negative capacity",81);merit_buffer_reserve(&b,(size_t)cap);return b;}''',
+              r'''static void merit_buffer_reserve(merit_Buffer *b,size_t need){if(need<=b->cap)return;size_t c=b->cap?b->cap:8;while(c<need)c*=2;void *p=merit_allocator_realloc(b->allocator,b->data,c);if(!p)merit_fail("allocation failed",80);b->data=(uint8_t*)p;b->cap=c;}''',
+              r'''static merit_Buffer merit_buffer_new(merit_Allocator a,int64_t cap){merit_Buffer b={0};b.allocator=a;if(cap<0)merit_fail("negative capacity",81);merit_buffer_reserve(&b,(size_t)cap);return b;}''',
               r'''static merit_Buffer merit_buffer_from_string(merit_Allocator a,merit_String s){merit_Buffer b=merit_buffer_new(a,(int64_t)s.len);if(s.len){memcpy(b.data,s.data,s.len);b.len=s.len;}return b;}''',
               r'''static void merit_buffer_push(merit_Buffer *b,uint8_t v){merit_buffer_reserve(b,b->len+1);b->data[b->len++]=v;}''',
               r'''static int64_t merit_buffer_len(const merit_Buffer *b){return (int64_t)b->len;}''',
               r'''static int64_t merit_buffer_get(const merit_Buffer *b,int64_t i){if(i<0||(size_t)i>=b->len)merit_fail("buffer index out of bounds",82);return (int64_t)b->data[i];}''',
               r'''static merit_ByteSlice merit_buffer_slice(const merit_Buffer *b,int64_t start,int64_t len){if(start<0||len<0||(size_t)start>b->len||(size_t)len>b->len-(size_t)start)merit_fail("slice out of bounds",85);return (merit_ByteSlice){b->data+(size_t)start,(size_t)len};}''',
+              r'''static merit_Allocator merit_buffer_allocator(const merit_Buffer *b){return b->allocator;}''',
               r'''static int64_t merit_slice_len(merit_ByteSlice s){return (int64_t)s.len;}''',
               r'''static int64_t merit_slice_get(merit_ByteSlice s,int64_t i){if(i<0||(size_t)i>=s.len)merit_fail("slice index out of bounds",85);return (int64_t)s.data[i];}''',
               r'''static void merit_i64vec_reserve(merit_I64Vec *v,size_t need){if(need<=v->cap)return;size_t c=v->cap?v->cap:8;while(c<need)c*=2;void *p=realloc(v->data,c*sizeof(int64_t));if(!p)merit_fail("allocation failed",80);v->data=(int64_t*)p;v->cap=c;}''',
@@ -1799,7 +1803,7 @@ class CGenerator:
               r'''static int64_t merit_i64vec_len(const merit_I64Vec *v){return (int64_t)v->len;}''',
               r'''static int64_t merit_i64vec_get(const merit_I64Vec *v,int64_t i){if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}''',
               r'''static void merit_i64vec_drop(merit_I64Vec *v){free(v->data);v->data=NULL;v->len=0;v->cap=0;}''',
-              r'''static void merit_buffer_drop(merit_Buffer *b){free(b->data);b->data=NULL;b->len=0;b->cap=0;}''',
+              r'''static void merit_buffer_drop(merit_Buffer *b){merit_allocator_free(b->allocator,b->data);b->data=NULL;b->len=0;b->cap=0;}''',
               r'''static merit_FsError merit_fs_error(int e){if(e==ENOENT)return merit_make_FsError_FsNotFound();if(e==EACCES||e==EPERM)return merit_make_FsError_FsPermissionDenied();return merit_make_FsError_FsIoError();}''',
               r'''static merit_FileReadResult merit_file_read(merit_Allocator a,merit_String path){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"rb");int open_error=errno;free(z);if(!f)return merit_make_FileReadResult_ReadErr(merit_fs_error(open_error));if(fseek(f,0,SEEK_END)!=0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}long n=ftell(f);if(n<0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}rewind(f);merit_Buffer b=merit_buffer_new(a,n);if(n>0){size_t got=fread(b.data,1,(size_t)n,f);if(got!=(size_t)n){int e=errno;merit_buffer_drop(&b);fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}b.len=got;}if(fclose(f)!=0){merit_buffer_drop(&b);return merit_make_FileReadResult_ReadErr(merit_fs_error(errno));}return merit_make_FileReadResult_ReadOk(b);}''',
               r'''static merit_FileWriteResult merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");int open_error=errno;free(z);if(!f)return merit_make_FileWriteResult_WriteErr(merit_fs_error(open_error));size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len){int e=errno;fclose(f);return merit_make_FileWriteResult_WriteErr(merit_fs_error(e));}if(fclose(f)!=0)return merit_make_FileWriteResult_WriteErr(merit_fs_error(errno));return merit_make_FileWriteResult_WriteOk((int64_t)wrote);}''',
@@ -2082,6 +2086,7 @@ class CGenerator:
             if n=='buffer_len': return f'merit_buffer_len({self.address_expr(a[0],env)})'
             if n=='buffer_get': return f'merit_buffer_get({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='buffer_slice': return f'merit_buffer_slice({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env)})'
+            if n=='buffer_allocator': return f'merit_buffer_allocator({self.address_expr(a[0],env)})'
             if n=='slice_len': return f'merit_slice_len({self.expr(a[0],env)})'
             if n=='slice_get': return f'merit_slice_get({self.expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='i64vec_new': return f'merit_i64vec_new({self.expr(a[0],env)}, {self.expr(a[1],env)})'
