@@ -1628,6 +1628,7 @@ class CGenerator:
         for vt in early_vecs: o.extend(self.vec_typedef_lines(vt))
         le=LayoutEngine(self.p)
         for enum in self.p.enums.values():
+            if self.p.exports and not include_private and enum.name not in self.p.exports and enum.name not in FS_BUILTIN_ENUMS:continue
             layout=le.enum_layout(enum)
             o.append(f'/* Merit layout enum {enum.name} hash {layout["layout_hash"]} */')
             o.append(f'typedef enum merit_{enum.name}_tag {{')
@@ -1653,6 +1654,7 @@ class CGenerator:
                 o.append(f'static inline merit_{enum.name} merit_make_{enum.name}_{variant.name}({params}){{return {init};}}')
             o.append('')
         for s in self.p.structs.values():
+            if self.p.exports and not include_private and s.name not in self.p.exports:continue
             if s.stable_abi:
                 layout=le.layout(s);o.append(f'/* Merit layout struct {s.name} hash {layout["layout_hash"]} */')
             o.append(f'typedef struct merit_{s.name} {{')

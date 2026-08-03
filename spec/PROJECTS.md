@@ -6,6 +6,8 @@
 
 The current acceptance gate loads the resulting library from a C-compatible foreign caller and invokes both a primitive `i32 -> i32` function and a stable-layout struct passed by value. Consumer headers include public project functions and omit private helpers; platform-specific library suffixes remain future hardening work.
 
+Public ABI signatures are closed over public types: exported functions, structs, and enums cannot expose a private project type. Consumer headers omit private structs and enums while retaining public types imported from another project module.
+
 ## Manifest
 
 A project is rooted by `Merit.toml`.

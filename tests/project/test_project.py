@@ -44,6 +44,7 @@ def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     )
     (project_root / "src" / "main.mrt").write_text(
         "module shared_api\n"
+        "stable(\"secret-v1\") struct Secret { value:i32; }\n"
         "pub fn increment(value:i32)->i32 { return checked_add(value,1); }\n"
         "fn private_helper(value:i32)->i32 { return value; }\n"
         "fn main()->i32 { return 0; }\n"
@@ -53,11 +54,28 @@ def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     assert library.suffix == ".so"
     assert "int32_t merit_increment(int32_t value);" in header.read_text()
     assert "merit_private_helper" not in header.read_text()
+    assert "merit_Secret" not in header.read_text()
     assert project.program.exports == {"increment"}
     shared = ctypes.CDLL(str(library))
     shared.merit_increment.argtypes = [ctypes.c_int32]
     shared.merit_increment.restype = ctypes.c_int32
     assert shared.merit_increment(41) == 42
+
+
+def test_public_function_cannot_expose_private_project_type(tmp_path):
+    project_root = tmp_path / "private_abi_leak"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "private_abi_leak"\nentry = "src/main.mrt"\nsources = ["src/*.mrt"]\n'
+    )
+    (project_root / "src" / "main.mrt").write_text(
+        "module private_abi_leak\n"
+        'stable("secret-v1") struct Secret { value:i32; }\n'
+        "pub fn reveal(secret:Secret)->i32 { return secret.value; }\n"
+        "fn main()->i32 { return 0; }\n"
+    )
+    with pytest.raises(ProjectError, match="public function reveal exposes private type Secret"):
+        load_project(project_root / "Merit.toml")
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")

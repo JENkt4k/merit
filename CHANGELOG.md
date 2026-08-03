@@ -7,7 +7,9 @@
 - Added a foreign-caller smoke test for a generated primitive ABI function.
 - Preserved merged-project `pub` exports and filtered private functions from consumer headers.
 - Added foreign-caller acceptance for stable-layout structs passed by value.
-- Increased the regression suite from 185 to 186 tests.
+- Rejected private-type leakage through public functions, structs, and enums.
+- Filtered private structs and enums from project consumer headers.
+- Increased the regression suite from 185 to 187 tests.
 - Increased the regression suite from 184 to 185 tests.
 
 ## Epoch III — MIR constant branch checkpoint

@@ -315,6 +315,7 @@ Continue alpha-readiness hardening:
 - A foreign caller loads the library and invokes a generated primitive ABI function.
 - A foreign caller passes a stable-layout Merit struct by value and observes matching field layout.
 - Consumer headers preserve project `pub` function filtering; cross-platform suffix policy remains deliberately deferred.
+- Public ABI declarations reject private-type leakage and consumer headers omit private structs/enums.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

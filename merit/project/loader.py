@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import CompileError, FS_BUILTIN_ENUMS, FunctionDecl, NodeProvenance, Program, SemanticNode, SourceSpan, parse, _impl_function_name
+from merit.compiler import BUILTIN_TYPES, CompileError, FS_BUILTIN_ENUMS, FunctionDecl, NodeProvenance, Program, SemanticNode, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -200,6 +200,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
             for variant in enum.variants: variants[variant.name] = unit
     builtins = {"checked_add", "checked_sub", "checked_mul", "decimal_div", "old"}
     primitive = {"void", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"}
+    project_exports={symbol for unit in units for symbol in unit.exports}
     for unit in units:
         allowed_modules = set(unit.imports) | {unit.module}
         def require(symbol: str, context: str) -> None:
@@ -256,6 +257,23 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                         if node is None: continue
                         if node.kind == "call" and node.callee_name not in builtins: require(node.callee_name, f"call in {function.name}")
                         elif node.kind == "struct_init": require(node.constructed_type, f"construction in {function.name}")
+        public_types=project_exports|primitive|BUILTIN_TYPES
+        for function in unit.program.functions:
+            if function.name not in unit.exports:continue
+            exposed=[function.return_type,*[param.type_name for param in function.params]]
+            for type_name in exposed:
+                if type_name not in public_types:
+                    raise ProjectError(f"public function {function.name} exposes private type {type_name}")
+        for struct in unit.program.structs.values():
+            if struct.name not in unit.exports:continue
+            for field in struct.fields:
+                if field.type_name not in public_types:
+                    raise ProjectError(f"public struct {struct.name} exposes private type {field.type_name}")
+        for enum in unit.program.enums.values():
+            if enum.name not in unit.exports:continue
+            for variant in enum.variants:
+                if variant.payload_type and variant.payload_type not in public_types:
+                    raise ProjectError(f"public enum {enum.name} exposes private type {variant.payload_type}")
 
 
 def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str) -> Program:
