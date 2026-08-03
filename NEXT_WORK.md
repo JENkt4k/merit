@@ -298,6 +298,7 @@ Continue alpha-readiness hardening:
 - Recursive by-value aggregate cycles are rejected during semantic checking before backend generation.
 - Opaque C forward declarations allow by-value aggregates to contain vectors of composite elements without definition-order failures.
 - `try` participates in shared owned-source consumption for exact-once `Ok` binding and `Err` propagation.
+- Owned match subjects become unavailable before arm checking, and partial moves from aggregate fields remain rejected.
 
 ## Deliberately deferred
 - specialization

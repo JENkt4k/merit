@@ -60,6 +60,7 @@ destructor Marker { print(self.number); }
 - An owned temporary cannot be discarded as an expression statement; it must be bound, transferred to an owning destination, or explicitly dropped after binding.
 - An owned enum payload binding must be moved or explicitly dropped within its match arm; arm-scoped implicit drop glue is not synthesized in alpha.
 - `try` consumes an owned Result-style subject: `Ok` transfers into the new binding and `Err` transfers into the function return without duplicating cleanup.
+- Matching an owned enum consumes the subject before entering an arm. Matching an owned enum field is rejected until partial-move state exists.
 - Interpreter destruction recursively follows the same metadata for buffers, vectors, structs, and active enum payloads.
 - Move and drop state retains its originating source span.
 - Later use-after-move and use-after-drop diagnostics point to the invalid use and attach the original consumption site as a note.

@@ -1167,6 +1167,7 @@ class Checker:
                 if len(names)!=len(set(names)): self.fail('M6101: duplicate match arm',st)
                 missing=set(expected)-set(names); extra=set(names)-set(expected)
                 if missing or extra: self.fail(f'M6102: non-exhaustive match; missing={sorted(missing)} extra={sorted(extra)}',st)
+                self.consume_owned_source(node.expression,subject_t,env,'matching owned enum subject')
                 states=[]
                 for variant in enum.variants:
                     arm=next(arm for arm in arms if arm.variant==variant.name); local={k:dataclasses.replace(v) for k,v in env.items()}
@@ -1181,9 +1182,6 @@ class Checker:
                 for k in env:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
-                root=self.root_var(node.expression)
-                if root and self.types.get(subject_t).needs_drop:
-                    env[root].moved=True;env[root].move_origin=self.p.span(node.expression);env[root].move_context='matching owned enum subject'
             elif tag=='with_cap':
                 cap=node.capability_name
                 if cap not in self.p.capabilities:self.fail(f'M2002: undeclared capability {cap}',st)

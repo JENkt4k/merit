@@ -186,6 +186,29 @@ fn main()->i32 { return 0; }'''
         Checker(parse(source)).check()
 
 
+def test_match_rejects_owned_subject_reuse_inside_arm():
+    source='''module owned_match_reuse
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum Outcome { Ok(Marker), Err(i32) }
+fn consume(value:Outcome)->i32 { match (value) { Ok(marker)=>{ print(value); drop(marker); } Err(code)=>{ print(code); } } return 0; }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5001: use of moved value value'):
+        Checker(parse(source)).check()
+
+
+def test_match_rejects_partial_move_of_owned_enum_field():
+    source='''module owned_match_field
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum Outcome { Ok(Marker), Err(i32) }
+struct Wrapper { outcome:Outcome; sibling:Marker; }
+fn consume(wrapper:Wrapper)->i32 { match (wrapper.outcome) { Ok(marker)=>{ drop(marker); } Err(code)=>{ print(code); } } return 0; }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5200: cannot move owned field wrapper.outcome while matching owned enum subject'):
+        Checker(parse(source)).check()
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }
