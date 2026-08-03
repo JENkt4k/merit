@@ -53,6 +53,17 @@ def test_project_build_reuses_content_addressed_object(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
+def test_failed_object_compilation_does_not_publish_partial_cache_entry(tmp_path):
+    project = load_project(EXAMPLE)
+    invalid_manifest = dataclasses.replace(project.manifest, c_flags=("-fdefinitely-not-a-real-merit-test-flag",))
+    with pytest.raises(subprocess.CalledProcessError):
+        build(dataclasses.replace(project,manifest=invalid_manifest),tmp_path / "failed")
+    cache = tmp_path / ".merit-cache"
+    assert not list(cache.glob("*.o"))
+    assert not list(cache.glob("*.tmp"))
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
 def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     project_root = tmp_path / "shared_api"
     (project_root / "src").mkdir(parents=True)

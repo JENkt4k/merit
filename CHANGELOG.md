@@ -22,6 +22,8 @@
 - Added content-addressed object caching keyed by source, compiler, flags, and PIC mode.
 - Added deterministic reuse coverage for repeated identical builds.
 - Added resolved compiler-binary identity and flag-change invalidation coverage.
+- Made object-cache publication atomic and added failed-compilation cleanup coverage.
+- Increased the regression suite from 195 to 196 tests.
 - Increased the regression suite from 187 to 188 tests.
 
 ## Epoch III — C shared-library acceptance checkpoint

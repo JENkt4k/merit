@@ -321,6 +321,7 @@ Continue alpha-readiness hardening:
 - Executable and shared builds compile generated C to an object before linking.
 - Cache identity includes generated source, resolved compiler binary, flags, and PIC mode.
 - Repeated identical builds reuse the merged-project object without rewriting it.
+- Object publication is atomic and failed compilation leaves no partial cache entry.
 - Per-module objects and dependency-granular invalidation remain deliberately deferred.
 
 ## Qualified import checkpoint now available

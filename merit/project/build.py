@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 from merit.compiler import CGenerator, Checker, Interpreter
 from .loader import LoadedProject
@@ -34,11 +35,17 @@ def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path
     object_path = cache_dir / f"{digest.hexdigest()[:24]}.o"
     if object_path.exists():
         return object_path
+    temporary_handle = tempfile.NamedTemporaryFile(prefix=object_path.stem+"-",suffix=".tmp",dir=cache_dir,delete=False)
+    temporary_path = Path(temporary_handle.name);temporary_handle.close()
     command = [compiler, "-std=c11", "-Wall", "-Wextra"]
     if pic:
         command.append("-fPIC")
-    command.extend((*project.manifest.c_flags, "-c", str(c_path), "-o", str(object_path)))
-    subprocess.run(command, check=True)
+    command.extend((*project.manifest.c_flags, "-c", str(c_path), "-o", str(temporary_path)))
+    try:
+        subprocess.run(command, check=True)
+        os.replace(temporary_path,object_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
     return object_path
 
 

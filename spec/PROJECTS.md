@@ -12,6 +12,8 @@ Public ABI signatures are closed over public types: exported functions, structs,
 
 Executable and shared builds compile generated C to a content-addressed object before linking. The cache key includes generated source, resolved compiler binary identity, project C flags, and PIC mode. Identical rebuilds reuse the existing object, while flag or compiler changes produce a distinct entry. This checkpoint caches the current merged project translation unit; per-module object generation remains future work.
 
+Object publication is atomic: compilation targets a cache-local temporary file, which replaces the final cache entry only after successful compiler exit. Failed compilation removes the temporary file and publishes no object.
+
 ## Manifest
 
 A project is rooted by `Merit.toml`.
