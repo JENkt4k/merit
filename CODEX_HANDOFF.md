@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III typed semantic storage-family checkpoint** of Merit.
+This repository contains the verified **Epoch III safety-critical per-kind variant checkpoint** of Merit.
 
 Current baseline:
 - 171 tests passing after editable installation
@@ -52,6 +52,7 @@ python -m pytest -q
 - named expression operands across ownership, checking, interpretation, and C lowering with no direct positional reads
 - concrete tuple-compatible semantic node storage produced uniformly by the parser
 - typed storage families for atoms, calls, constructors, bindings, replacement, effects, and control flow
+- distinct ownership-sensitive and control-flow node variants with compatibility serialization
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Safety-critical per-kind variant checkpoint
+
+- Added distinct variants for ordinary bindings, `try`, assignment, and replacement.
+- Added distinct variants for capability scopes, branches, loops, and matches.
+- Preserved family inheritance and tuple-compatible serialization.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Typed semantic storage-family checkpoint
 
 - Added concrete storage families for expression and statement categories.

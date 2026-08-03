@@ -3,7 +3,7 @@ import contextlib
 import io
 import subprocess
 
-from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, Checker, ControlFlowNode, Interpreter, OwnershipEffects, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
+from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, IfNode, Interpreter, LetNode, OwnershipEffects, ReplaceNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
 
 DIRECT_MOVE_PROGRAM = '''module semantic_metadata_move
@@ -61,6 +61,7 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     capability_statement = program.functions[0]["body"][0]
     assert isinstance(capability_statement, SemanticTuple)
     assert isinstance(capability_statement, ControlFlowNode)
+    assert isinstance(capability_statement, CapabilityNode)
     assert isinstance(capability_statement, tuple)
     capability = program.node(capability_statement)
     assert capability.kind == "with_cap"
@@ -71,6 +72,7 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert capability.related_span is None
     binding = program.node(capability.operand(1)[1])
     assert isinstance(binding.raw, BindingNode)
+    assert isinstance(binding.raw, LetNode)
     assert (binding.kind, binding.binding_name, binding.declared_type) == ("let", "source", "Buffer")
     assert program.node(binding.initializer).kind == "call"
     call = program.node(binding.initializer)
@@ -87,6 +89,7 @@ fn main() -> i32 {
 }''')
     replacement = program.node(program.functions[0]["body"][1])
     assert isinstance(replacement.raw, AssignmentNode)
+    assert isinstance(replacement.raw, ReplaceNode)
     assert replacement.kind == "replace"
     assert program.node(replacement.assignment_target).kind == "var"
     assert program.node(replacement.assigned_value).kind == "number"
@@ -98,6 +101,7 @@ fn main() -> i32 {
     if 1 { return 1; } else { return 0; }
 }''')
     branch = program.node(program.functions[0]["body"][0])
+    assert isinstance(branch.raw, IfNode)
     assert branch.kind == "if"
     assert program.node(branch.condition).kind == "number"
     assert program.node(branch.then_body[0]).expression[1] == "1"

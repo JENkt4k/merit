@@ -112,15 +112,23 @@ class ConstructorNode(SemanticTuple):pass
 class CallNode(SemanticTuple):pass
 class BinaryNode(SemanticTuple):pass
 class BindingNode(SemanticTuple):pass
+class LetNode(BindingNode):pass
+class TryLetNode(BindingNode):pass
 class AssignmentNode(SemanticTuple):pass
+class AssignNode(AssignmentNode):pass
+class ReplaceNode(AssignmentNode):pass
 class EffectStatementNode(SemanticTuple):pass
 class ControlFlowNode(SemanticTuple):pass
+class CapabilityNode(ControlFlowNode):pass
+class IfNode(ControlFlowNode):pass
+class WhileNode(ControlFlowNode):pass
+class MatchNode(ControlFlowNode):pass
 SEMANTIC_STORAGE_TYPES={
     'string':AtomNode,'number':AtomNode,'var':AtomNode,'field':FieldNode,
     'struct_init':ConstructorNode,'call':CallNode,'generic_call':CallNode,'binop':BinaryNode,
-    'let':BindingNode,'try_let':BindingNode,'assign':AssignmentNode,'replace':AssignmentNode,
+    'let':LetNode,'try_let':TryLetNode,'assign':AssignNode,'replace':ReplaceNode,
     'return':EffectStatementNode,'print':EffectStatementNode,'expr':EffectStatementNode,'drop':EffectStatementNode,
-    'with_cap':ControlFlowNode,'if':ControlFlowNode,'while':ControlFlowNode,'match':ControlFlowNode,
+    'with_cap':CapabilityNode,'if':IfNode,'while':WhileNode,'match':MatchNode,
 }
 @dataclasses.dataclass(frozen=True)
 class SemanticNodeView:

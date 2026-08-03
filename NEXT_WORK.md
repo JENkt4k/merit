@@ -183,9 +183,14 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Parser construction selects the storage family deterministically by semantic kind.
 - Storage-family tests cover capability control flow, owned bindings/calls, and replacement nodes.
 
+## Safety-critical per-kind variant checkpoint now available
+- `LetNode`, `TryLetNode`, `AssignNode`, and `ReplaceNode` distinguish ownership-sensitive statements.
+- `CapabilityNode`, `IfNode`, `WhileNode`, and `MatchNode` distinguish control-flow invariants.
+- Per-kind variants retain family inheritance and tuple-compatible serialization.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Split storage families into per-kind typed variants where distinct invariants justify them.
+- Split call, constructor, field, binary, and effect families into per-kind variants where useful.
 - Move span/provenance storage onto concrete variants before removing external metadata maps.
 - Remove tuple compatibility only after every operand access is typed.
 
@@ -199,7 +204,7 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Add per-kind variants for ownership and control-flow nodes.
+1. Complete remaining per-kind expression/effect variants.
 2. Move span/provenance storage onto variants before removing external metadata maps.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

@@ -48,6 +48,8 @@ The parser now constructs `SemanticTuple` for every expression and statement. Th
 
 Concrete semantic storage is further classified into atom, field, constructor, call, binary, binding, assignment, effect-statement, and control-flow families. These runtime types provide a stable intermediate step toward per-kind variants without duplicating backend paths.
 
+Ownership-sensitive binding/assignment/replacement statements and capability/branch/loop/match control flow now have distinct per-kind runtime variants beneath their shared storage families.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.
