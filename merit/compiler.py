@@ -621,7 +621,7 @@ class VecIntrinsic:
 
 @dataclasses.dataclass(frozen=True)
 class BuiltinSig:
-    params:tuple[tuple[str,str],...]; return_type:str; capability:str|None=None; hazard:str|None=None
+    params:tuple[tuple[str,str],...]; return_type:str; capability:str|None=None; hazard:str|None=None; additional_capabilities:tuple[str,...]=()
 
 @dataclasses.dataclass(frozen=True)
 class CapabilityPolicy:
@@ -722,7 +722,7 @@ BUILTIN_SIGS={
     'i64vec_len':BuiltinSig((('borrow','I64Vec'),), 'i64'),
     'i64vec_get':BuiltinSig((('borrow','I64Vec'),('value','i64')), 'i64'),
     'i64vec_allocator':BuiltinSig((('borrow','I64Vec'),), 'Allocator'),
-    'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'FileReadResult', 'file_read', 'filesystem_read'),
+    'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'FileReadResult', 'file_read', 'filesystem_read', ('allocate',)),
     'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'FileWriteResult', 'file_write', 'filesystem_write'),
 }
 
@@ -755,9 +755,10 @@ def audit_payload(p,checker):
 def capability_requirements(p):
     requirements=[]
     for name,sig in BUILTIN_SIGS.items():
-        if sig.capability:
-            entry=capability_policy(sig.capability)
-            entry.update({'kind':'builtin','operation':name,'capability':sig.capability,'hazard':sig.hazard or sig.capability})
+        for capability in ((sig.capability,) if sig.capability else ()) + sig.additional_capabilities:
+            entry=capability_policy(capability)
+            hazard=sig.hazard if capability==sig.capability else capability_policy(capability)['hazard_class']
+            entry.update({'kind':'builtin','operation':name,'capability':capability,'hazard':hazard})
             requirements.append(entry)
     for name,spec in VEC_INTRINSICS.items():
         if spec.capability:
@@ -1274,8 +1275,11 @@ class Checker:
                 return vec_return_type(op,elem)
             if name in BUILTIN_SIGS:
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
-                if cap and cap not in caps: self.fail(f'M2003: call to {name} requires capabilities {[cap]}',e)
-                if cap: self.hazardous_operations.append(hazard_entry(fn.name,name,cap,sig.hazard))
+                required=set(((cap,) if cap else ()) + sig.additional_capabilities);missing=required-caps
+                if missing: self.fail(f'M2003: call to {name} requires capabilities {sorted(missing)}',e)
+                for capability in sorted(required):
+                    hazard=sig.hazard if capability==cap else capability_policy(capability)['hazard_class']
+                    self.hazardous_operations.append(hazard_entry(fn.name,name,capability,hazard))
                 if len(args)!=len(params): self.fail(f'M3005: {name} expects {len(params)} arguments',e)
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):

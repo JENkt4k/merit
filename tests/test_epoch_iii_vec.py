@@ -568,9 +568,25 @@ fn main()->i32 { with capability allocate { let portable:Allocator=portable_allo
 def test_file_read_buffer_retains_requested_allocator(tmp_path):
     payload=tmp_path/'payload.bin';payload.write_bytes(b'abc')
     source=f'''module file_buffer_allocator
+capability allocate;
 capability file_read;
-fn main()->i32 {{ let portable:Allocator=portable_allocator(); with capability file_read {{ let result:FileReadResult=file_read(portable,"{payload}"); match (result) {{ ReadOk(data)=>{{ print(allocator_compatible(buffer_allocator(data),portable)); print(buffer_len(data)); drop(data); }} ReadErr(error)=>{{ print(0); }} }} }} return 0; }}'''
+fn main()->i32 {{ with capability allocate {{ let portable:Allocator=portable_allocator(); with capability file_read {{ let result:FileReadResult=file_read(portable,"{payload}"); match (result) {{ ReadOk(data)=>{{ print(allocator_compatible(buffer_allocator(data),portable)); print(buffer_len(data)); drop(data); }} ReadErr(error)=>{{ print(0); }} }} }} }} return 0; }}'''
     assert run_interpreter_and_native(source,tmp_path,'file_buffer_allocator') == '1\n3\n'
+
+
+def test_file_read_requires_allocation_capability_for_result_buffer():
+    source='''module file_read_allocate
+capability allocate;
+capability file_read;
+fn main()->i32 { let allocator:Allocator=system_allocator(); with capability file_read { let result:FileReadResult=file_read(allocator,"missing"); } return 0; }'''
+    with pytest.raises(CompileError,match=r"M2003: call to file_read requires capabilities \['allocate'\]"):
+        Checker(parse(source)).check()
+
+
+def test_file_read_audit_reports_filesystem_and_allocation_hazards():
+    program=parse('module file_read_audit\ncapability allocate;\ncapability file_read;\nfn main()->i32 { return 0; }')
+    entries={(entry['capability'],entry['hazard']) for entry in capability_requirements(program) if entry['operation']=='file_read'}
+    assert entries == {('file_read','filesystem_read'),('allocate','allocation')}
 
 
 def test_legacy_i64vec_retains_and_dispatches_through_allocator(tmp_path):

@@ -41,7 +41,7 @@ enum FileReadResult { ReadOk(Buffer), ReadErr(FsError) }
 enum FileWriteResult { WriteOk(i64), WriteErr(FsError) }
 ```
 
-`file_read(allocator, path)` and `file_write(path, buffer)` never expose host exceptions or terminate native execution for ordinary OS failures. Both execution paths map missing paths, permission failures, and other I/O errors to the same `FsError` variants. Allocation failure remains a separate fatal allocation hazard.
+`file_read(allocator, path)` and `file_write(path, buffer)` never expose host exceptions or terminate native execution for ordinary OS failures. Both execution paths map missing paths, permission failures, and other I/O errors to the same `FsError` variants. Because a successful read creates an owned Buffer, `file_read` requires both lexical `file_read` and `allocate` capabilities; the audit reports the hazards separately. Allocation failure remains fatal.
 
 ## Visibility
 

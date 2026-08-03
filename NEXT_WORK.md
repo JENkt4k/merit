@@ -306,6 +306,7 @@ Continue alpha-readiness hardening:
 - Buffers now retain allocator identity across growth, filesystem reads, and drop; `buffer_allocator` exposes it.
 - Legacy `I64Vec` also retains and exposes its provider, closing the growable-container allocator gap.
 - Every potentially growing push operation now requires and audits the lexical `allocate` capability.
+- `file_read` requires both `file_read` and `allocate`, with distinct audit entries.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.
