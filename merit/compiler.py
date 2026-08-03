@@ -100,10 +100,21 @@ class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
 @dataclasses.dataclass(frozen=True)
 class SourceSpan:
     line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
+@dataclasses.dataclass(frozen=True)
+class SemanticNodeView:
+    raw:tuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
+    @property
+    def kind(self)->str:return self.raw[0]
+    @property
+    def operands(self)->tuple:return self.raw[1:]
+    def operand(self,index:int):return self.raw[index+1]
 @dataclasses.dataclass
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
     def span(self,node):return self.spans.get(id(node))
+    def node(self,raw):
+        if not isinstance(raw,tuple) or not raw:return None
+        return SemanticNodeView(raw,self.span(raw),self.related_spans.get(id(raw)))
 
 def _impl_function_name(trait_name: str, target_type: str, method_name: str) -> str:
     return 'impl__' + trait_name + '__' + target_type + '__' + method_name
@@ -623,8 +634,9 @@ def resolved_call(e) -> tuple[str,list]:
 class OwnershipEffects:
     def __init__(self,p,types=None): self.p=p;self.types=types or TypeTable(p);self.fn={f['name']:f for f in p.functions}
     def root(self,e):
-        while isinstance(e,tuple) and e and e[0]=='field':e=e[1]
-        return e[1] if isinstance(e,tuple) and e and e[0]=='var' else None
+        node=self.p.node(e)
+        while node and node.kind=='field':e=node.operand(0);node=self.p.node(e)
+        return node.operand(0) if node and node.kind=='var' else None
     def consume(self,e,type_name):
         return set(self.consume_sites(e,type_name))
     def consume_sites(self,e,type_name):
@@ -634,13 +646,14 @@ class OwnershipEffects:
     def effects(self,e):
         return set(self.effect_sites(e))
     def effect_sites(self,e):
-        if not isinstance(e,tuple):return {}
+        node=self.p.node(e)
+        if not node:return {}
         sites={}
-        if e[0]=='struct_init':
+        if node.kind=='struct_init':
             struct=self.p.structs[e[1]]
             for field in struct.fields:sites.update(self.consume_sites(e[2][field.name],field.type_name))
             return sites
-        if e[0] in ('call','generic_call'):
+        if node.kind in ('call','generic_call'):
             name,args=resolved_call(e)
             for arg in args:sites.update(self.effect_sites(arg))
             variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
@@ -660,24 +673,26 @@ class OwnershipEffects:
                 for arg,(_,type_name,mode) in zip(args,self.fn[name]['params']):
                     if mode=='value':sites.update(self.consume_sites(arg,type_name))
             return sites
-        if e[0]=='binop':
+        if node.kind=='binop':
             sites.update(self.effect_sites(e[2]));sites.update(self.effect_sites(e[3]));return sites
         return sites
     def statements(self,body):
         for statement in body:
             yield statement
-            if statement[0] in ('with_cap','while'):yield from self.statements(statement[-1])
-            elif statement[0]=='if':
+            kind=self.p.node(statement).kind
+            if kind in ('with_cap','while'):yield from self.statements(statement[-1])
+            elif kind=='if':
                 yield from self.statements(statement[2]);yield from self.statements(statement[3])
-            elif statement[0]=='match':
+            elif kind=='match':
                 for arm in statement[2]:yield from self.statements(arm[2])
     def expression_type(self,e,env):
-        if e[0]=='var':return env.get(e[1])
-        if e[0]=='field':
+        kind=self.p.node(e).kind
+        if kind=='var':return env.get(e[1])
+        if kind=='field':
             base=self.expression_type(e[1],env);struct=self.p.structs.get(base)
             return next((field.type_name for field in struct.fields if field.name==e[2]),None) if struct else None
-        if e[0]=='struct_init':return e[1]
-        if e[0] in ('call','generic_call'):
+        if kind=='struct_init':return e[1]
+        if kind in ('call','generic_call'):
             name,args=resolved_call(e)
             variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
             if variants:return variants[0]
@@ -689,7 +704,7 @@ class OwnershipEffects:
     def function(self,f):
         env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed_sites={}
         for statement in self.statements(f['body']):
-            tag=statement[0]
+            tag=self.p.node(statement).kind
             if tag=='let':
                 consumed_sites.update(self.consume_sites(statement[3],statement[2]));env[statement[1]]=statement[2]
                 if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
@@ -797,7 +812,7 @@ class Checker:
                 self.fail(f'M7206: trait impl method {name} cannot declare effects or capabilities until trait signatures support them',candidate)
     def block(self,body,env,caps,fn):
         for st in body:
-            tag=st[0]
+            tag=self.p.node(st).kind
             if tag=='let':
                 _,n,t,e,mut=st;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
@@ -895,7 +910,8 @@ class Checker:
                     env[k].move_context=env[k].move_context or loop[k].move_context
                     env[k].drop_origin=env[k].drop_origin or loop[k].drop_origin
     def lvalue_type(self,e,env,write=False):
-        if e[0]=='var':
+        kind=self.p.node(e).kind
+        if kind=='var':
             n=e[1]
             if n not in env:self.fail(f'M3003: unknown variable {n}',e)
             if env[n].moved:
@@ -904,7 +920,7 @@ class Checker:
             if env[n].dropped:raise CompileError(f'M5103: use of dropped value {n}',self.p.span(e),(DiagnosticNote('value dropped here',env[n].drop_origin),))
             if write and not env[n].mutable:self.fail(f'M5002: cannot assign to immutable binding {n}',e)
             return env[n].type_name
-        if e[0]=='field':
+        if kind=='field':
             base=e[1];bt=self.lvalue_type(base,env,write);s=self.p.structs.get(bt)
             if not s:self.fail(f'M4002: {bt} has no fields',e)
             for fld in s.fields:
@@ -912,7 +928,7 @@ class Checker:
             self.fail(f'M4003: unknown field {e[2]} on {bt}',e)
         self.fail('M3007: invalid assignment target',e)
     def expr_type(self,e,env,caps,fn):
-        tag=e[0]
+        tag=self.p.node(e).kind
         if tag=='string':return 'String'
         if tag=='number':return 'number'
         if tag=='var':return self.lvalue_type(e,env)

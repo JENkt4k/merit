@@ -134,11 +134,17 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Expansion errors retain structured spans through merged-project loading and remap to the calling unit.
 - Ambiguous trait-method expansion can report the template as primary with the instantiation as a related location.
 
+## Typed semantic-node adapter checkpoint now available
+- `SemanticNodeView` provides typed kind, operands, primary span, and related provenance over compatibility tuples.
+- `Program.node()` is the centralized boundary from legacy representation to semantic-node metadata.
+- The checker and shared ownership-effects analysis dispatch through the typed view.
+- Interpreter and C lowering remain unchanged behind the compatibility layer.
+
 ## Recommended next epic
-Decompose semantic nodes without changing behavior:
-- Introduce typed expression and statement node interfaces alongside the tuple compatibility layer.
-- Move span and provenance ownership onto typed nodes.
-- Migrate one semantic/backend path at a time while preserving interpreter/native equivalence.
+Continue typed semantic-node decomposition:
+- Migrate MIR, interpreter, and C lowering dispatch through `SemanticNodeView` one subsystem at a time.
+- Replace positional operands with typed accessors for high-risk ownership and replacement nodes.
+- Keep tuple compatibility until every backend path uses the typed interface.
 
 ## Deliberately deferred
 - specialization
@@ -150,8 +156,8 @@ Decompose semantic nodes without changing behavior:
 - concurrency
 
 ## Suggested implementation order
-1. Introduce typed semantic node interfaces and adapters.
-2. Migrate checker and ownership analysis before backend lowering.
+1. Add typed accessors for ownership-sensitive nodes.
+2. Migrate MIR, interpreter, and C lowering dispatch before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

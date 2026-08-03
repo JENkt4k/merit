@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Typed semantic-node adapter checkpoint
+
+- Added a typed semantic-node view with kind, operand, span, and related-provenance access.
+- Added `Program.node()` as the compatibility boundary for tuple-backed nodes.
+- Migrated checker and shared ownership analysis dispatch to the typed interface.
+- Preserved interpreter and native backend behavior behind the compatibility representation.
+- Increased the regression suite from 168 to 169 tests.
+
 ## Epoch III — Generic expansion diagnostics checkpoint
 
 - Added source locations to generic arity and trait-bound expansion errors.

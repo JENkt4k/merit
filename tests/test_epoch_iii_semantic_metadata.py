@@ -56,6 +56,17 @@ def test_shared_ownership_effects_record_direct_move():
     assert function_mir["consumed_roots"] == ["source"]
 
 
+def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
+    program = parse(DIRECT_MOVE_PROGRAM, "semantic_nodes.mrt")
+    capability_statement = program.functions[0]["body"][0]
+    capability = program.node(capability_statement)
+    assert capability.kind == "with_cap"
+    assert capability.operand(0) == "allocate"
+    assert capability.operands[1] is capability_statement[2]
+    assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
+    assert capability.related_span is None
+
+
 def test_hir_exposes_shared_type_semantics():
     program = parse('''module metadata_hir
 struct OwnedText { data: Buffer; }
