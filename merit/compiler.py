@@ -2027,16 +2027,16 @@ def reachable_mir_blocks(blocks):
     return [block for block in blocks if block['id'] in reachable]
 def constant_mir_value(p,expression):
     node=p.node(expression)
-    if node.kind=='number':return Decimal(node.atom_value)
+    if node.kind=='number':return int(Decimal(node.atom_value))
     if node.kind!='binop':return None
     left=constant_mir_value(p,node.left);right=constant_mir_value(p,node.right)
     if left is None or right is None:return None
     if node.operator=='+':return left+right
     if node.operator=='-':return left-right
     if node.operator=='*':return left*right
-    if node.operator=='/':return left/right if right!=0 else None
+    if node.operator=='/':return int(Decimal(left)/Decimal(right)) if right!=0 else None
     comparisons={'==':left==right,'!=':left!=right,'>=':left>=right,'<=':left<=right,'>':left>right,'<':left<right}
-    return Decimal(int(comparisons[node.operator])) if node.operator in comparisons else None
+    return int(comparisons[node.operator]) if node.operator in comparisons else None
 def fold_constant_mir_branches(p,blocks):
     for block in blocks:
         terminator=block['terminator']

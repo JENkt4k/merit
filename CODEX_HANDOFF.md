@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III MIR constant branch checkpoint** of Merit.
 
 Current baseline:
-- 183 tests passing after editable installation
+- 184 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
