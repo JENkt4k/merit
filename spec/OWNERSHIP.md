@@ -22,7 +22,7 @@ stable("marker-v1") struct Marker { number: i32; }
 destructor Marker { print(self.number); }
 ```
 
-`self` is an implicit mutable borrow. The custom body runs exactly once before recursive field cleanup on explicit or implicit drop in both execution paths. The current parity-safe subset permits print and expression statements; ownership-changing statements are rejected with `M5502` until their cleanup interactions are specified.
+`self` is an implicit mutable borrow. The custom body runs exactly once before recursive field cleanup on explicit or implicit drop in both execution paths. The parity-safe subset permits printing, expressions, copy-field assignment, and structured `if`/`while` control flow. Ownership- or capability-changing statements remain rejected until their cleanup interactions are specified.
 
 ## Rules implemented
 

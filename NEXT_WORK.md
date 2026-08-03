@@ -356,6 +356,7 @@ Continue alpha-readiness hardening:
 - HIR and MIR expose JSON-safe destructor bodies and provenance explicitly.
 - Project visibility checks traverse destructor bodies and preserve their original source spans.
 - Ownership-changing destructor statements remain rejected pending a broader destructor contract.
+- Copy-field mutation and structured `if`/`while` destructor bodies preserve interpreter/native parity.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

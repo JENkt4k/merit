@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 227 tests passing after editable installation
+- 229 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -93,6 +93,7 @@ python -m pytest -q
 - Atomic object-cache publication with failed-compilation cleanup
 - Custom struct destructors with exact-once interpreter/native cleanup parity
 - Cross-module destructor visibility and source-mapped project diagnostics
+- Structured destructor control flow and copy-field mutation
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
@@ -115,7 +116,7 @@ This design is useful because all instantiated generic code reuses one semantic 
 - generic arguments remain explicit
 - no associated types, blanket impls, specialization, trait objects, or dynamic dispatch
 - trait methods cannot yet declare effects or required capabilities
-- user-defined destructors currently support effect-free `print` and expression bodies; broader ownership-changing destructor contracts remain deferred
+- user-defined destructors support effect-free structured bodies; ownership/capability-changing destructor contracts remain deferred
 - returned borrows are ephemeral; reference-typed local storage and general lifetime parameters are absent
 - system and portable allocator identities are implemented over the same host allocation primitives
 - modules merge into one generated C translation unit

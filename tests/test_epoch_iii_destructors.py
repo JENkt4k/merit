@@ -60,7 +60,24 @@ def test_destructor_rejects_ownership_changing_statements():
 stable("marker-v1") struct Marker { number:i32; }
 destructor Marker { let value:i32=1; print(value); }
 fn main()->i32 { return 0; }'''
-    with pytest.raises(CompileError,match='M5502: destructor bodies currently allow only print and expression statements'):
+    with pytest.raises(CompileError,match='M5502: destructor body statement may change ownership or capabilities'):
+        Checker(parse(source)).check()
+
+
+def test_destructor_supports_copy_field_mutation_and_control_flow(tmp_path):
+    source='''module structured_destructor
+stable("counter-v1") struct Counter { number:i32; }
+destructor Counter { if self.number { self.number=checked_add(self.number,1); } else { self.number=10; } while self.number < 3 { self.number=checked_add(self.number,1); } print(self.number); }
+fn main()->i32 { let first:Counter=Counter{number:1}; let second:Counter=Counter{number:0}; return 0; }'''
+    assert outputs(source,tmp_path) == ('10\n3\n','10\n3\n')
+
+
+def test_destructor_still_rejects_owned_field_assignment():
+    source='''module unsafe_destructor_assignment
+struct Resource { data:Buffer; }
+destructor Resource { self.data=self.data; }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5201: cannot assign into owned storage self.data'):
         Checker(parse(source)).check()
 
 

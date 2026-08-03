@@ -949,8 +949,8 @@ class Checker:
                 elif node.kind=='match':
                     for arm in node.match_arms:yield from statements(arm.body)
         for statement in statements(destructor.body):
-            if self.p.node(statement).kind not in ('print','expr'):
-                self.fail('M5502: destructor bodies currently allow only print and expression statements',statement)
+            if self.p.node(statement).kind not in ('print','expr','assign','if','while'):
+                self.fail('M5502: destructor body statement may change ownership or capabilities',statement)
         function=FunctionDecl(f'__destructor_{destructor.type_name}',[Parameter('self',destructor.type_name,'borrow_mut')],'void',[],[],[],[],destructor.body)
         self.check_function_body(function)
     def ensure_type(self,t,node=None):
