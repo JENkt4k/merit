@@ -23,7 +23,10 @@ bounded_decl: "bounded" CNAME "(" BASE_INT "," SIGNED_NUMBER "," SIGNED_NUMBER "
 capability_decl: "capability" CNAME ";"
 struct_decl: ["stable" "(" ESCAPED_STRING ")"] "struct" CNAME "{" field_decl* "}"
 field_decl: CNAME ":" type_ref ";"
-function_decl: "fn" CNAME "(" [params] ")" "->" type_ref effects? requires_caps? contract* block
+function_decl: "fn" CNAME "(" [params] ")" "->" return_ref effects? requires_caps? contract* block
+return_ref: "borrow_mut" type_ref -> return_borrow_mut
+          | "borrow" type_ref -> return_borrow
+          | type_ref -> return_value
 params: param ("," param)*
 param: "borrow_mut" CNAME ":" type_ref -> param_borrow_mut
      | "borrow" CNAME ":" type_ref -> param_borrow
@@ -124,6 +127,9 @@ class FieldInitializer:
 @dataclasses.dataclass(frozen=True)
 class FunctionClause:
     kind:str; value:Any
+@dataclasses.dataclass(frozen=True)
+class ReturnSpec:
+    type_name:str; mode:str='value'
 class SemanticNode:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
@@ -134,16 +140,16 @@ class SemanticNode:
     def __setattr__(self,name,value):raise AttributeError('semantic nodes are immutable')
 @dataclasses.dataclass
 class FunctionDecl(Mapping):
-    name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
+    name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;return_mode:str='value';provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
     KEYS=('name','params','return','effects','requires_caps','pre','post','body')
     def __getitem__(self,key):return getattr(self,'return_type' if key=='return' else key)
     def __iter__(self):return iter(self.KEYS)
     def __len__(self):return len(self.KEYS)
     def to_dict(self,serializer=None):
         convert=serializer or (lambda value:value)
-        return {key:convert(self[key]) for key in self.KEYS}
+        return {**{key:convert(self[key]) for key in self.KEYS},'return_mode':self.return_mode}
     @classmethod
-    def from_mapping(cls,value):return cls(*(value[key] for key in cls.KEYS))
+    def from_mapping(cls,value):return cls(*(value[key] for key in cls.KEYS),return_mode=getattr(value,'return_mode','value'))
 class AtomNode(SemanticNode):pass
 class StringNode(AtomNode):pass
 class NumberNode(AtomNode):pass
@@ -285,6 +291,9 @@ class ASTBuilder(Transformer):
     def bounded_decl(self,meta,x): return DeclarationEntry('bounded',self.mark(BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))),meta))
     def capability_decl(self,x): return DeclarationEntry('capability',str(x[0]))
     def type_ref(self,x): return str(x[0]) if x else 'void'
+    def return_borrow_mut(self,x): return ReturnSpec(x[0],'borrow_mut')
+    def return_borrow(self,x): return ReturnSpec(x[0],'borrow')
+    def return_value(self,x): return ReturnSpec(x[0])
     @v_args(meta=True)
     def field_decl(self,meta,x): return self.mark(Field(str(x[0]),x[1]),meta)
     @v_args(meta=True)
@@ -378,7 +387,7 @@ class ASTBuilder(Transformer):
             elif clause.kind=='pre':pre.append(clause.value)
             elif clause.kind=='post':post.append(clause.value)
             i+=1
-        return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
+        return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret.type_name,effects,caps,pre,post,x[-1],return_mode=ret.mode),meta))
     def start(self,x):
         ds={};bs={};cs=set();ss={};es=dict(FS_BUILTIN_ENUMS);ts={};fs=[];ims=[];symbols={name:'builtin' for name in FS_BUILTIN_ENUMS}
         def add_symbol(kind,name,node):
@@ -926,6 +935,7 @@ class Checker:
         if t!='Self': self.ensure_type(t,node)
     def check_function_body(self,f):
         self.ensure_type(f.return_type,f)
+        if f.return_mode!='value': self.check_borrowed_return(f)
         missing=set(f.requires_caps)-self.p.capabilities
         if missing:self.fail(f"M2001: function {f.name} requires undeclared capabilities: {sorted(missing)}",f)
         env={param.name:VarState(param.type_name,param.mode=='borrow_mut',False,False,param.mode) for param in f.params}
@@ -933,6 +943,26 @@ class Checker:
         self.block(f.body,env,set(f.requires_caps),f)
         post_env=dict(env); post_env['result']=VarState(f.return_type,False)
         for e in f.post:self.check_contract_expr(e,post_env,set(f.requires_caps),f,'post')
+    def check_borrowed_return(self,f):
+        params={param.name:param for param in f.params}
+        def returns(body):
+            for statement in body:
+                node=self.p.node(statement)
+                if node.kind=='return':yield statement,node
+                elif node.kind in ('with_cap','while'):yield from returns(node.nested_body)
+                elif node.kind=='if':yield from returns(node.then_body);yield from returns(node.else_body)
+                elif node.kind=='match':
+                    for arm in node.match_arms:yield from returns(arm.body)
+        found=False
+        for statement,node in returns(f.body):
+            found=True; expression=self.p.node(node.expression)
+            if expression.kind!='var' or expression.atom_value not in params or params[expression.atom_value].mode not in ('borrow','borrow_mut'):
+                self.fail('M5300: borrowed return must originate from a borrowed parameter',statement)
+            param=params[expression.atom_value]
+            if f.return_mode=='borrow_mut' and param.mode!='borrow_mut':
+                self.fail(f'M5301: borrow_mut return requires borrow_mut parameter {param.name}',statement)
+        if not found:self.fail('M5303: borrowed-return function must return a borrowed parameter',f)
+        self.fail('M5302: borrowed return lowering requires caller lifetime tracking and is not yet enabled',f)
     def check_contract_expr(self,e,env,caps,fn,phase):
         previous=self.contract_phase
         self.contract_phase=phase

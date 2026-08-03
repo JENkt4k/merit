@@ -72,6 +72,7 @@ Parser field initializers and function effects/capability/contract clauses also 
 Capability-gated filesystem builtins return nominal `FileReadResult` / `FileWriteResult` values with stable `FsError` categories in both interpreter and generated C.
 Every concrete `Vec<T>` retains the allocator passed to `vec_new<T>`; generated growth and destruction dispatch through that stored allocator and include it in deterministic layout metadata.
 `system_allocator()` and `portable_allocator()` provide distinct deterministic allocator identities while sharing the same checked vector lowering and ownership path.
+Borrowed return modes are explicit semantic metadata. Origin and mutability are checked now; acceptance remains gated on completing caller lifetime tracking and equivalent interpreter/native pointer lowering.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

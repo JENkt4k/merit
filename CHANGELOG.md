@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Borrowed return diagnostic checkpoint
+
+- Added explicit `borrow` and `borrow_mut` function return modes.
+- Added borrowed-parameter origin and mutable-origin lifetime diagnostics.
+- Kept otherwise-valid borrowed returns gated until caller tracking and parity-safe lowering are complete.
+- Increased the regression suite from 177 to 181 tests.
+
 ## Epoch III — Multiple allocator provider checkpoint
 
 - Added deterministic `portable_allocator()` alongside `system_allocator()`.

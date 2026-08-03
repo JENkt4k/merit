@@ -279,7 +279,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 ## Recommended next epic
 Continue alpha-readiness hardening:
 - Define allocator compatibility for future collection transfer/merge operations.
-- Begin returned/stored borrow lifetime analysis without weakening call-scoped loan checks.
+- Lower validated returned borrows with caller lifetime tracking without weakening call-scoped loan checks.
 
 ## Deliberately deferred
 - specialization
@@ -292,7 +292,13 @@ Continue alpha-readiness hardening:
 
 ## Suggested implementation order
 1. Specify allocator compatibility at collection-transfer boundaries.
-2. Add the first returned-borrow lifetime diagnostics and parity-safe lowering constraints.
+2. Add caller-side lifetime propagation and matching interpreter/native borrowed-return lowering.
+
+## Borrowed return diagnostic checkpoint now available
+- Function signatures represent `borrow` and `borrow_mut` return modes explicitly.
+- Borrowed results must originate directly from borrowed parameters.
+- Mutable borrowed results require mutable borrowed parameters.
+- Otherwise-valid signatures remain rejected until caller lifetime propagation and pointer lowering land together.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

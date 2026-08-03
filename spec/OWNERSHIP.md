@@ -2,6 +2,17 @@
 
 Alpha.3 implements the first executable ownership subset.
 
+## Borrowed returns
+
+Function signatures may spell borrowed results explicitly:
+
+```merit
+fn view(borrow value: Value) -> borrow Value { return value; }
+fn edit(borrow_mut value: Value) -> borrow_mut Value { return value; }
+```
+
+The current lifetime-analysis checkpoint validates that a borrowed result originates directly from a borrowed parameter and that a mutable result originates from a `borrow_mut` parameter. Otherwise-valid borrowed returns are rejected with `M5302` until caller lifetime tracking and matching pointer lowering are implemented; they are not silently lowered as owned values.
+
 ## Rules implemented
 
 - Stable struct values are non-copy values.
