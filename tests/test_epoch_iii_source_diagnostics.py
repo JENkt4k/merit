@@ -387,3 +387,28 @@ fn main()->i32 { let allocator:Allocator=system_allocator(); let data:Buffer=buf
     assert payload["code"] == "M2003"
     assert payload["path"] == str(source)
     assert payload["line"] == 3
+
+
+def test_compiler_syntax_error_honors_json_diagnostic_mode(tmp_path, capsys):
+    source = tmp_path / "syntax_error.mrt"
+    source.write_text("module syntax_error\nfn main( -> i32 { return 0; }")
+    assert compiler_main(["check", str(source), "--diagnostic-format", "json"]) == 1
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "M0002"
+    assert payload["message"] == "syntax error"
+    assert payload["line"] == 2
+
+
+def test_project_error_honors_json_diagnostic_mode(tmp_path, capsys):
+    root = tmp_path / "missing_import_json"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="missing_import_json"\nentry="src/main.mrt"\nsources=["src/*.mrt"]\n'
+    )
+    (root / "src" / "main.mrt").write_text(
+        "module missing_import_json\nimport absent;\nfn main()->i32 { return 0; }\n"
+    )
+    assert project_cli_main(["check", str(root), "--diagnostic-format", "json"]) == 1
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "M0000"
+    assert "missing modules" in payload["message"]

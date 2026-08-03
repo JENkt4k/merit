@@ -5,7 +5,8 @@
 - Added stable structured diagnostic payloads with source ranges and related notes.
 - Added JSON diagnostic output to compiler and project CLIs.
 - Preserved existing human-readable diagnostics as the default.
-- Increased the regression suite from 190 to 193 tests.
+- Ensured syntax and project-system failures never fall back to mixed text in JSON mode.
+- Increased the regression suite from 190 to 195 tests.
 
 ## Epoch III — Qualified import checkpoint
 

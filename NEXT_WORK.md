@@ -332,6 +332,7 @@ Continue alpha-readiness hardening:
 - Diagnostics expose stable JSON severity, code, message, path/range, excerpt, and related-note fields.
 - `merit` and `merit-project` accept `--diagnostic-format json`.
 - Human-readable source diagnostics remain the default output.
+- Syntax and project-system failures also honor structured output mode.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

@@ -78,7 +78,12 @@ def main(argv: list[str] | None = None) -> int:
             print(render_exception(exc, source_path, source), file=sys.stderr)
         return 1
     except (ProjectError, ValueError, subprocess.CalledProcessError) as exc:
-        print(exc, file=sys.stderr)
+        if args.diagnostic_format == "json":
+            diagnostic_path=_manifest(args.path)
+            source=diagnostic_path.read_text() if diagnostic_path.is_file() else ""
+            print(json.dumps(diagnostic_from_exception(exc,diagnostic_path,source).to_dict()),file=sys.stderr)
+        else:
+            print(exc, file=sys.stderr)
         return 1
 
 

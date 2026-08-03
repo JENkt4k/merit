@@ -2185,6 +2185,13 @@ def main(argv=None):
         if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text()).to_dict()),file=sys.stderr)
         else:print(render_exception(e,path,path.read_text()),file=sys.stderr)
         return 1
-    except Exception as e:print(f'error: {e}',file=sys.stderr);return 1
+    except Exception as e:
+        if getattr(ns,'diagnostic_format','text')=='json':
+            from merit.diagnostics import diagnostic_from_exception
+            diagnostic_path=locals().get('path',Path(getattr(ns,'source','<unknown>')))
+            source=diagnostic_path.read_text() if diagnostic_path.is_file() else ''
+            print(json.dumps(diagnostic_from_exception(e,diagnostic_path,source).to_dict()),file=sys.stderr)
+        else:print(f'error: {e}',file=sys.stderr)
+        return 1
     return 0
 if __name__=='__main__':raise SystemExit(main())
