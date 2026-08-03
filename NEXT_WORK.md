@@ -163,9 +163,14 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - C contract scanning, cleanup discovery, statement walking, and address lowering use the typed boundary.
 - Compiler semantic statement/expression tag dispatch no longer relies on direct positional tag reads.
 
+## Typed statement-operand checkpoint now available
+- Named accessors cover mutability, capability names/regions, `try` bindings, match subjects/arms, and branch/loop bodies.
+- Checker, ownership analysis, interpreter, MIR, and C lowering no longer read semantic statement operands positionally.
+- Replacement evaluation and drop ordering remain unchanged across interpreter/native paths.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Introduce typed statement/expression variants behind `SemanticNodeView` now that accessors are stable.
+- Introduce typed expression variants behind `SemanticNodeView` now that statement access is stable.
 - Move span/provenance storage onto typed variants before removing tuple compatibility.
 - Remove tuple compatibility only after every operand access is typed.
 
@@ -179,7 +184,7 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Introduce typed statement/expression variants.
+1. Introduce typed expression variants.
 2. Move span/provenance storage onto variants before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 

@@ -117,6 +117,8 @@ class SemanticNodeView:
     @property
     def initializer(self):self.require('let','try_let');return self.operand(2)
     @property
+    def mutable(self):self.require('let');return self.operand(3)
+    @property
     def assignment_target(self):self.require('assign','replace');return self.operand(0)
     @property
     def assigned_value(self):self.require('assign','replace');return self.operand(1)
@@ -150,6 +152,8 @@ class SemanticNodeView:
     def else_body(self):self.require('if');return self.operand(2)
     @property
     def nested_body(self):self.require('with_cap','while');return self.operand(1)
+    @property
+    def capability_name(self):self.require('with_cap');return self.operand(0)
     @property
     def match_arms(self):self.require('match');return self.operand(1)
 @dataclasses.dataclass
@@ -725,12 +729,12 @@ class OwnershipEffects:
     def statements(self,body):
         for statement in body:
             yield statement
-            kind=self.p.node(statement).kind
-            if kind in ('with_cap','while'):yield from self.statements(statement[-1])
+            node=self.p.node(statement);kind=node.kind
+            if kind in ('with_cap','while'):yield from self.statements(node.nested_body)
             elif kind=='if':
-                yield from self.statements(statement[2]);yield from self.statements(statement[3])
+                yield from self.statements(node.then_body);yield from self.statements(node.else_body)
             elif kind=='match':
-                for arm in statement[2]:yield from self.statements(arm[2])
+                for arm in node.match_arms:yield from self.statements(arm[2])
     def expression_type(self,e,env):
         kind=self.p.node(e).kind
         if kind=='var':return env.get(e[1])
@@ -860,7 +864,7 @@ class Checker:
         for st in body:
             node=self.p.node(st);tag=node.kind
             if tag=='let':
-                n=node.binding_name;t=node.declared_type;e=node.initializer;mut=st[4];self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
+                n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if self.p.node(e).kind=='number':self.validate_literal(t,e[1])
                 self.consume_owned_source(e,et,env,f'initializing {n}')
@@ -931,10 +935,10 @@ class Checker:
                 if root and self.types.get(subject_t).needs_drop:
                     env[root].moved=True;env[root].move_origin=self.p.span(node.expression);env[root].move_context='matching owned enum subject'
             elif tag=='with_cap':
-                cap=st[1]
+                cap=node.capability_name
                 if cap not in self.p.capabilities:self.fail(f'M2002: undeclared capability {cap}',st)
                 self.audit_sites.append({'function':fn['name'],'capability':cap})
-                self.block(st[2],env,caps|{cap},fn)
+                self.block(node.nested_body,env,caps|{cap},fn)
             elif tag=='if':
                 ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3300: if condition must be boolean/comparison',st)
@@ -1247,9 +1251,9 @@ class Interpreter:
             node=self.p.node(st);kind=node.kind
             if kind=='let':env[node.binding_name]=self.eval(node.initializer,env,node.declared_type)
             elif kind=='try_let':
-                value=self.eval(st[3],env); enum=self.p.enums[value.type_name]
+                value=self.eval(node.initializer,env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
-                env[st[1]]=value.value['payload']
+                env[node.binding_name]=value.value['payload']
             elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env),env)
             elif kind=='replace':
                 replacement=self.eval(node.assigned_value,env);self.drop_value(self.eval(node.assignment_target,env));self.assign(node.assignment_target,replacement,env)
@@ -1677,10 +1681,10 @@ class CGenerator:
         node=self.p.node(s);kind=node.kind
         if kind=='let':env[node.binding_name]=node.declared_type;return [f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {self.checked(node.declared_type,self.expr(node.initializer,env,node.declared_type))};']
         if kind=='try_let':
-            enum_t=self.etype(s[3],env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
+            enum_t=self.etype(node.initializer,env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
-            env[s[1]]=s[2]
-            return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[3],env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(s[2])} {s[1]} = {temp}.data.Ok;']
+            env[node.binding_name]=node.declared_type
+            return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.initializer,env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {temp}.data.Ok;']
         if kind=='assign':
             t=self.etype(node.assignment_target,env);return [f'{p}{self.expr(node.assignment_target,env)} = {self.checked(t,self.expr(node.assigned_value,env,t))};']
         if kind=='replace':
@@ -1726,10 +1730,10 @@ class CGenerator:
             t=self.env_type(env,node.binding_name)
             return [self.drop_binding_line(p,node.binding_name,t)]
         if kind=='match':
-            enum_t=self.etype(s[1],env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
-            o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(s[1],env)};',f'{p}switch ({temp}.tag) {{']
+            enum_t=self.etype(node.expression,env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
+            o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.expression,env)};',f'{p}switch ({temp}.tag) {{']
             enum=self.p.enums[enum_t]
-            for arm in s[2]:
+            for arm in node.match_arms:
                 variant=next(v for v in enum.variants if v.name==arm[0]);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
                 local=dict(env)
                 if arm[1] is not None:
@@ -1738,19 +1742,19 @@ class CGenerator:
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
         if kind=='with_cap':
-            o=[f'{p}/* merit capability begin: {s[1]} */']
-            for z in s[2]:o+=self.stmt(z,env,i)
-            o.append(f'{p}/* merit capability end: {s[1]} */')
+            o=[f'{p}/* merit capability begin: {node.capability_name} */']
+            for z in node.nested_body:o+=self.stmt(z,env,i)
+            o.append(f'{p}/* merit capability end: {node.capability_name} */')
             return o
         if kind=='if':
-            o=[f'{p}if ({self.expr(s[1],env)}) {{']
-            for z in s[2]:o+=self.stmt(z,env,i+1)
+            o=[f'{p}if ({self.expr(node.condition,env)}) {{']
+            for z in node.then_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}} else {{')
-            for z in s[3]:o+=self.stmt(z,env,i+1)
+            for z in node.else_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
         if kind=='while':
-            o=[f'{p}while ({self.expr(s[1],env)}) {{']
-            for z in s[2]:o+=self.stmt(z,env,i+1)
+            o=[f'{p}while ({self.expr(node.condition,env)}) {{']
+            for z in node.nested_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
         return []
     def env_type(self,env,n):

@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed statement-operand checkpoint
+
+- Added named mutability and capability-region accessors.
+- Migrated remaining `try`, match, branch, loop, and capability statement operands.
+- Removed positional statement operand reads from checker, ownership, MIR, interpreter, and C lowering.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Typed helper-dispatch checkpoint
 
 - Migrated type and layout discovery to typed node accessors.
