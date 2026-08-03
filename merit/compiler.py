@@ -348,7 +348,6 @@ def expand_generics(source: str) -> str:
 def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
-OWNED_BUILTINS={'Buffer','I64Vec'}
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
@@ -359,10 +358,19 @@ class TypedValue: type_name:str; value:Any
 class VarState: type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"
 @dataclasses.dataclass(frozen=True)
 class TypeSemantics:
-    owned:bool; needs_drop:bool; copyable:bool; reason:str
+    owned:bool; needs_drop:bool; copyable:bool; reason:str; kind:str='scalar'; drop_strategy:str='none'
+@dataclasses.dataclass(frozen=True)
+class FunctionOwnership:
+    owned_locals:tuple[tuple[str,str],...]; explicit_drops:frozenset[str]; consumed_roots:frozenset[str]
 @dataclasses.dataclass(frozen=True)
 class VecIntrinsic:
-    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False; requires_owned_element:bool=False; capability:str|None=None; hazard:str|None=None
+    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; element_policy:str='any'; capability:str|None=None; hazard:str|None=None
+    @property
+    def rejects_owned_result_copy(self): return self.element_policy=='copy_result'
+    @property
+    def rejects_owned_replace(self): return self.element_policy=='copy_replace'
+    @property
+    def requires_owned_element(self): return self.element_policy=='owned_replace'
 
 @dataclasses.dataclass(frozen=True)
 class BuiltinSig:
@@ -391,27 +399,55 @@ def vec_elem_needs_drop(t: str, p) -> bool:
     return type_needs_drop(t,p)
 
 def type_semantics(t: str, p=None, seen=None) -> TypeSemantics:
-    if seen is None: seen=set()
-    if t in seen: return TypeSemantics(True,True,False,'recursive aggregate')
-    if t in OWNED_BUILTINS: return TypeSemantics(True,True,False,'owned builtin')
-    if is_vec_type(t): return TypeSemantics(True,True,False,'vector')
-    if p is not None and t in p.structs:
-        child=[type_semantics(field.type_name,p,seen|{t}) for field in p.structs[t].fields]
-        needs=any(x.needs_drop for x in child)
-        return TypeSemantics(True,needs,False,'struct with owned fields' if needs else 'struct')
-    if p is not None and t in p.enums:
-        child=[type_semantics(v.payload_type,p,seen|{t}) for v in p.enums[t].variants if v.payload_type is not None]
-        needs=any(x.needs_drop for x in child)
-        return TypeSemantics(needs,needs,not needs,'enum with owned payload' if needs else 'copy enum')
-    return TypeSemantics(False,False,True,'copy scalar')
+    return TypeTable(p).get(t,seen)
+
+class TypeTable:
+    def __init__(self,p=None): self.p=p;self.cache={}
+    def get(self,t,seen=None):
+        if seen is None and t in self.cache:return self.cache[t]
+        active=set() if seen is None else seen
+        if t in active:return TypeSemantics(True,True,False,'recursive aggregate','recursive','aggregate')
+        if t=='Buffer': result=TypeSemantics(True,True,False,'owned builtin','builtin','buffer')
+        elif t=='I64Vec': result=TypeSemantics(True,True,False,'owned builtin','builtin','i64vec')
+        elif is_vec_type(t): result=TypeSemantics(True,True,False,'vector','vector','vector')
+        elif self.p is not None and t in self.p.structs:
+            child=[self.get(field.type_name,active|{t}) for field in self.p.structs[t].fields]
+            needs=any(x.needs_drop for x in child)
+            result=TypeSemantics(True,needs,False,'struct with owned fields' if needs else 'struct','struct','aggregate' if needs else 'none')
+        elif self.p is not None and t in self.p.enums:
+            child=[self.get(v.payload_type,active|{t}) for v in self.p.enums[t].variants if v.payload_type is not None]
+            needs=any(x.needs_drop for x in child)
+            result=TypeSemantics(needs,needs,not needs,'enum with owned payload' if needs else 'copy enum','enum','aggregate' if needs else 'none')
+        else: result=TypeSemantics(False,False,True,'copy scalar')
+        if seen is None:self.cache[t]=result
+        return result
+    def known_types(self):
+        names=set(INT_RANGES)|set(BUILTIN_TYPES)
+        if self.p is None:return sorted(names)
+        names |= set(self.p.decimals)|set(self.p.bounded)|set(self.p.structs)|set(self.p.enums)
+        for struct in self.p.structs.values():names.update(field.type_name for field in struct.fields)
+        for enum in self.p.enums.values():names.update(variant.payload_type for variant in enum.variants if variant.payload_type)
+        def statements(body):
+            for statement in body:
+                yield statement
+                if statement[0] in ('with_cap','while'):yield from statements(statement[-1])
+                elif statement[0]=='if':yield from statements(statement[2]);yield from statements(statement[3])
+                elif statement[0]=='match':
+                    for arm in statement[2]:yield from statements(arm[2])
+        for function in self.p.functions:
+            names.add(function['return']);names.update(type_name for _,type_name,_ in function['params'])
+            names.update(statement[2] for statement in statements(function['body']) if statement[0] in ('let','try_let'))
+        names.discard('void')
+        return sorted(names)
+    def all(self):return {name:dataclasses.asdict(self.get(name)) for name in self.known_types()}
 
 VEC_INTRINSICS={
     'new':VecIntrinsic(2,'vec',requires_allocate=True,capability='allocate',hazard='allocation'),
     'push':VecIntrinsic(2,'void',receiver_mode='borrow_mut',value_index=1),
     'len':VecIntrinsic(1,'i64',receiver_mode='borrow'),
-    'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,rejects_owned_result_copy=True),
-    'set':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,rejects_owned_replace=True),
-    'replace':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,requires_owned_element=True),
+    'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,element_policy='copy_result'),
+    'set':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,element_policy='copy_replace'),
+    'replace':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,element_policy='owned_replace'),
     'pop':VecIntrinsic(1,'elem',receiver_mode='borrow_mut'),
     'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
 }
@@ -507,8 +543,91 @@ def resolved_call(e) -> tuple[str,list]:
         raise CompileError(f'M3010: unsupported generic call {e[1]}<{e[2]}>')
     raise CompileError(f'M3011: expected call expression, got {e[0]}')
 
+class OwnershipEffects:
+    def __init__(self,p,types=None): self.p=p;self.types=types or TypeTable(p);self.fn={f['name']:f for f in p.functions}
+    def root(self,e):
+        while isinstance(e,tuple) and e and e[0]=='field':e=e[1]
+        return e[1] if isinstance(e,tuple) and e and e[0]=='var' else None
+    def consume(self,e,type_name):
+        roots=self.effects(e);root=self.root(e)
+        if root and self.types.get(type_name).owned:roots.add(root)
+        return roots
+    def effects(self,e):
+        if not isinstance(e,tuple):return set()
+        roots=set()
+        if e[0]=='struct_init':
+            struct=self.p.structs[e[1]]
+            for field in struct.fields:roots |= self.consume(e[2][field.name],field.type_name)
+            return roots
+        if e[0] in ('call','generic_call'):
+            name,args=resolved_call(e)
+            for arg in args:roots |= self.effects(arg)
+            variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
+            if variants and variants[0].payload_type is not None and args:
+                roots |= self.consume(args[0],variants[0].payload_type)
+                return roots
+            vec=vec_builtin(name)
+            if vec:
+                op,elem=vec;index=VEC_INTRINSICS[op].value_index
+                if index is not None:roots |= self.consume(args[index],elem)
+                return roots
+            if name in BUILTIN_SIGS:
+                for arg,(mode,type_name) in zip(args,BUILTIN_SIGS[name].params):
+                    if mode=='value':roots |= self.consume(arg,type_name)
+                return roots
+            if name in self.fn:
+                for arg,(_,type_name,mode) in zip(args,self.fn[name]['params']):
+                    if mode=='value':roots |= self.consume(arg,type_name)
+            return roots
+        if e[0]=='binop':return self.effects(e[2])|self.effects(e[3])
+        return roots
+    def statements(self,body):
+        for statement in body:
+            yield statement
+            if statement[0] in ('with_cap','while'):yield from self.statements(statement[-1])
+            elif statement[0]=='if':
+                yield from self.statements(statement[2]);yield from self.statements(statement[3])
+            elif statement[0]=='match':
+                for arm in statement[2]:yield from self.statements(arm[2])
+    def expression_type(self,e,env):
+        if e[0]=='var':return env.get(e[1])
+        if e[0]=='field':
+            base=self.expression_type(e[1],env);struct=self.p.structs.get(base)
+            return next((field.type_name for field in struct.fields if field.name==e[2]),None) if struct else None
+        if e[0]=='struct_init':return e[1]
+        if e[0] in ('call','generic_call'):
+            name,args=resolved_call(e)
+            variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
+            if variants:return variants[0]
+            if name in BUILTIN_SIGS:return BUILTIN_SIGS[name].return_type
+            vec=vec_builtin(name)
+            if vec:return vec_return_type(*vec)
+            if name in self.fn:return self.fn[name]['return']
+        return None
+    def function(self,f):
+        env={name:type_name for name,type_name,_ in f['params']};owned=[];explicit=set();consumed=set()
+        for statement in self.statements(f['body']):
+            tag=statement[0]
+            if tag=='let':
+                consumed |= self.consume(statement[3],statement[2]);env[statement[1]]=statement[2]
+                if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
+            elif tag=='try_let':
+                consumed |= self.effects(statement[3]);env[statement[1]]=statement[2]
+                if self.types.get(statement[2]).owned:owned.append((statement[1],statement[2]))
+            elif tag=='assign':consumed |= self.effects(statement[2])
+            elif tag=='replace':
+                target_type=self.expression_type(statement[1],env)
+                if target_type:consumed |= self.consume(statement[2],target_type)
+            elif tag=='return':consumed |= self.consume(statement[1],f['return'])
+            elif tag=='match':
+                subject_type=self.expression_type(statement[1],env)
+                if subject_type:consumed |= self.consume(statement[1],subject_type)
+            elif tag in ('expr','print'):consumed |= self.effects(statement[1])
+            elif tag=='drop':explicit.add(statement[1])
+        return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed))
+
 class Checker:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
@@ -615,12 +734,12 @@ class Checker:
             elif tag=='assign':
                 lt=self.lvalue_type(st[1],env,True);rt=self.expr_type(st[2],env,caps,fn)
                 if rt not in (lt,'number'):raise CompileError(f'M3006: cannot assign {rt} to {lt}')
-                if type_needs_drop(lt,self.p): raise CompileError(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner')
+                if self.types.get(lt).needs_drop: raise CompileError(f'M5201: cannot assign into owned storage {self.expr_path(st[1])}; drop and create a new owner')
                 self.consume_owned_source(st[2],rt,env,f'assigning {self.expr_path(st[1])}')
             elif tag=='replace':
                 target,value=st[1],st[2]
                 lt=self.lvalue_type(target,env,True)
-                if not type_needs_drop(lt,self.p): raise CompileError(f'M5203: replace requires owned storage, got {lt}')
+                if not self.types.get(lt).needs_drop: raise CompileError(f'M5203: replace requires owned storage, got {lt}')
                 target_root=self.root_var(target)
                 rt=self.expr_type(value,env,caps,fn)
                 if rt not in (lt,'number'): raise CompileError(f'M5204: replacement type {rt} does not match {lt}')
@@ -658,7 +777,7 @@ class Checker:
                     env[k].moved=any(state[k].moved for state in states)
                     env[k].dropped=any(state[k].dropped for state in states)
                 root=self.root_var(st[1])
-                if root and type_needs_drop(subject_t,self.p): env[root].moved=True
+                if root and self.types.get(subject_t).needs_drop: env[root].moved=True
             elif tag=='with_cap':
                 cap=st[1]
                 if cap not in self.p.capabilities:raise CompileError(f'M2002: undeclared capability {cap}')
@@ -752,11 +871,12 @@ class Checker:
                     return vec_return_type(op,elem)
                 if spec.receiver_mode:
                     self.check_vec_receiver(args[0],env,caps,fn,vec_t,spec.receiver_mode)
-                if spec.rejects_owned_result_copy:
-                    if type_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
-                if spec.rejects_owned_replace:
-                    if type_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
-                if spec.requires_owned_element and not type_needs_drop(elem,self.p):
+                element=self.types.get(elem)
+                if spec.element_policy=='copy_result' and element.needs_drop:
+                    raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
+                if spec.element_policy=='copy_replace' and element.needs_drop:
+                    raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
+                if spec.element_policy=='owned_replace' and not element.needs_drop:
                     raise CompileError(f'M7304: {name} requires an owned element type, got {elem}')
                 if spec.index_index is not None:
                     it=self.expr_type(args[spec.index_index],env,caps,fn)
@@ -827,7 +947,7 @@ class Checker:
         if mode=='borrow_mut' and not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
     def consume_owned_source(self,e,t,env,context):
         root=self.root_var(e)
-        if not root or not is_owned_type(t,self.p): return
+        if not root or not self.types.get(t).owned: return
         if e[0]=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
         if env[root].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot move borrowed parameter {root}')
         env[root].moved=True
@@ -942,7 +1062,7 @@ class TrySignal:
     value:TypedValue
 
 class Interpreter:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.call_modes=[]
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f['name']:f for f in p.functions};self.call_modes=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
         f=self.fn[n];env={pn:v for (pn,_,_),v in zip(f['params'],args)}
@@ -966,11 +1086,12 @@ class Interpreter:
                 if value.value['variant']=='Err': return TrySignal(value)
                 env[st[1]]=value.value['payload']
             elif st[0]=='assign':self.assign(st[1],self.eval(st[2],env),env)
-            elif st[0]=='replace':self.assign(st[1],self.eval(st[2],env),env)
+            elif st[0]=='replace':
+                replacement=self.eval(st[2],env);self.drop_value(self.eval(st[1],env));self.assign(st[1],replacement,env)
             elif st[0]=='print':print(self.format(self.eval(st[1],env)))
             elif st[0]=='return':return ReturnSignal(self.eval(st[1],env))
             elif st[0]=='expr':self.eval(st[1],env)
-            elif st[0]=='drop': env.pop(st[1],None)
+            elif st[0]=='drop': self.drop_value(env.pop(st[1],None))
             elif st[0]=='match':
                 value=self.eval(st[1],env); variant=value.value['variant']
                 arm=next(a for a in st[2] if a[0]==variant)
@@ -1004,6 +1125,21 @@ class Interpreter:
             if isinstance(v.value,dict): return TypedValue(v.type_name,{k:self.clone(x) for k,x in v.value.items()})
             return TypedValue(v.type_name,v.value)
         return v
+    def drop_value(self,v):
+        if not isinstance(v,TypedValue):return
+        semantics=self.types.get(v.type_name)
+        if not semantics.needs_drop:return
+        if semantics.drop_strategy=='buffer':v.value=bytearray();return
+        if semantics.drop_strategy=='i64vec':v.value=[];return
+        if semantics.drop_strategy=='vector':
+            for element in v.value:self.drop_value(element)
+            v.value=[];return
+        if semantics.kind=='struct':
+            for field in self.p.structs[v.type_name].fields:self.drop_value(v.value[field.name])
+            return
+        if semantics.kind=='enum':
+            payload=v.value.get('payload')
+            if payload is not None:self.drop_value(payload)
     def eval(self,e,env,expected=None):
         if e[0]=='string':return TypedValue('String',e[1])
         if e[0]=='number':return self.literal(expected or 'i64',e[1])
@@ -1073,13 +1209,13 @@ class Interpreter:
                     data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                     replacement=self.clone(self.eval(args[2],env,elem))
                     if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
-                    data[idx]=replacement; return TypedValue('void',None)
+                    self.drop_value(data[idx]);data[idx]=replacement; return TypedValue('void',None)
                 if op=='pop':
                     data=self.eval(args[0],env).value
                     if not data: raise RuntimeError('vector pop from empty')
                     return self.clone(data.pop())
                 if op=='drop':
-                    self.eval(args[0],env).value.clear(); return TypedValue('void',None)
+                    self.drop_value(self.eval(args[0],env)); return TypedValue('void',None)
             if n=='file_read':
                 path=self.eval(e[2][1],env).value
                 return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
@@ -1128,7 +1264,7 @@ class Interpreter:
         return str(v.value)
 
 class CGenerator:
-    def __init__(self,p):self.p=p;self.fn={f['name']:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f['name']:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
     def vec_types(self):
         found=set()
         def add(t):
@@ -1250,19 +1386,19 @@ class CGenerator:
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_round_div(__int128 n,__int128 d,int mode){if(d==0)merit_fail("Merit division by zero",72);int neg=(n<0)^(d<0);if(n<0)n=-n;if(d<0)d=-d;__int128 q=n/d,r=n%d;int up=0;if(mode==0){__int128 twice=r*2;up=twice>d || (twice==d && (q&1));}else if(mode==1)up=r*2>=d;else if(mode==3)up=!neg&&r;else if(mode==4)up=neg&&r;q+=up;__int128 z=neg?-q:q;if(z>INT64_MAX||z<INT64_MIN)merit_fail("Merit decimal overflow",70);return (int64_t)z;}''','']
         for e in self.p.enums.values():
-            if type_needs_drop(e.name,self.p):
+            if self.types.get(e.name).needs_drop:
                 o.append(f'static void merit_drop_{e.name}({self.ctype(e.name)} *v);')
         for s in self.p.structs.values():
-            if type_needs_drop(s.name,self.p):
+            if self.types.get(s.name).needs_drop:
                 o.append(f'static void merit_drop_{s.name}({self.ctype(s.name)} *v);')
-        if any(type_needs_drop(e.name,self.p) for e in self.p.enums.values()) or any(type_needs_drop(s.name,self.p) for s in self.p.structs.values()):
+        if any(self.types.get(e.name).needs_drop for e in self.p.enums.values()) or any(self.types.get(s.name).needs_drop for s in self.p.structs.values()):
             o.append('')
         for vt in self.vec_types(): o.extend(self.vec_runtime(vt))
         for e in self.p.enums.values():
-            if type_needs_drop(e.name,self.p):
+            if self.types.get(e.name).needs_drop:
                 o.extend(self.enum_drop_runtime(e))
         for s in self.p.structs.values():
-            if type_needs_drop(s.name,self.p):
+            if self.types.get(s.name).needs_drop:
                 o.extend(self.struct_drop_runtime(s))
         for t,b in self.p.bounded.items():
             o.append(f'static {self.ctype(t)} merit_check_{t}({self.ctype(t)} x){{if(x < {b.minimum} || x > {b.maximum}) merit_fail("bounded range violation: {t}",70);return x;}}')
@@ -1287,21 +1423,19 @@ class CGenerator:
             ''
         ]
     def drop_field_stmt(self,base,t):
-        if not type_needs_drop(t,self.p): return ''
-        if t=='Buffer': return f'merit_buffer_drop(&{base});'
-        if t=='I64Vec': return f'merit_i64vec_drop(&{base});'
-        if is_vec_type(t): return f'merit_vec_drop__{vec_elem_type(t)}(&{base});'
-        if t in self.p.enums or t in self.p.structs: return f'merit_drop_{t}(&{base});'
+        return self.drop_address_stmt(f'&{base}',t)
+    def drop_address_stmt(self,address,t):
+        strategy=self.types.get(t).drop_strategy
+        if strategy=='buffer': return f'merit_buffer_drop({address});'
+        if strategy=='i64vec': return f'merit_i64vec_drop({address});'
+        if strategy=='vector': return f'merit_vec_drop__{vec_elem_type(t)}({address});'
+        if strategy=='aggregate': return f'merit_drop_{t}({address});'
         return ''
     def drop_binding_line(self,prefix,name,t):
         stmt=self.drop_field_stmt(name,t)
         return f'{prefix}{stmt}' if stmt else f'{prefix}/* deterministic drop {name} */'
     def drop_address_line(self,prefix,address,t):
-        if t=='Buffer': stmt=f'merit_buffer_drop({address});'
-        elif t=='I64Vec': stmt=f'merit_i64vec_drop({address});'
-        elif is_vec_type(t): stmt=f'merit_vec_drop__{vec_elem_type(t)}({address});'
-        elif t in self.p.enums or t in self.p.structs: stmt=f'merit_drop_{t}({address});'
-        else: stmt=''
+        stmt=self.drop_address_stmt(address,t)
         return f'{prefix}{stmt}' if stmt else f'{prefix}/* deterministic replacement drop */'
     def enum_drop_runtime(self,e):
         lines=[f'static void merit_drop_{e.name}({self.ctype(e.name)} *v){{','    switch (v->tag) {']
@@ -1338,57 +1472,15 @@ class CGenerator:
                 yield from self.walk_statements(st[2]); yield from self.walk_statements(st[3])
             elif st[0]=='match':
                 for arm in st[2]: yield from self.walk_statements(arm[2])
-    def expr_root(self,e):
-        return e[1] if isinstance(e,tuple) and e[0]=='var' else None
-    def moved_roots(self,e):
-        moved=set()
-        if not isinstance(e,tuple): return moved
-        if e[0]=='struct_init':
-            s=self.p.structs[e[1]]
-            for field in s.fields:
-                value=e[2][field.name]
-                root=self.expr_root(value)
-                if root and is_owned_type(field.type_name,self.p): moved.add(root)
-                moved |= self.moved_roots(value)
-        elif e[0] in ('call','generic_call'):
-            name,args=resolved_call(e)
-            vec=vec_builtin(name)
-            if vec:
-                op,elem=vec;spec=VEC_INTRINSICS[op]
-                if spec.value_index is not None and type_needs_drop(elem,self.p):
-                    root=self.expr_root(args[spec.value_index])
-                    if root: moved.add(root)
-            else:
-                variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
-                if variants and variants[0].payload_type is not None and args:
-                    root=self.expr_root(args[0])
-                    if root and is_owned_type(variants[0].payload_type,self.p): moved.add(root)
-            if name in self.fn:
-                callee=self.fn[name]
-                for arg,(_,t,mode) in zip(args,callee['params']):
-                    if mode=='value' and is_owned_type(t,self.p):
-                        root=self.expr_root(arg)
-                        if root: moved.add(root)
-        return moved
     def owned_buffer_cleanup(self, f):
-        locals_order=[]; explicit=set(); returned=set(); moved=set(); local_types={}
-        for st in self.walk_statements(f['body']):
-            if st[0]=='let':
-                local_types[st[1]]=st[2]
-                if type_needs_drop(st[2],self.p):
-                    locals_order.append((st[1],st[2]))
-            elif st[0]=='drop': explicit.add(st[1])
-            elif st[0]=='replace':
-                root=self.expr_root(st[2])
-                if root: moved.add(root)
-            elif st[0]=='return' and st[1][0]=='var': returned.add(st[1][1])
-            elif st[0]=='match':
-                root=self.expr_root(st[1])
-                if root and root in local_types and local_types[root] in self.p.enums and type_needs_drop(local_types[root],self.p):
-                    moved.add(root)
-            for part in st[1:]:
-                if isinstance(part,tuple): moved |= self.moved_roots(part)
-        return [(n,t) for n,t in reversed(locals_order) if n not in explicit and n not in returned and n not in moved]
+        ownership=self.ownership.function(f)
+        return [
+            (name,type_name)
+            for name,type_name in reversed(ownership.owned_locals)
+            if self.types.get(type_name).needs_drop
+            and name not in ownership.explicit_drops
+            and name not in ownership.consumed_roots
+        ]
     def fn_c(self,f):
         name='main' if f['name']=='main' else 'merit_'+f['name'];params=', '.join(f'{self.ctype(t)}{" *" if m in ("borrow","borrow_mut") else " "}{n}' for n,t,m in f['params']) or 'void';env={n:(t,m) for n,t,m in f['params']};o=[f'{self.ctype(f["return"])} {name}({params}) {{']
         old={}
@@ -1582,8 +1674,9 @@ class CGenerator:
             return f'({self.expr(e[2],env,t)} {e[1]} {self.expr(e[3],env,t)})'
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'impls':[dataclasses.asdict(x) for x in p.impls],'functions':p.functions}
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':p.functions}
 def mir(p):
+    types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
     def lower_function(f):
         blocks=[]
         next_id=0
@@ -1623,19 +1716,14 @@ def mir(p):
             return current
         tail=lower_seq(f['body'],entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
-        locals_order=[st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='let' and is_owned_type(st[2],p)]
-        explicit={st[1] for st in CGenerator(p).walk_statements(f['body']) if st[0]=='drop'}
-        replacement_moved={
-            st[2][1]
-            for st in CGenerator(p).walk_statements(f['body'])
-            if st[0]=='replace' and st[2][0]=='var'
-        }
+        ownership=ownership_model.function(f)
+        locals_order=[name for name,_ in ownership.owned_locals]
         entry['statements'].extend(
             ('drop_implicit',name)
             for name in reversed(locals_order)
-            if name not in explicit and name not in replacement_moved
+            if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
-        return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'blocks':blocks}
+        return {'name':f['name'],'params':f['params'],'return':f['return'],'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'blocks':blocks}
     return {'module':p.module,'functions':[lower_function(f) for f in p.functions]}
 
 

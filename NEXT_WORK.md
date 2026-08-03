@@ -85,11 +85,20 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Explicit `replace(target, replacement)` supports mutable owned locals, owned fields, and mutable borrowed storage.
 - Explicit `vec_replace<T>` supports checked replacement of owned vector elements.
 
+## Typed semantic metadata checkpoint now available
+- A cached type table classifies ownership, copyability, drop requirements, semantic kinds, and backend-neutral drop strategies.
+- Vector get/set/replace restrictions use one declarative element policy plus concrete type metadata.
+- A shared ownership-effects model derives owned locals, consumed roots, and explicit drops per function.
+- MIR and native cleanup consume the same function ownership effects.
+- Direct owned local moves no longer leave a duplicate native epilogue drop.
+- HIR reports concrete type semantics; MIR reports consumed roots and explicit drops.
+- The interpreter recursively models destruction through the same lifecycle metadata.
+
 ## Recommended next epic
 Continue memory model polish:
 - Add focused resource-destruction instrumentation if user-defined destructors are introduced; current replacement drop order is asserted in generated C.
 - Add partial-move tracking only if the language commits to field-level ownership states.
-- Improve diagnostics with move-origin notes once the checker carries source spans.
+- Preserve source spans through ownership effects and emit move-origin notes.
 
 ## Deliberately deferred
 - specialization
@@ -101,9 +110,9 @@ Continue memory model polish:
 - concurrency
 
 ## Suggested implementation order
-1. Continue migrating checker/codegen decisions onto typed semantic metadata.
-2. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
-3. Improve move diagnostics once source spans survive through the relevant semantic nodes.
+1. Preserve source spans through semantic and ownership nodes.
+2. Add move-origin and previous-drop notes to ownership diagnostics.
+3. Continue removing compact tuple-AST special cases as typed nodes become available.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

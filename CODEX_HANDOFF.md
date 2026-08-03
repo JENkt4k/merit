@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III filesystem capability acceptance checkpoint** of Merit.
+This repository contains the verified **Epoch III typed semantic metadata checkpoint** of Merit.
 
 Current baseline:
-- 135 tests passing after editable installation
+- 141 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -35,6 +35,7 @@ python -m pytest -q
 - allocator-backed generic `Vec<T>` collections with owned-element drop glue
 - project-level filesystem read/write capability parity and audit coverage
 - explicit owned replacement for locals, fields, mutable borrows, and vector elements
+- shared typed lifecycle metadata and function ownership effects across checker, MIR, interpreter, and C cleanup
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
@@ -44,6 +45,7 @@ Current path:
 source/project
   -> parse
   -> generic discovery and monomorphization
+  -> concrete type table and ownership effects
   -> semantic/ownership/capability checking
   -> HIR/MIR inspection
   -> interpreter or C11 generation
@@ -64,7 +66,7 @@ This design is useful because all instantiated generic code reuses one semantic 
 - no LLVM backend, package registry, formatter, or LSP
 
 ## How to work safely
-Make small commits inside a large subsystem. Keep the full suite green. Add compile-fail tests as aggressively as success tests. For each new construct, verify both interpreter behavior and generated-native behavior. Inspect generated C when mutations, borrows, returns, match subjects, or cleanup are involved.
+Use cohesive epic commits with intermediate green test gates. Add compile-fail tests as aggressively as success tests. For each new construct, verify both interpreter behavior and generated-native behavior. Inspect generated C when mutations, borrows, returns, match subjects, or cleanup are involved.
 
 ## Files worth reading first
 - `merit/compiler.py`

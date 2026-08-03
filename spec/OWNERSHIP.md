@@ -17,6 +17,9 @@ Alpha.3 implements the first executable ownership subset.
 - Replacement accepts mutable locals, fields rooted in mutable aggregates, and mutable borrowed parameters.
 - `vec_replace<T>(vector, index, replacement)` performs the same operation for an owned vector element after checked indexing.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
+- Concrete types carry shared lifecycle metadata: ownership, copyability, drop requirement, semantic kind, and drop strategy.
+- Function ownership effects identify consumed roots and explicit drops once for MIR and native cleanup lowering.
+- Interpreter destruction recursively follows the same metadata for buffers, vectors, structs, and active enum payloads.
 
 ## Deliberate limits
 

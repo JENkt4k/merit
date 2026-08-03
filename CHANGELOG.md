@@ -1,5 +1,16 @@
 # Changelog
 
+## Epoch III — Typed semantic metadata checkpoint
+
+- Added a cached concrete type table for ownership, copyability, drop requirements, semantic kinds, and drop strategies.
+- Replaced vector ownership booleans with declarative element policies evaluated against type metadata.
+- Added a shared function ownership-effects model for owned locals, consumed roots, and explicit drops.
+- Migrated MIR and native epilogue cleanup to the shared ownership effects.
+- Fixed duplicate native cleanup after direct owned local moves.
+- Added metadata-driven recursive interpreter destruction for buffers, vectors, structs, and enums.
+- Exposed type semantics in HIR and ownership effects in MIR.
+- Added direct-move native parity, nested consuming-call, lifecycle metadata, and recursive destruction tests.
+
 ## Epoch III — Explicit owned replacement checkpoint
 
 - Added `replace(target, replacement)` for mutable owned locals, owned fields, and mutable borrowed parameters.
