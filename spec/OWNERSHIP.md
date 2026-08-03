@@ -11,7 +11,7 @@ fn view(borrow value: Value) -> borrow Value { return value; }
 fn edit(borrow_mut value: Value) -> borrow_mut Value { return value; }
 ```
 
-The current lifetime-analysis checkpoint validates that a borrowed result originates directly from a borrowed parameter and that a mutable result originates from a `borrow_mut` parameter. Otherwise-valid borrowed returns are rejected with `M5302` until caller lifetime tracking and matching pointer lowering are implemented; they are not silently lowered as owned values.
+Borrowed results must originate from one consistent borrowed parameter, and mutable results require a `borrow_mut` origin. Callers may use returned borrows ephemerally for field access or pass them onward to a compatible borrow parameter. The interpreter preserves object identity and native C lowers the result as a pointer. Returned borrows cannot be stored in owned bindings, passed by value, or escalated from shared to mutable access.
 
 ## User-defined destructors
 
@@ -49,4 +49,4 @@ destructor Marker { print(self.number); }
 
 ## Deliberate limits
 
-Loans are currently call-scoped. Stored borrows, returned borrows, subobject-disjointness, loops, branches, user destructors, and lifetime parameters are not implemented. These omissions are reported as alpha limits rather than modeled unsafely.
+Loans are call-scoped except for validated ephemeral returned-borrow propagation. Stored borrows, subobject-disjointness, lifetime parameters, and ownership-changing destructor bodies are not implemented. These omissions are reported as alpha limits rather than modeled unsafely.

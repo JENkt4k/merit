@@ -977,16 +977,34 @@ class Checker:
                 elif node.kind=='if':yield from returns(node.then_body);yield from returns(node.else_body)
                 elif node.kind=='match':
                     for arm in node.match_arms:yield from returns(arm.body)
-        found=False
+        found=False;origins=set()
         for statement,node in returns(f.body):
             found=True; expression=self.p.node(node.expression)
             if expression.kind!='var' or expression.atom_value not in params or params[expression.atom_value].mode not in ('borrow','borrow_mut'):
                 self.fail('M5300: borrowed return must originate from a borrowed parameter',statement)
             param=params[expression.atom_value]
+            origins.add(param.name)
             if f.return_mode=='borrow_mut' and param.mode!='borrow_mut':
                 self.fail(f'M5301: borrow_mut return requires borrow_mut parameter {param.name}',statement)
         if not found:self.fail('M5303: borrowed-return function must return a borrowed parameter',f)
-        self.fail('M5302: borrowed return lowering requires caller lifetime tracking and is not yet enabled',f)
+        if len(origins)!=1:self.fail('M5305: borrowed return must have one consistent parameter origin',f)
+    def borrowed_return_origin(self,f):
+        def expressions(body):
+            for statement in body:
+                node=self.p.node(statement)
+                if node.kind=='return':yield node.expression
+                elif node.kind in ('with_cap','while'):yield from expressions(node.nested_body)
+                elif node.kind=='if':yield from expressions(node.then_body);yield from expressions(node.else_body)
+                elif node.kind=='match':
+                    for arm in node.match_arms:yield from expressions(arm.body)
+        expression=next(expressions(f.body),None)
+        node=self.p.node(expression) if expression is not None else None
+        return node.atom_value if node and node.kind=='var' else None
+    def borrowed_call_mode(self,e):
+        node=e if isinstance(e,SemanticNodeView) else self.p.node(e)
+        if node.kind not in ('call','generic_call'):return None
+        name,_=resolved_call(node);callee=self.fn.get(name)
+        return callee.return_mode if callee and callee.return_mode!='value' else None
     def check_contract_expr(self,e,env,caps,fn,phase):
         previous=self.contract_phase
         self.contract_phase=phase
@@ -1015,6 +1033,7 @@ class Checker:
             node=self.p.node(st);tag=node.kind
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
+                if self.borrowed_call_mode(e):self.fail('M5304: borrowed return cannot be stored in an owned binding',e)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if self.p.node(e).kind=='number':self.validate_literal(t,self.p.node(e).atom_value)
                 self.consume_owned_source(e,et,env,f'initializing {n}')
@@ -1034,6 +1053,7 @@ class Checker:
                 env[n]=VarState(t,False)
             elif tag=='assign':
                 target=node.assignment_target;value=node.assigned_value
+                if self.borrowed_call_mode(value):self.fail('M5304: borrowed return cannot be stored in owned storage',value)
                 lt=self.lvalue_type(target,env,True);rt=self.expr_type(value,env,caps,fn)
                 if rt not in (lt,'number'):self.fail(f'M3006: cannot assign {rt} to {lt}',st)
                 if self.types.get(lt).needs_drop: self.fail(f'M5201: cannot assign into owned storage {self.expr_path(target)}; drop and create a new owner',st)
@@ -1052,7 +1072,8 @@ class Checker:
             elif tag=='return':
                 et=self.expr_type(node.expression,env,caps,fn)
                 if et not in (fn.return_type,'number'):self.fail(f"M3002: return type {et} does not match {fn.return_type}",st)
-                self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
+                if fn.return_mode=='value' and self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot escape through an owned return',node.expression)
+                if fn.return_mode=='value':self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
             elif tag in ('print','expr'):self.expr_type(node.expression,env,caps,fn)
             elif tag=='drop':
                 n=node.binding_name
@@ -1133,7 +1154,15 @@ class Checker:
         if tag=='string':return 'String'
         if tag=='number':return 'number'
         if tag=='var':return self.lvalue_type(e,env)
-        if tag=='field':return self.lvalue_type(e,env)
+        if tag=='field':
+            base=self.p.node(node.field_base)
+            if base.kind in ('call','generic_call') and self.borrowed_call_mode(base):
+                bt=self.expr_type(node.field_base,env,caps,fn);struct=self.p.structs.get(bt)
+                if not struct:self.fail(f'M4002: {bt} has no fields',e)
+                field=next((field for field in struct.fields if field.name==node.field_name),None)
+                if field:return field.type_name
+                self.fail(f'M4003: unknown field {node.field_name} on {bt}',e)
+            return self.lvalue_type(e,env)
         if tag=='struct_init':
             name,vals=node.constructed_type,node.field_values;s=self.p.structs.get(name)
             if not s:self.fail(f'M4004: unknown struct {name}',e)
@@ -1200,6 +1229,7 @@ class Checker:
                     if it not in ('i64','number'): raise CompileError(f'M3008: argument {spec.index_index} expects i64, got {it}')
                 if spec.value_index is not None:
                     value_arg=args[spec.value_index]
+                    if self.borrowed_call_mode(value_arg):self.fail('M5304: borrowed return cannot be moved into a vector',value_arg)
                     receiver_root=self.root_var(args[0])
                     if op=='replace' and receiver_root in self.referenced_roots(value_arg):
                         raise CompileError(f'M7303: replacement source aliases vector {receiver_root}')
@@ -1218,6 +1248,8 @@ class Checker:
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
                     at=self.expr_type(arg,env,caps,fn)
+                    if mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
+                    if mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
                     if not self.argument_matches(at,pt): self.fail(f'M3008: argument {idx} expects {pt}, got {at}',arg)
                     root=self.root_var(arg)
                     if mode in ('borrow','borrow_mut'):
@@ -1236,6 +1268,8 @@ class Checker:
             loans=[]
             for arg,param in zip(args,callee.params):
                 at=self.expr_type(arg,env,caps,fn)
+                if param.mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
+                if param.mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
                 if not self.argument_matches(at,param.type_name):self.fail(f'M3008: argument {param.name} expects {param.type_name}, got {at}',arg)
                 root=self.root_var(arg)
                 if root and param.mode in ('borrow','borrow_mut'):
@@ -1259,6 +1293,7 @@ class Checker:
     def check_vec_receiver(self,arg,env,caps,fn,vec_t,mode):
         at=self.expr_type(arg,env,caps,fn)
         if at!=vec_t: raise CompileError(f'M3008: vector argument expects {vec_t}, got {at}')
+        if mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
         root=self.root_var(arg)
         if not root: raise CompileError(f'M5004: {mode} argument must be addressable')
         if mode=='borrow_mut' and not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
@@ -1276,6 +1311,12 @@ class Checker:
     def root_var(self,e):
         node=self.p.node(e)
         while node and node.kind=='field':e=node.field_base;node=self.p.node(e)
+        if node and node.kind in ('call','generic_call'):
+            name,args=resolved_call(node);callee=self.fn.get(name)
+            if callee and callee.return_mode!='value':
+                origin=self.borrowed_return_origin(callee)
+                index=next((index for index,param in enumerate(callee.params) if param.name==origin),None)
+                if index is not None:return self.root_var(args[index])
         return node.operand(0) if node and node.kind=='var' else None
     def referenced_roots(self,e):
         if not isinstance(e,SemanticNode): return set()
@@ -1704,7 +1745,8 @@ class CGenerator:
             if f.name=='main':continue
             if self.p.exports and not include_private and f.name not in self.p.exports:continue
             params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void'
-            o.append(f'{self.ctype(f.return_type)} merit_{f.name}({params});')
+            return_type=self.ctype(f.return_type)+(' *' if f.return_mode!='value' else '')
+            o.append(f'{return_type} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
         o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
@@ -1840,7 +1882,7 @@ class CGenerator:
             and name not in ownership.consumed_roots
         ]
     def fn_c(self,f):
-        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};o=[f'{self.ctype(f.return_type)} {name}({params}) {{']
+        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(f'{self.ctype(param.type_name)}{" *" if param.mode in ("borrow","borrow_mut") else " "}{param.name}' for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};return_type=self.ctype(f.return_type)+(' *' if f.return_mode!='value' else '');o=[f'{return_type} {name}({params}) {{']
         old={}
         for c in f.post:self.walk_old(c,old)
         self.old_map={}
@@ -1848,7 +1890,9 @@ class CGenerator:
             t=self.etype(e,env);v=f'_merit_old_{idx}';self.old_map[key]=v;o.append(f'    {self.ctype(t)} {v} = {self.expr(e,env)};')
         for c in f.pre:o.append(f'    if(!({self.expr(c,env)})) merit_fail("precondition failed in {f.name}",71);')
         self.current_return=f.return_type
-        if f.return_type!='void':o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
+        if f.return_type!='void':
+            if f.return_mode!='value':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
+            else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
         postenv=dict(env);postenv['result']=(f.return_type,'__result__')
@@ -1970,6 +2014,9 @@ class CGenerator:
         node=self.p.node(e)
         if node.kind=='var' and self.env_mode(env,node.operand(0)) in ('borrow','borrow_mut'):
             return rendered
+        if node.kind in ('call','generic_call'):
+            called,_=resolved_call(node);callee=self.fn.get(called)
+            if callee and callee.return_mode!='value':return rendered
         return '&'+rendered
     def expr(self,e,env,expected=None):
         node=self.p.node(e);kind=node.kind
@@ -1981,6 +2028,9 @@ class CGenerator:
             base=node.field_base; op='.'
             base_node=self.p.node(base)
             if base_node.kind=='var' and self.env_mode(env,base_node.atom_value) in ('borrow','borrow_mut'): op='->'
+            elif base_node.kind in ('call','generic_call'):
+                called,_=resolved_call(base_node);callee=self.fn.get(called)
+                if callee and callee.return_mode!='value':op='->'
             return f'{self.expr(base,env)}{op}{node.field_name}'
         if kind=='struct_init':
             s=self.p.structs[node.constructed_type];return f'({self.ctype(node.constructed_type)}){{'+', '.join(f'.{f.name}={self.expr(node.field_values[f.name],env,f.type_name)}' for f in s.fields)+'}'
@@ -2032,7 +2082,7 @@ class CGenerator:
                 return f'({left} * {right})' if n=='checked_mul' else f'({left} / {right})'
             callee=self.fn[n];rendered=[]
             for x,param in zip(a,callee.params):
-                ex=self.expr(x,env,param.type_name);rendered.append(('&'+ex) if param.mode in ('borrow','borrow_mut') else ex)
+                ex=self.expr(x,env,param.type_name);rendered.append(self.address_expr(x,env) if param.mode in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
             t=expected or self.etype(node.left,env)

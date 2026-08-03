@@ -278,7 +278,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Continue alpha-readiness hardening:
-- Lower validated returned borrows with caller lifetime tracking without weakening call-scoped loan checks.
+- Define reference-typed local storage and explicit lifetime parameters before allowing borrowed results to escape expressions.
 
 ## Deliberately deferred
 - specialization
@@ -290,7 +290,7 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Add caller-side lifetime propagation and matching interpreter/native borrowed-return lowering.
+1. Design stored-reference syntax and lifetime relationships without weakening ephemeral borrow checks.
 
 ## Allocator compatibility checkpoint now available
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.
@@ -301,7 +301,9 @@ Continue alpha-readiness hardening:
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.
 - Borrowed results must originate directly from borrowed parameters.
 - Mutable borrowed results require mutable borrowed parameters.
-- Otherwise-valid signatures remain rejected until caller lifetime propagation and pointer lowering land together.
+- Validated results lower as aliases in the interpreter and pointers in native C.
+- Callers may use them ephemerally or pass them to compatible borrow parameters.
+- Owned storage/value transfer and shared-to-mutable escalation are rejected.
 
 ## MIR reachability checkpoint now available
 - CFG lowering computes block reachability from the entry block.
