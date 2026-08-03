@@ -1,5 +1,10 @@
 # Changelog
 
+## Epoch III — Typed parser declaration checkpoint
+
+- Replaced top-level parser declaration-tag tuples with immutable `DeclarationEntry` records.
+- Migrated impl-method extraction and program symbol assembly to named declaration fields.
+
 ## Epoch III — Typed parameter checkpoint
 
 - Added immutable `Parameter` records shared by functions and trait methods.

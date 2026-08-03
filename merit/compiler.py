@@ -110,6 +110,9 @@ class NodeProvenance:
 @dataclasses.dataclass(frozen=True)
 class MatchArm:
     variant:str; binding:str|None; body:list
+@dataclasses.dataclass(frozen=True)
+class DeclarationEntry:
+    kind:str; value:Any
 class SemanticNode:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
@@ -253,7 +256,7 @@ class ASTBuilder(Transformer):
     @v_args(meta=True)
     def enum_variant(self,meta,x): return self.mark(EnumVariant(str(x[0]), x[1] if len(x)>1 else None),meta)
     @v_args(meta=True)
-    def enum_decl(self,meta,x): return ('enum', self.mark(EnumType(str(x[0]), tuple(x[1:])),meta))
+    def enum_decl(self,meta,x): return DeclarationEntry('enum', self.mark(EnumType(str(x[0]), tuple(x[1:])),meta))
     @v_args(meta=True)
     def trait_method(self,meta,x):
         name=str(x[0]); i=1; params=[]
@@ -261,15 +264,15 @@ class ASTBuilder(Transformer):
         elif i<len(x) and isinstance(x[i],list):params=x[i];i+=1
         return self.mark(TraitMethod(name, tuple(params), x[i]),meta)
     @v_args(meta=True)
-    def trait_decl(self,meta,x): return ('trait', self.mark(TraitType(str(x[0]), tuple(x[1:])),meta))
-    def impl_method(self,x): return x[0][1]
+    def trait_decl(self,meta,x): return DeclarationEntry('trait', self.mark(TraitType(str(x[0]), tuple(x[1:])),meta))
+    def impl_method(self,x): return x[0].value
     @v_args(meta=True)
-    def impl_decl(self,meta,x): return ('impl', self.mark(TraitImpl(str(x[0]), x[1], tuple(x[2:])),meta))
+    def impl_decl(self,meta,x): return DeclarationEntry('impl', self.mark(TraitImpl(str(x[0]), x[1], tuple(x[2:])),meta))
     @v_args(meta=True)
-    def decimal_decl(self,meta,x): return ('decimal',self.mark(DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])),meta))
+    def decimal_decl(self,meta,x): return DeclarationEntry('decimal',self.mark(DecimalType(str(x[0]),int(x[1]),int(x[2]),str(x[3])),meta))
     @v_args(meta=True)
-    def bounded_decl(self,meta,x): return ('bounded',self.mark(BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))),meta))
-    def capability_decl(self,x): return ('capability',str(x[0]))
+    def bounded_decl(self,meta,x): return DeclarationEntry('bounded',self.mark(BoundedType(str(x[0]),str(x[1]),int(Decimal(str(x[2]))),int(Decimal(str(x[3])))),meta))
+    def capability_decl(self,x): return DeclarationEntry('capability',str(x[0]))
     def type_ref(self,x): return str(x[0]) if x else 'void'
     @v_args(meta=True)
     def field_decl(self,meta,x): return self.mark(Field(str(x[0]),x[1]),meta)
@@ -278,7 +281,7 @@ class ASTBuilder(Transformer):
         x=[v for v in x if v is not None]
         abi=None; i=0
         if x and str(x[0]).startswith('"'): abi=str(x[0])[1:-1]; i=1
-        name=str(x[i]); return ('struct',self.mark(StructType(name,tuple(x[i+1:]),abi),meta))
+        name=str(x[i]); return DeclarationEntry('struct',self.mark(StructType(name,tuple(x[i+1:]),abi),meta))
     def param_borrow_mut(self,x): return Parameter(str(x[0]),x[1],'borrow_mut')
     def param_borrow(self,x): return Parameter(str(x[0]),x[1],'borrow')
     def param_value(self,x): return Parameter(str(x[0]),x[1],'value')
@@ -364,13 +367,14 @@ class ASTBuilder(Transformer):
             elif tag=='pre':pre.append(val)
             elif tag=='post':post.append(val)
             i+=1
-        return ('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
+        return DeclarationEntry('function',self.mark(FunctionDecl(name,params,ret,effects,caps,pre,post,x[-1]),meta))
     def start(self,x):
         ds={};bs={};cs=set();ss={};es={};ts={};fs=[];ims=[];symbols={}
         def add_symbol(kind,name,node):
             if name in symbols: raise CompileError(f'M0002: duplicate top-level symbol {name}',getattr(node,'provenance',NodeProvenance()).primary)
             symbols[name]=kind
-        for k,v in x[1:]:
+        for declaration in x[1:]:
+            k=declaration.kind;v=declaration.value
             if k in ('decimal','bounded','struct','enum','trait'):
                 add_symbol(k,v.name,v)
             elif k=='function':

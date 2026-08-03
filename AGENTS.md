@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Replace **parser declaration-tag tuples with typed declaration records** as described in `NEXT_WORK.md`.
+Replace **field-initializer tuples with typed records** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.

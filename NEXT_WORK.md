@@ -262,10 +262,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Ownership, checking, interpretation, C lowering, MIR, and project visibility use named parameter fields.
 - HIR and MIR serialize parameters explicitly as JSON-safe records.
 
+## Typed parser declaration checkpoint now available
+- Top-level parser declarations use immutable `DeclarationEntry` records.
+- Impl-method extraction and program symbol assembly use named declaration fields.
+- Duplicate symbol diagnostics remain attached to typed declaration provenance.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace remaining parser declaration-tag tuples with typed declaration records.
 - Replace field-initializer tuples with typed records.
+- Replace compact function-clause tuples for effects, capabilities, and contracts.
 
 ## Deliberately deferred
 - specialization
@@ -277,8 +282,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace parser declaration-tag tuples with typed records.
-2. Replace field-initializer tuples with typed records.
+1. Replace field-initializer tuples with typed records.
+2. Replace compact function-clause tuples with typed records.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
