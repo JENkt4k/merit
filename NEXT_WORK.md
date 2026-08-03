@@ -168,10 +168,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Checker, ownership analysis, interpreter, MIR, and C lowering no longer read semantic statement operands positionally.
 - Replacement evaluation and drop ordering remain unchanged across interpreter/native paths.
 
+## Typed expression-operand checkpoint now available
+- Named accessors cover atom values, fields, constructors, calls, generic calls, and binary expressions.
+- Ownership analysis, checker, interpreter, and C lowering no longer read semantic expression operands positionally.
+- Recursive expression walkers traverse the typed operand collection.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Introduce typed expression variants behind `SemanticNodeView` now that statement access is stable.
-- Move span/provenance storage onto typed variants before removing tuple compatibility.
+- Introduce concrete typed node storage behind the now-complete semantic accessor surface.
+- Move span/provenance storage onto concrete nodes before removing tuple compatibility.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -184,8 +189,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Introduce typed expression variants.
-2. Move span/provenance storage onto variants before removing compatibility tuples.
+1. Introduce concrete typed node storage with compatibility serialization.
+2. Move span/provenance storage onto concrete nodes before removing tuple compatibility.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

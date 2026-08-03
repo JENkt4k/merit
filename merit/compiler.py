@@ -139,6 +139,8 @@ class SemanticNodeView:
     @property
     def field_values(self):self.require('struct_init');return self.operand(1)
     @property
+    def atom_value(self):self.require('string','number','var');return self.operand(0)
+    @property
     def operator(self):self.require('binop');return self.operand(0)
     @property
     def left(self):self.require('binop');return self.operand(1)
@@ -700,8 +702,8 @@ class OwnershipEffects:
         if not node:return {}
         sites={}
         if node.kind=='struct_init':
-            struct=self.p.structs[e[1]]
-            for field in struct.fields:sites.update(self.consume_sites(e[2][field.name],field.type_name))
+            struct=self.p.structs[node.constructed_type]
+            for field in struct.fields:sites.update(self.consume_sites(node.field_values[field.name],field.type_name))
             return sites
         if node.kind in ('call','generic_call'):
             name,args=resolved_call(e)
@@ -724,7 +726,7 @@ class OwnershipEffects:
                     if mode=='value':sites.update(self.consume_sites(arg,type_name))
             return sites
         if node.kind=='binop':
-            sites.update(self.effect_sites(e[2]));sites.update(self.effect_sites(e[3]));return sites
+            sites.update(self.effect_sites(node.left));sites.update(self.effect_sites(node.right));return sites
         return sites
     def statements(self,body):
         for statement in body:
@@ -736,12 +738,12 @@ class OwnershipEffects:
             elif kind=='match':
                 for arm in node.match_arms:yield from self.statements(arm[2])
     def expression_type(self,e,env):
-        kind=self.p.node(e).kind
-        if kind=='var':return env.get(e[1])
+        node=self.p.node(e);kind=node.kind
+        if kind=='var':return env.get(node.atom_value)
         if kind=='field':
-            base=self.expression_type(e[1],env);struct=self.p.structs.get(base)
-            return next((field.type_name for field in struct.fields if field.name==e[2]),None) if struct else None
-        if kind=='struct_init':return e[1]
+            base=self.expression_type(node.field_base,env);struct=self.p.structs.get(base)
+            return next((field.type_name for field in struct.fields if field.name==node.field_name),None) if struct else None
+        if kind=='struct_init':return node.constructed_type
         if kind in ('call','generic_call'):
             name,args=resolved_call(e)
             variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
@@ -866,7 +868,7 @@ class Checker:
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
-                if self.p.node(e).kind=='number':self.validate_literal(t,e[1])
+                if self.p.node(e).kind=='number':self.validate_literal(t,self.p.node(e).atom_value)
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
             elif tag=='try_let':
@@ -961,9 +963,9 @@ class Checker:
                     env[k].move_context=env[k].move_context or loop[k].move_context
                     env[k].drop_origin=env[k].drop_origin or loop[k].drop_origin
     def lvalue_type(self,e,env,write=False):
-        kind=self.p.node(e).kind
+        node=self.p.node(e);kind=node.kind
         if kind=='var':
-            n=e[1]
+            n=node.atom_value
             if n not in env:self.fail(f'M3003: unknown variable {n}',e)
             if env[n].moved:
                 context=f' ({env[n].move_context})' if env[n].move_context else ''
@@ -972,20 +974,20 @@ class Checker:
             if write and not env[n].mutable:self.fail(f'M5002: cannot assign to immutable binding {n}',e)
             return env[n].type_name
         if kind=='field':
-            base=e[1];bt=self.lvalue_type(base,env,write);s=self.p.structs.get(bt)
+            base=node.field_base;bt=self.lvalue_type(base,env,write);s=self.p.structs.get(bt)
             if not s:self.fail(f'M4002: {bt} has no fields',e)
             for fld in s.fields:
-                if fld.name==e[2]:return fld.type_name
-            self.fail(f'M4003: unknown field {e[2]} on {bt}',e)
+                if fld.name==node.field_name:return fld.type_name
+            self.fail(f'M4003: unknown field {node.field_name} on {bt}',e)
         self.fail('M3007: invalid assignment target',e)
     def expr_type(self,e,env,caps,fn):
-        tag=self.p.node(e).kind
+        node=self.p.node(e);tag=node.kind
         if tag=='string':return 'String'
         if tag=='number':return 'number'
         if tag=='var':return self.lvalue_type(e,env)
         if tag=='field':return self.lvalue_type(e,env)
         if tag=='struct_init':
-            name,vals=e[1],e[2];s=self.p.structs.get(name)
+            name,vals=node.constructed_type,node.field_values;s=self.p.structs.get(name)
             if not s:self.fail(f'M4004: unknown struct {name}',e)
             expected={f.name:f for f in s.fields}
             if set(vals)!=set(expected):self.fail(f'M4005: {name} fields must be {sorted(expected)}',e)
@@ -1097,8 +1099,8 @@ class Checker:
                 if mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {pn} to {name}')
             return callee['return']
         if tag=='binop':
-            a=self.expr_type(e[2],env,caps,fn);b=self.expr_type(e[3],env,caps,fn)
-            if e[1] in ('==','!=','>=','<=','>','<'):return 'i32'
+            a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
+            if node.operator in ('==','!=','>=','<=','>','<'):return 'i32'
             if a=='number':return b
             if b=='number':return a
             if a!=b:self.fail(f'M3102: arithmetic operands differ: {a} and {b}',e)
@@ -1130,7 +1132,7 @@ class Checker:
         root=self.root_var(e)
         if root: return {root}
         roots=set()
-        for part in e[1:]:
+        for part in self.p.node(e).operands:
             if isinstance(part,tuple): roots |= self.referenced_roots(part)
             elif isinstance(part,list):
                 for item in part: roots |= self.referenced_roots(item)
@@ -1285,9 +1287,9 @@ class Interpreter:
     def assign(self,e,v,env):
         node=self.p.node(e)
         if node.kind=='var':
-            if self.call_modes and self.call_modes[-1].get(e[1])=='borrow_mut':
-                env[e[1]].type_name=v.type_name;env[e[1]].value=v.value
-            else: env[e[1]]=v
+            if self.call_modes and self.call_modes[-1].get(node.atom_value)=='borrow_mut':
+                env[node.atom_value].type_name=v.type_name;env[node.atom_value].value=v.value
+            else: env[node.atom_value]=v
             return
         if node.kind=='field':self.eval(node.field_base,env).value[node.field_name]=v;return
     def clone(self,v):
@@ -1311,54 +1313,54 @@ class Interpreter:
             payload=v.value.get('payload')
             if payload is not None:self.drop_value(payload)
     def eval(self,e,env,expected=None):
-        kind=self.p.node(e).kind
-        if kind=='string':return TypedValue('String',e[1])
-        if kind=='number':return self.literal(expected or 'i64',e[1])
-        if kind=='var':return env[e[1]]
-        if kind=='field':return self.eval(e[1],env).value[e[2]]
+        node=self.p.node(e);kind=node.kind
+        if kind=='string':return TypedValue('String',node.atom_value)
+        if kind=='number':return self.literal(expected or 'i64',node.atom_value)
+        if kind=='var':return env[node.atom_value]
+        if kind=='field':return self.eval(node.field_base,env).value[node.field_name]
         if kind=='struct_init':
-            s=self.p.structs[e[1]];return TypedValue(e[1],{f.name:self.eval(e[2][f.name],env,f.type_name) for f in s.fields})
+            s=self.p.structs[node.constructed_type];return TypedValue(node.constructed_type,{f.name:self.eval(node.field_values[f.name],env,f.type_name) for f in s.fields})
         if kind in ('call','generic_call'):
             n,args=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
             if variants:
                 enum,variant=variants[0]
-                payload=self.eval(e[2][0],env,variant.payload_type) if variant.payload_type is not None else None
+                payload=self.eval(args[0],env,variant.payload_type) if variant.payload_type is not None else None
                 return TypedValue(enum.name,{'variant':variant.name,'payload':payload})
             if n=='old':
                 old_env=env.get('__old__')
                 if old_env is None: raise RuntimeError('old() is only valid in postconditions')
-                return self.eval(e[2][0],old_env)
+                return self.eval(args[0],old_env)
             if n=='system_allocator': return TypedValue('Allocator','system')
-            if n=='string_len': return TypedValue('i64',len(self.eval(e[2][0],env).value.encode('utf-8')))
+            if n=='string_len': return TypedValue('i64',len(self.eval(args[0],env).value.encode('utf-8')))
             if n=='string_byte':
-                text=self.eval(e[2][0],env).value.encode('utf-8'); idx=self.eval(e[2][1],env).value
+                text=self.eval(args[0],env).value.encode('utf-8'); idx=self.eval(args[1],env).value
                 if idx<0 or idx>=len(text): raise RuntimeError('string index out of bounds')
                 return TypedValue('u8',text[idx])
             if n=='buffer_new': return TypedValue('Buffer',bytearray())
-            if n=='buffer_from_string': return TypedValue('Buffer',bytearray(self.eval(e[2][1],env).value.encode('utf-8')))
+            if n=='buffer_from_string': return TypedValue('Buffer',bytearray(self.eval(args[1],env).value.encode('utf-8')))
             if n=='buffer_push':
-                buf=self.eval(e[2][0],env); buf.value.append(self.eval(e[2][1],env).value); return TypedValue('void',None)
-            if n=='buffer_len': return TypedValue('i64',len(self.eval(e[2][0],env).value))
+                buf=self.eval(args[0],env); buf.value.append(self.eval(args[1],env).value); return TypedValue('void',None)
+            if n=='buffer_len': return TypedValue('i64',len(self.eval(args[0],env).value))
             if n=='buffer_get':
-                buf=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                buf=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                 if idx<0 or idx>=len(buf): raise RuntimeError('buffer index out of bounds')
                 return TypedValue('i64',buf[idx])
             if n=='buffer_slice':
-                buf=self.eval(e[2][0],env).value; start=self.eval(e[2][1],env).value; length=self.eval(e[2][2],env).value
+                buf=self.eval(args[0],env).value; start=self.eval(args[1],env).value; length=self.eval(args[2],env).value
                 if start<0 or length<0 or start+length>len(buf): raise RuntimeError('slice out of bounds')
                 return TypedValue('ByteSlice',memoryview(buf)[start:start+length])
-            if n=='slice_len': return TypedValue('i64',len(self.eval(e[2][0],env).value))
+            if n=='slice_len': return TypedValue('i64',len(self.eval(args[0],env).value))
             if n=='slice_get':
-                view=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                view=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                 if idx<0 or idx>=len(view): raise RuntimeError('slice index out of bounds')
                 return TypedValue('i64',int(view[idx]))
             if n=='i64vec_new': return TypedValue('I64Vec',[])
             if n=='i64vec_push':
-                vec=self.eval(e[2][0],env); vec.value.append(self.eval(e[2][1],env).value); return TypedValue('void',None)
-            if n=='i64vec_len': return TypedValue('i64',len(self.eval(e[2][0],env).value))
+                vec=self.eval(args[0],env); vec.value.append(self.eval(args[1],env).value); return TypedValue('void',None)
+            if n=='i64vec_len': return TypedValue('i64',len(self.eval(args[0],env).value))
             if n=='i64vec_get':
-                vec=self.eval(e[2][0],env).value; idx=self.eval(e[2][1],env).value
+                vec=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                 if idx<0 or idx>=len(vec): raise RuntimeError('vector index out of bounds')
                 return TypedValue('i64',vec[idx])
             vec=vec_builtin(n)
@@ -1388,24 +1390,24 @@ class Interpreter:
                 if op=='drop':
                     self.drop_value(self.eval(args[0],env)); return TypedValue('void',None)
             if n=='file_read':
-                path=self.eval(e[2][1],env).value
+                path=self.eval(args[1],env).value
                 return TypedValue('Buffer',bytearray(Path(path).read_bytes()))
             if n=='file_write':
-                path=self.eval(e[2][0],env).value
-                data=self.eval(e[2][1],env).value
+                path=self.eval(args[0],env).value
+                data=self.eval(args[1],env).value
                 return TypedValue('i64',Path(path).write_bytes(bytes(data)))
             if n.startswith('checked_') or n=='decimal_div':
-                first=self.eval(e[2][0],env)
-                second=self.eval(e[2][1],env,first.type_name)
+                first=self.eval(args[0],env)
+                second=self.eval(args[1],env,first.type_name)
                 return self.arith('div' if n=='decimal_div' else n[8:],first,second)
             callee=self.fn[n]
-            vals=[self.eval(x,env,t) for x,(_,t,_) in zip(e[2],callee['params'])]
+            vals=[self.eval(x,env,t) for x,(_,t,_) in zip(args,callee['params'])]
             return self.call(n,vals)
         if kind=='binop':
-            a=self.eval(e[2],env);b=self.eval(e[3],env,a.type_name)
-            if e[1] in ('==','!=','>=','<=','>','<'):
-                return TypedValue('i32',int({'==':a.value==b.value,'!=':a.value!=b.value,'>=':a.value>=b.value,'<=':a.value<=b.value,'>':a.value>b.value,'<':a.value<b.value}[e[1]]))
-            return self.arith({'+':'add','-':'sub','*':'mul','/':'div'}[e[1]],a,b)
+            a=self.eval(node.left,env);b=self.eval(node.right,env,a.type_name)
+            if node.operator in ('==','!=','>=','<=','>','<'):
+                return TypedValue('i32',int({'==':a.value==b.value,'!=':a.value!=b.value,'>=':a.value>=b.value,'<=':a.value<=b.value,'>':a.value>b.value,'<':a.value<b.value}[node.operator]))
+            return self.arith({'+':'add','-':'sub','*':'mul','/':'div'}[node.operator],a,b)
     def literal(self,t,x):
         if t in self.p.decimals:return TypedValue(t,int(Decimal(x)*(10**self.p.decimals[t].scale)))
         return TypedValue(t,int(Decimal(x)))
@@ -1632,7 +1634,7 @@ class CGenerator:
         node=self.p.node(e)
         if node.kind=='call' and node.callee_name=='old':
             key=repr(node.arguments[0]);out.setdefault(key,node.arguments[0]);return
-        for x in e[1:]:
+        for x in node.operands:
             if isinstance(x,tuple):self.walk_old(x,out)
             elif isinstance(x,list):
                 for y in x:self.walk_old(y,out)
@@ -1762,13 +1764,13 @@ class CGenerator:
     def env_mode(self,env,n):
         v=env[n]; return v[1] if isinstance(v,tuple) else 'value'
     def etype(self,e,env):
-        kind=self.p.node(e).kind
+        node=self.p.node(e);kind=node.kind
         if kind=='string':return 'String'
         if kind=='number':return 'i64'
-        if kind=='var':return self.env_type(env,e[1])
+        if kind=='var':return self.env_type(env,node.atom_value)
         if kind=='field':
-            t=self.etype(e[1],env);return next(f.type_name for f in self.p.structs[t].fields if f.name==e[2])
-        if kind=='struct_init':return e[1]
+            t=self.etype(node.field_base,env);return next(f.type_name for f in self.p.structs[t].fields if f.name==node.field_name)
+        if kind=='struct_init':return node.constructed_type
         if kind in ('call','generic_call'):
             name,args=resolved_call(e)
             variants=[enum.name for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
@@ -1780,7 +1782,7 @@ class CGenerator:
                 op,elem=vec
                 return vec_return_type(op,elem)
             return self.etype(args[0],env) if name.startswith('checked_') or name=='decimal_div' else self.fn[name]['return']
-        if kind=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
+        if kind=='binop':return 'i32' if node.operator in ('==','!=','>=','<=','>','<') else self.etype(node.left,env)
     def address_expr(self,e,env):
         rendered=self.expr(e,env)
         node=self.p.node(e)
@@ -1788,17 +1790,18 @@ class CGenerator:
             return rendered
         return '&'+rendered
     def expr(self,e,env,expected=None):
-        kind=self.p.node(e).kind
+        node=self.p.node(e);kind=node.kind
         if kind=='string':
-            raw=json.dumps(e[1]); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
-        if kind=='number':return str(int(Decimal(e[1])*(10**self.p.decimals[expected].scale))) if expected in self.p.decimals else str(int(Decimal(e[1])))
-        if kind=='var':return '_merit_result' if e[1]=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else e[1]
+            raw=json.dumps(node.atom_value); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
+        if kind=='number':return str(int(Decimal(node.atom_value)*(10**self.p.decimals[expected].scale))) if expected in self.p.decimals else str(int(Decimal(node.atom_value)))
+        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get('result'),tuple) and env['result'][1]=='__result__' else node.atom_value
         if kind=='field':
-            base=e[1]; op='.'
-            if base[0]=='var' and self.env_mode(env,base[1]) in ('borrow','borrow_mut'): op='->'
-            return f'{self.expr(base,env)}{op}{e[2]}'
+            base=node.field_base; op='.'
+            base_node=self.p.node(base)
+            if base_node.kind=='var' and self.env_mode(env,base_node.atom_value) in ('borrow','borrow_mut'): op='->'
+            return f'{self.expr(base,env)}{op}{node.field_name}'
         if kind=='struct_init':
-            s=self.p.structs[e[1]];return f'({self.ctype(e[1])}){{'+', '.join(f'.{f.name}={self.expr(e[2][f.name],env,f.type_name)}' for f in s.fields)+'}'
+            s=self.p.structs[node.constructed_type];return f'({self.ctype(node.constructed_type)}){{'+', '.join(f'.{f.name}={self.expr(node.field_values[f.name],env,f.type_name)}' for f in s.fields)+'}'
         if kind in ('call','generic_call'):
             n,a=resolved_call(e)
             variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==n]
@@ -1848,8 +1851,8 @@ class CGenerator:
                 ex=self.expr(x,env,t);rendered.append(('&'+ex) if m in ('borrow','borrow_mut') else ex)
             return f'merit_{n}('+', '.join(rendered)+')'
         if kind=='binop':
-            t=expected or self.etype(e[2],env)
-            return f'({self.expr(e[2],env,t)} {e[1]} {self.expr(e[3],env,t)})'
+            t=expected or self.etype(node.left,env)
+            return f'({self.expr(node.left,env,t)} {node.operator} {self.expr(node.right,env,t)})'
 
 def hir(p):
     return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':p.functions}

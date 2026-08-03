@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Typed expression-operand checkpoint
+
+- Migrated atom, field, constructor, call, generic-call, and binary operands to named accessors.
+- Removed positional expression operand reads from ownership, checking, interpreter, and C lowering.
+- Migrated recursive expression walkers to the typed operand collection.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Typed statement-operand checkpoint
 
 - Added named mutability and capability-region accessors.
