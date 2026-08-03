@@ -14,6 +14,7 @@ class DiagnosticNote:
     column: Optional[int] = None
     source_line: Optional[str] = None
     path: Optional[Path] = None
+    end_column: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class Diagnostic:
     column: Optional[int] = None
     source_line: Optional[str] = None
     notes: tuple[DiagnosticNote, ...] = ()
+    end_column: Optional[int] = None
 
     def render(self) -> str:
         head = f"error[{self.code}]: {self.message}"
@@ -40,7 +42,8 @@ class Diagnostic:
             number = str(self.line)
             lines += ["  |", f"{number} | {self.source_line}"]
             if self.column is not None:
-                lines.append(f"  | {' ' * max(self.column - 1, 0)}^")
+                width=max(1,(self.end_column or self.column+1)-self.column)
+                lines.append(f"  | {' ' * max(self.column - 1, 0)}{'^' * width}")
         for note in self.notes:
             note_location = str(note.path or self.path)
             if note.line is not None:
@@ -52,7 +55,8 @@ class Diagnostic:
                 number = str(note.line)
                 lines += ["  |", f"{number} | {note.source_line}"]
                 if note.column is not None:
-                    lines.append(f"  | {' ' * max(note.column - 1, 0)}^")
+                    width=max(1,(note.end_column or note.column+1)-note.column)
+                    lines.append(f"  | {' ' * max(note.column - 1, 0)}{'^' * width}")
         return "\n".join(lines)
 
 
@@ -78,6 +82,7 @@ def render_exception(exc: Exception, path: Path, source: str) -> str:
         span = getattr(exc, "span", None)
         line = getattr(span, "line", None)
         column = getattr(span, "column", None)
+        end_column = getattr(span, "end_column", None)
         source_line = rows[line - 1] if line is not None and 1 <= line <= len(rows) else None
         diagnostic_path = Path(span.source_name) if span is not None and getattr(span, "source_name", None) else path
         notes = []
@@ -85,11 +90,12 @@ def render_exception(exc: Exception, path: Path, source: str) -> str:
             note_span = getattr(note, "span", None)
             note_line = getattr(note_span, "line", None)
             note_column = getattr(note_span, "column", None)
+            note_end_column = getattr(note_span, "end_column", None)
             note_path = Path(note_span.source_name) if note_span is not None and getattr(note_span, "source_name", None) else diagnostic_path
             note_rows = rows
             if note_path != diagnostic_path and note_path.is_file():
                 note_rows = note_path.read_text().splitlines()
             note_source = note_rows[note_line - 1] if note_line is not None and 1 <= note_line <= len(note_rows) else None
-            notes.append(DiagnosticNote(note.message, note_line, note_column, note_source, note_path))
-        return Diagnostic(exc.code, exc.message, diagnostic_path, line, column, source_line, tuple(notes)).render()
+            notes.append(DiagnosticNote(note.message, note_line, note_column, note_source, note_path, note_end_column))
+        return Diagnostic(exc.code, exc.message, diagnostic_path, line, column, source_line, tuple(notes), end_column).render()
     return Diagnostic("M0000", str(exc), path).render()

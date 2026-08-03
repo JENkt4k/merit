@@ -203,6 +203,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Generic application discovery records start and end columns as well as source lines.
 - Expansion-time arity/bound failures underline the concrete application.
 - Generated-body related notes underline the instantiation in both single-source and project diagnostics.
+- The diagnostic renderer uses span end columns to underline full primary and related ranges.
 
 ## Recommended next epic
 Continue typed semantic-node decomposition:

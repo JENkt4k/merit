@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Precise diagnostic range checkpoint
+
+- Extended rendered primary and related diagnostics with end-column ranges.
+- Underlined complete semantic spans rather than only their first column.
+- Added rendered generic-range coverage.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Column-precise generic provenance checkpoint
 
 - Recorded exact generic application start/end columns during expansion.

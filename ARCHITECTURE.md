@@ -56,6 +56,8 @@ Atoms, struct initialization, direct/generic calls, and effect statements also h
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 
+Diagnostic rendering consumes both start and end columns for primary and related spans, producing full-width source underlines rather than point-only carets.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.

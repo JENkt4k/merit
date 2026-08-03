@@ -324,6 +324,7 @@ def test_generic_expansion_errors_point_to_instantiation(source, code, line, col
     rendered = render_exception(error, Path("generic_expansion.mrt"), source)
     assert f" --> generic_expansion.mrt:{line}:{column}" in rendered
     assert excerpt in rendered
+    assert "^^^^^^^^" in rendered
 
 
 def test_project_generic_bound_error_points_to_calling_unit(tmp_path, capsys):
