@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 221 tests passing after editable installation
+- 226 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -74,6 +74,7 @@ python -m pytest -q
 - Allocator-retaining `Vec<T>` growth/drop paths with deterministic layout assertions
 - System and portable allocator providers verified through one interpreter/native vector path
 - Explicit allocator compatibility policy for future zero-copy collection transfers
+- Zero-copy `vec_transfer<T>` with allocator, alias, emptiness, and owned-drop safety
 - Explicit borrowed-return modes with caller-origin propagation and interpreter/native pointer parity
 - Mutable borrowed-result field assignment and owned replacement
 - Multi-module `borrowed_views` acceptance project for public shared/mutable views

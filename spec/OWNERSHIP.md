@@ -40,6 +40,7 @@ destructor Marker { print(self.number); }
 - `vec_replace<T>(vector, index, replacement)` performs the same operation for an owned vector element after checked indexing.
 - `allocator_compatible(left, right)` reports whether storage allocated by one provider may be transferred to and released by the other. Compatibility is provider identity in the current runtime: system is compatible with system, portable with portable, and the two providers are not interchangeable.
 - Future zero-copy collection transfer and merge operations must reject incompatible allocators before moving elements or storage. Element-wise moves that allocate fresh destination storage may cross allocator providers because each allocation remains paired with its originating provider.
+- `vec_transfer<T>(destination, source)` is the zero-copy transfer primitive. Both vectors must be distinct mutable bindings, the destination must be empty, and their allocators must be compatible. It steals the source allocation, leaves the source valid and empty, and transfers every owned-element destruction obligation without running a destructor during the transfer.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 - Concrete types carry shared lifecycle metadata: ownership, copyability, drop requirement, semantic kind, and drop strategy.
 - Function ownership effects identify consumed roots and explicit drops once for MIR and native cleanup lowering.

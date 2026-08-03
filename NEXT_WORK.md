@@ -296,6 +296,8 @@ Continue alpha-readiness hardening:
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.
 - Compatibility requires matching provider identity; system and portable allocations are not interchangeable.
 - Future zero-copy collection transfers must validate compatibility before moving storage.
+- `vec_transfer<T>` now performs that checked zero-copy handoff into an empty destination.
+- The source remains valid and empty; owned element drop obligations transfer without intermediate destruction.
 
 ## Borrowed return diagnostic checkpoint now available
 - Function signatures represent `borrow` and `borrow_mut` return modes explicitly.

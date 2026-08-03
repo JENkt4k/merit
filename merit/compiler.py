@@ -587,7 +587,7 @@ def parse(s:str,source_name=None)->Program:
         if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
         raise
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
-VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
+VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
 @dataclasses.dataclass(frozen=True)
@@ -698,6 +698,7 @@ VEC_INTRINSICS={
     'replace':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,element_policy='owned_replace'),
     'pop':VecIntrinsic(1,'elem',receiver_mode='borrow_mut'),
     'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
+    'transfer':VecIntrinsic(2,'void',receiver_mode='borrow_mut'),
 }
 
 BUILTIN_SIGS={
@@ -1228,6 +1229,10 @@ class Checker:
                     return vec_return_type(op,elem)
                 if spec.receiver_mode:
                     self.check_vec_receiver(args[0],env,caps,fn,vec_t,spec.receiver_mode)
+                if op=='transfer':
+                    self.check_vec_receiver(args[1],env,caps,fn,vec_t,'borrow_mut')
+                    destination=self.root_var(args[0]);source=self.root_var(args[1])
+                    if destination==source:self.fail(f'M7305: vector transfer source aliases destination {destination}',e)
                 element=self.types.get(elem)
                 if spec.element_policy=='copy_result' and element.needs_drop:
                     raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
@@ -1603,6 +1608,11 @@ class Interpreter:
                     return self.clone(data.pop())
                 if op=='drop':
                     self.drop_value(self.eval(args[0],env)); return TypedValue('void',None)
+                if op=='transfer':
+                    destination=self.eval(args[0],env);source=self.eval(args[1],env)
+                    if destination.allocator!=source.allocator:raise RuntimeError('incompatible vector allocators')
+                    if destination.value:raise RuntimeError('vector transfer destination is not empty')
+                    destination.value=source.value;source.value=[];return TypedValue('void',None)
             if n=='file_read':
                 path=self.eval(args[1],env).value
                 try:return TypedValue('FileReadResult',{'variant':'ReadOk','payload':TypedValue('Buffer',bytearray(Path(path).read_bytes()))})
@@ -1825,6 +1835,7 @@ class CGenerator:
             f'static void merit_vec_replace__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);{self.drop_field_stmt("v->data[i]",elem)}v->data[i]=x;}}',
             f'static {ct} merit_vec_pop__{suffix}({vct} *v){{if(!v->len)merit_fail("vector pop from empty",86);return v->data[--v->len];}}',
             f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}merit_allocator_free(v->allocator,v->data);v->data=NULL;v->len=0;v->cap=0;}}',
+            f'static void merit_vec_transfer__{suffix}({vct} *destination,{vct} *source){{if(destination==source)merit_fail("vector transfer aliases itself",90);if(!merit_allocator_compatible(destination->allocator,source->allocator))merit_fail("incompatible vector allocators",90);if(destination->len)merit_fail("vector transfer destination is not empty",90);merit_allocator_free(destination->allocator,destination->data);destination->data=source->data;destination->len=source->len;destination->cap=source->cap;source->data=NULL;source->len=0;source->cap=0;}}',
             ''
         ]
     def drop_field_stmt(self,base,t):
@@ -2083,6 +2094,7 @@ class CGenerator:
                 if op=='replace': return f'(merit_vec_replace__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
                 if op=='pop': return f'merit_vec_pop__{elem}({self.address_expr(a[0],env)})'
                 if op=='drop': return f'(merit_vec_drop__{elem}({self.address_expr(a[0],env)}), 0)'
+                if op=='transfer': return f'(merit_vec_transfer__{elem}({self.address_expr(a[0],env)}, {self.address_expr(a[1],env)}), 0)'
             if n in ('checked_add','checked_sub','checked_mul','decimal_div'):
                 t=self.etype(a[0],env);left=self.expr(a[0],env,t);right=self.expr(a[1],env,t)
                 if n=='checked_add':return f'merit_add({left}, {right})'

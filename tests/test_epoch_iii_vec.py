@@ -488,3 +488,45 @@ def test_numeric_literal_does_not_coerce_to_nonnumeric_user_parameter():
     source='module invalid_literal_coercion\nfn use(value:Allocator)->i32 { return 0; }\nfn main()->i32 { return use(1); }'
     with pytest.raises(CompileError,match='argument value expects Allocator'):
         Checker(parse(source)).check()
+
+
+def test_vec_transfer_steals_compatible_storage(tmp_path):
+    source='''module vector_transfer
+capability allocate;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var destination:Vec<i64>=vec_new<i64>(allocator,0); var source:Vec<i64>=vec_new<i64>(allocator,2); vec_push<i64>(source,7); vec_push<i64>(source,11); vec_transfer<i64>(destination,source); print(vec_len<i64>(destination)); print(vec_get<i64>(destination,1)); print(vec_len<i64>(source)); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'vector_transfer') == '2\n11\n0\n'
+
+
+def test_vec_transfer_preserves_owned_element_drop_obligations(tmp_path):
+    source='''module owned_vector_transfer
+capability allocate;
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var destination:Vec<Marker>=vec_new<Marker>(allocator,0); var source:Vec<Marker>=vec_new<Marker>(allocator,1); let marker:Marker=Marker{number:41}; vec_push<Marker>(source,marker); vec_transfer<Marker>(destination,source); } return 0; }'''
+    assert run_interpreter_and_native(source,tmp_path,'owned_vector_transfer') == '41\n'
+
+
+def test_vec_transfer_rejects_aliasing_at_compile_time():
+    source='''module aliased_vector_transfer
+capability allocate;
+fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var values:Vec<i64>=vec_new<i64>(allocator,0); vec_transfer<i64>(values,values); } return 0; }'''
+    with pytest.raises(CompileError,match='M7305: vector transfer source aliases destination values'):
+        Checker(parse(source)).check()
+
+
+@pytest.mark.parametrize(
+    ('destination','expected'),
+    [('vec_new<i64>(portable,0)','incompatible vector allocators'),('vec_new<i64>(system,1)','vector transfer destination is not empty')],
+)
+def test_vec_transfer_runtime_contracts_match_native_failures(tmp_path,destination,expected):
+    destination_setup=destination
+    push_destination='vec_push<i64>(target,3);' if 'system,1' in destination else ''
+    source=f'''module invalid_vector_transfer
+capability allocate;
+fn main()->i32 {{ with capability allocate {{ let system:Allocator=system_allocator(); let portable:Allocator=portable_allocator(); var target:Vec<i64>={destination_setup}; {push_destination} var values:Vec<i64>=vec_new<i64>(system,1); vec_push<i64>(values,7); vec_transfer<i64>(target,values); }} return 0; }}'''
+    program=parse(source);Checker(program).check()
+    with pytest.raises(RuntimeError,match=expected):Interpreter(program).run()
+    path=tmp_path/'invalid_transfer.mrt';executable=tmp_path/'invalid_transfer';path.write_text(source);compile_file(path,executable)
+    native=subprocess.run([str(executable)],text=True,capture_output=True)
+    assert native.returncode == 90
+    assert expected in native.stderr
