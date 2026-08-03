@@ -40,6 +40,13 @@ fn main()->i32 { var x:i32=0; while x<2 { if x==1 { print(x); } else { print(0);
     kinds={b['terminator']['kind'] for b in mir(p)['functions'][0]['semantic_blocks']}
     assert {'branch','goto','return'} <= kinds
 
+def test_cfg_mir_prunes_blocks_after_terminal_return():
+    p=checked('''module x
+fn main()->i32 { return 7; print(99); }''')
+    blocks=mir(p)['functions'][0]['semantic_blocks']
+    assert [block['id'] for block in blocks] == [0]
+    assert blocks[0]['terminator']['kind'] == 'return'
+
 def test_text_pipeline_project_native_matches():
     project=load_project(ROOT/'examples/projects/text_pipeline/Merit.toml')
     expected=interpret(project)

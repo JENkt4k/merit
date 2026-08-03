@@ -300,6 +300,11 @@ Continue alpha-readiness hardening:
 - Mutable borrowed results require mutable borrowed parameters.
 - Otherwise-valid signatures remain rejected until caller lifetime propagation and pointer lowering land together.
 
+## MIR reachability checkpoint now available
+- CFG lowering computes block reachability from the entry block.
+- Synthetic continuation blocks after terminal returns are removed from canonical MIR.
+- Explicit semantic serialization contains only reachable blocks.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

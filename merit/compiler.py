@@ -2015,6 +2015,16 @@ def semantic_payload(value,p):
 
 def hir(p):
     return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'functions':[f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p) for f in p.functions]}
+def reachable_mir_blocks(blocks):
+    by_id={block['id']:block for block in blocks}; reachable=set(); pending=[0]
+    while pending:
+        block_id=pending.pop()
+        if block_id in reachable or block_id not in by_id:continue
+        reachable.add(block_id);terminator=by_id[block_id]['terminator'];kind=terminator['kind']
+        if kind=='goto':pending.append(terminator['target'])
+        elif kind=='branch':pending.extend((terminator['then'],terminator['else']))
+        elif kind=='switch':pending.extend(arm['target'] for arm in terminator['arms'])
+    return [block for block in blocks if block['id'] in reachable]
 def mir(p):
     types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
     def lower_function(f):
@@ -2057,6 +2067,7 @@ def mir(p):
             return current
         tail=lower_seq(f.body,entry)
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
+        blocks=reachable_mir_blocks(blocks)
         ownership=ownership_model.function(f)
         locals_order=[name for name,_ in ownership.owned_locals]
         entry['statements'].extend(

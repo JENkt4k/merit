@@ -1,5 +1,11 @@
 # Changelog
 
+## Epoch III — MIR reachability checkpoint
+
+- Added entry-rooted reachability analysis after MIR CFG construction.
+- Removed synthetic unreachable continuation blocks after terminal returns.
+- Increased the regression suite from 181 to 182 tests.
+
 ## Epoch III — Borrowed return diagnostic checkpoint
 
 - Added explicit `borrow` and `borrow_mut` function return modes.
