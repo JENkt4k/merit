@@ -343,6 +343,7 @@ Continue alpha-readiness hardening:
 - Custom destructors run before owned field cleanup and compose through nested aggregates.
 - Interpreter function-exit cleanup now consumes the shared ownership-effects model.
 - HIR and MIR expose JSON-safe destructor bodies and provenance explicitly.
+- Project visibility checks traverse destructor bodies and preserve their original source spans.
 - Ownership-changing destructor statements remain rejected pending a broader destructor contract.
 
 ## Acceptance gates

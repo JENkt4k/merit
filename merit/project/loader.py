@@ -273,6 +273,19 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                         if node is None: continue
                         if node.kind == "call" and node.callee_name not in builtins: require(node.callee_name, f"call in {function.name}")
                         elif node.kind == "struct_init": require(node.constructed_type, f"construction in {function.name}")
+        for destructor in unit.program.destructors.values():
+            for statement in _walk_statements(destructor.body, unit.program):
+                statement_node = unit.program.node(statement)
+                for value in statement_node.operands:
+                    if not isinstance(value, (SemanticNode, tuple)):
+                        continue
+                    for expression in _walk_expr(value):
+                        node = unit.program.node(expression)
+                        if node is None: continue
+                        if node.kind == "call" and node.callee_name not in builtins:
+                            require(node.callee_name, f"call in destructor {destructor.type_name}")
+                        elif node.kind == "struct_init":
+                            require(node.constructed_type, f"construction in destructor {destructor.type_name}")
         public_types=project_exports|primitive|BUILTIN_TYPES
         for function in unit.program.functions:
             if function.name not in unit.exports:continue
@@ -355,6 +368,9 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         for expression in (*function.pre, *function.post):
             semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticNode))
         for statement in _walk_statements(function.body, merged):
+            semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticNode))
+    for destructor in merged.destructors.values():
+        for statement in _walk_statements(destructor.body, merged):
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticNode))
     for node_id, node in semantic_nodes.items():
         object.__setattr__(node, "provenance", NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related)))

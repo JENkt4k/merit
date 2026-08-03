@@ -6,6 +6,8 @@ import subprocess
 import pytest
 
 from merit.compiler import Checker, CompileError, Interpreter, compile_file, hir, mir, parse, type_needs_drop
+from merit.project.build import build, check, interpret
+from merit.project.loader import ProjectError, load_project
 
 
 IMPLICIT_DESTRUCTOR = '''module custom_destructor
@@ -87,3 +89,46 @@ struct Wrapper { marker:Marker; }
 destructor Marker { print(self.number); }
 fn main()->i32 { let wrapper:Wrapper=Wrapper{marker:Marker{number:13}}; return 0; }'''
     assert outputs(source,tmp_path) == ('13\n','13\n')
+
+
+def write_project(tmp_path, library: str, main: str):
+    (tmp_path/'src').mkdir()
+    (tmp_path/'Merit.toml').write_text('[package]\nname="destructor_project"\nentry="src/main.mrt"\nsources=["src/*.mrt"]\n')
+    (tmp_path/'src'/'library.mrt').write_text(library)
+    (tmp_path/'src'/'main.mrt').write_text(main)
+    return tmp_path/'Merit.toml'
+
+
+def test_project_destructor_can_call_imported_public_function(tmp_path):
+    manifest=write_project(
+        tmp_path,
+        'module library\npub fn increment(value:i32)->i32 { return checked_add(value,1); }\n',
+        'module main\nimport library;\nstable("marker-v1") struct Marker { number:i32; }\ndestructor Marker { print(increment(self.number)); }\nfn main()->i32 { let marker:Marker=Marker{number:20}; return 0; }\n',
+    )
+    project=load_project(manifest)
+    assert interpret(project) == '21\n'
+    _,_,executable=build(project,tmp_path/'build'/'destructor_project')
+    native=subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout
+    assert native == '21\n'
+
+
+def test_project_destructor_rejects_private_imported_function(tmp_path):
+    manifest=write_project(
+        tmp_path,
+        'module library\nfn hidden(value:i32)->i32 { return value; }\n',
+        'module main\nimport library;\nstable("marker-v1") struct Marker { number:i32; }\ndestructor Marker { print(hidden(self.number)); }\nfn main()->i32 { let marker:Marker=Marker{number:1}; return 0; }\n',
+    )
+    with pytest.raises(ProjectError,match='private symbol hidden'):
+        load_project(manifest)
+
+
+def test_project_destructor_diagnostic_maps_to_its_source_file(tmp_path):
+    manifest=write_project(
+        tmp_path,
+        'module library\npub fn visible(value:i32)->i32 { return value; }\n',
+        'module main\nimport library;\nstable("marker-v1") struct Marker { number:i32; }\ndestructor Marker { let invalid:i32=1; }\nfn main()->i32 { return 0; }\n',
+    )
+    with pytest.raises(CompileError,match='M5502') as raised:
+        check(load_project(manifest))
+    assert raised.value.span.source_name == str(tmp_path/'src'/'main.mrt')
+    assert raised.value.span.line == 4
