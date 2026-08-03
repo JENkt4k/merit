@@ -1,5 +1,11 @@
 # Changelog
 
+## Epoch III — Named semantic access checkpoint
+
+- Removed indexed sequence compatibility from semantic nodes.
+- Migrated project visibility traversal and compiler literal validation to named node properties.
+- Retained raw tuples only for non-node parser records pending typed decomposition.
+
 ## Epoch III — Immutable semantic storage checkpoint
 
 - Replaced Python tuple inheritance with immutable typed semantic sequence storage.

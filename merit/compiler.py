@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any
@@ -104,14 +104,12 @@ class SourceSpan:
 @dataclasses.dataclass(frozen=True)
 class NodeProvenance:
     primary:SourceSpan|None=None; related:SourceSpan|None=None
-class SemanticTuple(Sequence):
+class SemanticTuple:
     __slots__=('kind','operands','provenance')
     def __init__(self,kind,*operands):
         object.__setattr__(self,'kind',kind)
         object.__setattr__(self,'operands',tuple(operands))
         object.__setattr__(self,'provenance',NodeProvenance())
-    def __len__(self):return len(self.operands)+1
-    def __getitem__(self,index):return (self.kind,*self.operands)[index]
     def __repr__(self):return repr((self.kind,*self.operands))
     def __setattr__(self,name,value):raise AttributeError('semantic nodes are immutable')
 @dataclasses.dataclass
@@ -162,12 +160,12 @@ SEMANTIC_STORAGE_TYPES={
 }
 @dataclasses.dataclass(frozen=True)
 class SemanticNodeView:
-    raw:tuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
+    raw:SemanticTuple; span:SourceSpan|None=None; related_span:SourceSpan|None=None
     @property
-    def kind(self)->str:return self.raw[0]
+    def kind(self)->str:return self.raw.kind
     @property
-    def operands(self)->tuple:return self.raw[1:]
-    def operand(self,index:int):return self.raw[index+1]
+    def operands(self)->tuple:return self.raw.operands
+    def operand(self,index:int):return self.raw.operands[index]
     def require(self,*kinds):
         if self.kind not in kinds:raise ValueError(f'{self.kind} node does not support this accessor')
     @property
@@ -1068,7 +1066,8 @@ class Checker:
             for n,x in vals.items():
                 t=self.expr_type(x,env,caps,fn)
                 if t not in (expected[n].type_name,'number'):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
-                if x[0]=='number':self.validate_literal(expected[n].type_name,x[1])
+                value_node=self.p.node(x)
+                if value_node.kind=='number':self.validate_literal(expected[n].type_name,value_node.atom_value)
                 self.consume_owned_source(x,t,env,f'initializing field {name}.{n}')
             return name
         if tag in ('call','generic_call'):
@@ -1082,7 +1081,8 @@ class Checker:
                 if expected_count:
                     at=self.expr_type(args[0],env,caps,fn)
                     if at not in (variant.payload_type,'number'): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
-                    if args[0][0]=='number': self.validate_literal(variant.payload_type,args[0][1])
+                    argument_node=self.p.node(args[0])
+                    if argument_node.kind=='number': self.validate_literal(variant.payload_type,argument_node.atom_value)
                     self.consume_owned_source(args[0],at,env,f'constructing {enum.name}::{variant.name}')
                 return enum.name
             if name=='old':

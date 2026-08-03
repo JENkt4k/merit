@@ -145,7 +145,8 @@ def _walk_expr(expr):
     if not isinstance(expr, (SemanticTuple, tuple)):
         return
     yield expr
-    for value in expr[1:]:
+    values = expr.operands if isinstance(expr, SemanticTuple) else expr[1:]
+    for value in values:
         if isinstance(value, (SemanticTuple, tuple)):
             yield from _walk_expr(value)
         elif isinstance(value, list):
@@ -156,16 +157,16 @@ def _walk_expr(expr):
                 yield from _walk_expr(item)
 
 
-def _walk_statements(body):
+def _walk_statements(body, program):
     for statement in body:
         yield statement
-        tag = statement[0]
-        if tag in ("with_cap", "while"):
-            yield from _walk_statements(statement[-1])
-        elif tag == "if":
-            yield from _walk_statements(statement[2]); yield from _walk_statements(statement[3])
-        elif tag == "match":
-            for arm in statement[2]: yield from _walk_statements(arm[2])
+        node = program.node(statement)
+        if node.kind in ("with_cap", "while"):
+            yield from _walk_statements(node.nested_body, program)
+        elif node.kind == "if":
+            yield from _walk_statements(node.then_body, program); yield from _walk_statements(node.else_body, program)
+        elif node.kind == "match":
+            for arm in node.match_arms: yield from _walk_statements(arm[2], program)
 
 
 def _split_generic_params(text: str) -> list[str]:
@@ -241,15 +242,19 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
             for _, type_name, _ in function.params:
                 if type_name not in primitive: require(type_name, f"function {function.name}")
             if function.return_type not in primitive: require(function.return_type, f"function {function.name}")
-            for statement in _walk_statements(function.body):
-                if statement[0] in ("let", "try_let") and statement[2] not in primitive: require(statement[2], f"binding {statement[1]}")
+            for statement in _walk_statements(function.body, unit.program):
+                statement_node = unit.program.node(statement)
+                if statement_node.kind in ("let", "try_let") and statement_node.declared_type not in primitive:
+                    require(statement_node.declared_type, f"binding {statement_node.binding_name}")
                 exprs=[]
-                for value in statement[1:]:
+                for value in statement_node.operands:
                     if isinstance(value, (SemanticTuple, tuple)): exprs.append(value)
                 for expr in exprs:
-                    for node in _walk_expr(expr):
-                        if node[0] == "call" and node[1] not in builtins: require(node[1], f"call in {function.name}")
-                        elif node[0] == "struct_init": require(node[1], f"construction in {function.name}")
+                    for expression in _walk_expr(expr):
+                        node = unit.program.node(expression)
+                        if node is None: continue
+                        if node.kind == "call" and node.callee_name not in builtins: require(node.callee_name, f"call in {function.name}")
+                        elif node.kind == "struct_init": require(node.constructed_type, f"construction in {function.name}")
 
 
 def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str) -> Program:
@@ -312,7 +317,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
     for function in merged.functions:
         for expression in (*function.pre, *function.post):
             semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticTuple))
-        for statement in _walk_statements(function.body):
+        for statement in _walk_statements(function.body, merged):
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
     for node_id, node in semantic_nodes.items():
         object.__setattr__(node, "provenance", NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related)))

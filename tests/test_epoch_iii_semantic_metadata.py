@@ -70,8 +70,8 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     capability = program.node(capability_statement)
     assert capability.kind == "with_cap"
     assert capability.operand(0) == "allocate"
-    assert capability.operands[1] is capability_statement[2]
-    assert capability.nested_body is capability_statement[2]
+    assert capability.operands[1] is capability_statement.operands[1]
+    assert capability.nested_body is capability_statement.operands[1]
     assert (capability.span.line, capability.span.source_name) == (5, "semantic_nodes.mrt")
     assert capability.related_span is None
     provenance = program.provenance(capability_statement)
@@ -114,8 +114,8 @@ fn main() -> i32 {
     assert branch.kind == "if"
     assert isinstance(program.node(branch.condition).raw, NumberNode)
     assert isinstance(branch.then_body[0], ReturnNode)
-    assert program.node(branch.then_body[0]).expression[1] == "1"
-    assert program.node(branch.else_body[0]).expression[1] == "0"
+    assert program.node(program.node(branch.then_body[0]).expression).atom_value == "1"
+    assert program.node(program.node(branch.else_body[0]).expression).atom_value == "0"
 
 
 def test_hir_exposes_shared_type_semantics():

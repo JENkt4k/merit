@@ -65,7 +65,7 @@ Declaration dataclasses and `FunctionDecl` mappings also embed provenance. Proje
 All internal function consumers now use typed fields. `FunctionDecl` exposes only read-only mapping compatibility for external inspection while generated declarations are changed through typed attributes.
 
 HIR function bodies and MIR `semantic_blocks` serialize semantic nodes explicitly as JSON-safe kind/operand/provenance records. MIR no longer exposes internal tuple-compatible nodes.
-Compiler semantic nodes use immutable typed sequence storage rather than inheriting from Python tuples; source provenance is attached only through controlled parser/project-loader paths.
+Compiler semantic nodes use immutable typed storage with named semantic views and no indexed sequence compatibility; source provenance is attached only through controlled parser/project-loader paths.
 
 Generic application discovery records exact line/column ranges. Expansion errors use those ranges directly, and generated-node related provenance preserves the same application range through project remapping.
 

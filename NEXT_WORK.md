@@ -244,13 +244,18 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Immutable semantic storage checkpoint now available
 - Semantic nodes no longer inherit from Python tuples.
-- Typed node subclasses retain a read-only sequence interface while compiler consumers finish moving to named operands.
+- Compiler and project-loader consumers use typed node properties rather than indexed operands.
 - Node kind and operands are immutable; provenance attachment is limited to parser and project merge internals.
+
+## Named semantic access checkpoint now available
+- Indexed semantic-node compatibility has been removed.
+- Project visibility analysis traverses typed semantic views.
+- Literal validation uses typed atom accessors.
 
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace remaining indexed operand access with typed node properties.
-- Remove indexed sequence compatibility only after every operand access is typed.
+- Rename the legacy `SemanticTuple` base now that it no longer has tuple behavior.
+- Replace compact non-node tuple records such as match arms with typed records.
 
 ## Deliberately deferred
 - specialization
@@ -262,8 +267,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace indexed semantic operand access with typed node properties.
-2. Continue replacing compact non-node tuple special cases with typed records.
+1. Rename the legacy semantic storage base and remove obsolete compatibility naming.
+2. Replace compact non-node tuple special cases with typed records.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
