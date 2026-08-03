@@ -142,11 +142,11 @@ def _check_graph(units: Iterable[SourceUnit], entry_module: str) -> None:
 
 
 def _walk_expr(expr):
-    if not isinstance(expr, tuple):
+    if not isinstance(expr, (SemanticTuple, tuple)):
         return
     yield expr
     for value in expr[1:]:
-        if isinstance(value, tuple):
+        if isinstance(value, (SemanticTuple, tuple)):
             yield from _walk_expr(value)
         elif isinstance(value, list):
             for item in value:
@@ -245,7 +245,7 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
                 if statement[0] in ("let", "try_let") and statement[2] not in primitive: require(statement[2], f"binding {statement[1]}")
                 exprs=[]
                 for value in statement[1:]:
-                    if isinstance(value, tuple): exprs.append(value)
+                    if isinstance(value, (SemanticTuple, tuple)): exprs.append(value)
                 for expr in exprs:
                     for node in _walk_expr(expr):
                         if node[0] == "call" and node[1] not in builtins: require(node[1], f"call in {function.name}")
@@ -315,7 +315,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
         for statement in _walk_statements(function.body):
             semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
     for node_id, node in semantic_nodes.items():
-        node.provenance = NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related))
+        object.__setattr__(node, "provenance", NodeProvenance(remap(node.provenance.primary), remap(node.provenance.related)))
     declarations = [*merged.decimals.values(), *merged.bounded.values(), *merged.structs.values(), *merged.enums.values(), *merged.traits.values(), *merged.impls, *merged.functions]
     declarations.extend(field for struct in merged.structs.values() for field in struct.fields)
     declarations.extend(variant for enum in merged.enums.values() for variant in enum.variants)

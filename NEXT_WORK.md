@@ -242,10 +242,15 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Raw tuple-compatible MIR `blocks` have been retired.
 - CLI MIR output is JSON-safe without relying on fallback string conversion for semantic nodes.
 
+## Immutable semantic storage checkpoint now available
+- Semantic nodes no longer inherit from Python tuples.
+- Typed node subclasses retain a read-only sequence interface while compiler consumers finish moving to named operands.
+- Node kind and operands are immutable; provenance attachment is limited to parser and project merge internals.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Replace tuple-compatible semantic storage with immutable typed sequence records.
-- Remove tuple compatibility only after every operand access is typed.
+- Replace remaining indexed operand access with typed node properties.
+- Remove indexed sequence compatibility only after every operand access is typed.
 
 ## Deliberately deferred
 - specialization
@@ -257,8 +262,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Replace tuple-compatible storage with immutable typed records.
-2. Continue replacing compact tuple-AST special cases with typed nodes.
+1. Replace indexed semantic operand access with typed node properties.
+2. Continue replacing compact non-node tuple special cases with typed records.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

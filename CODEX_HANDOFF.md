@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III canonical explicit MIR checkpoint** of Merit.
+This repository contains the verified **Epoch III immutable semantic storage checkpoint** of Merit.
 
 Current baseline:
 - 173 tests passing after editable installation
@@ -64,6 +64,7 @@ python -m pytest -q
 - typed function-field consumers across semantics, interpreter, C lowering, MIR, and project loading
 - JSON-safe semantic kind/operand/provenance serialization in HIR and MIR inspection
 - Canonical explicit MIR output with no raw tuple-compatible block surface
+- Immutable typed semantic storage with controlled provenance attachment
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

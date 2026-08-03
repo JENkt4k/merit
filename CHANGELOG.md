@@ -1,5 +1,11 @@
 # Changelog
 
+## Epoch III — Immutable semantic storage checkpoint
+
+- Replaced Python tuple inheritance with immutable typed semantic sequence storage.
+- Tightened compiler and project traversal to identify semantic nodes by their typed base.
+- Restricted source-provenance updates to controlled internal attachment paths.
+
 ## Epoch III — Canonical explicit MIR checkpoint
 
 - Migrated repository MIR consumers to JSON-safe `semantic_blocks`.

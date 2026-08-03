@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any
@@ -104,13 +104,16 @@ class SourceSpan:
 @dataclasses.dataclass(frozen=True)
 class NodeProvenance:
     primary:SourceSpan|None=None; related:SourceSpan|None=None
-class SemanticTuple(tuple):
-    def __new__(cls,kind,*operands):
-        node=super().__new__(cls,(kind,*operands));node.provenance=NodeProvenance();return node
-    @property
-    def kind(self):return self[0]
-    @property
-    def operands(self):return self[1:]
+class SemanticTuple(Sequence):
+    __slots__=('kind','operands','provenance')
+    def __init__(self,kind,*operands):
+        object.__setattr__(self,'kind',kind)
+        object.__setattr__(self,'operands',tuple(operands))
+        object.__setattr__(self,'provenance',NodeProvenance())
+    def __len__(self):return len(self.operands)+1
+    def __getitem__(self,index):return (self.kind,*self.operands)[index]
+    def __repr__(self):return repr((self.kind,*self.operands))
+    def __setattr__(self,name,value):raise AttributeError('semantic nodes are immutable')
 @dataclasses.dataclass
 class FunctionDecl(Mapping):
     name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
@@ -223,7 +226,7 @@ class Program:
         return embedded if embedded is not None else NodeProvenance()
     def span(self,node):return self.provenance(node).primary
     def node(self,raw):
-        if not isinstance(raw,tuple) or not raw:return None
+        if not isinstance(raw,SemanticTuple):return None
         provenance=self.provenance(raw)
         return SemanticNodeView(raw,provenance.primary,provenance.related)
 
@@ -1199,12 +1202,12 @@ class Checker:
         while node and node.kind=='field':e=node.field_base;node=self.p.node(e)
         return node.operand(0) if node and node.kind=='var' else None
     def referenced_roots(self,e):
-        if not isinstance(e,tuple): return set()
+        if not isinstance(e,SemanticTuple): return set()
         root=self.root_var(e)
         if root: return {root}
         roots=set()
         for part in self.p.node(e).operands:
-            if isinstance(part,tuple): roots |= self.referenced_roots(part)
+            if isinstance(part,SemanticTuple): roots |= self.referenced_roots(part)
             elif isinstance(part,list):
                 for item in part: roots |= self.referenced_roots(item)
             elif isinstance(part,dict):
@@ -1701,12 +1704,12 @@ class CGenerator:
         lines.append('')
         return lines
     def walk_old(self,e,out):
-        if not isinstance(e,tuple):return
+        if not isinstance(e,SemanticTuple):return
         node=self.p.node(e)
         if node.kind=='call' and node.callee_name=='old':
             key=repr(node.arguments[0]);out.setdefault(key,node.arguments[0]);return
         for x in node.operands:
-            if isinstance(x,tuple):self.walk_old(x,out)
+            if isinstance(x,SemanticTuple):self.walk_old(x,out)
             elif isinstance(x,list):
                 for y in x:self.walk_old(y,out)
     def walk_statements(self, body):

@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import subprocess
+import pytest
 
 from merit.compiler import AssignmentNode, BindingNode, CGenerator, CallNode, CapabilityNode, Checker, ControlFlowNode, DirectCallNode, FunctionDecl, IfNode, Interpreter, LetNode, NumberNode, OwnershipEffects, ReplaceNode, ReturnNode, SemanticTuple, TypeTable, TypedValue, compile_file, hir, mir, parse
 
@@ -63,7 +64,9 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     assert isinstance(capability_statement, SemanticTuple)
     assert isinstance(capability_statement, ControlFlowNode)
     assert isinstance(capability_statement, CapabilityNode)
-    assert isinstance(capability_statement, tuple)
+    assert not isinstance(capability_statement, tuple)
+    with pytest.raises(AttributeError, match="immutable"):
+        capability_statement.kind = "while"
     capability = program.node(capability_statement)
     assert capability.kind == "with_cap"
     assert capability.operand(0) == "allocate"
