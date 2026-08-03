@@ -463,7 +463,7 @@ def test_generic_collections_project_interpreter_and_native(tmp_path):
     output = interpret(project)
     _, _, executable = build(project, tmp_path / 'generic_collections')
     native = subprocess.run([str(executable)], check=True, capture_output=True, text=True).stdout
-    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n6\n2\n32\n44\n'
+    assert native == output == '2\n7\n13\n21\n5\n2\n4\n5\n2\n6\n2\n32\n44\n1\n1\n0\n7\n'
 
 
 def test_allocator_compatibility_has_interpreter_native_parity(tmp_path):

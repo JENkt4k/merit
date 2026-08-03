@@ -95,6 +95,21 @@ fn main() -> i32 {
             }
         }
 
+        var transfer_destination: Vec<OwnedText> = vec_new<OwnedText>(a, 0);
+        var transfer_source: Vec<OwnedText> = vec_new<OwnedText>(a, 1);
+        let transfer_buffer: Buffer = buffer_from_string(a, "handoff");
+        let transfer_item: OwnedText = OwnedText { data: transfer_buffer };
+        vec_push<OwnedText>(transfer_source, transfer_item);
+        print(allocator_compatible(vec_allocator<OwnedText>(transfer_destination), vec_allocator<OwnedText>(transfer_source)));
+        vec_transfer<OwnedText>(transfer_destination, transfer_source);
+        print(vec_len<OwnedText>(transfer_destination));
+        print(vec_len<OwnedText>(transfer_source));
+        let transferred: OwnedText = vec_pop<OwnedText>(transfer_destination);
+        print(buffer_len(transferred.data));
+
+        drop(transferred);
+        drop(transfer_source);
+        drop(transfer_destination);
         drop(wrapped);
         drop(last_item);
         drop(text_items);
