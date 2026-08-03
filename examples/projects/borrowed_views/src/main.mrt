@@ -1,0 +1,10 @@
+module main
+import views;
+
+fn main() -> i32 {
+    var record: views.Record = views.Record { number: 5 };
+    print(views.view_record(record).number);
+    views.edit_record(record).number = 8;
+    print(record.number);
+    return 0;
+}

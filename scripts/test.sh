@@ -6,6 +6,7 @@ merit-project verify examples/projects/binary_packet
 merit-project verify examples/projects/generic_result
 merit-project verify examples/projects/trait_bounds
 merit-project verify examples/projects/generic_collections
+merit-project verify examples/projects/borrowed_views
 repository_root="$(pwd -P)"
 filesystem_test_directory="$(mktemp -d)"
 trap 'rm -rf "$filesystem_test_directory"' EXIT

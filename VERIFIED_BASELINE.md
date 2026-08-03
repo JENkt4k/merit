@@ -11,17 +11,19 @@ merit-project verify examples/projects/binary_packet
 merit-project verify examples/projects/generic_result
 merit-project verify examples/projects/trait_bounds
 merit-project verify examples/projects/generic_collections
+merit-project verify examples/projects/borrowed_views
 # filesystem_capabilities is verified from a temporary working directory
 ```
 
 Results:
 ```text
-219 passed
+220 passed
 text_pipeline: verified 2 modules; output matches (26 bytes)
 binary_packet: verified 2 modules; output matches (16 bytes)
 generic_result: verified 1 modules; output matches (6 bytes)
 trait_bounds: verified 1 modules; output matches (3 bytes)
 generic_collections: verified 1 modules; output matches (30 bytes)
+borrowed_views: verified 2 modules; output matches (4 bytes)
 filesystem_capabilities: verified 1 modules; output matches (13 bytes)
 ```
 

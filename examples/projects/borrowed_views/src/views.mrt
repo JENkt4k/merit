@@ -1,0 +1,11 @@
+module views
+
+pub stable("borrowed-record-v1") struct Record { number: i32; }
+
+pub fn view_record(borrow value: Record) -> borrow Record {
+    return value;
+}
+
+pub fn edit_record(borrow_mut value: Record) -> borrow_mut Record {
+    return value;
+}

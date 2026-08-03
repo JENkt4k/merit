@@ -1,0 +1,7 @@
+[package]
+name = "borrowed_views"
+entry = "src/main.mrt"
+sources = ["src/**/*.mrt"]
+
+[build]
+c_flags = ["-O2"]

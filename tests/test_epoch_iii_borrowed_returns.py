@@ -1,10 +1,13 @@
 import contextlib
 import io
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from merit.compiler import Checker, CompileError, Interpreter, compile_file, hir, parse
+from merit.project.build import build, check, interpret
+from merit.project.loader import load_project
 
 
 def source(signature: str, body: str) -> str:
@@ -125,3 +128,12 @@ struct Resource { data:Buffer; }
 fn expose_mut(borrow_mut value:Resource)->borrow_mut Resource { return value; }
 fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var resource:Resource=Resource{data:buffer_from_string(allocator,"old")}; let replacement:Buffer=buffer_from_string(allocator,"new-value"); replace(expose_mut(resource).data,replacement); print(buffer_len(resource.data)); } return 0; }'''
     assert parity(source_text,tmp_path) == ('9\n','9\n')
+
+
+def test_borrowed_views_project_preserves_interpreter_native_parity(tmp_path):
+    project=load_project(Path('examples/projects/borrowed_views/Merit.toml'))
+    check(project)
+    assert interpret(project) == '5\n8\n'
+    _,_,executable=build(project,tmp_path/'borrowed_views')
+    native=subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout
+    assert native == '5\n8\n'
