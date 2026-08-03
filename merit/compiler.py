@@ -562,13 +562,14 @@ class TypeTable:
         def statements(body):
             for statement in body:
                 yield statement
-                if statement[0] in ('with_cap','while'):yield from statements(statement[-1])
-                elif statement[0]=='if':yield from statements(statement[2]);yield from statements(statement[3])
-                elif statement[0]=='match':
-                    for arm in statement[2]:yield from statements(arm[2])
+                node=self.p.node(statement)
+                if node.kind in ('with_cap','while'):yield from statements(node.nested_body)
+                elif node.kind=='if':yield from statements(node.then_body);yield from statements(node.else_body)
+                elif node.kind=='match':
+                    for arm in node.match_arms:yield from statements(arm[2])
         for function in self.p.functions:
             names.add(function['return']);names.update(type_name for _,type_name,_ in function['params'])
-            names.update(statement[2] for statement in statements(function['body']) if statement[0] in ('let','try_let'))
+            names.update(self.p.node(statement).declared_type for statement in statements(function['body']) if self.p.node(statement).kind in ('let','try_let'))
         names.discard('void')
         return sorted(names)
     def all(self):return {name:dataclasses.asdict(self.get(name)) for name in self.known_types()}
@@ -861,7 +862,7 @@ class Checker:
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=st[4];self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if et not in (t,'number'):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
-                if e[0]=='number':self.validate_literal(t,e[1])
+                if self.p.node(e).kind=='number':self.validate_literal(t,e[1])
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
             elif tag=='try_let':
@@ -1108,16 +1109,18 @@ class Checker:
     def consume_owned_source(self,e,t,env,context):
         root=self.root_var(e)
         if not root or not self.types.get(t).owned: return
-        if e[0]=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
+        if self.p.node(e).kind=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
         if env[root].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot move borrowed parameter {root}')
         env[root].moved=True;env[root].move_origin=self.p.span(e);env[root].move_context=context
     def expr_path(self,e):
-        if e[0]=='var': return e[1]
-        if e[0]=='field': return self.expr_path(e[1])+'.'+e[2]
+        node=self.p.node(e)
+        if node.kind=='var': return node.operand(0)
+        if node.kind=='field': return self.expr_path(node.field_base)+'.'+node.field_name
         return '<expression>'
     def root_var(self,e):
-        while e and e[0]=='field': e=e[1]
-        return e[1] if e and e[0]=='var' else None
+        node=self.p.node(e)
+        while node and node.kind=='field':e=node.field_base;node=self.p.node(e)
+        return node.operand(0) if node and node.kind=='var' else None
     def referenced_roots(self,e):
         if not isinstance(e,tuple): return set()
         root=self.root_var(e)
@@ -1164,7 +1167,8 @@ class LayoutEngine:
             add(f['return'])
             for _,t,_ in f['params']: add(t)
             for st in CGenerator(self.p).walk_statements(f['body']):
-                if st[0] in ('let','try_let'): add(st[2])
+                node=self.p.node(st)
+                if node.kind in ('let','try_let'): add(node.declared_type)
         return sorted(found)
     def size_align(self,t):
         if t in self.SIZES:return self.SIZES[t]
@@ -1275,12 +1279,13 @@ class Interpreter:
                     if guard>1000000:raise RuntimeError('loop iteration limit exceeded')
         return None
     def assign(self,e,v,env):
-        if e[0]=='var':
+        node=self.p.node(e)
+        if node.kind=='var':
             if self.call_modes and self.call_modes[-1].get(e[1])=='borrow_mut':
                 env[e[1]].type_name=v.type_name;env[e[1]].value=v.value
             else: env[e[1]]=v
             return
-        if e[0]=='field':self.eval(e[1],env).value[e[2]]=v;return
+        if node.kind=='field':self.eval(node.field_base,env).value[node.field_name]=v;return
     def clone(self,v):
         if isinstance(v,TypedValue):
             if isinstance(v.value,dict): return TypedValue(v.type_name,{k:self.clone(x) for k,x in v.value.items()})
@@ -1441,7 +1446,8 @@ class CGenerator:
             add(f['return'])
             for _,t,_ in f['params']: add(t)
             for st in self.walk_statements(f['body']):
-                if st[0] in ('let','try_let'): add(st[2])
+                node=self.p.node(st)
+                if node.kind in ('let','try_let'): add(node.declared_type)
         return sorted(found)
     def ctype(self,t):
         if t in self.p.decimals:return 'int64_t'
@@ -1619,8 +1625,9 @@ class CGenerator:
         return lines
     def walk_old(self,e,out):
         if not isinstance(e,tuple):return
-        if e[0]=='call' and e[1]=='old':
-            key=repr(e[2][0]);out.setdefault(key,e[2][0]);return
+        node=self.p.node(e)
+        if node.kind=='call' and node.callee_name=='old':
+            key=repr(node.arguments[0]);out.setdefault(key,node.arguments[0]);return
         for x in e[1:]:
             if isinstance(x,tuple):self.walk_old(x,out)
             elif isinstance(x,list):
@@ -1628,12 +1635,13 @@ class CGenerator:
     def walk_statements(self, body):
         for st in body:
             yield st
-            if st[0] in ('with_cap','while'):
-                yield from self.walk_statements(st[-1])
-            elif st[0]=='if':
-                yield from self.walk_statements(st[2]); yield from self.walk_statements(st[3])
-            elif st[0]=='match':
-                for arm in st[2]: yield from self.walk_statements(arm[2])
+            node=self.p.node(st)
+            if node.kind in ('with_cap','while'):
+                yield from self.walk_statements(node.nested_body)
+            elif node.kind=='if':
+                yield from self.walk_statements(node.then_body); yield from self.walk_statements(node.else_body)
+            elif node.kind=='match':
+                for arm in node.match_arms: yield from self.walk_statements(arm[2])
     def owned_buffer_cleanup(self, f):
         ownership=self.ownership.function(f)
         return [
@@ -1702,7 +1710,7 @@ class CGenerator:
             return lines
         if kind=='expr':
             expression=node.expression
-            if expression[0] in ('call','generic_call'):
+            if self.p.node(expression).kind in ('call','generic_call'):
                 name,args=resolved_call(expression);vec=vec_builtin(name)
                 if vec and vec[0]=='replace':
                     elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
@@ -1771,7 +1779,8 @@ class CGenerator:
         if kind=='binop':return 'i32' if e[1] in ('==','!=','>=','<=','>','<') else self.etype(e[2],env)
     def address_expr(self,e,env):
         rendered=self.expr(e,env)
-        if e[0]=='var' and self.env_mode(env,e[1]) in ('borrow','borrow_mut'):
+        node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.operand(0)) in ('borrow','borrow_mut'):
             return rendered
         return '&'+rendered
     def expr(self,e,env,expected=None):

@@ -157,10 +157,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Call resolution uses the typed view for both ordinary and generic intrinsic calls.
 - Checker, interpreter, and MIR control-flow paths use named branch and match operands.
 
+## Typed helper-dispatch checkpoint now available
+- Type discovery and layout collection use typed declaration accessors.
+- Ownership path/root helpers and interpreter assignment use typed field/variable dispatch.
+- C contract scanning, cleanup discovery, statement walking, and address lowering use the typed boundary.
+- Compiler semantic statement/expression tag dispatch no longer relies on direct positional tag reads.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
 - Introduce typed statement/expression variants behind `SemanticNodeView` now that accessors are stable.
-- Migrate remaining helper-level raw operand reads before removing tuple compatibility.
+- Move span/provenance storage onto typed variants before removing tuple compatibility.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -174,7 +180,7 @@ Continue typed semantic-node decomposition:
 
 ## Suggested implementation order
 1. Introduce typed statement/expression variants.
-2. Migrate remaining helper-level raw operand reads before removing compatibility tuples.
+2. Move span/provenance storage onto variants before removing compatibility tuples.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

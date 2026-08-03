@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Typed helper-dispatch checkpoint
+
+- Migrated type and layout discovery to typed node accessors.
+- Migrated ownership path/root and interpreter assignment helpers.
+- Migrated C contract, cleanup, statement-walking, and address helpers.
+- Removed remaining direct tuple-tag reads from semantic expression/statement dispatch.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Epoch III — Call and control-flow accessor checkpoint
 
 - Added typed accessors for calls, generic arguments, fields, constructors, binary expressions, and control flow.

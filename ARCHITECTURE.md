@@ -38,6 +38,8 @@ Named accessors now cover binding declarations, assignment/replacement targets a
 
 Call, generic-call, field, constructor, binary-expression, and control-flow accessors complete the initial named semantic surface. Call resolution and checker/interpreter/MIR branch handling use these accessors; compact operands remain as a transitional storage format.
 
+Type/layout discovery, ownership path analysis, interpreter assignment, and C contract/cleanup/address helpers also dispatch through `Program.node()`. Direct raw tag reads are now confined outside semantic expression/statement dispatch, preparing the storage representation for typed variants.
+
 Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
 
 Generic extraction blanks template text while preserving its newlines. Monomorphized declarations carry a generated-line map back to the corresponding template lines and related instantiation lines. Project assembly remaps both locations to their owning units, so cross-module failures render the template as primary and the concrete application as a related note.
