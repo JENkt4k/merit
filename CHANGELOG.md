@@ -1,5 +1,12 @@
 # Changelog
 
+## Epoch III — Structured diagnostic checkpoint
+
+- Added stable structured diagnostic payloads with source ranges and related notes.
+- Added JSON diagnostic output to compiler and project CLIs.
+- Preserved existing human-readable diagnostics as the default.
+- Increased the regression suite from 190 to 193 tests.
+
 ## Epoch III — Qualified import checkpoint
 
 - Added explicit `module.symbol` resolution for imported functions, types, and constructors.

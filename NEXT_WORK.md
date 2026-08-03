@@ -328,6 +328,11 @@ Continue alpha-readiness hardening:
 - Qualification preprocessing preserves source columns.
 - Qualified access without an explicit import is rejected at project load time.
 
+## Structured diagnostic checkpoint now available
+- Diagnostics expose stable JSON severity, code, message, path/range, excerpt, and related-note fields.
+- `merit` and `merit-project` accept `--diagnostic-format json`.
+- Human-readable source diagnostics remain the default output.
+
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 

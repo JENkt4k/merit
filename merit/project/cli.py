@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from merit.compiler import CompileError, LayoutEngine, audit_payload
-from merit.diagnostics import render_exception
+from merit.diagnostics import diagnostic_from_exception, render_exception
 
 from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("check", "build", "build-shared", "run", "verify", "graph", "layout", "audit"))
     parser.add_argument("path", nargs="?", default="Merit.toml")
     parser.add_argument("-o", "--output")
+    parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
     try:
         project = load_project(_manifest(args.path))
@@ -71,7 +72,10 @@ def main(argv: list[str] | None = None) -> int:
         span = getattr(exc, "span", None)
         source_path = Path(span.source_name) if span is not None and span.source_name else _manifest(args.path)
         source = source_path.read_text() if source_path.is_file() else ""
-        print(render_exception(exc, source_path, source), file=sys.stderr)
+        if args.diagnostic_format == "json":
+            print(json.dumps(diagnostic_from_exception(exc,source_path,source).to_dict()),file=sys.stderr)
+        else:
+            print(render_exception(exc, source_path, source), file=sys.stderr)
         return 1
     except (ProjectError, ValueError, subprocess.CalledProcessError) as exc:
         print(exc, file=sys.stderr)

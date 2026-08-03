@@ -1,9 +1,10 @@
 from pathlib import Path
+import json
 
 import pytest
 
 from merit.compiler import Checker, CompileError, main as compiler_main, mir, parse
-from merit.diagnostics import render_exception
+from merit.diagnostics import diagnostic_from_exception, render_exception
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import load_project
 
@@ -348,3 +349,41 @@ pub fn identity<T: Copy>(value: T) -> T { return value; }''')
     assert "error[M7002]: type Buffer does not satisfy generic bound Copy" in error
     assert f" --> {main_source}:4:12" in error
     assert "4 |     return identity<Buffer>(0);" in error
+
+
+def test_structured_diagnostic_payload_includes_related_source_note():
+    error = move_error()
+    payload = diagnostic_from_exception(error, Path("move_origin.mrt"), MOVE_SOURCE).to_dict()
+    assert payload["severity"] == "error"
+    assert payload["code"] == "M5001"
+    assert payload["line"] == 8
+    assert payload["notes"][0]["message"] == "value moved here (initializing destination)"
+    assert payload["notes"][0]["line"] == 7
+
+
+def test_compiler_cli_emits_json_diagnostics(tmp_path, capsys):
+    source = tmp_path / "json_diagnostic.mrt"
+    source.write_text('''module json_diagnostic
+fn main()->i32 { return missing; }''')
+    assert compiler_main(["check", str(source), "--diagnostic-format", "json"]) == 1
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "M3003"
+    assert payload["path"] == str(source)
+    assert payload["line"] == 2
+
+
+def test_project_cli_emits_json_diagnostics(tmp_path, capsys):
+    root = tmp_path / "json_project_diagnostic"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="json_project_diagnostic"\nentry="src/main.mrt"\nsources=["src/*.mrt"]\n'
+    )
+    source = root / "src" / "main.mrt"
+    source.write_text('''module json_project_diagnostic
+capability allocate;
+fn main()->i32 { let allocator:Allocator=system_allocator(); let data:Buffer=buffer_new(allocator,8); drop(data); return 0; }''')
+    assert project_cli_main(["check", str(root), "--diagnostic-format", "json"]) == 1
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "M2003"
+    assert payload["path"] == str(source)
+    assert payload["line"] == 3

@@ -2140,6 +2140,7 @@ def main(argv=None):
     for n in source_commands:
         q=sub.add_parser(n)
         q.add_argument('source')
+        q.add_argument('--diagnostic-format',choices=('text','json'),default='text')
         if n in ('build','exec'):q.add_argument('-o','--output')
     q=sub.add_parser('new',help='create a small Merit project')
     q.add_argument('directory')
@@ -2180,8 +2181,10 @@ def main(argv=None):
                 completed=subprocess.run([str(e.resolve())])
                 return completed.returncode
     except CompileError as e:
-        from merit.diagnostics import render_exception
-        print(render_exception(e,path,path.read_text()),file=sys.stderr);return 1
+        from merit.diagnostics import diagnostic_from_exception,render_exception
+        if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text()).to_dict()),file=sys.stderr)
+        else:print(render_exception(e,path,path.read_text()),file=sys.stderr)
+        return 1
     except Exception as e:print(f'error: {e}',file=sys.stderr);return 1
     return 0
 if __name__=='__main__':raise SystemExit(main())

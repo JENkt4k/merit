@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import dataclasses
 from pathlib import Path
 from typing import Optional
 
@@ -59,8 +60,20 @@ class Diagnostic:
                     lines.append(f"  | {' ' * max(note.column - 1, 0)}{'^' * width}")
         return "\n".join(lines)
 
+    def to_dict(self) -> dict:
+        def path_text(value):return str(value) if value is not None else None
+        return {
+            "severity":"error","code":self.code,"message":self.message,
+            "path":path_text(self.path),"line":self.line,"column":self.column,"end_column":self.end_column,
+            "source_line":self.source_line,
+            "notes":[{
+                **{field.name:getattr(note,field.name) for field in dataclasses.fields(note) if field.name!='path'},
+                "path":path_text(note.path),
+            } for note in self.notes],
+        }
 
-def render_exception(exc: Exception, path: Path, source: str) -> str:
+
+def diagnostic_from_exception(exc: Exception, path: Path, source: str) -> Diagnostic:
     if isinstance(exc, UnexpectedInput):
         line = getattr(exc, "line", None)
         column = getattr(exc, "column", None)
@@ -76,7 +89,7 @@ def render_exception(exc: Exception, path: Path, source: str) -> str:
             line,
             column,
             source_line,
-        ).render()
+        )
     if hasattr(exc, "code") and hasattr(exc, "message"):
         rows = source.splitlines()
         span = getattr(exc, "span", None)
@@ -97,5 +110,9 @@ def render_exception(exc: Exception, path: Path, source: str) -> str:
                 note_rows = note_path.read_text().splitlines()
             note_source = note_rows[note_line - 1] if note_line is not None and 1 <= note_line <= len(note_rows) else None
             notes.append(DiagnosticNote(note.message, note_line, note_column, note_source, note_path, note_end_column))
-        return Diagnostic(exc.code, exc.message, diagnostic_path, line, column, source_line, tuple(notes), end_column).render()
-    return Diagnostic("M0000", str(exc), path).render()
+        return Diagnostic(exc.code, exc.message, diagnostic_path, line, column, source_line, tuple(notes), end_column)
+    return Diagnostic("M0000", str(exc), path)
+
+
+def render_exception(exc: Exception, path: Path, source: str) -> str:
+    return diagnostic_from_exception(exc,path,source).render()
