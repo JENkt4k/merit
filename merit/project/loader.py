@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import CompileError, Program, SourceSpan, parse, _impl_function_name
+from merit.compiler import CompileError, NodeProvenance, Program, SemanticTuple, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -330,6 +330,14 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 span.end_column,
                 str(path),
             )
+    semantic_nodes = {}
+    for function in merged.functions:
+        for expression in (*function["pre"], *function["post"]):
+            semantic_nodes.update((id(node), node) for node in _walk_expr(expression) if isinstance(node, SemanticTuple))
+        for statement in _walk_statements(function["body"]):
+            semantic_nodes.update((id(node), node) for node in _walk_expr(statement) if isinstance(node, SemanticTuple))
+    for node_id, node in semantic_nodes.items():
+        node.provenance = NodeProvenance(merged.spans.get(node_id), merged.related_spans.get(node_id))
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:

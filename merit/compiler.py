@@ -104,7 +104,8 @@ class SourceSpan:
 class NodeProvenance:
     primary:SourceSpan|None=None; related:SourceSpan|None=None
 class SemanticTuple(tuple):
-    def __new__(cls,kind,*operands):return super().__new__(cls,(kind,*operands))
+    def __new__(cls,kind,*operands):
+        node=super().__new__(cls,(kind,*operands));node.provenance=NodeProvenance();return node
     @property
     def kind(self):return self[0]
     @property
@@ -204,7 +205,10 @@ class SemanticNodeView:
 @dataclasses.dataclass
 class Program:
     module:str; decimals:dict[str,DecimalType]; bounded:dict[str,BoundedType]; capabilities:set[str]; structs:dict[str,StructType]; functions:list[dict[str,Any]]; enums:dict[str,EnumType]=dataclasses.field(default_factory=dict); traits:dict[str,TraitType]=dataclasses.field(default_factory=dict); impls:list[TraitImpl]=dataclasses.field(default_factory=list); spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict); related_spans:dict[int,SourceSpan]=dataclasses.field(default_factory=dict)
-    def provenance(self,node):return NodeProvenance(self.spans.get(id(node)),self.related_spans.get(id(node)))
+    def provenance(self,node):
+        embedded=getattr(node,'provenance',None)
+        if embedded is not None and (embedded.primary is not None or embedded.related is not None):return embedded
+        return NodeProvenance(self.spans.get(id(node)),self.related_spans.get(id(node)))
     def span(self,node):return self.provenance(node).primary
     def node(self,raw):
         if not isinstance(raw,tuple) or not raw:return None
@@ -218,10 +222,13 @@ class ASTBuilder(Transformer):
     def __init__(self,source_name=None,line_map=None,related_line_map=None):super().__init__();self.spans={};self.related_spans={};self.source_name=source_name;self.line_map=line_map or {};self.related_line_map=related_line_map or {}
     def mark(self,node,meta):
         line=self.line_map.get(meta.line,meta.line);end_line=self.line_map.get(meta.end_line,meta.end_line)
-        self.spans[id(node)]=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
+        primary=SourceSpan(line,meta.column,end_line,meta.end_column,self.source_name)
+        self.spans[id(node)]=primary;related_span=None
         if meta.line in self.related_line_map:
             related=self.related_line_map[meta.line]
-            self.related_spans[id(node)]=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
+            related_span=SourceSpan(related[0],related[1],related[0],related[2],self.source_name)
+            self.related_spans[id(node)]=related_span
+        if isinstance(node,SemanticTuple):node.provenance=NodeProvenance(primary,related_span)
         return node
     def semantic(self,kind,*operands):return SEMANTIC_STORAGE_TYPES[kind](kind,*operands)
     def module_decl(self,x): return str(x[0])

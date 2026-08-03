@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Embedded semantic-node provenance checkpoint
+
+- Embedded typed primary/related provenance on every concrete semantic node.
+- Made `Program.provenance()` prefer embedded locations with compatibility fallback.
+- Refreshed embedded locations after project-unit remapping.
+- Verified semantic provenance remains available after clearing legacy maps.
+- Preserved the 171-test interpreter/native parity baseline.
+
 ## Development tooling — Python launcher portability
 
 - Made bootstrap select `python` or `python3` instead of requiring a `python` command.

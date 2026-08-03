@@ -1,7 +1,7 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III precise diagnostic range checkpoint** of Merit.
+This repository contains the verified **Epoch III embedded semantic-node provenance checkpoint** of Merit.
 
 Current baseline:
 - 171 tests passing after editable installation
@@ -57,6 +57,7 @@ python -m pytest -q
 - centralized typed primary/related provenance lookup for node views and checker diagnostics
 - exact generic application columns for expansion errors and related instantiation notes
 - full-width primary and related source underlines from semantic span ranges
+- embedded primary/related provenance on every semantic node with project remapping parity
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

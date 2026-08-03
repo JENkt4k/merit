@@ -73,6 +73,9 @@ def test_semantic_node_view_exposes_typed_dispatch_and_provenance():
     provenance = program.provenance(capability_statement)
     assert provenance.primary == capability.span
     assert provenance.related is None
+    program.spans.clear()
+    program.related_spans.clear()
+    assert program.provenance(capability_statement) == provenance
     binding = program.node(capability.operand(1)[1])
     assert isinstance(binding.raw, BindingNode)
     assert isinstance(binding.raw, LetNode)

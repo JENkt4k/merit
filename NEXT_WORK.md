@@ -205,10 +205,16 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Generated-body related notes underline the instantiation in both single-source and project diagnostics.
 - The diagnostic renderer uses span end columns to underline full primary and related ranges.
 
+## Embedded semantic-node provenance checkpoint now available
+- Every `SemanticTuple` carries typed primary and related `NodeProvenance` directly.
+- `Program.provenance()` prefers embedded locations and falls back to legacy declaration maps.
+- Project merging refreshes embedded provenance after remapping both locations to owning units.
+- Semantic-node diagnostics remain source-aware after legacy maps are cleared.
+
 ## Recommended next epic
 Continue typed semantic-node decomposition:
-- Move primary span and related provenance storage onto concrete variants.
-- Retire external node-id metadata maps behind `Program.provenance()` after project remapping supports embedded provenance.
+- Retire semantic-node entries from external node-id metadata maps; retain declaration provenance until declarations are embedded.
+- Embed provenance on declaration records and remove the remaining external maps.
 - Remove tuple compatibility only after every operand access is typed.
 
 ## Deliberately deferred
@@ -221,8 +227,8 @@ Continue typed semantic-node decomposition:
 - concurrency
 
 ## Suggested implementation order
-1. Embed span/provenance on concrete semantic variants.
-2. Retire external node-id metadata maps after project remapping is migrated.
+1. Remove duplicated semantic-node provenance map entries.
+2. Embed declaration provenance and retire the remaining external maps.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates
