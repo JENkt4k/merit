@@ -6,6 +6,7 @@
 - Added JSON diagnostic output to compiler and project CLIs.
 - Preserved existing human-readable diagnostics as the default.
 - Ensured syntax and project-system failures never fall back to mixed text in JSON mode.
+- Added stable `M8000` project error codes and source ranges for qualified-import failures.
 - Increased the regression suite from 190 to 195 tests.
 
 ## Epoch III — Qualified import checkpoint

@@ -410,5 +410,5 @@ def test_project_error_honors_json_diagnostic_mode(tmp_path, capsys):
     )
     assert project_cli_main(["check", str(root), "--diagnostic-format", "json"]) == 1
     payload = json.loads(capsys.readouterr().err)
-    assert payload["code"] == "M0000"
+    assert payload["code"] == "M8000"
     assert "missing modules" in payload["message"]

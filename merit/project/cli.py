@@ -79,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except (ProjectError, ValueError, subprocess.CalledProcessError) as exc:
         if args.diagnostic_format == "json":
-            diagnostic_path=_manifest(args.path)
+            span=getattr(exc,"span",None)
+            diagnostic_path=Path(span.source_name) if span is not None and getattr(span,"source_name",None) else _manifest(args.path)
             source=diagnostic_path.read_text() if diagnostic_path.is_file() else ""
             print(json.dumps(diagnostic_from_exception(exc,diagnostic_path,source).to_dict()),file=sys.stderr)
         else:

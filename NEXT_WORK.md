@@ -333,6 +333,7 @@ Continue alpha-readiness hardening:
 - `merit` and `merit-project` accept `--diagnostic-format json`.
 - Human-readable source diagnostics remain the default output.
 - Syntax and project-system failures also honor structured output mode.
+- Project-system failures use stable `M8000` codes; qualification errors include precise source ranges.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:

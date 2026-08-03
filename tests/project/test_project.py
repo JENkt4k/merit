@@ -150,7 +150,7 @@ def test_qualified_imported_function_resolves_and_preserves_parity(tmp_path):
     assert subprocess.run([str(executable)],check=True,text=True,capture_output=True).stdout == "42\n"
 
 
-def test_qualified_name_requires_explicit_import(tmp_path):
+def test_qualified_name_requires_explicit_import(tmp_path, capsys):
     project_root = tmp_path / "unimported_qualified"
     (project_root / "src").mkdir(parents=True)
     (project_root / "Merit.toml").write_text(
@@ -164,6 +164,11 @@ def test_qualified_name_requires_explicit_import(tmp_path):
     )
     with pytest.raises(ProjectError,match="module main uses qualified name domain.answer without importing domain"):
         load_project(project_root / "Merit.toml")
+    assert project_cli_main(["check",str(project_root),"--diagnostic-format","json"]) == 1
+    payload=json.loads(capsys.readouterr().err)
+    assert payload["code"] == "M8000"
+    assert payload["path"] == str(project_root / "src" / "main.mrt")
+    assert payload["line"] == 2
 
 
 def test_cycle_is_rejected(tmp_path):

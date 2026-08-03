@@ -14,7 +14,9 @@ PUB_RE = re.compile(r"^(\s*)pub\s+(?=(?:stable\([^\n]+\)\s+)?(?:enum|trait|decim
 
 
 class ProjectError(Exception):
-    pass
+    code = "M8000"
+    def __init__(self,message: str,span=None,notes=()):
+        super().__init__(message);self.message=message;self.span=span;self.notes=tuple(notes)
 
 
 @dataclass(frozen=True)
@@ -90,12 +92,14 @@ def _extract_generic_context_declarations(source: str) -> str:
     return "\n".join(declarations)
 
 
-def _resolve_qualified_names(source: str, module: str, imports: tuple[str, ...], module_names: set[str]) -> str:
+def _resolve_qualified_names(source: str, module: str, imports: tuple[str, ...], module_names: set[str], source_name: str) -> str:
     def replace(match: re.Match) -> str:
         qualifier,symbol=match.group(1),match.group(2)
         if qualifier not in module_names:return match.group(0)
         if qualifier != module and qualifier not in imports:
-            raise ProjectError(f"module {module} uses qualified name {qualifier}.{symbol} without importing {qualifier}")
+            line=source.count("\n",0,match.start())+1;line_start=source.rfind("\n",0,match.start())+1;column=match.start()-line_start+1
+            span=SourceSpan(line,column,line,column+len(match.group(0)),source_name)
+            raise ProjectError(f"module {module} uses qualified name {qualifier}.{symbol} without importing {qualifier}",span)
         return " " * (len(qualifier)+1) + symbol
     return re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b",replace,source)
 
@@ -107,7 +111,7 @@ def _parse_unit(path: Path, module_names: set[str], generic_prelude: str = "") -
     exports = frozenset(match.group(2) for match in PUB_RE.finditer(imports_source))
     parser_source = PUB_RE.sub(r"\1", imports_source)
     module = re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)", parser_source, re.MULTILINE).group(1)
-    parser_source = _resolve_qualified_names(parser_source,module,imports,module_names)
+    parser_source = _resolve_qualified_names(parser_source,module,imports,module_names,str(path))
     try:
         program = parse(parser_source, str(path))
     except Exception as exc:
