@@ -15,6 +15,7 @@ Alpha.3 implements the first executable ownership subset.
 - `drop(name)` consumes an owned local.
 - `replace(target, replacement)` evaluates the replacement once, drops the previous value in mutable addressable owned storage, installs the replacement, and consumes its source.
 - Replacement accepts mutable locals, fields rooted in mutable aggregates, and mutable borrowed parameters.
+- `vec_replace<T>(vector, index, replacement)` performs the same operation for an owned vector element after checked indexing.
 - MIR receives implicit drops for remaining owned struct locals in reverse declaration order.
 
 ## Deliberate limits

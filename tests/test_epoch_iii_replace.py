@@ -171,3 +171,89 @@ def test_replace_through_mutable_borrow_interpreter_and_native_match(tmp_path):
     compile_file(source, executable)
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
     assert native.stdout == interpreted.getvalue() == "borrow-new\n"
+
+
+VECTOR_REPLACE_PROGRAM = '''module replace_vector
+capability allocate;
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        var values: Vec<Buffer> = vec_new<Buffer>(allocator, 1);
+        let initial: Buffer = buffer_from_string(allocator, "vector-old");
+        vec_push<Buffer>(values, initial);
+        let replacement: Buffer = buffer_from_string(allocator, "vector-new");
+        vec_replace<Buffer>(values, 0, replacement);
+        let result: Buffer = vec_pop<Buffer>(values);
+        print(result);
+        drop(result);
+        drop(values);
+    }
+    return 0;
+}'''
+
+
+def test_replace_owned_vector_element_interpreter_and_native_match(tmp_path):
+    program = checked(VECTOR_REPLACE_PROGRAM)
+    interpreted = io.StringIO()
+    with contextlib.redirect_stdout(interpreted):
+        Interpreter(program).run()
+
+    source = tmp_path / "replace_vector.mrt"
+    executable = tmp_path / "replace_vector"
+    source.write_text(VECTOR_REPLACE_PROGRAM)
+    compile_file(source, executable)
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
+    assert native.stdout == interpreted.getvalue() == "vector-new\n"
+
+
+def test_vec_replace_drops_old_element_before_assignment():
+    c_source = CGenerator(checked(VECTOR_REPLACE_PROGRAM)).generate()
+    helper = "merit_vec_replace__Buffer"
+    start = c_source.index(helper)
+    start = c_source.rfind("static ", 0, start)
+    body = c_source[start:c_source.index("\n", start)]
+    assert body.index("merit_buffer_drop(&v->data[i]);") < body.index("v->data[i]=x;")
+    assert c_source.count("_merit_vec_replace_value_0 = replacement;") == 1
+    assert c_source.index("_merit_vec_replace_index_0 = 0;") < c_source.index("_merit_vec_replace_value_0 = replacement;")
+
+
+def test_vec_replace_consumes_replacement_source():
+    bad = VECTOR_REPLACE_PROGRAM.replace(
+        "let result: Buffer",
+        "print(buffer_len(replacement));\n        let result: Buffer",
+    )
+    with pytest.raises(CompileError, match="moved value replacement"):
+        checked(bad)
+
+
+def test_vec_replace_requires_mutable_vector():
+    bad = VECTOR_REPLACE_PROGRAM.replace("var values: Vec<Buffer>", "let values: Vec<Buffer>")
+    with pytest.raises(CompileError, match="borrow_mut argument values is not mutable"):
+        checked(bad)
+
+
+def test_vec_replace_rejects_copy_element_type():
+    source = '''module replace_copy_vector
+capability allocate;
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        var values: Vec<i64> = vec_new<i64>(allocator, 1);
+        vec_push<i64>(values, 1);
+        vec_replace<i64>(values, 0, 2);
+        drop(values);
+    }
+    return 0;
+}'''
+    with pytest.raises(CompileError, match="requires an owned element type"):
+        checked(source)
+
+
+def test_vec_replace_rejects_source_aliasing_receiver():
+    bad = VECTOR_REPLACE_PROGRAM.replace(
+        "vec_replace<Buffer>(values, 0, replacement);",
+        "vec_replace<Buffer>(values, 0, vec_pop<Buffer>(values));",
+    )
+    with pytest.raises(CompileError, match="replacement source aliases vector values"):
+        checked(bad)

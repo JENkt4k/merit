@@ -81,11 +81,13 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Passing an owned field to a consuming function is rejected.
 - Returning an owned field from an aggregate is rejected.
 - Constructing a new aggregate by moving an owned field out of another aggregate is rejected.
-- Assignment into existing owned storage is rejected until explicit replace/drop semantics exist.
+- Plain assignment into existing owned storage remains rejected so replacement is always explicit.
+- Explicit `replace(target, replacement)` supports mutable owned locals, owned fields, and mutable borrowed storage.
+- Explicit `vec_replace<T>` supports checked replacement of owned vector elements.
 
 ## Recommended next epic
 Continue memory model polish:
-- Extend the implemented `replace(target, replacement)` operation to owned vector elements with checked indexing.
+- Add focused resource-destruction instrumentation if user-defined destructors are introduced; current replacement drop order is asserted in generated C.
 - Add partial-move tracking only if the language commits to field-level ownership states.
 - Improve diagnostics with move-origin notes once the checker carries source spans.
 
@@ -99,14 +101,17 @@ Continue memory model polish:
 - concurrency
 
 ## Suggested implementation order
-1. Design explicit replacement operations for owned storage.
-2. Continue migrating checker/codegen decisions onto typed semantic metadata.
-3. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
+1. Continue migrating checker/codegen decisions onto typed semantic metadata.
+2. Continue removing duplicated aggregate/drop special cases as parser and AST support improve.
+3. Improve move diagnostics once source spans survive through the relevant semantic nodes.
 
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 
 ### Positive
+- owned locals, fields, and mutable borrows can be replaced explicitly.
+- owned vector elements can be replaced with checked indexing.
+- interpreter and native replacement behavior agree.
 - `Vec<i64>` grows and preserves values.
 - `Vec<Pair<i64,i32>>` stores generic structs.
 - `Vec<Buffer>` moves owned buffers into the vector and destroys each live element exactly once.
@@ -148,7 +153,8 @@ The checkpoint is complete only when all of these pass:
 - owned field extraction into a new binding is rejected.
 - owned field extraction into a consuming call is rejected.
 - owned field extraction through aggregate construction or return is rejected.
-- assignment into owned storage is rejected until replacement semantics exist.
+- plain assignment into owned storage remains rejected in favor of explicit replacement.
+- replacement sources are consumed and aliasing replacement expressions are rejected.
 
 ## Recommended acceptance project
 Create `examples/projects/generic_collections/` with modules for:

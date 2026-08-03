@@ -349,7 +349,7 @@ def parse(s:str)->Program:
     return ASTBuilder().transform(PARSER.parse(expand_generics(s)))
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}
 OWNED_BUILTINS={'Buffer','I64Vec'}
-VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','pop','drop')
+VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
 INT_RANGES={'i8':(-2**7,2**7-1),'i16':(-2**15,2**15-1),'i32':(-2**31,2**31-1),'i64':(-2**63,2**63-1),'u8':(0,255),'u16':(0,65535),'u32':(0,2**32-1),'u64':(0,2**64-1)}
 class CompileError(Exception):pass
@@ -362,7 +362,7 @@ class TypeSemantics:
     owned:bool; needs_drop:bool; copyable:bool; reason:str
 @dataclasses.dataclass(frozen=True)
 class VecIntrinsic:
-    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False; capability:str|None=None; hazard:str|None=None
+    arity:int; return_kind:str; receiver_mode:str|None=None; value_index:int|None=None; index_index:int|None=None; requires_allocate:bool=False; rejects_owned_result_copy:bool=False; rejects_owned_replace:bool=False; requires_owned_element:bool=False; capability:str|None=None; hazard:str|None=None
 
 @dataclasses.dataclass(frozen=True)
 class BuiltinSig:
@@ -411,6 +411,7 @@ VEC_INTRINSICS={
     'len':VecIntrinsic(1,'i64',receiver_mode='borrow'),
     'get':VecIntrinsic(2,'elem',receiver_mode='borrow',index_index=1,rejects_owned_result_copy=True),
     'set':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,rejects_owned_replace=True),
+    'replace':VecIntrinsic(3,'void',receiver_mode='borrow_mut',value_index=2,index_index=1,requires_owned_element=True),
     'pop':VecIntrinsic(1,'elem',receiver_mode='borrow_mut'),
     'drop':VecIntrinsic(1,'void',receiver_mode='borrow_mut'),
 }
@@ -755,11 +756,16 @@ class Checker:
                     if type_needs_drop(elem,self.p): raise CompileError(f'M7301: {name} cannot copy owned element {elem}; use pop')
                 if spec.rejects_owned_replace:
                     if type_needs_drop(elem,self.p): raise CompileError(f'M7302: {name} cannot replace owned element {elem}')
+                if spec.requires_owned_element and not type_needs_drop(elem,self.p):
+                    raise CompileError(f'M7304: {name} requires an owned element type, got {elem}')
                 if spec.index_index is not None:
                     it=self.expr_type(args[spec.index_index],env,caps,fn)
                     if it not in ('i64','number'): raise CompileError(f'M3008: argument {spec.index_index} expects i64, got {it}')
                 if spec.value_index is not None:
                     value_arg=args[spec.value_index]
+                    receiver_root=self.root_var(args[0])
+                    if op=='replace' and receiver_root in self.referenced_roots(value_arg):
+                        raise CompileError(f'M7303: replacement source aliases vector {receiver_root}')
                     at=self.expr_type(value_arg,env,caps,fn)
                     if at not in (elem,'number'): raise CompileError(f'M3008: vector value expects {elem}, got {at}')
                     self.consume_owned_source(value_arg,at,env,f'calling {name}')
@@ -832,6 +838,18 @@ class Checker:
     def root_var(self,e):
         while e and e[0]=='field': e=e[1]
         return e[1] if e and e[0]=='var' else None
+    def referenced_roots(self,e):
+        if not isinstance(e,tuple): return set()
+        root=self.root_var(e)
+        if root: return {root}
+        roots=set()
+        for part in e[1:]:
+            if isinstance(part,tuple): roots |= self.referenced_roots(part)
+            elif isinstance(part,list):
+                for item in part: roots |= self.referenced_roots(item)
+            elif isinstance(part,dict):
+                for item in part.values(): roots |= self.referenced_roots(item)
+        return roots
     def validate_literal(self,t,text):
         if t in self.p.decimals:
             d=self.p.decimals[t];v=Decimal(text);q=Decimal(1).scaleb(-d.scale)
@@ -1051,6 +1069,11 @@ class Interpreter:
                     data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
                     if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
                     data[idx]=self.clone(self.eval(args[2],env,elem)); return TypedValue('void',None)
+                if op=='replace':
+                    data=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
+                    replacement=self.clone(self.eval(args[2],env,elem))
+                    if idx<0 or idx>=len(data): raise RuntimeError('vector index out of bounds')
+                    data[idx]=replacement; return TypedValue('void',None)
                 if op=='pop':
                     data=self.eval(args[0],env).value
                     if not data: raise RuntimeError('vector pop from empty')
@@ -1258,6 +1281,7 @@ class CGenerator:
             f'static int64_t merit_vec_len__{suffix}(const {vct} *v){{return (int64_t)v->len;}}',
             f'static {ct} merit_vec_get__{suffix}(const {vct} *v,int64_t i){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);return v->data[i];}}',
             f'static void merit_vec_set__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);v->data[i]=x;}}',
+            f'static void merit_vec_replace__{suffix}({vct} *v,int64_t i,{ct} x){{if(i<0||(size_t)i>=v->len)merit_fail("vector index out of bounds",86);{self.drop_field_stmt("v->data[i]",elem)}v->data[i]=x;}}',
             f'static {ct} merit_vec_pop__{suffix}({vct} *v){{if(!v->len)merit_fail("vector pop from empty",86);return v->data[--v->len];}}',
             f'static void merit_vec_drop__{suffix}({vct} *v){{{drop_live}free(v->data);v->data=NULL;v->len=0;v->cap=0;}}',
             ''
@@ -1329,9 +1353,11 @@ class CGenerator:
         elif e[0] in ('call','generic_call'):
             name,args=resolved_call(e)
             vec=vec_builtin(name)
-            if vec and vec[0]=='push':
-                root=self.expr_root(args[1])
-                if root: moved.add(root)
+            if vec:
+                op,elem=vec;spec=VEC_INTRINSICS[op]
+                if spec.value_index is not None and type_needs_drop(elem,self.p):
+                    root=self.expr_root(args[spec.value_index])
+                    if root: moved.add(root)
             else:
                 variants=[variant for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
                 if variants and variants[0].payload_type is not None and args:
@@ -1419,7 +1445,20 @@ class CGenerator:
             else:
                 lines.append(f'{p}printf("%lld\\n",(long long)({temp}));')
             return lines
-        if s[0]=='expr':return [f'{p}(void)({self.expr(s[1],env)});']
+        if s[0]=='expr':
+            expression=s[1]
+            if expression[0] in ('call','generic_call'):
+                name,args=resolved_call(expression);vec=vec_builtin(name)
+                if vec and vec[0]=='replace':
+                    elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
+                    index_temp=f'_merit_vec_replace_index_{counter}'
+                    value_temp=f'_merit_vec_replace_value_{counter}'
+                    return [
+                        f'{p}int64_t {index_temp} = {self.expr(args[1],env)};',
+                        f'{p}{self.ctype(elem)} {value_temp} = {self.expr(args[2],env,elem)};',
+                        f'{p}merit_vec_replace__{elem}({self.address_expr(args[0],env)}, {index_temp}, {value_temp});',
+                    ]
+            return [f'{p}(void)({self.expr(expression,env)});']
         if s[0]=='drop':
             t=self.env_type(env,s[1])
             return [self.drop_binding_line(p,s[1],t)]
@@ -1523,6 +1562,7 @@ class CGenerator:
                 if op=='len': return f'merit_vec_len__{elem}({self.address_expr(a[0],env)})'
                 if op=='get': return f'merit_vec_get__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
                 if op=='set': return f'(merit_vec_set__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
+                if op=='replace': return f'(merit_vec_replace__{elem}({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env,elem)}), 0)'
                 if op=='pop': return f'merit_vec_pop__{elem}({self.address_expr(a[0],env)})'
                 if op=='drop': return f'(merit_vec_drop__{elem}({self.address_expr(a[0],env)}), 0)'
             if n in ('checked_add','checked_sub','checked_mul','decimal_div'):

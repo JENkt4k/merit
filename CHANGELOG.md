@@ -1,5 +1,14 @@
 # Changelog
 
+## Epoch III — Explicit owned replacement checkpoint
+
+- Added `replace(target, replacement)` for mutable owned locals, owned fields, and mutable borrowed parameters.
+- Defined replacement order as evaluate once, drop the displaced owner, then install and consume the replacement.
+- Added checked `vec_replace<T>` for owned vector elements.
+- Added conservative source/target alias rejection.
+- Preserved replacement operations in MIR and excluded consumed replacement sources from implicit cleanup.
+- Added interpreter/native parity and generated-C drop-order coverage.
+
 ## Epoch III — Filesystem capability acceptance checkpoint
 
 - Added a project-level deterministic filesystem read/write acceptance application.

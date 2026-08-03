@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Design and implement **explicit replacement operations for owned storage** as described in `NEXT_WORK.md`.
+Continue **memory-model polish and typed semantic metadata migration** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.
