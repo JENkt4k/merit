@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from merit.compiler import Program, parse, _impl_function_name
+from merit.compiler import Program, SourceSpan, parse, _impl_function_name
 from merit.diagnostics import render_exception
 from .manifest import Manifest, load_manifest
 
@@ -280,12 +280,29 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
                 raise ProjectError(f"duplicate function {name}: {seen_functions[name]} and {unit.path}")
             seen_functions[name] = unit.path
             functions.append(function)
-    combined_source = "module " + manifest.name + "\n" + "\n".join(_declaration_source(unit) for unit in units)
+    combined_source = "module " + manifest.name + "\n"
+    source_ranges = []
+    for unit in units:
+        declaration = _declaration_source(unit)
+        start_line = combined_source.count("\n") + 1
+        combined_source += declaration + "\n"
+        source_ranges.append((start_line, start_line + declaration.count("\n"), unit.path))
     try:
         merged = parse(combined_source, str(manifest.root / "<merged-project>"))
     except Exception as exc:
         raise ProjectError(f"project generic expansion failed: {exc}") from exc
     seen_functions = {function["name"]: manifest.root for function in merged.functions}
+    for node_id, span in list(merged.spans.items()):
+        owner = next((entry for entry in source_ranges if entry[0] <= span.line <= entry[1]), None)
+        if owner:
+            start, _, path = owner
+            merged.spans[node_id] = SourceSpan(
+                span.line - start + 1,
+                span.column,
+                span.end_line - start + 1,
+                span.end_column,
+                str(path),
+            )
     functions = list(merged.functions)
     for impl in merged.impls:
         for method in impl.methods:

@@ -30,6 +30,8 @@ HIR inspection exposes the concrete type-semantics table. MIR inspection exposes
 
 Semantic expression nodes retain source spans in the program metadata table. Ownership state records move and drop origins, and MIR consumption metadata includes the originating span and source identity.
 
+Project assembly remaps spans from the merged semantic program to the owning source unit for unchanged source declarations. Project checking commands render structured compiler errors using those per-unit origins.
+
 ## Planned decomposition
 
 The next architectural slice moves AST/HIR/MIR structures into dedicated packages without changing semantics. Subsequent slices add enums and typed errors, buffers and allocators, then a real basic-block MIR.

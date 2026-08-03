@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import Checker, CompileError, mir, parse
+from merit.compiler import Checker, CompileError, main as compiler_main, mir, parse
 from merit.diagnostics import render_exception
+from merit.project.cli import main as project_cli_main
 from merit.project.loader import load_project
 
 
@@ -94,4 +95,69 @@ def test_project_merge_retains_source_identity_for_semantic_nodes():
     project = load_project(Path("examples/projects/binary_packet/Merit.toml"))
     spans = list(project.program.spans.values())
     assert spans
-    assert all(span.source_name for span in spans)
+    source_names = {span.source_name for span in spans}
+    assert str((Path("examples/projects/binary_packet/src/main.mrt")).resolve()) in source_names
+    assert str((Path("examples/projects/binary_packet/src/packet.mrt")).resolve()) in source_names
+
+
+def write_invalid_project(tmp_path):
+    root = tmp_path / "move_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="move_project"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n'
+    )
+    (root / "src" / "main.mrt").write_text(MOVE_SOURCE.replace("module move_origin", "module move_project"))
+    return root
+
+
+@pytest.mark.parametrize("command", ["check", "build", "run", "verify", "audit"])
+def test_project_commands_render_source_aware_semantic_errors(tmp_path, capsys, command):
+    root = write_invalid_project(tmp_path)
+    arguments = [command, str(root)]
+    if command in ("build", "run", "verify"):
+        arguments += ["-o", str(tmp_path / "invalid-output")]
+    assert project_cli_main(arguments) == 1
+    error = capsys.readouterr().err
+    source_path = root / "src" / "main.mrt"
+    assert "error[M5001]: use of moved value source" in error
+    assert f" --> {source_path}:8:26" in error
+    assert "note: value moved here (initializing destination)" in error
+    assert f" --> {source_path}:7:35" in error
+
+
+def test_single_source_cli_renders_structured_semantic_error(tmp_path, capsys):
+    source = tmp_path / "move_origin.mrt"
+    source.write_text(MOVE_SOURCE)
+    assert compiler_main(["check", str(source)]) == 1
+    error = capsys.readouterr().err
+    assert "error[M5001]: use of moved value source" in error
+    assert f" --> {source}:8:26" in error
+    assert "note: value moved here (initializing destination)" in error
+
+
+def test_multimodule_diagnostic_points_to_owning_non_entry_source(tmp_path, capsys):
+    root = tmp_path / "multi_move"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="multi_move"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n'
+    )
+    (root / "src" / "main.mrt").write_text(
+        "module multi_move\nimport worker;\nfn main() -> i32 { return 0; }\n"
+    )
+    worker = root / "src" / "worker.mrt"
+    worker.write_text('''module worker
+capability allocate;
+pub fn broken() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        let source: Buffer = buffer_from_string(allocator, "worker");
+        let destination: Buffer = source;
+        print(buffer_len(source));
+        drop(destination);
+    }
+    return 0;
+}''')
+    assert project_cli_main(["check", str(root)]) == 1
+    error = capsys.readouterr().err
+    assert f" --> {worker}:8:26" in error
+    assert f" --> {worker}:7:35" in error

@@ -6,7 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from merit.compiler import LayoutEngine, audit_payload
+from merit.compiler import CompileError, LayoutEngine, audit_payload
+from merit.diagnostics import render_exception
 
 from .build import build, check, interpret
 from .loader import ProjectError, load_project
@@ -62,6 +63,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"verified {len(project.units)} modules; output matches ({len(actual)} bytes)")
         return 0
+    except CompileError as exc:
+        span = getattr(exc, "span", None)
+        source_path = Path(span.source_name) if span is not None and span.source_name else _manifest(args.path)
+        source = source_path.read_text() if source_path.is_file() else ""
+        print(render_exception(exc, source_path, source), file=sys.stderr)
+        return 1
     except (ProjectError, ValueError, subprocess.CalledProcessError) as exc:
         print(exc, file=sys.stderr)
         return 1

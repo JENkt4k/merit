@@ -102,11 +102,17 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 - Shared ownership effects and MIR expose consumption source locations.
 - Generic expansion currently reports locations in expanded source when rewriting changes line structure; typed source maps remain future work.
 
+## Project semantic diagnostic checkpoint now available
+- Merged project nodes map back to their owning source unit and original line numbers.
+- `merit-project check`, build, run, verify, and audit render structured semantic errors consistently.
+- Multi-module ownership failures identify the correct non-entry source file.
+- The single-source CLI uses the same structured semantic renderer.
+
 ## Recommended next epic
-Extend structured semantic diagnostics through project workflows:
-- Map merged project nodes back to their owning source units.
-- Render semantic errors consistently from `merit-project check`, build, run, and verify.
-- Add project-level move-origin diagnostic acceptance coverage.
+Expand semantic span coverage:
+- Retain spans for declarations, statements, calls, constructors, and control-flow nodes.
+- Attach primary spans to type, capability, replacement, and exhaustiveness diagnostics.
+- Add source maps for generated generic instantiations.
 
 ## Deliberately deferred
 - specialization
@@ -118,8 +124,8 @@ Extend structured semantic diagnostics through project workflows:
 - concurrency
 
 ## Suggested implementation order
-1. Preserve per-unit origins through project merging and generic expansion.
-2. Route structured compiler diagnostics through every project command.
+1. Cover remaining semantic AST nodes and diagnostic families with spans.
+2. Preserve original-source maps through generic instantiation.
 3. Continue replacing compact tuple-AST special cases with typed nodes.
 
 ## Acceptance gates

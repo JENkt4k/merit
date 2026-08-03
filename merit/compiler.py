@@ -1839,6 +1839,9 @@ def main(argv=None):
             else:
                 completed=subprocess.run([str(e.resolve())])
                 return completed.returncode
+    except CompileError as e:
+        from merit.diagnostics import render_exception
+        print(render_exception(e,path,path.read_text()),file=sys.stderr);return 1
     except Exception as e:print(f'error: {e}',file=sys.stderr);return 1
     return 0
 if __name__=='__main__':raise SystemExit(main())

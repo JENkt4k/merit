@@ -1,5 +1,13 @@
 # Changelog
 
+## Epoch III — Project semantic diagnostics checkpoint
+
+- Remapped merged-project semantic spans to their owning source units.
+- Added structured `CompileError` rendering to every checking project workflow.
+- Added the same structured semantic rendering to the single-source CLI.
+- Added project check/build/run/verify/audit diagnostic regression coverage.
+- Added multi-module ownership diagnostics that identify the correct non-entry file.
+
 ## Epoch III — Source-aware ownership diagnostics checkpoint
 
 - Preserved source spans and source identity for variable, field, and drop nodes.

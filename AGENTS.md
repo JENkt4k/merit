@@ -30,6 +30,6 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Next assigned subsystem
-Extend **structured semantic diagnostics through project workflows** as described in `NEXT_WORK.md`.
+Expand **semantic span coverage and generic source mapping** as described in `NEXT_WORK.md`.
 
 Do not claim the subsystem is complete until all acceptance gates in that file pass.
