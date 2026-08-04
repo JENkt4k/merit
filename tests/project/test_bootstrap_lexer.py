@@ -84,13 +84,14 @@ def expected_output(source):
 def reference_syntax(source, tokens):
     data = source.encode("utf-8")
     kinds = {b"module": 1, b"fn": 2, b"struct": 3, b"enum": 4, b"capability": 5, b"decimal": 6, b"bounded": 7, b"trait": 8, b"impl": 9, b"destructor": 10, b"effects": 11, b"requires_caps": 12, b"requires": 13, b"ensures": 14}
+    statements = {b"let": 20, b"var": 21, b"return": 22, b"print": 23, b"drop": 24, b"if": 25, b"while": 26, b"match": 27, b"with": 28, b"replace": 29}
     nodes = []
     depth = 0
     for index, (token_kind, start, length) in enumerate(tokens):
         text = data[start:start + length]
         if token_kind == 4 and text == b"}" and depth > 0:
             depth -= 1
-        syntax_kind = kinds.get(text, 0) if depth == 0 else 0
+        syntax_kind = kinds.get(text, 0) if depth == 0 else statements.get(text, 0)
         if syntax_kind:
             end = start + length
             if syntax_kind <= 10 and index + 1 < len(tokens) and tokens[index + 1][0] == 1:
@@ -172,6 +173,7 @@ def project_with_source(tmp_path, source_text):
         'module all\ncapability io; decimal Money(8,2,half_even); bounded Count(i32,0,9); struct S { value:i32; } enum E { A } trait T { fn run()->i32; } impl T for S { fn run()->i32 { return 1; } } destructor S { return 0; } fn main()->i32 { return 0; }',
         'module { } } struct Open {',
         'module contracts\nfn checked(value:i32)->i32 effects [read] requires_caps [io] requires value >= 0; ensures result >= value; { return value; }',
+        'module statements\nfn all()->i32 { let x:i32=0; var y:i32=1; print(x); drop(y); if x { replace(x,1); } while y { return 0; } match(x) { A => { return 1; } } with capability io { print(y); } return 2; }',
     ],
 )
 def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_text):

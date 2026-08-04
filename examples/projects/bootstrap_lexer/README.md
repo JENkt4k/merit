@@ -18,3 +18,7 @@ top-level declaration index.
 Typed parse diagnostics currently cover missing declaration names, unexpected
 closing braces, unclosed bodies, and invalid unterminated strings with stable
 byte locations.
+
+The syntax index recognizes `let`, `var`, `return`, `print`, `drop`, `if`,
+`while`, `match`, `with capability`, and `replace` statement introducers at any
+nested body depth. Statement operands remain a subsequent parser slice.
