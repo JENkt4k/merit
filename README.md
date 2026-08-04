@@ -22,7 +22,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-The completed `v0.1.0-alpha.1` local gate is now followed by `v0.1.0-alpha.2` replacement-compiler development. The current local gate runs 374 tests plus nine interpreter/native project verifiers, including the Merit-native lexer/parser, typed statement boundaries, and precedence-aware call/field/arithmetic expression trees against independent differential corpora. See `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `VERIFIED_BASELINE.md`.
+The completed `v0.1.0-alpha.1` local gate is now followed by `v0.1.0-alpha.2` replacement-compiler development. The current local gate runs 376 tests plus nine interpreter/native project verifiers, including the Merit-native lexer/parser and precedence-aware call/field/constructor/generic expression trees against independent differential corpora. See `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `VERIFIED_BASELINE.md`.
 
 ## Current checkpoint
 

@@ -204,6 +204,48 @@ def reference_expression(source):
                         cursor += 1
                 call_start = nodes[left][1]
                 left = push(34, call_start, end - call_start, left, arguments)
+            elif text == b"<" and cursor + 3 < len(tokens):
+                type_kind, type_start, type_length = tokens[cursor + 1]
+                _, close_start, close_length = tokens[cursor + 2]
+                _, call_start, call_length = tokens[cursor + 3]
+                if type_kind == 1 and data[close_start:close_start + close_length] == b">" and data[call_start:call_start + call_length] == b"(":
+                    type_index = push(30, type_start, type_length)
+                    generic_start = nodes[left][1]
+                    left = push(36, generic_start, close_start + close_length - generic_start, left, type_index)
+                    cursor += 3
+                else:
+                    break
+            elif text == b"{":
+                cursor += 1
+                initializers = -1
+                while cursor < len(tokens):
+                    _, possible_start, possible_length = tokens[cursor]
+                    if data[possible_start:possible_start + possible_length] == b"}":
+                        break
+                    field_index = push(30, possible_start, possible_length)
+                    cursor += 2
+                    value_index = comparison()
+                    initializer_end = nodes[value_index][1] + nodes[value_index][2]
+                    initializer_index = push(38, possible_start, initializer_end - possible_start, field_index, value_index)
+                    if initializers == -1:
+                        initializers = initializer_index
+                    else:
+                        initializer_start = nodes[initializers][1]
+                        initializers = push(37, initializer_start, initializer_end - initializer_start, initializers, initializer_index)
+                    if cursor < len(tokens):
+                        _, separator_start, separator_length = tokens[cursor]
+                        if data[separator_start:separator_start + separator_length] == b",":
+                            cursor += 1
+                        else:
+                            break
+                end = start + length
+                if cursor < len(tokens):
+                    _, closing_start, closing_length = tokens[cursor]
+                    if data[closing_start:closing_start + closing_length] == b"}":
+                        end = closing_start + closing_length
+                        cursor += 1
+                constructor_start = nodes[left][1]
+                left = push(70, constructor_start, end - constructor_start, left, initializers)
             elif text == b".":
                 cursor += 1
                 field_index = -1
@@ -335,7 +377,7 @@ def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_t
     assert native == expected
 
 
-@pytest.mark.parametrize("expression", ["1+2*3", "(1+2)*3", "a-b-c", "a==b+1", '"value"', "a/2+4", "f()", "f(1,2+3)", "account.balance+1", "f(g(1)).value"])
+@pytest.mark.parametrize("expression", ["1+2*3", "(1+2)*3", "a-b-c", "a==b+1", '"value"', "a/2+4", "f()", "f(1,2+3)", "account.balance+1", "f(g(1)).value", "Point { x:1, y:2+3 }.x", "identity<i64>(1)"])
 def test_bootstrap_expression_precedence_matches_independent_reference(tmp_path, expression):
     project, project_root = project_with_expression(tmp_path, expression)
     expected = expected_output(DEFAULT_SOURCE, expression)

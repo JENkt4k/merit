@@ -559,6 +559,34 @@ requires_caps [allocate]
         var handled: i32 = 0;
         if token.kind == 4 {
             let punctuation: i64 = buffer_get(source, token.start);
+            if punctuation == 60 {
+                let type_index: i64 = checked_add(cursor.index, 1);
+                let close_index: i64 = checked_add(cursor.index, 2);
+                let call_index: i64 = checked_add(cursor.index, 3);
+                if call_index < vec_len<Token>(tokens) {
+                    let type_token: Token = vec_get<Token>(tokens, type_index);
+                    let close_token: Token = vec_get<Token>(tokens, close_index);
+                    let call_token: Token = vec_get<Token>(tokens, call_index);
+                    if type_token.kind == 1 {
+                        if close_token.kind == 4 {
+                            if buffer_get(source, close_token.start) == 62 {
+                                if call_token.kind == 4 {
+                                    if buffer_get(source, call_token.start) == 40 {
+                                        handled = 1;
+                                        let type_node: ExpressionNode = ExpressionNode { kind: 30, start: type_token.start, length: type_token.length, left: -1, right: -1 };
+                                        let type_node_index: i64 = push_expression(nodes, type_node);
+                                        let generic_base: ExpressionNode = vec_get<ExpressionNode>(nodes, left);
+                                        let generic_end: i64 = checked_add(close_token.start, close_token.length);
+                                        let generic: ExpressionNode = ExpressionNode { kind: 36, start: generic_base.start, length: generic_end - generic_base.start, left: left, right: type_node_index };
+                                        left = push_expression(nodes, generic);
+                                        cursor.index = call_index;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if punctuation == 40 {
                 handled = 1;
                 cursor.index = checked_add(cursor.index, 1);
@@ -604,6 +632,58 @@ requires_caps [allocate]
                 }
                 let call: ExpressionNode = ExpressionNode { kind: 34, start: callee.start, length: end - callee.start, left: left, right: arguments };
                 left = push_expression(nodes, call);
+            }
+            if punctuation == 123 {
+                handled = 1;
+                cursor.index = checked_add(cursor.index, 1);
+                var initializers: i64 = -1;
+                var reading_fields: i32 = 1;
+                while (reading_fields) {
+                    if cursor.index >= vec_len<Token>(tokens) { reading_fields = 0; }
+                    else {
+                        let possible_field: Token = vec_get<Token>(tokens, cursor.index);
+                        if possible_field.kind == 4 {
+                            if buffer_get(source, possible_field.start) == 125 { reading_fields = 0; }
+                        }
+                        if (reading_fields) {
+                            let field_node: ExpressionNode = ExpressionNode { kind: 30, start: possible_field.start, length: possible_field.length, left: -1, right: -1 };
+                            let field_index: i64 = push_expression(nodes, field_node);
+                            cursor.index = checked_add(cursor.index, 1);
+                            if cursor.index < vec_len<Token>(tokens) { cursor.index = checked_add(cursor.index, 1); }
+                            let value_index: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
+                            let value_node: ExpressionNode = vec_get<ExpressionNode>(nodes, value_index);
+                            let initializer_end: i64 = checked_add(value_node.start, value_node.length);
+                            let initializer: ExpressionNode = ExpressionNode { kind: 38, start: possible_field.start, length: initializer_end - possible_field.start, left: field_index, right: value_index };
+                            let initializer_index: i64 = push_expression(nodes, initializer);
+                            if initializers == -1 { initializers = initializer_index; }
+                            else {
+                                let first_initializer: ExpressionNode = vec_get<ExpressionNode>(nodes, initializers);
+                                let list: ExpressionNode = ExpressionNode { kind: 37, start: first_initializer.start, length: initializer_end - first_initializer.start, left: initializers, right: initializer_index };
+                                initializers = push_expression(nodes, list);
+                            }
+                            if cursor.index < vec_len<Token>(tokens) {
+                                let separator: Token = vec_get<Token>(tokens, cursor.index);
+                                if separator.kind == 4 {
+                                    if buffer_get(source, separator.start) == 44 { cursor.index = checked_add(cursor.index, 1); }
+                                    else { reading_fields = 0; }
+                                } else { reading_fields = 0; }
+                            } else { reading_fields = 0; }
+                        }
+                    }
+                }
+                let type_node: ExpressionNode = vec_get<ExpressionNode>(nodes, left);
+                var constructor_end: i64 = checked_add(token.start, token.length);
+                if cursor.index < vec_len<Token>(tokens) {
+                    let closing: Token = vec_get<Token>(tokens, cursor.index);
+                    if closing.kind == 4 {
+                        if buffer_get(source, closing.start) == 125 {
+                            constructor_end = checked_add(closing.start, closing.length);
+                            cursor.index = checked_add(cursor.index, 1);
+                        }
+                    }
+                }
+                let constructor: ExpressionNode = ExpressionNode { kind: 70, start: type_node.start, length: constructor_end - type_node.start, left: left, right: initializers };
+                left = push_expression(nodes, constructor);
             }
             if punctuation == 46 {
                 handled = 1;

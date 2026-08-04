@@ -24,6 +24,6 @@ GitHub Actions and other hosted CI are intentionally not part of this release ga
 
 ## Active post-alpha development
 
-The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The Merit-native lexer/source model and statement envelopes are established. Typed expression trees now preserve atoms/groups, calls, argument lists, fields, arithmetic, and comparisons against an independent oracle. Constructors, generic calls, malformed-expression recovery, and typed statement/clause operands remain before the parser gate can close. Unrelated language expansion and hosted CI remain deferred.
+The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. Typed expression trees now preserve atoms/groups, calls, arguments, fields, direct constructors, single-type generic calls, arithmetic, and comparisons against an independent oracle. Qualified and multi-type constructors, malformed-expression recovery, and typed statement/clause operands remain before the parser gate can close. Unrelated language expansion and hosted CI remain deferred.
 
 Python remains the semantic and diagnostic reference oracle. The Merit implementation is a bootstrap compiler only; it is neither trusted nor self-hosted. Trust requires complete accepted/rejected corpus parity, stable AST/HIR/MIR contracts, deterministic stage agreement, and a clean release cycle. Self-hosting begins only after trust and requires reproducible stage-1/stage-2 equivalence.

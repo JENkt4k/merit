@@ -27,7 +27,7 @@ Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across
 ### Active `v0.1.0-alpha.2` bootstrap targets
 
 1. Complete typed statement syntax records — in progress; statement kinds and deterministic envelopes are complete, typed operands remain.
-2. Complete expression precedence and typed expression records — in progress; atoms, grouping, calls, fields, argument lists, arithmetic, and comparisons are implemented, while constructors, generic calls, and full recovery remain.
+2. Complete expression precedence and typed expression records — in progress; direct constructors and single-type generic calls join atoms, postfix, arithmetic, and comparisons; qualified/multi-type constructors and full recovery remain.
 3. Complete typed effects, capability, precondition, and postcondition operands — pending; clause introducers are indexed.
 4. Complete deterministic parser recovery — pending; initial structural recovery and diagnostics are implemented.
 5. Establish an explicit trivia-preserving CST-to-AST boundary — pending.

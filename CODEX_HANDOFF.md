@@ -4,7 +4,7 @@
 This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
 Current baseline:
-- 374 tests passing after editable installation
+- 376 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -139,6 +139,7 @@ python -m pytest -q
 - Deterministic bootstrap statement envelopes and end-of-input recovery
 - Precedence-aware typed bootstrap expression trees with explicit source spans and child indices
 - Typed postfix call, argument-list, and field-access bootstrap expression records
+- Typed direct-constructor and single-type generic-call bootstrap expression records
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

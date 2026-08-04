@@ -14,6 +14,7 @@
 - Extended simple statements through semicolons and control statements through opening braces, with deterministic end-of-input recovery for missing terminators.
 - Added `bootstrap-expression-v1` postorder expression trees with explicit children, source spans, grouping preservation, and independently verified multiplicative/additive/comparison precedence.
 - Extended bootstrap expressions with postfix calls, nested and multiple argument lists, and field access while preserving precedence and canonical reference parity.
+- Added direct struct-constructor field trees and lookahead-proven single-type generic calls without confusing `<` comparison expressions.
 
 ## v0.1.0-alpha.1 — 2026-08-04
 
