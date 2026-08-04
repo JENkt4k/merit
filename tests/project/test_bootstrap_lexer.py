@@ -76,7 +76,8 @@ def reference_tokens(source):
 def expected_output(source):
     tokens = reference_tokens(source)
     syntax = reference_syntax(source, tokens)
-    values = [len(tokens), *(value for token in tokens for value in token), -1, len(syntax), *(value for node in syntax for value in node)]
+    diagnostics = reference_diagnostics(source, tokens)
+    values = [len(tokens), *(value for token in tokens for value in token), -1, len(syntax), *(value for node in syntax for value in node), -2, len(diagnostics), *(value for diagnostic in diagnostics for value in diagnostic)]
     return "".join(f"{value}\n" for value in values)
 
 
@@ -99,6 +100,30 @@ def reference_syntax(source, tokens):
         if token_kind == 4 and text == b"{":
             depth += 1
     return nodes
+
+
+def reference_diagnostics(source, tokens):
+    data = source.encode("utf-8")
+    keywords = {b"module", b"fn", b"struct", b"enum", b"capability", b"decimal", b"bounded", b"trait", b"impl", b"destructor"}
+    diagnostics = []
+    depth = 0
+    for index, (kind, start, length) in enumerate(tokens):
+        text = data[start:start + length]
+        if kind == 5:
+            diagnostics.append((4, start, length))
+        if kind == 4 and text == b"}":
+            if depth == 0:
+                diagnostics.append((2, start, length))
+            else:
+                depth -= 1
+        if depth == 0 and text in keywords:
+            if index + 1 >= len(tokens) or tokens[index + 1][0] != 1:
+                diagnostics.append((1, start, length))
+        if kind == 4 and text == b"{":
+            depth += 1
+    if depth > 0:
+        diagnostics.append((3, len(data), 0))
+    return diagnostics
 
 
 EXPECTED = expected_output(DEFAULT_SOURCE)
@@ -145,6 +170,7 @@ def project_with_source(tmp_path, source_text):
         '"escaped \\\" quote" @',
         '0.00 12.5 1e6 2.5e-3',
         'module all\ncapability io; decimal Money(8,2,half_even); bounded Count(i32,0,9); struct S { value:i32; } enum E { A } trait T { fn run()->i32; } impl T for S { fn run()->i32 { return 1; } } destructor S { return 0; } fn main()->i32 { return 0; }',
+        'module { } } struct Open {',
     ],
 )
 def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_text):
@@ -169,4 +195,12 @@ def test_bootstrap_parser_allocation_is_compile_fail_without_capability_contract
     parser = next(function for function in project.program.functions if function.name == "parse_top_level")
     parser.requires_caps = []
     with pytest.raises(CompileError, match="vec_new__SyntaxNode requires capabilities"):
+        check(project)
+
+
+def test_bootstrap_diagnostics_allocation_is_compile_fail_without_capability_contract():
+    project = load_project(MANIFEST)
+    diagnostics = next(function for function in project.program.functions if function.name == "parse_diagnostics")
+    diagnostics.requires_caps = []
+    with pytest.raises(CompileError, match="vec_new__ParseDiagnostic requires capabilities"):
         check(project)

@@ -6,6 +6,12 @@ pub struct SyntaxNode {
     length: i64;
 }
 
+pub struct ParseDiagnostic {
+    code: i32;
+    start: i64;
+    length: i64;
+}
+
 pub fn syntax_kind(borrow node: SyntaxNode) -> i32 {
     return node.kind;
 }
@@ -16,4 +22,16 @@ pub fn syntax_start(borrow node: SyntaxNode) -> i64 {
 
 pub fn syntax_length(borrow node: SyntaxNode) -> i64 {
     return node.length;
+}
+
+pub fn diagnostic_code(borrow diagnostic: ParseDiagnostic) -> i32 {
+    return diagnostic.code;
+}
+
+pub fn diagnostic_start(borrow diagnostic: ParseDiagnostic) -> i64 {
+    return diagnostic.start;
+}
+
+pub fn diagnostic_length(borrow diagnostic: ParseDiagnostic) -> i64 {
+    return diagnostic.length;
 }

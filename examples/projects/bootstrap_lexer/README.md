@@ -14,3 +14,7 @@ The project also produces the first typed syntax boundary: byte-spanned module,
 function, struct, enum, capability, numeric-type, trait, impl, and destructor
 declaration records. Brace-depth tracking excludes nested impl methods from the
 top-level declaration index.
+
+Typed parse diagnostics currently cover missing declaration names, unexpected
+closing braces, unclosed bodies, and invalid unterminated strings with stable
+byte locations.

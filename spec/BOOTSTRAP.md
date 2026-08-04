@@ -28,6 +28,8 @@ Kinds are module (`1`), function (`2`), struct (`3`), enum (`4`), capability (`5
 
 The differential corpus compares every syntax kind and byte span with an independent reference, including a fixture containing all declaration kinds and a nested impl method that must not appear as a top-level function.
 
+`ParseDiagnostic { code, start, length }` is the initial deterministic diagnostic boundary. Codes are missing declaration name (`1`), unexpected closing brace (`2`), unclosed brace at end of input (`3`), and invalid unterminated string (`4`). Diagnostics use source byte spans; the end-of-input unclosed-brace diagnostic has a zero-length span at `buffer_len(source)`. Interpreter and native diagnostic records must exactly match the independent corpus oracle.
+
 ## Staged replacement gates
 
 1. Extend `bootstrap-lex-v1` to the complete accepted token vocabulary and differential fixtures.

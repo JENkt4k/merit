@@ -349,12 +349,64 @@ requires_caps [allocate]
     return nodes;
 }
 
+fn parse_diagnostics(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ParseDiagnostic>
+requires_caps [allocate]
+{
+    var diagnostics: Vec<ParseDiagnostic> = vec_new<ParseDiagnostic>(allocator, 4);
+    var index: i64 = 0;
+    var brace_depth: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if token.kind == 5 {
+            let invalid: ParseDiagnostic = ParseDiagnostic { code: 4, start: token.start, length: token.length };
+            vec_push<ParseDiagnostic>(diagnostics, invalid);
+        }
+        if token.kind == 4 {
+            let punctuation: i64 = buffer_get(source, token.start);
+            if punctuation == 125 {
+                if brace_depth == 0 {
+                    let unexpected: ParseDiagnostic = ParseDiagnostic { code: 2, start: token.start, length: token.length };
+                    vec_push<ParseDiagnostic>(diagnostics, unexpected);
+                } else {
+                    brace_depth = checked_sub(brace_depth, 1);
+                }
+            }
+        }
+        if brace_depth == 0 {
+            let kind: i32 = declaration_kind(source, token);
+            if kind != 0 {
+                let name_index: i64 = checked_add(index, 1);
+                var has_name: i32 = 0;
+                if (name_index < vec_len<Token>(tokens)) {
+                    let name: Token = vec_get<Token>(tokens, name_index);
+                    if name.kind == 1 { has_name = 1; }
+                }
+                if has_name == 0 {
+                    let missing: ParseDiagnostic = ParseDiagnostic { code: 1, start: token.start, length: token.length };
+                    vec_push<ParseDiagnostic>(diagnostics, missing);
+                }
+            }
+        }
+        if token.kind == 4 {
+            let punctuation: i64 = buffer_get(source, token.start);
+            if punctuation == 123 { brace_depth = checked_add(brace_depth, 1); }
+        }
+        index = checked_add(index, 1);
+    }
+    if brace_depth > 0 {
+        let unclosed: ParseDiagnostic = ParseDiagnostic { code: 3, start: buffer_len(source), length: 0 };
+        vec_push<ParseDiagnostic>(diagnostics, unclosed);
+    }
+    return diagnostics;
+}
+
 fn main() -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
         let source: Buffer = buffer_from_string(allocator, "module demo\nfn main()->i32 { print(\"ok\"); return 0; }\n");
         let tokens: Vec<Token> = lex(source, allocator);
         let syntax: Vec<SyntaxNode> = parse_top_level(source, tokens, allocator);
+        let diagnostics: Vec<ParseDiagnostic> = parse_diagnostics(source, tokens, allocator);
         print(vec_len<Token>(tokens));
         var index: i64 = 0;
         while (index < vec_len<Token>(tokens)) {
@@ -374,6 +426,17 @@ fn main() -> i32 {
             print(syntax_length(node));
             syntax_index = checked_add(syntax_index, 1);
         }
+        print(-2);
+        print(vec_len<ParseDiagnostic>(diagnostics));
+        var diagnostic_index: i64 = 0;
+        while (diagnostic_index < vec_len<ParseDiagnostic>(diagnostics)) {
+            let diagnostic: ParseDiagnostic = vec_get<ParseDiagnostic>(diagnostics, diagnostic_index);
+            print(diagnostic_code(diagnostic));
+            print(diagnostic_start(diagnostic));
+            print(diagnostic_length(diagnostic));
+            diagnostic_index = checked_add(diagnostic_index, 1);
+        }
+        drop(diagnostics);
         drop(syntax);
         drop(tokens);
         drop(source);

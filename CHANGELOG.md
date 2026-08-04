@@ -8,6 +8,7 @@
 - Corrected generated-C zero initialization for functions returning monomorphized vectors.
 - Defined the versioned bootstrap source contract and staged non-Python replacement gates.
 - Added `bootstrap-syntax-v1`, a typed top-level declaration index with brace-depth isolation, independent span comparison, capability compile-fail coverage, and ordered generated-C inspection.
+- Added deterministic typed parser diagnostics for missing names, invalid strings, unexpected closing braces, and unclosed bodies, with interpreter/native/reference parity.
 
 ## v0.1.0-alpha.1 — 2026-08-04
 
