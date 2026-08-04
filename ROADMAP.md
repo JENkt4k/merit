@@ -7,10 +7,10 @@ The first alpha closes a deterministic, resource-safe component-language subset.
 1. Universal left-to-right ordered expression lowering — complete.
 2. Unique semantic binding IDs for ownership and cleanup — complete.
 3. Ephemeral-only returned-borrow boundary — complete.
-4. Release-document consolidation — complete when `STATUS.md`, `LIMITATIONS.md`, the specifications, and changelog agree.
+4. Release-document consolidation — complete.
 5. Multi-module exact-decimal ledger acceptance application with typed errors, explicit allocation, filesystem capabilities, stable exports, and foreign ABI verification — complete.
 6. Arbitrary-precision reference coverage for decimal and bounded arithmetic — complete.
-7. Final complete local test, project, generated-C, ABI, and specification audit — pending.
+7. Final complete local test, project, generated-C, ABI, and specification audit — complete.
 
 The alpha does not require stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, a package registry, or hosted CI.
 

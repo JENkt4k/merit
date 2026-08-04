@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "merit-lang-prototype"
-version = "0.3.0b2"
+version = "0.1.0a1"
 description = "Epoch III systems and generic type compiler for the Merit language"
 requires-python = ">=3.11"
 dependencies = ["lark>=1.1"]

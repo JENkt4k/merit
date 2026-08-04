@@ -1,4 +1,7 @@
+import tomllib
 from pathlib import Path
+
+from merit import __version__
 
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -10,11 +13,17 @@ def test_release_documents_exist_and_name_the_active_target():
         assert 'v0.1.0-alpha.1' in text
 
 
-def test_status_does_not_claim_the_incomplete_alpha_is_released():
+def test_status_records_the_completed_local_alpha_gate():
     status=(ROOT/'STATUS.md').read_text()
-    assert 'not yet released or complete' in status
+    assert 'local release gate is complete' in status
     assert 'ledger application' in status
     assert 'arbitrary-precision' in status
+    assert 'No known semantic correctness blocker remains undocumented' in status
+
+
+def test_package_version_matches_the_alpha_release():
+    metadata=tomllib.loads((ROOT/'pyproject.toml').read_text())
+    assert metadata['project']['version'] == __version__ == '0.1.0a1'
 
 
 def test_roadmap_keeps_deferred_work_outside_the_alpha_gate():

@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the active **`v0.1.0-alpha.1` release-gate checkpoint** of Merit.
+This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
 Current baseline:
-- 345 tests passing after editable installation
+- 346 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -109,7 +109,7 @@ python -m pytest -q
 - Owned Result-style `try` consumes its source and transfers `Ok`/`Err` obligations once
 - Owned match subjects move before arm checking; owned-field partial matches are rejected
 - Lexically scoped owned locals require move/drop before branch, loop, or match-arm exit
-- Binding shadowing rejected until ownership state uses unique binding identities
+- Binding shadowing supported through unique semantic identities in ownership and cleanup state
 - Trap-aware MIR constant folding for arithmetic conditions
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
@@ -129,6 +129,8 @@ python -m pytest -q
 - Universal exactly-once, left-to-right expression lowering in generated C
 - Deterministic semantic binding IDs across ownership, cleanup, HIR/MIR, interpreter, and C
 - Enforced ephemeral-only returned-borrow alpha boundary with explicit HIR/MIR policy
+- Multi-module exact-decimal ledger acceptance with typed errors, filesystem capabilities, stable exports, and ABI verification
+- Arbitrary-precision reference coverage for every decimal rounding mode and bounded arithmetic boundaries
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

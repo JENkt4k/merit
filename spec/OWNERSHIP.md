@@ -1,4 +1,4 @@
-# Ownership and borrowing in alpha.3
+# Ownership and borrowing in v0.1.0-alpha.1
 
 Alpha.3 implements the first executable ownership subset.
 

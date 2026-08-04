@@ -29,7 +29,5 @@ merit-project verify examples/projects/binary_packet
 merit-project verify examples/projects/text_pipeline
 ```
 
-## Next assigned subsystem
-Implement **caller lifetime tracking for validated borrowed returns** as described in `NEXT_WORK.md`.
-
-Do not claim the subsystem is complete until all acceptance gates in that file pass.
+## Current checkpoint
+The **`v0.1.0-alpha.1` local release gate is complete**. `STATUS.md`, `ALPHA_READINESS.md`, and `VERIFIED_BASELINE.md` record the result. Do not broaden the language without a newly assigned post-alpha subsystem; preserve every alpha gate when continuing work.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.0-alpha.1 — 2026-08-04
+
+The first-alpha local release gate is complete: all ordered semantic subsystems, acceptance applications, independent numeric references, generated-C inspections, ABI checks, specifications, and local deterministic verifiers pass. Package version: `0.1.0a1`.
+
 ## v0.1.0-alpha.1 gate — Arbitrary-precision numeric reference
 
 - Compared all five exact-decimal rounding policies with an independent 100-digit `Decimal` oracle across signed multiplication and division cases.

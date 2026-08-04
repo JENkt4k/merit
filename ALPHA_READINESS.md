@@ -4,7 +4,7 @@ Assessment date: 2026-08-04
 
 ## Status
 
-Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared complete. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Release documentation, the ledger application, and arbitrary-precision numeric reference coverage are complete; the final audit remains.
+Merit has closed its `v0.1.0-alpha.1` local release gate. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Release documentation, the ledger application, arbitrary-precision numeric reference coverage, and the final audit are complete.
 
 ## Proven gates
 
@@ -28,9 +28,9 @@ Merit has a credible systems-core alpha candidate, but it is not yet ready to be
 
 The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
-## Remaining alpha release gates
+## Release conclusion
 
-1. Run the final complete local and specification audit.
+Every semantic gate is enforced by positive and compile-fail tests, every acceptance project passes locally, the ledger application and numeric references pass, and the specifications match the implemented behavior. No known semantic correctness blocker remains undocumented.
 
 ## Accepted alpha limitations
 
@@ -49,6 +49,6 @@ The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 - Broader optimizer work and a production LLVM backend
 - Package registry, formatter, language server, concurrency, and production tooling
 
-## Recommended execution order
+## Continuing verification
 
-1. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.
+Run `./scripts/test.sh` before every subsequent release or semantic change. Preserve the shared-library foreign-caller tests, generated-C inspections, structured diagnostics, and all interpreter/native acceptance projects.
