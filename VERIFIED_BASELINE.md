@@ -17,7 +17,7 @@ merit-project verify examples/projects/borrowed_views
 
 Results:
 ```text
-308 passed
+310 passed
 text_pipeline: verified 2 modules; output matches (26 bytes)
 binary_packet: verified 2 modules; output matches (16 bytes)
 generic_result: verified 1 modules; output matches (6 bytes)

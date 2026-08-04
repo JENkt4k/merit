@@ -226,6 +226,26 @@ fn main()->i32 { if 1 { let marker:Marker=Marker{number:59}; drop(marker); } els
     assert outputs(source,tmp_path) == ('59\n','59\n')
 
 
+def test_owned_binding_redeclaration_cannot_overwrite_cleanup_identity():
+    source='''module owned_binding_shadow
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { let marker:Marker=Marker{number:61}; let marker:Marker=Marker{number:67}; drop(marker); return 0; }'''
+    with pytest.raises(CompileError,match='M3012: binding marker shadows an existing binding'):
+        Checker(parse(source)).check()
+
+
+def test_match_payload_cannot_shadow_existing_owner():
+    source='''module match_binding_shadow
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+enum Outcome { Ok(Marker), Err(i32) }
+fn consume(value:Outcome)->i32 { let marker:Marker=Marker{number:71}; match (value) { Ok(marker)=>{ drop(marker); } Err(code)=>{ print(code); } } drop(marker); return 0; }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M3012: binding marker shadows an existing binding'):
+        Checker(parse(source)).check()
+
+
 def test_recursive_aggregate_cleanup_invokes_nested_custom_destructor(tmp_path):
     source='''module nested_destructor
 stable("marker-v1") struct Marker { number:i32; }

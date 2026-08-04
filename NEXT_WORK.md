@@ -190,7 +190,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 ## Safety-critical per-kind variant checkpoint now available
 - `LetNode`, `TryLetNode`, `AssignNode`, and `ReplaceNode` distinguish ownership-sensitive statements.
 - `CapabilityNode`, `IfNode`, `WhileNode`, and `MatchNode` distinguish control-flow invariants.
-- Per-kind variants retain family inheritance and tuple-compatible serialization.
+- Per-kind variants retain family inheritance and explicit kind/operand/provenance serialization.
 
 ## Complete per-kind semantic variant checkpoint now available
 - Atom kinds have distinct string, number, and variable variants.
@@ -278,7 +278,8 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Continue alpha-readiness hardening:
-- Define reference-typed local storage and explicit lifetime parameters before allowing borrowed results to escape expressions.
+- Complete recursive ordered expression lowering so every nested native C operand evaluates once, left to right, matching the interpreter.
+- Decide whether stored reference values and explicit lifetime parameters are in first-alpha scope; keep ephemeral-only rejection unless the full model is implemented.
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
 - Preserve definite-return analysis when adding new control-flow constructs.
 - Preserve the completed type-specific native arithmetic policy when adding numeric types or operators.
@@ -300,6 +301,7 @@ Continue alpha-readiness hardening:
 - `try` participates in shared owned-source consumption for exact-once `Ok` binding and `Err` propagation.
 - Owned match subjects become unavailable before arm checking, and partial moves from aggregate fields remain rejected.
 - Branch-, loop-, and arm-scoped owned locals must discharge their obligation before lexical scope exit.
+- Binding shadowing is rejected until semantic bindings carry unique ownership identities.
 
 ## Deliberately deferred
 - specialization
@@ -311,7 +313,9 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Design stored-reference syntax and lifetime relationships without weakening ephemeral borrow checks.
+1. Add one recursive C expression-lowering result containing ordered prelude statements, value expression, and ownership/type metadata.
+2. Apply it to calls, builtins, constructors, binary operands, conditions, returns, contracts, and vector operations; add side-effect-order parity matrices.
+3. Decide the stored-reference alpha boundary, then introduce unique semantic binding identities before relaxing shadowing and lexical cleanup restrictions.
 
 ## Allocator compatibility checkpoint now available
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.

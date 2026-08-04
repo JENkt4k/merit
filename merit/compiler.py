@@ -1106,14 +1106,18 @@ class Checker:
         for st in body:
             node=self.p.node(st);tag=node.kind
             if tag=='let':
-                n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable;self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
+                n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable
+                if n in env:self.fail(f'M3012: binding {n} shadows an existing binding',st)
+                self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if self.borrowed_call_mode(e):self.fail('M5304: borrowed return cannot be stored in an owned binding',e)
                 if not self.argument_matches(et,t):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if self.p.node(e).kind=='number':self.validate_literal(t,self.p.node(e).atom_value)
                 self.consume_owned_source(e,et,env,f'initializing {n}')
                 env[n]=VarState(t,mut)
             elif tag=='try_let':
-                n=node.binding_name;t=node.declared_type;e=node.initializer; self.ensure_type(t)
+                n=node.binding_name;t=node.declared_type;e=node.initializer
+                if n in env:self.fail(f'M3012: binding {n} shadows an existing binding',st)
+                self.ensure_type(t)
                 et=self.expr_type(e,env,caps,fn); enum=self.p.enums.get(et)
                 if not enum or [v.name for v in enum.variants] != ['Ok','Err']:
                     self.fail('M6200: try requires an enum with Ok and Err variants',st)
@@ -1178,7 +1182,9 @@ class Checker:
                     binding=arm.binding
                     if variant.payload_type is None and binding is not None: self.fail(f'M6103: variant {variant.name} has no payload',st)
                     if variant.payload_type is not None and binding is None: self.fail(f'M6104: variant {variant.name} requires payload binding',st)
-                    if binding is not None: local[binding]=VarState(variant.payload_type,False)
+                    if binding is not None:
+                        if binding in local:self.fail(f'M3012: binding {binding} shadows an existing binding',arm)
+                        local[binding]=VarState(variant.payload_type,False)
                     self.block(arm.body,local,caps,fn)
                     if binding is not None and self.types.get(variant.payload_type).needs_drop and not (local[binding].moved or local[binding].dropped):
                         self.fail(f'M5211: owned match payload {binding} must be moved or dropped in arm {variant.name}',arm)

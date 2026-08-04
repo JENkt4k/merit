@@ -62,6 +62,7 @@ destructor Marker { print(self.number); }
 - `try` consumes an owned Result-style subject: `Ok` transfers into the new binding and `Err` transfers into the function return without duplicating cleanup.
 - Matching an owned enum consumes the subject before entering an arm. Matching an owned enum field is rejected until partial-move state exists.
 - Owned locals introduced inside `if`, `while`, or match-arm scopes must be moved or explicitly dropped before scope exit; function epilogues never reference out-of-scope storage.
+- Local and match-payload bindings cannot shadow an existing name while ownership effects are keyed by binding name.
 - Interpreter destruction recursively follows the same metadata for buffers, vectors, structs, and active enum payloads.
 - Move and drop state retains its originating source span.
 - Later use-after-move and use-after-drop diagnostics point to the invalid use and attach the original consumption site as a note.

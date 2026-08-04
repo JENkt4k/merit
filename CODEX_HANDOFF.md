@@ -4,7 +4,7 @@
 This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
 
 Current baseline:
-- 308 tests passing after editable installation
+- 310 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -43,16 +43,16 @@ python -m pytest -q
 - cross-module generic diagnostics linking template errors to instantiation sites with per-file excerpts
 - precise declaration spans for type, trait, implementation, field, function, and declaration-policy errors
 - source-aware generic arity, bound, and ambiguous-dispatch expansion errors across single files and projects
-- typed semantic-node views used by checking and shared ownership analysis over the backend-compatible tuple representation
+- typed semantic-node views used by checking and shared ownership analysis over immutable per-kind storage
 - typed node dispatch across MIR, interpreter, and native C lowering with unchanged parity
 - named typed operands for ownership-sensitive initialization, assignment, replacement, return, and drop paths
 - typed call, constructor, field, binary-expression, and control-flow accessors used by semantic and runtime paths
 - typed dispatch throughout semantic helper paths with no direct tuple-tag reads for expressions or statements
 - named statement operands across checker, ownership, MIR, interpreter, and C lowering
 - named expression operands across ownership, checking, interpretation, and C lowering with no direct positional reads
-- concrete tuple-compatible semantic node storage produced uniformly by the parser
+- concrete immutable semantic node storage produced uniformly by the parser
 - typed storage families for atoms, calls, constructors, bindings, replacement, effects, and control flow
-- distinct ownership-sensitive and control-flow node variants with compatibility serialization
+- distinct ownership-sensitive and control-flow node variants with explicit inspection serialization
 - concrete per-kind runtime variants for every parser-produced semantic expression and statement
 - centralized typed primary/related provenance lookup for node views and checker diagnostics
 - exact generic application columns for expansion errors and related instantiation notes
@@ -109,6 +109,7 @@ python -m pytest -q
 - Owned Result-style `try` consumes its source and transfers `Ok`/`Err` obligations once
 - Owned match subjects move before arm checking; owned-field partial matches are rejected
 - Lexically scoped owned locals require move/drop before branch, loop, or match-arm exit
+- Binding shadowing rejected until ownership state uses unique binding identities
 - Trap-aware MIR constant folding for arithmetic conditions
 - Canonical MIR reachability pruning after CFG construction
 - Exact constant-condition MIR folding with dead-branch pruning
@@ -151,8 +152,10 @@ This design is useful because all instantiated generic code reuses one semantic 
 - returned borrows are ephemeral; reference-typed local storage and general lifetime parameters are absent
 - system and portable allocator identities are implemented over the same host allocation primitives
 - modules merge into one generated C translation unit
-- ownership and project-unit spans are retained, but broader semantic nodes and generic rewrites still need source maps
+- semantic and declaration provenance is embedded and project/generic source maps retain primary and related locations
 - no LLVM backend, package registry, formatter, or LSP
+
+The evidence-based alpha gate and prioritized blockers are maintained in `ALPHA_READINESS.md`.
 
 ## How to work safely
 Use cohesive epic commits with intermediate green test gates. Add compile-fail tests as aggressively as success tests. For each new construct, verify both interpreter behavior and generated-native behavior. Inspect generated C when mutations, borrows, returns, match subjects, or cleanup are involved.

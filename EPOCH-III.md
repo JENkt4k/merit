@@ -71,7 +71,8 @@ Generic declarations are instantiated only for concrete applications present in 
 Current constraints:
 
 - type arguments must presently be explicit
-- bounds are limited to compiler-defined built-in traits
-- generic templates and their uses must currently be in the same source module
-- nested generic applications are only partially supported
-- generic owned collections and user-defined trait implementations remain open
+- bounds support compiler-defined traits and coherent user-defined trait implementations
+- project loading expands visible templates and concrete applications across imported modules
+- monomorphization remains source rewriting rather than a typed generic IR
+- nested generic vectors are supported; associated types and higher-kinded types are not
+- trait method signatures cannot yet express effects or required capabilities

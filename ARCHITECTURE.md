@@ -28,37 +28,33 @@ After parsing and generic expansion, a cached type table classifies every concre
 
 HIR inspection exposes the concrete type-semantics table. MIR inspection exposes each function's owned locals, consumed roots, and explicit drops.
 
-Semantic expression and statement nodes retain source spans in the program metadata table. Ownership state records move and drop origins, and MIR consumption metadata includes the originating span and source identity. Type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics use the nearest actionable semantic node as their primary location.
+Semantic expression and statement nodes embed typed `NodeProvenance` directly. Ownership state records move and drop origins, and MIR consumption metadata includes the originating span and source identity. Type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics use the nearest actionable semantic node as their primary location.
 
 Declaration objects and function records also retain spans. Declaration validation uses those locations for duplicate, unknown-type, numeric-policy, trait/implementation, and function capability diagnostics.
 
-`SemanticNodeView` is the migration boundary around compact tuple nodes. It exposes typed kind/operand access together with primary and related spans. Checker, ownership effects, MIR control flow, interpreter execution, and C statement/type/expression lowering dispatch through this boundary while operands remain compatible during incremental accessor migration.
+`SemanticNodeView` is the read-only typed dispatch facade over immutable per-kind `SemanticNode` storage. It exposes named operands together with primary and related provenance. Checker, ownership effects, MIR control flow, interpreter execution, project visibility, and C lowering dispatch through this boundary.
 
 Named accessors now cover binding declarations, assignment/replacement targets and values, statement expressions, and explicit drops. Ownership-sensitive checker, analysis, interpreter, and C paths use these names rather than positional operands.
 
-Call, generic-call, field, constructor, binary-expression, and control-flow accessors complete the initial named semantic surface. Call resolution and checker/interpreter/MIR branch handling use these accessors; compact operands remain as a transitional storage format.
+Call, generic-call, field, constructor, binary-expression, and control-flow accessors complete the named semantic surface. Call resolution and checker/interpreter/MIR branch handling use these accessors; indexed semantic-node compatibility has been removed.
 
 Type/layout discovery, ownership path analysis, interpreter assignment, and C contract/cleanup/address helpers also dispatch through `Program.node()`. Direct raw tag reads are now confined outside semantic expression/statement dispatch, preparing the storage representation for typed variants.
 
 Semantic statement consumers use named operands for declarations, `try`, assignment/replacement, capability regions, matching, branches, loops, returns, printing, and drops. Positional statement storage is now isolated behind `SemanticNodeView`.
 
-Semantic expression consumers likewise use named atom, field, constructor, call, and binary operands. Recursive ownership and contract walkers traverse the view's operand collection, leaving concrete tuple storage isolated behind the adapter.
+Semantic expression consumers likewise use named atom, field, constructor, call, and binary operands. Recursive ownership and contract walkers traverse the view's typed operand collection.
 
 The parser constructs immutable `SemanticNode` subclasses for every expression and statement. Public HIR/MIR inspection uses explicit serialization, and compiler consumers access nodes through named semantic views.
 
-Concrete semantic storage is further classified into atom, field, constructor, call, binary, binding, assignment, effect-statement, and control-flow families. These runtime types provide a stable intermediate step toward per-kind variants without duplicating backend paths.
+Concrete semantic storage is classified into atom, field, constructor, call, binary, binding, assignment, effect-statement, and control-flow families, with a distinct immutable runtime variant for every parser-produced semantic kind.
 
 Ownership-sensitive binding/assignment/replacement statements and capability/branch/loop/match control flow now have distinct per-kind runtime variants beneath their shared storage families.
 
-Atoms, struct initialization, direct/generic calls, and effect statements also have per-kind variants. Every semantic expression and statement produced by the parser is therefore concrete and typed while remaining tuple-compatible; provenance remains in external maps for the next migration slice.
+Atoms, struct initialization, direct/generic calls, and effect statements also have per-kind variants. Every semantic expression and statement produced by the parser is concrete and typed; no semantic node depends on tuple or indexed compatibility.
 
-`NodeProvenance` groups primary and related locations, and `Program.provenance()` is the single lookup boundary used by semantic views and checker diagnostics. This isolates the current external maps so embedded node provenance can replace them without changing consumers.
+`NodeProvenance` groups primary and related locations, and `Program.provenance()` is the single lookup boundary used by semantic views and checker diagnostics. Semantic nodes, declarations, functions, parameters, fields, variants, traits, and implementations retain their own provenance.
 
-Every concrete semantic node now embeds its `NodeProvenance`. Project assembly walks reachable semantic nodes after source-unit remapping and refreshes their embedded primary/related locations. External maps remain only as a compatibility and declaration-provenance layer pending the next cleanup.
-
-Semantic nodes are no longer inserted into the external ID maps. Those maps now serve only declaration/function records, while project assembly remaps semantic-node provenance in place.
-
-Declaration dataclasses and `FunctionDecl` mappings also embed provenance. Project assembly remaps both semantic and declaration locations in place, and `Program` no longer exposes node-ID span maps.
+Project assembly walks reachable semantic and declaration records after source-unit remapping and refreshes embedded primary/related locations in place. `Program` has no node-ID span maps or related-span maps.
 
 `FunctionDecl` is now a typed record with explicit fields for its signature, effects, required capabilities, contracts, body, and provenance. Read-only mapping compatibility remains during consumer migration; HIR converts records through explicit serialization.
 
@@ -72,7 +68,7 @@ Parser field initializers and function effects/capability/contract clauses also 
 Capability-gated filesystem builtins return nominal `FileReadResult` / `FileWriteResult` values with stable `FsError` categories in both interpreter and generated C.
 Every concrete `Vec<T>` retains the allocator passed to `vec_new<T>`; generated growth and destruction dispatch through that stored allocator and include it in deterministic layout metadata.
 `system_allocator()` and `portable_allocator()` provide distinct deterministic allocator identities while sharing the same checked vector lowering and ownership path.
-Borrowed return modes are explicit semantic metadata. Origin and mutability are checked now; acceptance remains gated on completing caller lifetime tracking and equivalent interpreter/native pointer lowering.
+Borrowed return modes are explicit semantic metadata. Origin and mutability are checked, ephemeral caller propagation is tracked, interpreter aliases preserve identity, generated C uses const-correct pointers, and the multi-module `borrowed_views` project plus shared-library tests verify the ABI. Stored reference values and general lifetime parameters remain deliberately unavailable.
 Canonical MIR runs a reachability pass after CFG construction so blocks synthesized after terminal returns do not leak into inspection or later optimization inputs.
 Exact literal/arithmetic/comparison conditions are folded to direct MIR gotos before reachability pruning, with the original condition retained in explicit inspection metadata.
 Project builds can emit a PIC shared object and matching generated header from the same checked merged program used for executable builds.
@@ -94,4 +90,4 @@ Errors raised before parsing completes, including generic arity and bound valida
 
 ## Planned decomposition
 
-The next architectural slice moves AST/HIR/MIR structures into dedicated packages without changing semantics. Subsequent slices add enums and typed errors, buffers and allocators, then a real basic-block MIR.
+The next semantic slice introduces a recursive ordered-expression lowering result so generated C never depends on unspecified operand or argument evaluation order. After that, unique binding identities can replace name-keyed ownership state and permit principled shadowing/lexical cleanup. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.
