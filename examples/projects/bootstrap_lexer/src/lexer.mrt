@@ -299,6 +299,61 @@ fn matches_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
+fn matches_effects(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token.length != 7 { return 0; }
+    if token_byte(source, token, 0) != 101 { return 0; }
+    if token_byte(source, token, 1) != 102 { return 0; }
+    if token_byte(source, token, 2) != 102 { return 0; }
+    if token_byte(source, token, 3) != 101 { return 0; }
+    if token_byte(source, token, 4) != 99 { return 0; }
+    if token_byte(source, token, 5) != 116 { return 0; }
+    if token_byte(source, token, 6) != 115 { return 0; }
+    return 1;
+}
+
+fn matches_requires_caps(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token.length != 13 { return 0; }
+    if token_byte(source, token, 0) != 114 { return 0; }
+    if token_byte(source, token, 1) != 101 { return 0; }
+    if token_byte(source, token, 2) != 113 { return 0; }
+    if token_byte(source, token, 3) != 117 { return 0; }
+    if token_byte(source, token, 4) != 105 { return 0; }
+    if token_byte(source, token, 5) != 114 { return 0; }
+    if token_byte(source, token, 6) != 101 { return 0; }
+    if token_byte(source, token, 7) != 115 { return 0; }
+    if token_byte(source, token, 8) != 95 { return 0; }
+    if token_byte(source, token, 9) != 99 { return 0; }
+    if token_byte(source, token, 10) != 97 { return 0; }
+    if token_byte(source, token, 11) != 112 { return 0; }
+    if token_byte(source, token, 12) != 115 { return 0; }
+    return 1;
+}
+
+fn matches_requires(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token.length != 8 { return 0; }
+    if token_byte(source, token, 0) != 114 { return 0; }
+    if token_byte(source, token, 1) != 101 { return 0; }
+    if token_byte(source, token, 2) != 113 { return 0; }
+    if token_byte(source, token, 3) != 117 { return 0; }
+    if token_byte(source, token, 4) != 105 { return 0; }
+    if token_byte(source, token, 5) != 114 { return 0; }
+    if token_byte(source, token, 6) != 101 { return 0; }
+    if token_byte(source, token, 7) != 115 { return 0; }
+    return 1;
+}
+
+fn matches_ensures(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token.length != 7 { return 0; }
+    if token_byte(source, token, 0) != 101 { return 0; }
+    if token_byte(source, token, 1) != 110 { return 0; }
+    if token_byte(source, token, 2) != 115 { return 0; }
+    if token_byte(source, token, 3) != 117 { return 0; }
+    if token_byte(source, token, 4) != 114 { return 0; }
+    if token_byte(source, token, 5) != 101 { return 0; }
+    if token_byte(source, token, 6) != 115 { return 0; }
+    return 1;
+}
+
 fn declaration_kind(borrow source: Buffer, borrow token: Token) -> i32 {
     if (matches_module(source, token)) { return 1; }
     if (matches_fn(source, token)) { return 2; }
@@ -310,6 +365,14 @@ fn declaration_kind(borrow source: Buffer, borrow token: Token) -> i32 {
     if (matches_trait(source, token)) { return 8; }
     if (matches_impl(source, token)) { return 9; }
     if (matches_destructor(source, token)) { return 10; }
+    return 0;
+}
+
+fn clause_kind(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (matches_effects(source, token)) { return 11; }
+    if (matches_requires_caps(source, token)) { return 12; }
+    if (matches_requires(source, token)) { return 13; }
+    if (matches_ensures(source, token)) { return 14; }
     return 0;
 }
 
@@ -328,13 +391,16 @@ requires_caps [allocate]
             }
         }
         if brace_depth == 0 {
-            let kind: i32 = declaration_kind(source, token);
+            var kind: i32 = declaration_kind(source, token);
+            if kind == 0 { kind = clause_kind(source, token); }
             if kind != 0 {
                 var end: i64 = checked_add(token.start, token.length);
-                let name_index: i64 = checked_add(index, 1);
-                if (name_index < vec_len<Token>(tokens)) {
-                    let name: Token = vec_get<Token>(tokens, name_index);
-                    if name.kind == 1 { end = checked_add(name.start, name.length); }
+                if kind <= 10 {
+                    let name_index: i64 = checked_add(index, 1);
+                    if (name_index < vec_len<Token>(tokens)) {
+                        let name: Token = vec_get<Token>(tokens, name_index);
+                        if name.kind == 1 { end = checked_add(name.start, name.length); }
+                    }
                 }
                 let node: SyntaxNode = SyntaxNode { kind: kind, start: token.start, length: end - token.start };
                 vec_push<SyntaxNode>(nodes, node);

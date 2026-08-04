@@ -83,7 +83,7 @@ def expected_output(source):
 
 def reference_syntax(source, tokens):
     data = source.encode("utf-8")
-    kinds = {b"module": 1, b"fn": 2, b"struct": 3, b"enum": 4, b"capability": 5, b"decimal": 6, b"bounded": 7, b"trait": 8, b"impl": 9, b"destructor": 10}
+    kinds = {b"module": 1, b"fn": 2, b"struct": 3, b"enum": 4, b"capability": 5, b"decimal": 6, b"bounded": 7, b"trait": 8, b"impl": 9, b"destructor": 10, b"effects": 11, b"requires_caps": 12, b"requires": 13, b"ensures": 14}
     nodes = []
     depth = 0
     for index, (token_kind, start, length) in enumerate(tokens):
@@ -93,7 +93,7 @@ def reference_syntax(source, tokens):
         syntax_kind = kinds.get(text, 0) if depth == 0 else 0
         if syntax_kind:
             end = start + length
-            if index + 1 < len(tokens) and tokens[index + 1][0] == 1:
+            if syntax_kind <= 10 and index + 1 < len(tokens) and tokens[index + 1][0] == 1:
                 _, name_start, name_length = tokens[index + 1]
                 end = name_start + name_length
             nodes.append((syntax_kind, start, end - start))
@@ -171,6 +171,7 @@ def project_with_source(tmp_path, source_text):
         '0.00 12.5 1e6 2.5e-3',
         'module all\ncapability io; decimal Money(8,2,half_even); bounded Count(i32,0,9); struct S { value:i32; } enum E { A } trait T { fn run()->i32; } impl T for S { fn run()->i32 { return 1; } } destructor S { return 0; } fn main()->i32 { return 0; }',
         'module { } } struct Open {',
+        'module contracts\nfn checked(value:i32)->i32 effects [read] requires_caps [io] requires value >= 0; ensures result >= value; { return value; }',
     ],
 )
 def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_text):

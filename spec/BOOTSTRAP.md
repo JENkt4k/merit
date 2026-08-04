@@ -24,7 +24,7 @@ The initial parser boundary recognizes top-level declaration introducers while t
 SyntaxNode { kind: i32, start: i64, length: i64 }
 ```
 
-Kinds are module (`1`), function (`2`), struct (`3`), enum (`4`), capability (`5`), decimal (`6`), bounded (`7`), trait (`8`), impl (`9`), and destructor (`10`). A node begins at its declaration keyword and extends through the following identifier when present. This first syntax contract is intentionally a declaration index, not yet a complete grammar tree; parameters, fields, clauses, statements, and expressions remain the next parser slices.
+Kinds are module (`1`), function (`2`), struct (`3`), enum (`4`), capability (`5`), decimal (`6`), bounded (`7`), trait (`8`), impl (`9`), destructor (`10`), effects clause (`11`), required-capabilities clause (`12`), precondition (`13`), and postcondition (`14`). A declaration node begins at its keyword and extends through the following identifier when present; clause nodes currently span their keyword. This first syntax contract is intentionally an index, not yet a complete grammar tree; parameters, fields, clause operands, statements, and expressions remain the next parser slices.
 
 The differential corpus compares every syntax kind and byte span with an independent reference, including a fixture containing all declaration kinds and a nested impl method that must not appear as a top-level function.
 
