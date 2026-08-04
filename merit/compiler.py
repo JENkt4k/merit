@@ -1240,6 +1240,7 @@ class Checker:
                 if fn.return_mode=='value' and self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot escape through an owned return',node.expression)
                 if fn.return_mode=='value':self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
             elif tag in ('print','expr'):
+                if self.borrowed_call_mode(node.expression):self.fail(f'M5304: borrowed return cannot be used as a {"printed" if tag=="print" else "discarded"} value',node.expression)
                 expression_type=self.expr_type(node.expression,env,caps,fn)
                 if self.types.get(expression_type).needs_drop and not self.root_var(node.expression):
                     self.fail(f'M5210: owned temporary {expression_type} must be bound, transferred, or explicitly dropped',node.expression)
@@ -1253,6 +1254,7 @@ class Checker:
                 if env[binding].mode in ('borrow','borrow_mut'): self.fail(f'M5102: cannot drop borrowed parameter {n}',st)
                 env[binding].dropped=True;env[binding].drop_origin=self.p.span(st)
             elif tag=='match':
+                if self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot be used as a match subject',node.expression)
                 subject_t=self.expr_type(node.expression,env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
                 arms=node.match_arms; names=[arm.variant for arm in arms]; expected=[v.name for v in enum.variants]
@@ -1282,6 +1284,7 @@ class Checker:
                 self.audit_sites.append({'function':fn.name,'capability':cap})
                 self.block(node.nested_body,env,caps|{cap},fn)
             elif tag=='if':
+                if self.borrowed_call_mode(node.condition):self.fail('M5304: borrowed return cannot be used as a condition',node.condition)
                 ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3300: if condition must be boolean/comparison',st)
                 left={k:dataclasses.replace(v) for k,v in env.items()}; right={k:dataclasses.replace(v) for k,v in env.items()}
@@ -1294,6 +1297,7 @@ class Checker:
                     env[k].move_context=left[k].move_context or right[k].move_context
                     env[k].drop_origin=left[k].drop_origin or right[k].drop_origin
             elif tag=='while':
+                if self.borrowed_call_mode(node.condition):self.fail('M5304: borrowed return cannot be used as a condition',node.condition)
                 ct=self.expr_type(node.condition,env,caps,fn)
                 if ct not in ('i32','number'): self.fail('M3301: while condition must be boolean/comparison',st)
                 loop={k:dataclasses.replace(v) for k,v in env.items()}; self.block(node.nested_body,loop,caps,fn)
@@ -1342,6 +1346,7 @@ class Checker:
             expected={f.name:f for f in s.fields}
             if set(vals)!=set(expected):self.fail(f'M4005: {name} fields must be {sorted(expected)}',e)
             for n,x in vals.items():
+                if self.borrowed_call_mode(x):self.fail(f'M5304: borrowed return cannot be stored in field {name}.{n}',x)
                 t=self.expr_type(x,env,caps,fn)
                 if not self.argument_matches(t,expected[n].type_name):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
                 value_node=self.p.node(x)
@@ -1357,6 +1362,7 @@ class Checker:
                 expected_count=0 if variant.payload_type is None else 1
                 if len(args)!=expected_count: self.fail(f'M6003: {name} expects {expected_count} arguments',e)
                 if expected_count:
+                    if self.borrowed_call_mode(args[0]):self.fail(f'M5304: borrowed return cannot be stored in enum payload {enum.name}::{variant.name}',args[0])
                     at=self.expr_type(args[0],env,caps,fn)
                     if not self.argument_matches(at,variant.payload_type): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
                     argument_node=self.p.node(args[0])
@@ -1483,6 +1489,7 @@ class Checker:
                     self.consume_owned_source(arg,at,env,f'passing argument {param.name} to {name}')
             return callee.return_type
         if tag=='binop':
+            if self.borrowed_call_mode(node.left) or self.borrowed_call_mode(node.right):self.fail('M5304: borrowed return cannot be used as a binary operand',e)
             a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
             numeric=lambda value:value=='number' or value in INT_RANGES or value in self.p.decimals or value in self.p.bounded
             if node.operator in ('==','!=','>=','<=','>','<'):
@@ -2503,7 +2510,7 @@ def hir(p):
         lowered=f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p)
         if isinstance(f,FunctionDecl) and f.return_mode!='value':lowered['borrowed_origin']=checker.borrowed_return_origin(f)
         return lowered
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'destructors':[{'type':d.type_name,'body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
+    return {'module':p.module,'borrow_policy':{'returned_borrows':'ephemeral','stored_references':False,'lifetime_parameters':False},'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'destructors':[{'type':d.type_name,'body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 def reachable_mir_blocks(blocks):
     by_id={block['id']:block for block in blocks}; reachable=set(); pending=[0]
     while pending:
@@ -2589,7 +2596,7 @@ def mir(p):
         )
         sites={binding.c_name:(dataclasses.asdict(span) if span else None) for binding,span in ownership.consumption_sites}
         return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'expression_evaluation_order':'left_to_right','owned_locals':locals_order,'owned_bindings':[dataclasses.asdict(binding) for binding in binding_order],'explicit_drops':sorted(binding.name for binding in ownership.explicit_drops),'consumed_roots':sorted(binding.name for binding in ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
-    return {'module':p.module,'expression_evaluation_order':'left_to_right','destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
+    return {'module':p.module,'expression_evaluation_order':'left_to_right','borrow_policy':{'returned_borrows':'ephemeral','stored_references':False,'lifetime_parameters':False},'destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 
 
 def compile_file(path,out=None):

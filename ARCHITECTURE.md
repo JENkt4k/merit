@@ -70,7 +70,7 @@ Parser field initializers and function effects/capability/contract clauses also 
 Capability-gated filesystem builtins return nominal `FileReadResult` / `FileWriteResult` values with stable `FsError` categories in both interpreter and generated C.
 Every concrete `Vec<T>` retains the allocator passed to `vec_new<T>`; generated growth and destruction dispatch through that stored allocator and include it in deterministic layout metadata.
 `system_allocator()` and `portable_allocator()` provide distinct deterministic allocator identities while sharing the same checked vector lowering and ownership path.
-Borrowed return modes are explicit semantic metadata. Origin and mutability are checked, ephemeral caller propagation is tracked, interpreter aliases preserve identity, generated C uses const-correct pointers, and the multi-module `borrowed_views` project plus shared-library tests verify the ABI. Stored reference values and general lifetime parameters remain deliberately unavailable.
+Borrowed return modes are explicit semantic metadata. Origin and mutability are checked, ephemeral caller propagation is tracked, interpreter aliases preserve identity, generated C uses const-correct pointers, and the multi-module `borrowed_views` project plus shared-library tests verify the ABI. The first-alpha policy permits returned borrows only for field access/mutation, compatible borrow arguments, and validated borrowed-return relays; every storage and value-like escape is rejected. HIR/MIR publish the ephemeral-only policy. Stored reference values and general lifetime parameters remain deliberately unavailable.
 Canonical MIR runs a reachability pass after CFG construction so blocks synthesized after terminal returns do not leak into inspection or later optimization inputs.
 Exact literal/arithmetic/comparison conditions are folded to direct MIR gotos before reachability pruning, with the original condition retained in explicit inspection metadata.
 Project builds can emit a PIC shared object and matching generated header from the same checked merged program used for executable builds.
@@ -96,4 +96,4 @@ Native lowering recursively produces ordered prelude statements followed by one 
 
 ## Planned decomposition
 
-The next semantic slice fixes and enforces the first-alpha boundary between ephemeral borrowed results and unsupported stored references. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.
+The semantic alpha blockers are now closed. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.

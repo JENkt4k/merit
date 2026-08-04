@@ -13,6 +13,8 @@ fn edit(borrow_mut value: Value) -> borrow_mut Value { return value; }
 
 Borrowed results must originate from one consistent borrowed parameter, and mutable results require an unbroken `borrow_mut` origin. A borrowed-return function may relay another validated borrowed result; its lifetime is mapped transitively back to the relaying function's ultimate parameter. Callers may use returned borrows ephemerally for field access or pass them onward to a compatible borrow parameter. The derived loan remains live across the enclosing call's argument evaluation, so that call cannot also move its origin. Mutable results support direct field assignment and owned-field replacement. The interpreter preserves object identity and native C lowers the result as a pointer. Returned borrows cannot be stored in owned bindings, passed by value, or escalated from shared to mutable access.
 
+The `v0.1.0-alpha.1` boundary is deliberately ephemeral-only. A returned borrow may appear only as the base of field access/mutation/replacement, as an argument to a compatible borrowed parameter, or as the validated return expression of another borrowed-return function. It cannot become a local, owned field, enum payload, vector element, match subject, direct printed/discarded value, condition, binary operand, value argument, or owned return. Reference-typed storage and lifetime parameters are outside this alpha rather than approximated unsafely. HIR and MIR publish this policy explicitly.
+
 Generated C signatures preserve mutability: shared borrow parameters and results are `const T *`, while mutable borrows are `T *`.
 Postconditions observe borrowed `result` through the same alias/pointer semantics in both execution paths.
 
@@ -69,4 +71,4 @@ destructor Marker { print(self.number); }
 
 ## Deliberate limits
 
-Loans are call-scoped except for validated ephemeral returned-borrow propagation. Stored borrows, subobject-disjointness, lifetime parameters, and ownership-changing destructor bodies are not implemented. These omissions are reported as alpha limits rather than modeled unsafely.
+Loans are call-scoped except for validated ephemeral returned-borrow propagation. Stored references and lifetime parameters are explicitly outside `v0.1.0-alpha.1`. Subobject-disjoint borrowing and ownership-changing destructor bodies are also not implemented. These omissions are reported as alpha limits rather than modeled unsafely.

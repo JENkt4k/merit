@@ -279,7 +279,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 ## Recommended next epic
 Continue alpha-readiness hardening:
 - Preserve the completed recursive ordered expression lowering: every nested native C operand evaluates once, left to right, matching the interpreter.
-- Decide whether stored reference values and explicit lifetime parameters are in first-alpha scope; keep ephemeral-only rejection unless the full model is implemented.
+- Preserve the enforced first-alpha boundary: borrowed results are ephemeral-only, while stored references and lifetime parameters are deferred.
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
 - Preserve definite-return analysis when adding new control-flow constructs.
 - Preserve the completed type-specific native arithmetic policy when adding numeric types or operators.
@@ -313,8 +313,8 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Decide and enforce the stored-reference alpha boundary.
-2. Preserve semantic binding IDs and ordered expression lowering across all later syntax and backend work.
+1. Consolidate release documentation, then complete the ledger and numeric-reference gates.
+2. Preserve the ephemeral borrow boundary, semantic binding IDs, and ordered expression lowering across all later syntax and backend work.
 
 ## Allocator compatibility checkpoint now available
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.

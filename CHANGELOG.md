@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Ephemeral borrow boundary
+
+- Declared stored references and general lifetime parameters outside the first alpha.
+- Limited returned borrows to field access/mutation, compatible borrow arguments, and validated borrowed-return relays.
+- Rejected aggregate, enum, match, condition, binary, print, discard, value-argument, local, vector, and owned-return escapes.
+- Published the borrow policy in HIR/MIR and added a positive/compile-fail boundary matrix.
+
 ## v0.1.0-alpha.1 gate — Semantic binding identity
 
 - Assigned deterministic IDs to parameters, locals, match payloads, references, and explicit drops during lexical resolution.
