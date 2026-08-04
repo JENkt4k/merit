@@ -4,7 +4,7 @@
 This repository contains the active **`v0.1.0-alpha.1` release-gate checkpoint** of Merit.
 
 Current baseline:
-- 339 tests passing after editable installation
+- 345 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs

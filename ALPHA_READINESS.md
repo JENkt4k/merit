@@ -4,13 +4,13 @@ Assessment date: 2026-08-04
 
 ## Status
 
-Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared complete. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Release documentation and the ledger application gate are complete; arbitrary-precision numeric reference coverage and the final audit remain.
+Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared complete. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Release documentation, the ledger application, and arbitrary-precision numeric reference coverage are complete; the final audit remains.
 
 ## Proven gates
 
 | Gate | Evidence | Status |
 |---|---|---|
-| Interpreter/native equivalence | `scripts/test.sh` runs the full pytest suite and seven project verifiers | Proven for covered programs |
+| Interpreter/native equivalence | `scripts/test.sh` runs the full pytest suite and eight project verifiers | Proven for covered programs |
 | Exact numerics | Checked primitive/bounded/decimal helpers, trap-aware MIR folding, `spec/NUMERICS.md` | Proven for implemented numeric types |
 | Ownership and deterministic destruction | Shared `TypeTable`/`OwnershipEffects`, custom-destructor parity, owned parameter/temporary/`try`/match tests | Proven for accepted ownership forms |
 | Generic traits and collections | User trait coherence, project-wide monomorphization, allocator-retaining and nested `Vec<T>`, trait/collection acceptance projects | Proven within documented trait limits |
@@ -24,13 +24,13 @@ Merit has a credible systems-core alpha candidate, but it is not yet ready to be
 | Unique binding identity | Parameters, locals, match payloads, references, ownership effects, cleanup, HIR/MIR, interpreter frames, and generated C use deterministic binding IDs | Proven by owned-shadowing parity and compile-fail scope tests |
 | Alpha borrow boundary | Returned borrows are limited to field access/mutation, compatible borrow arguments, and validated relays; all storage/value escapes are rejected | Proven by positive and compile-fail boundary matrix; policy is explicit in HIR/MIR |
 | Ledger acceptance application | Five modules combine exact decimals, bounded IDs, typed errors, explicit allocation, filesystem capabilities, stable exports, and foreign ABI calls | Proven by interpreter/native/filesystem parity, audit assertions, generated-C inspection, and ctypes calls |
+| Arbitrary-precision numeric reference | All decimal rounding modes and bounded success/failure boundaries are compared with independent 100-digit decimal and unbounded-integer oracles | Proven in interpreter and native C, with generated helper/ordering inspection |
 
 The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Remaining alpha release gates
 
-1. Strengthen decimal and bounded numeric coverage against an arbitrary-precision reference.
-2. Run the final complete local and specification audit.
+1. Run the final complete local and specification audit.
 
 ## Accepted alpha limitations
 
@@ -51,5 +51,4 @@ The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Recommended execution order
 
-1. Complete the numeric-reference gate.
-2. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.
+1. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.

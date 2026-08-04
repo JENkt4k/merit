@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Arbitrary-precision numeric reference
+
+- Compared all five exact-decimal rounding policies with an independent 100-digit `Decimal` oracle across signed multiplication and division cases.
+- Compared bounded arithmetic, truncating division, domain failures, and oversized literals with unbounded integer reference calculations.
+- Required interpreter/native/reference equivalence and inspected generated C for widened decimal rounding, ordered operands, checked primitive helpers, and bounded-domain checks.
+
 ## v0.1.0-alpha.1 gate — Exact-decimal ledger acceptance
 
 - Expanded `ledger_app` to five modules with exact `USD`, bounded IDs, typed ledger errors/results, and contract-checked operations.

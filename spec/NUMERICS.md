@@ -1,4 +1,4 @@
-# Numeric semantics in alpha.3
+# Numeric semantics in v0.1.0-alpha.1
 
 ## Exact decimal
 
@@ -16,6 +16,10 @@ Primitive signed and unsigned integer operators and `checked_add`, `checked_sub`
 
 Built-in arithmetic and comparison operators accept numeric domains only. Distinct nominal numeric types do not compare implicitly, and comparison operands retain their numeric type even though the result is `i32`.
 Destination typing propagates through compound literal expressions at binding, assignment, replacement, argument, and return boundaries, so runtime range behavior does not silently widen to `i64`.
+
+## Reference verification
+
+The first-alpha local gate compares every decimal rounding policy against Python `Decimal` with a 100-digit context and compares bounded arithmetic against unbounded Python integers. Signed ties, non-ties, multiplication, division, truncation toward zero, domain boundaries, runtime failures, and oversized compile-fail literals are covered. The same generated program output must match the independent reference in the interpreter and native C backend; generated C is also inspected for ordered operands, widened decimal intermediates, rounding-mode selection, checked primitive operations, and bounded-domain checks.
 
 ## Domain boundary rule
 
