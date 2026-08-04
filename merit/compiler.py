@@ -99,7 +99,7 @@ FS_BUILTIN_ENUMS={
 }
 @dataclasses.dataclass(frozen=True)
 class Parameter:
-    name:str; type_name:str; mode:str='value'
+    name:str; type_name:str; mode:str='value'; binding_id:BindingId|None=dataclasses.field(default=None,compare=False)
 @dataclasses.dataclass(frozen=True)
 class TraitMethod: name:str; params:tuple[Parameter,...]; return_type:str
 @dataclasses.dataclass(frozen=True)
@@ -110,6 +110,10 @@ class TraitImpl: trait_name:str; target_type:str; methods:tuple[dict[str,Any],..
 class Field: name:str; type_name:str
 @dataclasses.dataclass(frozen=True)
 class StructType: name:str; fields:tuple[Field,...]; stable_abi:str|None
+@dataclasses.dataclass(frozen=True,order=True)
+class BindingId:
+    serial:int; name:str=dataclasses.field(compare=False); c_name:str=dataclasses.field(compare=False)
+    def __str__(self):return self.name
 @dataclasses.dataclass(frozen=True)
 class SourceSpan:
     line:int; column:int; end_line:int; end_column:int; source_name:str|None=None
@@ -118,7 +122,7 @@ class NodeProvenance:
     primary:SourceSpan|None=None; related:SourceSpan|None=None
 @dataclasses.dataclass(frozen=True)
 class MatchArm:
-    variant:str; binding:str|None; body:list
+    variant:str; binding:str|None; body:list; binding_id:BindingId|None=dataclasses.field(default=None,compare=False)
 @dataclasses.dataclass(frozen=True)
 class DeclarationEntry:
     kind:str; value:Any
@@ -135,16 +139,17 @@ class ReturnSpec:
 class DestructorDecl:
     type_name:str; body:list; provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
 class SemanticNode:
-    __slots__=('kind','operands','provenance')
+    __slots__=('kind','operands','provenance','binding_id')
     def __init__(self,kind,*operands):
         object.__setattr__(self,'kind',kind)
         object.__setattr__(self,'operands',tuple(operands))
         object.__setattr__(self,'provenance',NodeProvenance())
+        object.__setattr__(self,'binding_id',None)
     def __repr__(self):return repr((self.kind,*self.operands))
     def __setattr__(self,name,value):raise AttributeError('semantic nodes are immutable')
 @dataclasses.dataclass
 class FunctionDecl(Mapping):
-    name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;return_mode:str='value';provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False)
+    name:str;params:list;return_type:str;effects:list;requires_caps:list;pre:list;post:list;body:list;return_mode:str='value';provenance:NodeProvenance=dataclasses.field(default_factory=NodeProvenance,compare=False);result_binding_id:BindingId|None=dataclasses.field(default=None,compare=False)
     KEYS=('name','params','return','effects','requires_caps','pre','post','body')
     def __getitem__(self,key):return getattr(self,'return_type' if key=='return' else key)
     def __iter__(self):return iter(self.KEYS)
@@ -582,10 +587,72 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
 
 def parse(s:str,source_name=None)->Program:
     expanded,line_map,related_line_map=expand_generics(s,True,source_name)
-    try:return ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
+    try:
+        program=ASTBuilder(source_name,line_map,related_line_map).transform(PARSER.parse(expanded))
+        assign_binding_ids(program)
+        return program
     except VisitError as exc:
         if isinstance(exc.orig_exc,CompileError):raise exc.orig_exc
         raise
+
+def assign_binding_ids(program):
+    serial=0
+    for function in program.functions:
+        scopes=[{}];name_counts={}
+        def bind(name):
+            nonlocal serial
+            count=name_counts.get(name,0);name_counts[name]=count+1
+            binding=BindingId(serial,name,name if count==0 else f'{name}__b{serial}');serial+=1
+            scopes[-1][name]=binding;return binding
+        def resolve_name(name):
+            return next((scope[name] for scope in reversed(scopes) if name in scope),None)
+        def expression(value):
+            if not isinstance(value,SemanticNode):return
+            node=program.node(value)
+            if node.kind=='var':object.__setattr__(value,'binding_id',resolve_name(node.atom_value));return
+            for part in node.operands:
+                if isinstance(part,SemanticNode):expression(part)
+                elif isinstance(part,list):
+                    for item in part:expression(item)
+                elif isinstance(part,dict):
+                    for item in part.values():expression(item)
+        def block(body,new_scope=False):
+            if new_scope:scopes.append({})
+            for statement in body:
+                node=program.node(statement);kind=node.kind
+                if kind in ('let','try_let'):
+                    expression(node.initializer);binding=bind(node.binding_name);object.__setattr__(statement,'binding_id',binding)
+                elif kind in ('assign','replace'):
+                    expression(node.assignment_target);expression(node.assigned_value)
+                elif kind in ('return','print','expr'):expression(node.expression)
+                elif kind=='drop':object.__setattr__(statement,'binding_id',resolve_name(node.binding_name))
+                elif kind=='match':
+                    expression(node.expression)
+                    for arm in node.match_arms:
+                        scopes.append({})
+                        if arm.binding is not None:object.__setattr__(arm,'binding_id',bind(arm.binding))
+                        block(arm.body);scopes.pop()
+                elif kind=='with_cap':block(node.nested_body,True)
+                elif kind=='if':expression(node.condition);block(node.then_body,True);block(node.else_body,True)
+                elif kind=='while':expression(node.condition);block(node.nested_body,True)
+            if new_scope:scopes.pop()
+        for parameter in function.params:object.__setattr__(parameter,'binding_id',bind(parameter.name))
+        for contract in function.pre:expression(contract)
+        block(function.body)
+        scopes.append({});object.__setattr__(function,'result_binding_id',bind('result'))
+        for contract in function.post:expression(contract)
+        scopes.pop()
+    destructor_binding=BindingId(-1,'self','self')
+    def attach_destructor(value):
+        if not isinstance(value,SemanticNode):return
+        node=program.node(value)
+        if node.kind=='var' and node.atom_value=='self':object.__setattr__(value,'binding_id',destructor_binding)
+        for part in node.operands:
+            if isinstance(part,SemanticNode):attach_destructor(part)
+            elif isinstance(part,list):
+                for item in part:attach_destructor(item)
+    for destructor in program.destructors.values():
+        for statement in destructor.body:attach_destructor(statement)
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer','allocator')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
@@ -818,7 +885,7 @@ class OwnershipEffects:
     def root(self,e):
         node=self.p.node(e)
         while node and node.kind=='field':e=node.operand(0);node=self.p.node(e)
-        return node.operand(0) if node and node.kind=='var' else None
+        return node.raw.binding_id if node and node.kind=='var' else None
     def consume(self,e,type_name):
         return set(self.consume_sites(e,type_name))
     def consume_sites(self,e,type_name):
@@ -869,7 +936,7 @@ class OwnershipEffects:
                 for arm in node.match_arms:yield from self.statements(arm.body)
     def expression_type(self,e,env):
         node=self.p.node(e);kind=node.kind
-        if kind=='var':return env.get(node.atom_value)
+        if kind=='var':return env.get(node.raw.binding_id)
         if kind=='field':
             base=self.expression_type(node.field_base,env);struct=self.p.structs.get(base)
             return next((field.type_name for field in struct.fields if field.name==node.field_name),None) if struct else None
@@ -884,15 +951,15 @@ class OwnershipEffects:
             if name in self.fn:return self.fn[name].return_type
         return None
     def function(self,f):
-        env={param.name:param.type_name for param in f.params};owned=[(param.name,param.type_name) for param in f.params if param.mode=='value' and self.types.get(param.type_name).owned];explicit=set();consumed_sites={}
+        env={param.binding_id:param.type_name for param in f.params};owned=[(param.binding_id,param.type_name) for param in f.params if param.mode=='value' and self.types.get(param.type_name).owned];explicit=set();consumed_sites={}
         for statement in self.statements(f.body):
             node=self.p.node(statement);tag=node.kind
             if tag=='let':
-                consumed_sites.update(self.consume_sites(node.initializer,node.declared_type));env[node.binding_name]=node.declared_type
-                if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
+                consumed_sites.update(self.consume_sites(node.initializer,node.declared_type));env[node.raw.binding_id]=node.declared_type
+                if self.types.get(node.declared_type).owned:owned.append((node.raw.binding_id,node.declared_type))
             elif tag=='try_let':
-                initializer_type=self.expression_type(node.initializer,env);consumed_sites.update(self.consume_sites(node.initializer,initializer_type) if initializer_type else self.effect_sites(node.initializer));env[node.binding_name]=node.declared_type
-                if self.types.get(node.declared_type).owned:owned.append((node.binding_name,node.declared_type))
+                initializer_type=self.expression_type(node.initializer,env);consumed_sites.update(self.consume_sites(node.initializer,initializer_type) if initializer_type else self.effect_sites(node.initializer));env[node.raw.binding_id]=node.declared_type
+                if self.types.get(node.declared_type).owned:owned.append((node.raw.binding_id,node.declared_type))
             elif tag=='assign':consumed_sites.update(self.effect_sites(node.assigned_value))
             elif tag=='replace':
                 target_type=self.expression_type(node.assignment_target,env)
@@ -902,7 +969,7 @@ class OwnershipEffects:
                 subject_type=self.expression_type(node.expression,env)
                 if subject_type:consumed_sites.update(self.consume_sites(node.expression,subject_type))
             elif tag in ('expr','print'):consumed_sites.update(self.effect_sites(node.expression))
-            elif tag=='drop':explicit.add(node.binding_name)
+            elif tag=='drop':explicit.add(node.raw.binding_id)
         return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed_sites),tuple(sorted(consumed_sites.items())))
 
 class Checker:
@@ -969,7 +1036,17 @@ class Checker:
         for statement in statements(destructor.body):
             if self.p.node(statement).kind not in ('print','expr','assign','if','while'):
                 self.fail('M5502: destructor body statement may change ownership or capabilities',statement)
-        function=FunctionDecl(f'__destructor_{destructor.type_name}',[Parameter('self',destructor.type_name,'borrow_mut')],'void',[],[],[],[],destructor.body)
+        binding=BindingId(-1,'self','self');parameter=Parameter('self',destructor.type_name,'borrow_mut',binding)
+        def attach(value):
+            if not isinstance(value,SemanticNode):return
+            node=self.p.node(value)
+            if node.kind=='var' and node.atom_value=='self':object.__setattr__(value,'binding_id',binding)
+            for part in node.operands:
+                if isinstance(part,SemanticNode):attach(part)
+                elif isinstance(part,list):
+                    for item in part:attach(item)
+        for statement in destructor.body:attach(statement)
+        function=FunctionDecl(f'__destructor_{destructor.type_name}',[parameter],'void',[],[],[],[],destructor.body)
         self.check_function_body(function)
     def ensure_type(self,t,node=None):
         if is_vec_type(t):
@@ -982,12 +1059,12 @@ class Checker:
         if f.return_mode!='value': self.check_borrowed_return(f)
         missing=set(f.requires_caps)-self.p.capabilities
         if missing:self.fail(f"M2001: function {f.name} requires undeclared capabilities: {sorted(missing)}",f)
-        env={param.name:VarState(param.type_name,param.mode=='borrow_mut',False,False,param.mode) for param in f.params}
+        env={param.binding_id:VarState(param.type_name,param.mode=='borrow_mut',False,False,param.mode) for param in f.params}
         for e in f.pre:self.check_contract_expr(e,env,set(f.requires_caps),f,'pre')
         self.block(f.body,env,set(f.requires_caps),f)
         if f.return_type!='void' and not self.block_definitely_returns(f.body):
             self.fail(f'M3009: function {f.name} does not return on every path',f)
-        post_env=dict(env); post_env['result']=VarState(f.return_type,False)
+        post_env=dict(env); post_env[f.result_binding_id]=VarState(f.return_type,False)
         for e in f.post:self.check_contract_expr(e,post_env,set(f.requires_caps),f,'post')
     def block_definitely_returns(self,body):
         for statement in body:
@@ -1116,16 +1193,14 @@ class Checker:
             node=self.p.node(st);tag=node.kind
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable
-                if n in env:self.fail(f'M3012: binding {n} shadows an existing binding',st)
                 self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if self.borrowed_call_mode(e):self.fail('M5304: borrowed return cannot be stored in an owned binding',e)
                 if not self.argument_matches(et,t):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
                 if self.p.node(e).kind=='number':self.validate_literal(t,self.p.node(e).atom_value)
                 self.consume_owned_source(e,et,env,f'initializing {n}')
-                env[n]=VarState(t,mut)
+                env[node.raw.binding_id]=VarState(t,mut)
             elif tag=='try_let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer
-                if n in env:self.fail(f'M3012: binding {n} shadows an existing binding',st)
                 self.ensure_type(t)
                 et=self.expr_type(e,env,caps,fn); enum=self.p.enums.get(et)
                 if not enum or [v.name for v in enum.variants] != ['Ok','Err']:
@@ -1138,7 +1213,7 @@ class Checker:
                 if ret_enum.variants[1].payload_type != enum.variants[1].payload_type:
                     self.fail('M6203: try error payload does not match function return error type',st)
                 self.consume_owned_source(e,et,env,f'trying into {n}')
-                env[n]=VarState(t,False)
+                env[node.raw.binding_id]=VarState(t,False)
             elif tag=='assign':
                 target=node.assignment_target;value=node.assigned_value
                 if self.borrowed_call_mode(value):self.fail('M5304: borrowed return cannot be stored in owned storage',value)
@@ -1169,14 +1244,14 @@ class Checker:
                 if self.types.get(expression_type).needs_drop and not self.root_var(node.expression):
                     self.fail(f'M5210: owned temporary {expression_type} must be bound, transferred, or explicitly dropped',node.expression)
             elif tag=='drop':
-                n=node.binding_name
-                if n not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)
-                if env[n].moved or env[n].dropped:
-                    origin=env[n].move_origin or env[n].drop_origin
-                    note='value moved here' if env[n].moved else 'value previously dropped here'
+                n=node.binding_name;binding=node.raw.binding_id
+                if binding not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)
+                if env[binding].moved or env[binding].dropped:
+                    origin=env[binding].move_origin or env[binding].drop_origin
+                    note='value moved here' if env[binding].moved else 'value previously dropped here'
                     raise CompileError(f'M5101: binding {n} already consumed',self.p.span(st),(DiagnosticNote(note,origin),))
-                if env[n].mode in ('borrow','borrow_mut'): self.fail(f'M5102: cannot drop borrowed parameter {n}',st)
-                env[n].dropped=True;env[n].drop_origin=self.p.span(st)
+                if env[binding].mode in ('borrow','borrow_mut'): self.fail(f'M5102: cannot drop borrowed parameter {n}',st)
+                env[binding].dropped=True;env[binding].drop_origin=self.p.span(st)
             elif tag=='match':
                 subject_t=self.expr_type(node.expression,env,caps,fn); enum=self.p.enums.get(subject_t)
                 if not enum: self.fail(f'M6100: match requires enum value, got {subject_t}',st)
@@ -1192,10 +1267,9 @@ class Checker:
                     if variant.payload_type is None and binding is not None: self.fail(f'M6103: variant {variant.name} has no payload',st)
                     if variant.payload_type is not None and binding is None: self.fail(f'M6104: variant {variant.name} requires payload binding',st)
                     if binding is not None:
-                        if binding in local:self.fail(f'M3012: binding {binding} shadows an existing binding',arm)
-                        local[binding]=VarState(variant.payload_type,False)
+                        local[arm.binding_id]=VarState(variant.payload_type,False)
                     self.block(arm.body,local,caps,fn)
-                    if binding is not None and self.types.get(variant.payload_type).needs_drop and not (local[binding].moved or local[binding].dropped):
+                    if binding is not None and self.types.get(variant.payload_type).needs_drop and not (local[arm.binding_id].moved or local[arm.binding_id].dropped):
                         self.fail(f'M5211: owned match payload {binding} must be moved or dropped in arm {variant.name}',arm)
                     self.require_scoped_owned_cleanup(local,set(env),f'match arm {variant.name}',arm)
                     states.append(local)
@@ -1233,14 +1307,14 @@ class Checker:
     def lvalue_type(self,e,env,write=False):
         node=self.p.node(e);kind=node.kind
         if kind=='var':
-            n=node.atom_value
-            if n not in env:self.fail(f'M3003: unknown variable {n}',e)
-            if env[n].moved:
-                context=f' ({env[n].move_context})' if env[n].move_context else ''
-                raise CompileError(f'M5001: use of moved value {n}',self.p.span(e),(DiagnosticNote(f'value moved here{context}',env[n].move_origin),))
-            if env[n].dropped:raise CompileError(f'M5103: use of dropped value {n}',self.p.span(e),(DiagnosticNote('value dropped here',env[n].drop_origin),))
-            if write and not env[n].mutable:self.fail(f'M5002: cannot assign to immutable binding {n}',e)
-            return env[n].type_name
+            n=node.atom_value;binding=node.raw.binding_id
+            if binding not in env:self.fail(f'M3003: unknown variable {n}',e)
+            if env[binding].moved:
+                context=f' ({env[binding].move_context})' if env[binding].move_context else ''
+                raise CompileError(f'M5001: use of moved value {n}',self.p.span(e),(DiagnosticNote(f'value moved here{context}',env[binding].move_origin),))
+            if env[binding].dropped:raise CompileError(f'M5103: use of dropped value {n}',self.p.span(e),(DiagnosticNote('value dropped here',env[binding].drop_origin),))
+            if write and not env[binding].mutable:self.fail(f'M5002: cannot assign to immutable binding {n}',e)
+            return env[binding].type_name
         if kind=='field':
             base=node.field_base;bt=self.lvalue_type(base,env,write);s=self.p.structs.get(bt)
             if not s:self.fail(f'M4002: {bt} has no fields',e)
@@ -1448,7 +1522,7 @@ class Checker:
                 origin=self.borrowed_return_origin(callee)
                 index=next((index for index,param in enumerate(callee.params) if param.name==origin),None)
                 if index is not None:return self.root_var(args[index])
-        return node.operand(0) if node and node.kind=='var' else None
+        return node.raw.binding_id if node and node.kind=='var' else None
     def referenced_roots(self,e):
         if not isinstance(e,SemanticNode): return set()
         root=self.root_var(e)
@@ -1562,21 +1636,21 @@ class Interpreter:
     def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[];self.call_return_types=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
-        f=self.fn[n];env={param.name:v for param,v in zip(f.params,args)}
-        self.call_modes.append({param.name:param.mode for param in f.params})
+        f=self.fn[n];env={param.binding_id:v for param,v in zip(f.params,args)}
+        self.call_modes.append({param.binding_id:param.mode for param in f.params})
         self.call_return_types.append(f.return_type)
         try:
             for c in f.pre:
                 if not self.eval(c,env).value:raise RuntimeError(f'precondition failed in {n}')
             before={k:self.clone(v) for k,v in env.items()}
             sig=self.block(f.body,env); r=sig.value if isinstance(sig,(ReturnSignal,TrySignal)) else TypedValue('void',None)
-            post_env=dict(env); post_env['result']=r; post_env['__old__']=before
+            post_env=dict(env); post_env[f.result_binding_id]=r; post_env['__old__']=before
             for c in f.post:
                 if not self.eval(c,post_env).value:raise RuntimeError(f'postcondition failed in {n}')
             ownership=OwnershipEffects(self.p,self.types).function(f)
-            for name,type_name in reversed(ownership.owned_locals):
-                if name in env and name not in ownership.explicit_drops and name not in ownership.consumed_roots:
-                    self.drop_value(env.pop(name))
+            for binding,type_name in reversed(ownership.owned_locals):
+                if binding in env and binding not in ownership.explicit_drops and binding not in ownership.consumed_roots:
+                    self.drop_value(env.pop(binding))
             return r
         finally:
             self.call_return_types.pop()
@@ -1584,22 +1658,22 @@ class Interpreter:
     def block(self,b,env):
         for st in b:
             node=self.p.node(st);kind=node.kind
-            if kind=='let':env[node.binding_name]=self.eval(node.initializer,env,node.declared_type)
+            if kind=='let':env[node.raw.binding_id]=self.eval(node.initializer,env,node.declared_type)
             elif kind=='try_let':
                 value=self.eval(node.initializer,env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
-                env[node.binding_name]=value.value['payload']
+                env[node.raw.binding_id]=value.value['payload']
             elif kind=='assign':self.assign(node.assignment_target,self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env)),env)
             elif kind=='replace':
                 replacement=self.eval(node.assigned_value,env,self.value_type(node.assignment_target,env));self.replace_value(node.assignment_target,replacement,env)
             elif kind=='print':print(self.format(self.eval(node.expression,env)))
             elif kind=='return':return ReturnSignal(self.eval(node.expression,env,self.call_return_types[-1]))
             elif kind=='expr':self.eval(node.expression,env)
-            elif kind=='drop': self.drop_value(env.pop(node.binding_name,None))
+            elif kind=='drop': self.drop_value(env.pop(node.raw.binding_id,None))
             elif kind=='match':
                 value=self.eval(node.expression,env); variant=value.value['variant']
                 arm=next(arm for arm in node.match_arms if arm.variant==variant)
-                if arm.binding is not None: env[arm.binding]=value.value['payload']
+                if arm.binding is not None: env[arm.binding_id]=value.value['payload']
                 r=self.block(arm.body,env)
                 if isinstance(r,(ReturnSignal,TrySignal)):return r
             elif kind=='with_cap':
@@ -1620,17 +1694,17 @@ class Interpreter:
     def replace_value(self,e,replacement,env):
         node=self.p.node(e)
         if node.kind=='var':
-            current=env[node.atom_value];self.drop_value(current)
-            if self.call_modes and self.call_modes[-1].get(node.atom_value)=='borrow_mut':
+            binding=node.raw.binding_id;current=env[binding];self.drop_value(current)
+            if self.call_modes and self.call_modes[-1].get(binding)=='borrow_mut':
                 current.type_name=replacement.type_name;current.value=replacement.value;current.allocator=replacement.allocator
-            else:env[node.atom_value]=replacement
+            else:env[binding]=replacement
             return
         if node.kind=='field':
             base=self.eval(node.field_base,env);current=base.value[node.field_name];self.drop_value(current);base.value[node.field_name]=replacement;return
         raise RuntimeError('invalid replacement target')
     def value_type(self,e,env):
         node=self.p.node(e)
-        if node.kind=='var':return env[node.atom_value].type_name
+        if node.kind=='var':return env[node.raw.binding_id].type_name
         if node.kind=='field':
             base=self.value_type(node.field_base,env)
             return next(field.type_name for field in self.p.structs[base].fields if field.name==node.field_name)
@@ -1648,9 +1722,10 @@ class Interpreter:
     def assign(self,e,v,env):
         node=self.p.node(e)
         if node.kind=='var':
-            if self.call_modes and self.call_modes[-1].get(node.atom_value)=='borrow_mut':
-                env[node.atom_value].type_name=v.type_name;env[node.atom_value].value=v.value
-            else: env[node.atom_value]=v
+            binding=node.raw.binding_id
+            if self.call_modes and self.call_modes[-1].get(binding)=='borrow_mut':
+                env[binding].type_name=v.type_name;env[binding].value=v.value
+            else: env[binding]=v
             return
         if node.kind=='field':self.eval(node.field_base,env).value[node.field_name]=v;return
     def clone(self,v):
@@ -1669,7 +1744,7 @@ class Interpreter:
             v.value=[];return
         if semantics.kind=='struct':
             destructor=self.p.destructors.get(v.type_name)
-            if destructor is not None:self.block(destructor.body,{'self':v})
+            if destructor is not None:self.block(destructor.body,{BindingId(-1,'self','self'):v})
             for field in self.p.structs[v.type_name].fields:self.drop_value(v.value[field.name])
             return
         if semantics.kind=='enum':
@@ -1679,7 +1754,7 @@ class Interpreter:
         node=self.p.node(e);kind=node.kind
         if kind=='string':return TypedValue('String',node.atom_value)
         if kind=='number':return self.literal(expected or 'i64',node.atom_value)
-        if kind=='var':return env[node.atom_value]
+        if kind=='var':return env[node.raw.binding_id]
         if kind=='field':return self.eval(node.field_base,env).value[node.field_name]
         if kind=='struct_init':
             s=self.p.structs[node.constructed_type];return TypedValue(node.constructed_type,{f.name:self.eval(node.field_values[f.name],env,f.type_name) for f in s.fields})
@@ -1852,9 +1927,10 @@ class CGenerator:
         if is_vec_type(t): return 'merit_'+t
         return {'i8':'int8_t','i16':'int16_t','i32':'int32_t','i64':'int64_t','u8':'uint8_t','u16':'uint16_t','u32':'uint32_t','u64':'uint64_t','void':'void'}[t]
     def parameter_c(self,param):
-        if param.mode=='borrow':return f'const {self.ctype(param.type_name)} *{param.name}'
-        if param.mode=='borrow_mut':return f'{self.ctype(param.type_name)} *{param.name}'
-        return f'{self.ctype(param.type_name)} {param.name}'
+        name=param.binding_id.c_name
+        if param.mode=='borrow':return f'const {self.ctype(param.type_name)} *{name}'
+        if param.mode=='borrow_mut':return f'{self.ctype(param.type_name)} *{name}'
+        return f'{self.ctype(param.type_name)} {name}'
     def return_ctype(self,function):
         if function.return_mode=='borrow':return f'const {self.ctype(function.return_type)} *'
         if function.return_mode=='borrow_mut':return f'{self.ctype(function.return_type)} *'
@@ -2043,7 +2119,7 @@ class CGenerator:
         lines=[f'static void merit_drop_{s.name}({self.ctype(s.name)} *self){{']
         destructor=self.p.destructors.get(s.name)
         if destructor is not None:
-            env={'self':(s.name,'borrow_mut')}
+            env={BindingId(-1,'self','self'):(s.name,'borrow_mut')}
             for statement in destructor.body:lines.extend(self.stmt(statement,env,1))
         for field in s.fields:
             stmt=self.drop_field_stmt(f'self->{field.name}',field.type_name)
@@ -2080,7 +2156,7 @@ class CGenerator:
             and name not in ownership.consumed_roots
         ]
     def fn_c(self,f):
-        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(self.parameter_c(param) for param in f.params) or 'void';env={param.name:(param.type_name,param.mode) for param in f.params};return_type=self.return_ctype(f);o=[f'{return_type} {name}({params}) {{']
+        name='main' if f.name=='main' else 'merit_'+f.name;params=', '.join(self.parameter_c(param) for param in f.params) or 'void';env={param.binding_id:(param.type_name,param.mode) for param in f.params};return_type=self.return_ctype(f);o=[f'{return_type} {name}({params}) {{']
         old={}
         for c in f.post:self.walk_old(c,old)
         self.old_map={}
@@ -2095,11 +2171,11 @@ class CGenerator:
             else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
-        postenv=dict(env);postenv['result']=(f.return_type,f.return_mode if f.return_mode!='value' else '__result__')
+        postenv=dict(env);postenv[f.result_binding_id]=(f.return_type,f.return_mode if f.return_mode!='value' else '__result__')
         for c in f.post:
             prelude,value=self.ordered_expr(c,postenv,None,'    ');o.extend(prelude);o.append(f'    if(!({value})) merit_fail("postcondition failed in {f.name}",73);')
-        for name,t in self.owned_buffer_cleanup(f):
-            o.append(self.drop_binding_line('    ',name,t))
+        for binding,t in self.owned_buffer_cleanup(f):
+            o.append(self.drop_binding_line('    ',binding.c_name,t))
         if f.return_type!='void':o.append('    return _merit_result;')
         o.append('}');return '\n'.join(o)
     def checked(self,t,x):
@@ -2111,14 +2187,14 @@ class CGenerator:
         finally:self._expr_overrides=previous;self._address_overrides=previous_addresses
     def rendered_address(self,e,rendered,env):
         node=self.p.node(e)
-        if node.kind=='var' and self.env_mode(env,node.atom_value) in ('borrow','borrow_mut'):return rendered
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):return rendered
         if node.kind in ('call','generic_call'):
             called,_=resolved_call(node);callee=self.fn.get(called)
             if callee and callee.return_mode!='value':return rendered
         return '&'+rendered
     def expression_pointer_mode(self,e,env):
         node=self.p.node(e)
-        if node.kind=='var' and self.env_mode(env,node.atom_value) in ('borrow','borrow_mut'):return self.env_mode(env,node.atom_value)
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):return self.env_mode(env,node.raw.binding_id)
         if node.kind in ('call','generic_call'):
             called,_=resolved_call(node);callee=self.fn.get(called)
             if callee and callee.return_mode!='value':return callee.return_mode
@@ -2192,14 +2268,14 @@ class CGenerator:
         p='    '*i
         node=self.p.node(s);kind=node.kind
         if kind=='let':
-            prelude,value=self.ordered_expr(node.initializer,env,node.declared_type,p);env[node.binding_name]=node.declared_type
-            return prelude+[f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {self.checked(node.declared_type,value)};']
+            prelude,value=self.ordered_expr(node.initializer,env,node.declared_type,p);binding=node.raw.binding_id;env[binding]=node.declared_type
+            return prelude+[f'{p}{self.ctype(node.declared_type)} {binding.c_name} = {self.checked(node.declared_type,value)};']
         if kind=='try_let':
             enum_t=self.etype(node.initializer,env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
-            env[node.binding_name]=node.declared_type
+            binding=node.raw.binding_id;env[binding]=node.declared_type
             prelude,value=self.ordered_expr(node.initializer,env,enum_t,p)
-            return prelude+[f'{p}{self.ctype(enum_t)} {temp} = {value};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {temp}.data.Ok;']
+            return prelude+[f'{p}{self.ctype(enum_t)} {temp} = {value};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {binding.c_name} = {temp}.data.Ok;']
         if kind=='assign':
             t=self.etype(node.assignment_target,env);index=self.temp_counter;value_temp=f'_merit_assign_value_{index}';address_temp=f'_merit_assign_address_{index}';self.temp_counter+=1
             value_lines,value=self.ordered_expr(node.assigned_value,env,t,p);address_lines,address=self.ordered_address(node.assignment_target,env,p)
@@ -2243,8 +2319,8 @@ class CGenerator:
             prelude,value=self.ordered_expr(expression,env,None,p)
             return prelude+[f'{p}(void)({value});']
         if kind=='drop':
-            t=self.env_type(env,node.binding_name)
-            return [self.drop_binding_line(p,node.binding_name,t)]
+            binding=node.raw.binding_id;t=self.env_type(env,binding)
+            return [self.drop_binding_line(p,binding.c_name,t)]
         if kind=='match':
             enum_t=self.etype(node.expression,env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
             prelude,value=self.ordered_expr(node.expression,env,enum_t,p)
@@ -2254,7 +2330,7 @@ class CGenerator:
                 variant=next(v for v in enum.variants if v.name==arm.variant);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
                 local=dict(env)
                 if arm.binding is not None:
-                    local[arm.binding]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm.binding} = {temp}.data.{variant.name};');o.append(f'{p}    (void){arm.binding};')
+                    local[arm.binding_id]=variant.payload_type;o.append(f'{p}    {self.ctype(variant.payload_type)} {arm.binding_id.c_name} = {temp}.data.{variant.name};');o.append(f'{p}    (void){arm.binding_id.c_name};')
                 for z in arm.body:o+=self.stmt(z,local,i+1)
                 o.append(f'{p}    break;');o.append(f'{p}}}')
             o.append(f'{p}}}');return o
@@ -2282,7 +2358,7 @@ class CGenerator:
         node=self.p.node(e);kind=node.kind
         if kind=='string':return 'String'
         if kind=='number':return 'i64'
-        if kind=='var':return self.env_type(env,node.atom_value)
+        if kind=='var':return self.env_type(env,node.raw.binding_id)
         if kind=='field':
             t=self.etype(node.field_base,env);return next(f.type_name for f in self.p.structs[t].fields if f.name==node.field_name)
         if kind=='struct_init':return node.constructed_type
@@ -2302,7 +2378,7 @@ class CGenerator:
         rendered=self.expr(e,env)
         if id(e) in self._address_overrides:return rendered
         node=self.p.node(e)
-        if node.kind=='var' and self.env_mode(env,node.operand(0)) in ('borrow','borrow_mut'):
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):
             return rendered
         if node.kind in ('call','generic_call'):
             called,_=resolved_call(node);callee=self.fn.get(called)
@@ -2318,11 +2394,11 @@ class CGenerator:
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
             if expected=='u64' and value==INT_RANGES['u64'][1]:return 'UINT64_MAX'
             return str(value)
-        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get('result'),tuple) and env['result'][1] in ('__result__','borrow','borrow_mut') else node.atom_value
+        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get(node.raw.binding_id),tuple) and env[node.raw.binding_id][1] in ('__result__','borrow','borrow_mut') else node.raw.binding_id.c_name
         if kind=='field':
             base=node.field_base; op='.'
             base_node=self.p.node(base)
-            if base_node.kind=='var' and self.env_mode(env,base_node.atom_value) in ('borrow','borrow_mut'): op='->'
+            if base_node.kind=='var' and self.env_mode(env,base_node.raw.binding_id) in ('borrow','borrow_mut'): op='->'
             elif base_node.kind in ('call','generic_call'):
                 called,_=resolved_call(base_node);callee=self.fn.get(called)
                 if callee and callee.return_mode!='value':op='->'
@@ -2409,6 +2485,7 @@ def semantic_payload(value,p):
         return {
             'kind':value.kind,
             'operands':[semantic_payload(item,p) for item in value.operands],
+            'binding_id':dataclasses.asdict(value.binding_id) if value.binding_id is not None else None,
             'provenance':{
                 'primary':dataclasses.asdict(provenance.primary) if provenance.primary else None,
                 'related':dataclasses.asdict(provenance.related) if provenance.related else None,
@@ -2504,14 +2581,14 @@ def mir(p):
         if tail['terminator']['kind']=='fallthrough': tail['terminator']={'kind':'return','value':None}
         blocks=reachable_mir_blocks(fold_constant_mir_branches(p,blocks))
         ownership=ownership_model.function(f)
-        locals_order=[name for name,_ in ownership.owned_locals]
+        binding_order=[binding for binding,_ in ownership.owned_locals];locals_order=[binding.name for binding in binding_order]
         entry['statements'].extend(
-            ('drop_implicit',name)
-            for name in reversed(locals_order)
-            if name not in ownership.explicit_drops and name not in ownership.consumed_roots
+            ('drop_implicit',binding.name)
+            for binding in reversed(binding_order)
+            if binding not in ownership.explicit_drops and binding not in ownership.consumed_roots
         )
-        sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'expression_evaluation_order':'left_to_right','owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
+        sites={binding.c_name:(dataclasses.asdict(span) if span else None) for binding,span in ownership.consumption_sites}
+        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'expression_evaluation_order':'left_to_right','owned_locals':locals_order,'owned_bindings':[dataclasses.asdict(binding) for binding in binding_order],'explicit_drops':sorted(binding.name for binding in ownership.explicit_drops),'consumed_roots':sorted(binding.name for binding in ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
     return {'module':p.module,'expression_evaluation_order':'left_to_right','destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 
 

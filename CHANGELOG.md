@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Semantic binding identity
+
+- Assigned deterministic IDs to parameters, locals, match payloads, references, and explicit drops during lexical resolution.
+- Re-keyed ownership effects, checker flow state, interpreter frames, MIR cleanup, and generated C naming by binding identity.
+- Enabled safe same-name shadowing without merging move, drop, or cleanup obligations.
+- Exposed binding IDs in HIR and MIR and added owned-shadowing interpreter/native parity plus compile-fail scope coverage.
+
 ## v0.1.0-alpha.1 gate — Universal ordered expression lowering
 
 - Added one recursive native expression-lowering path with ordered prelude temporaries and a final value.

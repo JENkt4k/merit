@@ -50,9 +50,9 @@ fn main() -> i32 { return 0; }''')
 def test_shared_ownership_effects_record_direct_move():
     program = checked()
     ownership = OwnershipEffects(program, TypeTable(program)).function(program.functions[0])
-    assert ownership.owned_locals == (("source", "Buffer"), ("destination", "Buffer"))
-    assert ownership.explicit_drops == frozenset({"destination"})
-    assert ownership.consumed_roots == frozenset({"source"})
+    assert [(binding.name,type_name) for binding,type_name in ownership.owned_locals] == [("source", "Buffer"), ("destination", "Buffer")]
+    assert {binding.name for binding in ownership.explicit_drops} == {"destination"}
+    assert {binding.name for binding in ownership.consumed_roots} == {"source"}
     function_mir = mir(program)["functions"][0]
     assert function_mir["explicit_drops"] == ["destination"]
     assert function_mir["consumed_roots"] == ["source"]
@@ -217,7 +217,7 @@ fn main() -> i32 {
     return 0;
 }''')
     ownership = OwnershipEffects(program, TypeTable(program)).function(next(f for f in program.functions if f["name"] == "main"))
-    assert ownership.consumed_roots == frozenset({"source"})
+    assert {binding.name for binding in ownership.consumed_roots} == {"source"}
     generated = CGenerator(program).generate()
     main = generated[generated.index("int32_t main"):]
     assert "merit_buffer_drop(&source);" not in main

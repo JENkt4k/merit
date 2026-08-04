@@ -331,7 +331,7 @@ fn main()->i32 {{ with capability allocate {{ let allocator:Allocator={construct
     vector_binding = program.node(capability.nested_body[1])
     interpreter = Interpreter(program)
     allocator = interpreter.eval(allocator_binding.initializer, {})
-    vector = interpreter.eval(vector_binding.initializer, {"allocator": allocator})
+    vector = interpreter.eval(vector_binding.initializer, {allocator_binding.raw.binding_id: allocator})
     assert vector.allocator == identity
     generated = CGenerator(program).generate()
     assert f"merit_{constructor}" in generated

@@ -26,6 +26,8 @@ Merit.toml
 
 After parsing and generic expansion, a cached type table classifies every concrete type by ownership, copyability, drop requirement, semantic kind, and drop strategy. A shared ownership-effects model derives consumed roots, explicit drops, and live owned locals for each function. The checker, MIR inspection, interpreter lifecycle model, and C cleanup lowering consume this metadata instead of independently reconstructing resource behavior.
 
+Lexical resolution assigns a deterministic `BindingId` to every parameter, local, match payload, variable reference, and explicit drop. Ownership and flow state are keyed by these identities rather than source spelling. HIR/MIR expose the IDs, while generated C uses stable disambiguated names only when a source name is shadowed.
+
 HIR inspection exposes the concrete type-semantics table. MIR inspection exposes each function's owned locals, consumed roots, and explicit drops.
 
 Semantic expression and statement nodes embed typed `NodeProvenance` directly. Ownership state records move and drop origins, and MIR consumption metadata includes the originating span and source identity. Type, capability, replacement, exhaustiveness, constructor, field, and call diagnostics use the nearest actionable semantic node as their primary location.
@@ -94,4 +96,4 @@ Native lowering recursively produces ordered prelude statements followed by one 
 
 ## Planned decomposition
 
-Unique binding identities are the next semantic slice, replacing name-keyed ownership state and permitting principled shadowing/lexical cleanup. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.
+The next semantic slice fixes and enforces the first-alpha boundary between ephemeral borrowed results and unsupported stored references. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.

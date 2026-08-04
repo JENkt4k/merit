@@ -301,7 +301,7 @@ Continue alpha-readiness hardening:
 - `try` participates in shared owned-source consumption for exact-once `Ok` binding and `Err` propagation.
 - Owned match subjects become unavailable before arm checking, and partial moves from aggregate fields remain rejected.
 - Branch-, loop-, and arm-scoped owned locals must discharge their obligation before lexical scope exit.
-- Binding shadowing is rejected until semantic bindings carry unique ownership identities.
+- Semantic binding IDs now keep shadowed parameters, locals, and match payloads distinct through ownership, cleanup, interpretation, MIR, and native lowering.
 
 ## Deliberately deferred
 - specialization
@@ -313,9 +313,8 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Replace name-keyed ownership state with unique semantic binding identities before relaxing shadowing and lexical cleanup restrictions.
-2. Decide and enforce the stored-reference alpha boundary.
-3. Preserve ordered expression lowering across all later syntax and backend work.
+1. Decide and enforce the stored-reference alpha boundary.
+2. Preserve semantic binding IDs and ordered expression lowering across all later syntax and backend work.
 
 ## Allocator compatibility checkpoint now available
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.
