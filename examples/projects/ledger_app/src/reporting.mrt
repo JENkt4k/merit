@@ -6,3 +6,13 @@ pub fn print_balance(borrow account: Account) -> i32 {
     print(account.balance);
     return 0;
 }
+
+pub fn write_audit(borrow account: Account, allocator: Allocator, path: String) -> FileWriteResult
+requires_caps [allocate, file_write]
+requires account.id > 0;
+{
+    let report: Buffer = buffer_from_string(allocator, "ledger-ok\n");
+    let result: FileWriteResult = file_write(path, report);
+    drop(report);
+    return result;
+}

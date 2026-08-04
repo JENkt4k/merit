@@ -1,5 +1,6 @@
 module ledger_operations
 import ledger_types;
+import ledger_errors;
 
 pub fn deposit(borrow_mut account: Account, amount: USD) -> USD
 requires amount > 0.00;
@@ -16,4 +17,17 @@ ensures result == old(account.balance) - amount;
 {
     account.balance = checked_sub(account.balance, amount);
     return account.balance;
+}
+
+pub fn withdraw_checked(borrow_mut account: Account, amount: USD) -> LedgerResult {
+    if (amount <= 0.00) {
+        return Rejected(InvalidAmount());
+    } else {
+        if (account.balance < amount) {
+            return Rejected(InsufficientFunds());
+        } else {
+            account.balance = checked_sub(account.balance, amount);
+            return Applied(account.balance);
+        }
+    }
 }

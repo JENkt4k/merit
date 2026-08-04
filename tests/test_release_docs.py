@@ -13,7 +13,7 @@ def test_release_documents_exist_and_name_the_active_target():
 def test_status_does_not_claim_the_incomplete_alpha_is_released():
     status=(ROOT/'STATUS.md').read_text()
     assert 'not yet released or complete' in status
-    assert 'ledger acceptance application' in status
+    assert 'ledger application' in status
     assert 'arbitrary-precision' in status
 
 

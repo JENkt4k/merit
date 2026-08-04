@@ -22,7 +22,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-The current local gate runs 336 tests plus seven interpreter/native project verifiers, including borrowed-view ABI coverage and filesystem verification in a disposable temporary directory. The first-alpha release remains gated on the ledger acceptance application and arbitrary-precision numeric reference tests; see `STATUS.md`.
+The current local gate runs 339 tests plus eight interpreter/native project verifiers, including borrowed-view and ledger ABI coverage and filesystem verification in disposable temporary directories. The first-alpha release remains gated on arbitrary-precision numeric reference tests and the final audit; see `STATUS.md`.
 
 ## Current checkpoint
 

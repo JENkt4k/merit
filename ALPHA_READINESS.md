@@ -4,7 +4,7 @@ Assessment date: 2026-08-04
 
 ## Status
 
-Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared complete. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Remaining release work is documentation consolidation, the ledger acceptance application, and arbitrary-precision numeric reference coverage.
+Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared complete. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, portable left-to-right expression evaluation, unique semantic binding identities, and an enforced ephemeral-only borrow boundary. Release documentation and the ledger application gate are complete; arbitrary-precision numeric reference coverage and the final audit remain.
 
 ## Proven gates
 
@@ -23,14 +23,14 @@ Merit has a credible systems-core alpha candidate, but it is not yet ready to be
 | Portable expression sequencing | Recursive C lowering emits ordered temporaries for calls, builtins, constructors, binary operands, conditions, returns, contracts, and vector operations; MIR declares the order | Proven by parity matrix and generated-C inspection |
 | Unique binding identity | Parameters, locals, match payloads, references, ownership effects, cleanup, HIR/MIR, interpreter frames, and generated C use deterministic binding IDs | Proven by owned-shadowing parity and compile-fail scope tests |
 | Alpha borrow boundary | Returned borrows are limited to field access/mutation, compatible borrow arguments, and validated relays; all storage/value escapes are rejected | Proven by positive and compile-fail boundary matrix; policy is explicit in HIR/MIR |
+| Ledger acceptance application | Five modules combine exact decimals, bounded IDs, typed errors, explicit allocation, filesystem capabilities, stable exports, and foreign ABI calls | Proven by interpreter/native/filesystem parity, audit assertions, generated-C inspection, and ctypes calls |
 
 The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Remaining alpha release gates
 
-1. Consolidate roadmap, status, limitations, and changelog documentation.
-2. Complete the multi-module exact-decimal ledger acceptance application and ABI verification.
-3. Strengthen decimal and bounded numeric coverage against an arbitrary-precision reference.
+1. Strengthen decimal and bounded numeric coverage against an arbitrary-precision reference.
+2. Run the final complete local and specification audit.
 
 ## Accepted alpha limitations
 
@@ -51,6 +51,5 @@ The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Recommended execution order
 
-1. Consolidate release documentation.
-2. Complete the ledger and numeric-reference gates.
-3. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.
+1. Complete the numeric-reference gate.
+2. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.

@@ -7,3 +7,7 @@ pub stable("merit-ledger-v1") struct Account {
     id: AccountId;
     balance: USD;
 }
+
+pub fn account_balance(borrow account: Account) -> USD {
+    return account.balance;
+}

@@ -30,21 +30,23 @@ def test_shared_library_policy_is_platform_specific(platform,expected):
 
 def test_loads_and_checks_multimodule_project():
     project = load_project(EXAMPLE)
-    assert len(project.units) == 4
-    assert len(project.program.functions) == 4
+    assert len(project.units) == 5
+    assert len(project.program.functions) == 7
     check(project)
 
 
-def test_multimodule_interpreter_output():
+def test_multimodule_interpreter_output(tmp_path,monkeypatch):
+    monkeypatch.chdir(tmp_path)
     project = load_project(EXAMPLE)
-    assert interpret(project) == "1001\n1100.25\n"
+    assert interpret(project) == "1100.25\n2\n10\n1001\n1100.25\n"
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
-def test_multimodule_native_matches_interpreter(tmp_path):
+def test_multimodule_native_matches_interpreter(tmp_path,monkeypatch):
+    monkeypatch.chdir(tmp_path)
     project = load_project(EXAMPLE)
     _, _, executable = build(project, tmp_path / "ledger")
-    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True,cwd=tmp_path).stdout
     assert native == interpret(project)
 
 

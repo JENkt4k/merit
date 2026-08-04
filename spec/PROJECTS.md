@@ -56,3 +56,7 @@ The loader rejects:
 ## Compilation
 
 All validated units are merged into one typed program before existing semantic, ownership, contract, capability, interpreter, and C-backend passes execute. The merged generated-C translation unit uses content-addressed object caching; per-module object compilation is a later milestone.
+
+## First-alpha ledger acceptance
+
+`examples/projects/ledger_app` is the substantial `v0.1.0-alpha.1` application gate. Five modules combine exact `USD`, bounded account IDs, typed ledger results, contract-checked mutation, explicit buffer allocation, capability-gated audit-file output, and a stable public `Account` ABI. The gate verifies interpreter/native output and filesystem contents, audits allocation/write hazards, inspects generated sequencing and layout assertions, and calls exact-decimal exports through a foreign C-compatible caller.

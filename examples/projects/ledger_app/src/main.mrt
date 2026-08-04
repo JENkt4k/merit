@@ -2,11 +2,39 @@ module ledger_main
 import ledger_types;
 import ledger_operations;
 import ledger_reporting;
+import ledger_errors;
+
+capability allocate;
+capability file_write;
 
 fn main() -> i32 {
     var account: Account = Account { id: 1001, balance: 1000.00 };
     deposit(account, 125.50);
-    withdraw(account, 25.25);
+    let applied: LedgerResult = withdraw_checked(account, 25.25);
+    match (applied) {
+        Applied(balance) => { print(balance); }
+        Rejected(error) => { print(0); }
+    }
+    let rejected: LedgerResult = withdraw_checked(account, 2000.00);
+    match (rejected) {
+        Applied(balance) => { print(0); }
+        Rejected(error) => {
+            match (error) {
+                InvalidAmount => { print(1); }
+                InsufficientFunds => { print(2); }
+            }
+        }
+    }
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        with capability file_write {
+            let written: FileWriteResult = write_audit(account, allocator, "ledger_report.txt");
+            match (written) {
+                WriteOk(bytes) => { print(bytes); }
+                WriteErr(error) => { print(0); }
+            }
+        }
+    }
     print_balance(account);
     return 0;
 }

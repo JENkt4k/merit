@@ -6,7 +6,7 @@ Status date: 2026-08-04
 
 The active target is `v0.1.0-alpha.1`. It is not yet released or complete.
 
-The Python-hosted compiler and C11 backend currently pass 336 local tests and seven interpreter/native acceptance verifiers. The full command is `./scripts/test.sh`. `VERIFIED_BASELINE.md` records the exact evidence.
+The Python-hosted compiler and C11 backend currently pass 339 local tests and eight interpreter/native acceptance verifiers, including the ledger application. The full command is `./scripts/test.sh`. `VERIFIED_BASELINE.md` records the exact evidence.
 
 ## Completed alpha gates
 
@@ -17,8 +17,7 @@ The Python-hosted compiler and C11 backend currently pass 336 local tests and se
 
 ## Remaining alpha gates
 
-1. Complete and verify the substantial multi-module exact-decimal ledger acceptance application, including foreign ABI calls.
-2. Add arbitrary-precision decimal and bounded-number reference testing.
-3. Run the final local release gate and reconcile every specification and evidence document.
+1. Add arbitrary-precision decimal and bounded-number reference testing.
+2. Run the final local release gate and reconcile every specification and evidence document.
 
 GitHub Actions and other hosted CI are intentionally not part of this release gate. See `ROADMAP.md` for the conditions that must be met before reconsideration.

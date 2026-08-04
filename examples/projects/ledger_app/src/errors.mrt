@@ -1,0 +1,12 @@
+module ledger_errors
+import ledger_types;
+
+pub enum LedgerError {
+    InvalidAmount,
+    InsufficientFunds
+}
+
+pub enum LedgerResult {
+    Applied(USD),
+    Rejected(LedgerError)
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Exact-decimal ledger acceptance
+
+- Expanded `ledger_app` to five modules with exact `USD`, bounded IDs, typed ledger errors/results, and contract-checked operations.
+- Added explicit allocation and capability-gated audit-file output with typed filesystem results and hazard-audit assertions.
+- Added stable public account exports, layout/offset assertions, exact scaled-decimal foreign calls, and interpreter/native/filesystem parity.
+- Added the ledger verifier to the complete local gate.
+
 ## v0.1.0-alpha.1 gate — Release documentation consolidation
 
 - Added authoritative `STATUS.md` and `LIMITATIONS.md` documents.
