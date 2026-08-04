@@ -19,14 +19,14 @@ merit-project verify examples/projects/ledger_app
 
 Results:
 ```text
-363 passed
+370 passed
 text_pipeline: verified 2 modules; output matches (26 bytes)
 binary_packet: verified 2 modules; output matches (16 bytes)
 generic_result: verified 1 modules; output matches (6 bytes)
 trait_bounds: verified 1 modules; output matches (3 bytes)
 generic_collections: verified 1 modules; output matches (38 bytes)
 borrowed_views: verified 2 modules; output matches (4 bytes)
-bootstrap_lexer: verified 3 modules; output matches (168 bytes)
+bootstrap_lexer: verified 3 modules; output matches (260 bytes)
 filesystem_capabilities: verified 1 modules; output matches (13 bytes)
 ledger_app: verified 5 modules; output matches (26 bytes)
 ```

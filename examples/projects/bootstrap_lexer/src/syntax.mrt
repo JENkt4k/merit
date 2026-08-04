@@ -12,6 +12,18 @@ pub struct ParseDiagnostic {
     length: i64;
 }
 
+pub struct ExpressionNode {
+    kind: i32;
+    start: i64;
+    length: i64;
+    left: i64;
+    right: i64;
+}
+
+pub struct ParseCursor {
+    index: i64;
+}
+
 pub fn syntax_kind(borrow node: SyntaxNode) -> i32 {
     return node.kind;
 }
@@ -35,3 +47,9 @@ pub fn diagnostic_start(borrow diagnostic: ParseDiagnostic) -> i64 {
 pub fn diagnostic_length(borrow diagnostic: ParseDiagnostic) -> i64 {
     return diagnostic.length;
 }
+
+pub fn expression_kind(borrow node: ExpressionNode) -> i32 { return node.kind; }
+pub fn expression_start(borrow node: ExpressionNode) -> i64 { return node.start; }
+pub fn expression_length(borrow node: ExpressionNode) -> i64 { return node.length; }
+pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }
+pub fn expression_right(borrow node: ExpressionNode) -> i64 { return node.right; }

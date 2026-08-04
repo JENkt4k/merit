@@ -12,6 +12,7 @@
 - Added typed syntax records for effects, required-capability, precondition, and postcondition clauses without weakening declaration-name diagnostics.
 - Added typed byte-spanned records for all accepted statement introducers across nested bodies, verified against the independent syntax oracle.
 - Extended simple statements through semicolons and control statements through opening braces, with deterministic end-of-input recovery for missing terminators.
+- Added `bootstrap-expression-v1` postorder expression trees with explicit children, source spans, grouping preservation, and independently verified multiplicative/additive/comparison precedence.
 
 ## v0.1.0-alpha.1 — 2026-08-04
 

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
 MANIFEST = PROJECT / "Merit.toml"
 DEFAULT_SOURCE = 'module demo\nfn main()->i32 { print("ok"); return 0; }\n'
+DEFAULT_EXPRESSION = "1 + 2 * 3 == 7"
 
 
 def reference_tokens(source):
@@ -73,11 +74,12 @@ def reference_tokens(source):
     return tokens
 
 
-def expected_output(source):
+def expected_output(source, expression=DEFAULT_EXPRESSION):
     tokens = reference_tokens(source)
     syntax = reference_syntax(source, tokens)
     diagnostics = reference_diagnostics(source, tokens)
-    values = [len(tokens), *(value for token in tokens for value in token), -1, len(syntax), *(value for node in syntax for value in node), -2, len(diagnostics), *(value for diagnostic in diagnostics for value in diagnostic)]
+    expressions = reference_expression(expression)
+    values = [len(tokens), *(value for token in tokens for value in token), -1, len(syntax), *(value for node in syntax for value in node), -2, len(diagnostics), *(value for diagnostic in diagnostics for value in diagnostic), -3, len(expressions), *(value for node in expressions for value in node)]
     return "".join(f"{value}\n" for value in values)
 
 
@@ -139,6 +141,81 @@ def reference_diagnostics(source, tokens):
     return diagnostics
 
 
+def reference_expression(source):
+    data = source.encode("utf-8")
+    tokens = reference_tokens(source)
+    nodes = []
+    cursor = 0
+    operators = {b"==": 40, b"!=": 41, b">=": 42, b"<=": 43, b">": 44, b"<": 45, b"+": 50, b"-": 51, b"*": 60, b"/": 61}
+
+    def push(kind, start, length, left=-1, right=-1):
+        nodes.append((kind, start, length, left, right))
+        return len(nodes) - 1
+
+    def primary():
+        nonlocal cursor
+        if cursor >= len(tokens):
+            return push(39, len(data), 0)
+        token_kind, start, length = tokens[cursor]
+        text = data[start:start + length]
+        if text == b"(":
+            cursor += 1
+            child = comparison()
+            end = start + length
+            if cursor < len(tokens):
+                _, closing_start, closing_length = tokens[cursor]
+                if data[closing_start:closing_start + closing_length] == b")":
+                    end = closing_start + closing_length
+                    cursor += 1
+            return push(33, start, end - start, child)
+        cursor += 1
+        kind = {1: 30, 2: 31, 3: 32}.get(token_kind, 39)
+        return push(kind, start, length)
+
+    def combine(kind, left, right):
+        start = nodes[left][1]
+        end = nodes[right][1] + nodes[right][2]
+        return push(kind, start, end - start, left, right)
+
+    def product():
+        nonlocal cursor
+        left = primary()
+        while cursor < len(tokens):
+            _, start, length = tokens[cursor]
+            kind = operators.get(data[start:start + length], 0)
+            if kind not in (60, 61):
+                break
+            cursor += 1
+            left = combine(kind, left, primary())
+        return left
+
+    def total():
+        nonlocal cursor
+        left = product()
+        while cursor < len(tokens):
+            _, start, length = tokens[cursor]
+            kind = operators.get(data[start:start + length], 0)
+            if kind not in (50, 51):
+                break
+            cursor += 1
+            left = combine(kind, left, product())
+        return left
+
+    def comparison():
+        nonlocal cursor
+        left = total()
+        if cursor < len(tokens):
+            _, start, length = tokens[cursor]
+            kind = operators.get(data[start:start + length], 0)
+            if 40 <= kind <= 45:
+                cursor += 1
+                return combine(kind, left, total())
+        return left
+
+    comparison()
+    return nodes
+
+
 EXPECTED = expected_output(DEFAULT_SOURCE)
 
 
@@ -152,6 +229,7 @@ def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     generated = c_path.read_text()
     assert "merit_Vec__Token _merit_result = {0};" in generated
     assert "merit_Vec__SyntaxNode _merit_result = {0};" in generated
+    assert "merit_Vec__ExpressionNode _merit_result = {0};" in generated
     lexer_body = generated[generated.rindex("merit_Vec__Token merit_lex("):generated.index("int32_t main(")]
     assert lexer_body.index("merit_buffer_get(_merit_expr_") < lexer_body.index("merit_vec_push__Token(")
     operations = {(site["operation"], site["capability"]) for site in checker.hazardous_operations}
@@ -168,6 +246,18 @@ def project_with_source(tmp_path, source_text):
     source = lexer_path.read_text()
     replacement = f"        let source: Buffer = buffer_from_string(allocator, {json.dumps(source_text)});"
     source, replacements = re.subn(r"^        let source: Buffer = buffer_from_string\(allocator, .+\);$", lambda _: replacement, source, count=1, flags=re.MULTILINE)
+    assert replacements == 1
+    lexer_path.write_text(source)
+    return load_project(project_root / "Merit.toml"), project_root
+
+
+def project_with_expression(tmp_path, expression_text):
+    project_root = tmp_path / "bootstrap_expression"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    source = lexer_path.read_text()
+    replacement = f"        let expression_source: Buffer = buffer_from_string(allocator, {json.dumps(expression_text)});"
+    source, replacements = re.subn(r"^        let expression_source: Buffer = buffer_from_string\(allocator, .+\);$", lambda _: replacement, source, count=1, flags=re.MULTILINE)
     assert replacements == 1
     lexer_path.write_text(source)
     return load_project(project_root / "Merit.toml"), project_root
@@ -198,6 +288,16 @@ def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_t
     assert native == expected
 
 
+@pytest.mark.parametrize("expression", ["1+2*3", "(1+2)*3", "a-b-c", "a==b+1", '"value"', "a/2+4"])
+def test_bootstrap_expression_precedence_matches_independent_reference(tmp_path, expression):
+    project, project_root = project_with_expression(tmp_path, expression)
+    expected = expected_output(DEFAULT_SOURCE, expression)
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "bootstrap_expression")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_allocation_is_compile_fail_without_capability_contract():
     project = load_project(MANIFEST)
     lexer = next(function for function in project.program.functions if function.name == "lex")
@@ -219,4 +319,12 @@ def test_bootstrap_diagnostics_allocation_is_compile_fail_without_capability_con
     diagnostics = next(function for function in project.program.functions if function.name == "parse_diagnostics")
     diagnostics.requires_caps = []
     with pytest.raises(CompileError, match="vec_new__ParseDiagnostic requires capabilities"):
+        check(project)
+
+
+def test_bootstrap_expression_allocation_is_compile_fail_without_capability_contract():
+    project = load_project(MANIFEST)
+    expression_parser = next(function for function in project.program.functions if function.name == "parse_expression_tokens")
+    expression_parser.requires_caps = []
+    with pytest.raises(CompileError, match="vec_new__ExpressionNode requires capabilities"):
         check(project)

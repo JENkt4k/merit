@@ -519,6 +519,155 @@ requires_caps [allocate]
     return diagnostics;
 }
 
+fn expression_operator_kind(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token.kind != 4 { return 0; }
+    let first: i64 = buffer_get(source, token.start);
+    if token.length == 1 {
+        if first == 43 { return 50; }
+        if first == 45 { return 51; }
+        if first == 42 { return 60; }
+        if first == 47 { return 61; }
+        if first == 62 { return 44; }
+        if first == 60 { return 45; }
+    }
+    if token.length == 2 {
+        let second: i64 = buffer_get(source, checked_add(token.start, 1));
+        if first == 61 { if second == 61 { return 40; } }
+        if first == 33 { if second == 61 { return 41; } }
+        if first == 62 { if second == 61 { return 42; } }
+        if first == 60 { if second == 61 { return 43; } }
+    }
+    return 0;
+}
+
+fn push_expression(borrow_mut nodes: Vec<ExpressionNode>, node: ExpressionNode) -> i64
+requires_caps [allocate]
+{
+    let index: i64 = vec_len<ExpressionNode>(nodes);
+    vec_push<ExpressionNode>(nodes, node);
+    return index;
+}
+
+fn parse_primary_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>) -> i64
+requires_caps [allocate]
+{
+    if cursor.index >= vec_len<Token>(tokens) {
+        let invalid: ExpressionNode = ExpressionNode { kind: 39, start: buffer_len(source), length: 0, left: -1, right: -1 };
+        return push_expression(nodes, invalid);
+    }
+    let token: Token = vec_get<Token>(tokens, cursor.index);
+    if token.kind == 4 {
+        if buffer_get(source, token.start) == 40 {
+            cursor.index = checked_add(cursor.index, 1);
+            let child: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
+            var end: i64 = checked_add(token.start, token.length);
+            if cursor.index < vec_len<Token>(tokens) {
+                let closing: Token = vec_get<Token>(tokens, cursor.index);
+                if closing.kind == 4 {
+                    if buffer_get(source, closing.start) == 41 {
+                        end = checked_add(closing.start, closing.length);
+                        cursor.index = checked_add(cursor.index, 1);
+                    }
+                }
+            }
+            let group: ExpressionNode = ExpressionNode { kind: 33, start: token.start, length: end - token.start, left: child, right: -1 };
+            return push_expression(nodes, group);
+        }
+    }
+    var kind: i32 = 39;
+    if token.kind == 1 { kind = 30; }
+    if token.kind == 2 { kind = 31; }
+    if token.kind == 3 { kind = 32; }
+    cursor.index = checked_add(cursor.index, 1);
+    let atom: ExpressionNode = ExpressionNode { kind: kind, start: token.start, length: token.length, left: -1, right: -1 };
+    return push_expression(nodes, atom);
+}
+
+fn combine_expression(borrow_mut nodes: Vec<ExpressionNode>, left: i64, right: i64, kind: i32) -> i64
+requires_caps [allocate]
+{
+    let left_node: ExpressionNode = vec_get<ExpressionNode>(nodes, left);
+    let right_node: ExpressionNode = vec_get<ExpressionNode>(nodes, right);
+    let end: i64 = checked_add(right_node.start, right_node.length);
+    let combined: ExpressionNode = ExpressionNode { kind: kind, start: left_node.start, length: end - left_node.start, left: left, right: right };
+    return push_expression(nodes, combined);
+}
+
+fn parse_product_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>) -> i64
+requires_caps [allocate]
+{
+    var left: i64 = parse_primary_expression(source, tokens, cursor, nodes);
+    var active: i32 = 1;
+    while (active) {
+        if cursor.index >= vec_len<Token>(tokens) { return left; }
+        let token: Token = vec_get<Token>(tokens, cursor.index);
+        let kind: i32 = expression_operator_kind(source, token);
+        if kind == 60 {
+            cursor.index = checked_add(cursor.index, 1);
+            let right: i64 = parse_primary_expression(source, tokens, cursor, nodes);
+            left = combine_expression(nodes, left, right, kind);
+        } else {
+            if kind == 61 {
+                cursor.index = checked_add(cursor.index, 1);
+                let right: i64 = parse_primary_expression(source, tokens, cursor, nodes);
+                left = combine_expression(nodes, left, right, kind);
+            } else { active = 0; }
+        }
+    }
+    return left;
+}
+
+fn parse_sum_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>) -> i64
+requires_caps [allocate]
+{
+    var left: i64 = parse_product_expression(source, tokens, cursor, nodes);
+    var active: i32 = 1;
+    while (active) {
+        if cursor.index >= vec_len<Token>(tokens) { return left; }
+        let token: Token = vec_get<Token>(tokens, cursor.index);
+        let kind: i32 = expression_operator_kind(source, token);
+        if kind == 50 {
+            cursor.index = checked_add(cursor.index, 1);
+            let right: i64 = parse_product_expression(source, tokens, cursor, nodes);
+            left = combine_expression(nodes, left, right, kind);
+        } else {
+            if kind == 51 {
+                cursor.index = checked_add(cursor.index, 1);
+                let right: i64 = parse_product_expression(source, tokens, cursor, nodes);
+                left = combine_expression(nodes, left, right, kind);
+            } else { active = 0; }
+        }
+    }
+    return left;
+}
+
+fn parse_comparison_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>) -> i64
+requires_caps [allocate]
+{
+    let left: i64 = parse_sum_expression(source, tokens, cursor, nodes);
+    if cursor.index >= vec_len<Token>(tokens) { return left; }
+    let token: Token = vec_get<Token>(tokens, cursor.index);
+    let kind: i32 = expression_operator_kind(source, token);
+    if kind >= 40 {
+        if kind <= 45 {
+            cursor.index = checked_add(cursor.index, 1);
+            let right: i64 = parse_sum_expression(source, tokens, cursor, nodes);
+            return combine_expression(nodes, left, right, kind);
+        }
+    }
+    return left;
+}
+
+fn parse_expression_tokens(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ExpressionNode>
+requires_caps [allocate]
+{
+    var nodes: Vec<ExpressionNode> = vec_new<ExpressionNode>(allocator, 8);
+    var cursor: ParseCursor = ParseCursor { index: 0 };
+    let root: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
+    root;
+    return nodes;
+}
+
 fn main() -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
@@ -526,6 +675,9 @@ fn main() -> i32 {
         let tokens: Vec<Token> = lex(source, allocator);
         let syntax: Vec<SyntaxNode> = parse_top_level(source, tokens, allocator);
         let diagnostics: Vec<ParseDiagnostic> = parse_diagnostics(source, tokens, allocator);
+        let expression_source: Buffer = buffer_from_string(allocator, "1 + 2 * 3 == 7");
+        let expression_tokens: Vec<Token> = lex(expression_source, allocator);
+        let expressions: Vec<ExpressionNode> = parse_expression_tokens(expression_source, expression_tokens, allocator);
         print(vec_len<Token>(tokens));
         var index: i64 = 0;
         while (index < vec_len<Token>(tokens)) {
@@ -555,6 +707,21 @@ fn main() -> i32 {
             print(diagnostic_length(diagnostic));
             diagnostic_index = checked_add(diagnostic_index, 1);
         }
+        print(-3);
+        print(vec_len<ExpressionNode>(expressions));
+        var expression_index: i64 = 0;
+        while (expression_index < vec_len<ExpressionNode>(expressions)) {
+            let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, expression_index);
+            print(expression_kind(expression));
+            print(expression_start(expression));
+            print(expression_length(expression));
+            print(expression_left(expression));
+            print(expression_right(expression));
+            expression_index = checked_add(expression_index, 1);
+        }
+        drop(expressions);
+        drop(expression_tokens);
+        drop(expression_source);
         drop(diagnostics);
         drop(syntax);
         drop(tokens);

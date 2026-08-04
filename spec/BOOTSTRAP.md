@@ -59,6 +59,12 @@ The differential corpus compares every syntax kind and byte span with an indepen
 
 `ParseDiagnostic { code, start, length }` is the initial deterministic diagnostic boundary. Codes are missing declaration name (`1`), unexpected closing brace (`2`), unclosed brace at end of input (`3`), and invalid unterminated string (`4`). Diagnostics use source byte spans; the end-of-input unclosed-brace diagnostic has a zero-length span at `buffer_len(source)`. Interpreter and native diagnostic records must exactly match the independent corpus oracle.
 
+## Versioned expression contract: bootstrap-expression-v1
+
+`ExpressionNode { kind, start, length, left, right }` is a postorder typed parser tree with child indices. Atom kinds are identifier (`30`), exact numeric (`31`), string (`32`), explicit parenthesized group (`33`), and invalid/missing primary (`39`). Binary kinds are equality (`40`), inequality (`41`), greater-or-equal (`42`), less-or-equal (`43`), greater (`44`), less (`45`), addition (`50`), subtraction (`51`), multiplication (`60`), and division (`61`).
+
+Multiplication/division bind tighter than addition/subtraction; comparisons bind after additive expressions; arithmetic operators associate left; the accepted grammar permits at most one comparison at this stage. Parentheses remain explicit because this is parser structure. The future CST-to-AST lowering will remove semantically irrelevant grouping nodes while retaining provenance. Calls, fields, constructors, and deterministic malformed-operator recovery are not yet implemented, so the expression gate remains partial.
+
 ## Staged replacement gates
 
 The normative implementation order is the 15-step `v0.1.0-alpha.2` list in `ROADMAP.md`. Each stage requires independent accepted/rejected corpora and canonical comparison at the token/span, syntax/diagnostic, AST, HIR, semantic, ownership, capability, contract, numeric, MIR, generated-C, and runtime layers where applicable.
