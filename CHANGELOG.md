@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Release documentation consolidation
+
+- Added authoritative `STATUS.md` and `LIMITATIONS.md` documents.
+- Recast the roadmap around the six ordered first-alpha gates and separated post-alpha work.
+- Recorded the explicit conditions for reconsidering hosted CI after Python bootstrap replacement and IR maturation.
+- Updated baseline, handoff, and README evidence to the 336-test local gate.
+
 ## v0.1.0-alpha.1 gate — Ephemeral borrow boundary
 
 - Declared stored references and general lifetime parameters outside the first alpha.

@@ -1,38 +1,29 @@
 # Merit Roadmap
 
-## Epoch I — Semantic Foundation — closed
+## `v0.1.0-alpha.1` release gate
 
-Exact decimals, bounded values, contracts, capabilities, stable layouts, ownership experiments, borrowing, interpretation, C generation, native execution, and differential testing.
+The first alpha closes a deterministic, resource-safe component-language subset. Work proceeds in this order:
 
-## Epoch II — Application Language — closed
+1. Universal left-to-right ordered expression lowering — complete.
+2. Unique semantic binding IDs for ownership and cleanup — complete.
+3. Ephemeral-only returned-borrow boundary — complete.
+4. Release-document consolidation — complete when `STATUS.md`, `LIMITATIONS.md`, the specifications, and changelog agree.
+5. Multi-module exact-decimal ledger acceptance application with typed errors, explicit allocation, filesystem capabilities, stable exports, and foreign ABI verification — pending.
+6. Arbitrary-precision reference coverage for decimal and bounded arithmetic — pending.
+7. Final complete local test, project, generated-C, ABI, and specification audit — pending.
 
-Projects and modules, visibility, enums, exhaustive matching, typed propagation, strings, owned byte buffers, explicit system allocation, deterministic buffer cleanup, file-read runtime support, and CFG-shaped MIR.
+The alpha does not require stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, a package registry, or hosted CI.
 
-## Epoch III — Systems Language
+## Proven foundation
 
-The next epoch is intentionally larger:
+- Epoch I established exact numerics, bounded values, contracts, capabilities, stable layouts, interpretation, native C generation, and differential testing.
+- Epoch II established projects/modules, visibility, enums, typed propagation, strings, owned buffers, explicit allocation, filesystem reads, and CFG-shaped MIR.
+- Epoch III established explicit generics and coherent traits, generic collections, typed filesystem errors, allocator identity, destructors, stable shared libraries, structured diagnostics, qualified imports, object caching, ordered expression lowering, binding IDs, and validated ephemeral borrowed returns.
 
-- Generic types and functions.
-- Traits/interfaces with coherence rules.
-- `Option<T>` and `Result<T,E>` as standard generic types.
-- Slices with explicit lifetimes and returned/stored borrows.
-- User-defined destructors and resource-owning structs.
-- Multiple allocator implementations and allocator parameters.
-- Typed file and operating-system errors.
-- Separate module compilation and object caching.
-- Qualified names and explicit namespace imports.
-- Complete source spans and structured diagnostics.
-- Optimization passes over MIR.
-- Atomics, threads, mutexes, and channels only after ownership interactions are specified.
-- A production compiler implementation plan, likely retaining Python as the semantic oracle.
+## After the first alpha
 
-Acceptance projects:
+Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across additional feature sets, deterministic local release tooling, and multiple post-bootstrap releases. Per-module C objects and dependency-granular caching may proceed when they preserve the existing semantic pipeline.
 
-1. Binary protocol parser using slices and typed errors.
-2. C-callable shared library with stable ABI.
-3. Concurrent checksum/file-processing utility.
-4. Allocator-pluggable collections library.
+Reconsider persistent hosted CI only after normal production compilation no longer depends on Python, the typed interfaces have survived several feature sets and releases, and local release/acceptance gates are mature and reproducible.
 
-## Epoch IV — Scientific and Industrial Readiness
-
-Deterministic floating-point policies, arrays and views, SIMD metadata, numerical libraries, fuzzing, compatibility tooling, formatter, LSP, package tooling, and multi-platform release engineering.
+Async, concurrency, networking, LLVM, richer trait machinery, scientific arrays/tensors, registry/package infrastructure, formatter/LSP work, and broad platform automation remain post-alpha roadmap topics. They must not displace semantic correctness or bootstrap replacement.

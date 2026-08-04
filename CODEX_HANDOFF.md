@@ -1,10 +1,10 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the verified **Epoch III user-defined destructor checkpoint** of Merit.
+This repository contains the active **`v0.1.0-alpha.1` release-gate checkpoint** of Merit.
 
 Current baseline:
-- 310 tests passing after editable installation
+- 336 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -126,6 +126,9 @@ python -m pytest -q
 - Cross-module destructor visibility and source-mapped project diagnostics
 - Structured destructor control flow and copy-field mutation
 - Strict numeric-literal compatibility and range validation at every value boundary
+- Universal exactly-once, left-to-right expression lowering in generated C
+- Deterministic semantic binding IDs across ownership, cleanup, HIR/MIR, interpreter, and C
+- Enforced ephemeral-only returned-borrow alpha boundary with explicit HIR/MIR policy
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.

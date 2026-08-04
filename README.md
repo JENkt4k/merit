@@ -11,6 +11,8 @@ This export is prepared for continued development in Codex. Start with:
 - `AGENTS.md` — repository rules and invariants
 - `CODEX_HANDOFF.md` — verified state and architecture
 - `NEXT_WORK.md` — the next complete subsystem and acceptance gates
+- `STATUS.md` — current alpha-gate evidence and remaining work
+- `LIMITATIONS.md` — deliberately unsupported first-alpha behavior
 - `IMPORT_INTO_CODEX.md` — import instructions
 
 ## Baseline
@@ -20,7 +22,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-The current local gate runs the pytest suite plus native project verification for the text pipeline, binary packet parser, generic result, trait bounds, generic collections, and filesystem capability acceptance projects. Filesystem verification runs in a disposable temporary directory.
+The current local gate runs 336 tests plus seven interpreter/native project verifiers, including borrowed-view ABI coverage and filesystem verification in a disposable temporary directory. The first-alpha release remains gated on the ledger acceptance application and arbitrary-precision numeric reference tests; see `STATUS.md`.
 
 ## Current checkpoint
 

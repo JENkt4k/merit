@@ -1,4 +1,4 @@
-# Merit Alpha Readiness
+# Merit `v0.1.0-alpha.1` Readiness
 
 Assessment date: 2026-08-04
 
