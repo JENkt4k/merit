@@ -22,7 +22,7 @@ This export is prepared for continued development in Codex. Start with:
 ./scripts/test.sh
 ```
 
-The completed `v0.1.0-alpha.1` local gate runs 346 tests plus eight interpreter/native project verifiers, including borrowed-view and ledger ABI coverage and filesystem verification in disposable temporary directories. See `STATUS.md` and `VERIFIED_BASELINE.md` for release evidence.
+The completed `v0.1.0-alpha.1` local gate is now followed by `v0.1.0-alpha.2` replacement-compiler development. The current local gate runs 349 tests plus nine interpreter/native project verifiers, including the first Merit-native bootstrap lexer. See `STATUS.md`, `ROADMAP.md`, and `VERIFIED_BASELINE.md`.
 
 ## Current checkpoint
 

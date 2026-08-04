@@ -97,3 +97,9 @@ Native lowering recursively produces ordered prelude statements followed by one 
 ## Planned decomposition
 
 The semantic alpha blockers are now closed. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.
+
+## Replacement compiler bootstrap
+
+The active post-alpha path is a compiler written in the accepted Merit subset and initially compiled by the Python host. `spec/BOOTSTRAP.md` defines the versioned boundaries. The first slice, `examples/projects/bootstrap_lexer`, establishes typed byte-span tokens, explicit allocation, owned token-vector cleanup, and interpreter/native equivalence. It also exposed and closed aggregate initialization for functions returning monomorphized vectors in generated C.
+
+Until stage equivalence is established, the Python compiler remains the executable semantic reference. Replacement stages must compare their outputs with it rather than silently creating a second language path.

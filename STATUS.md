@@ -21,3 +21,7 @@ The Python-hosted compiler and C11 backend currently pass 346 local tests and ei
 All seven ordered alpha gates are complete. No known semantic correctness blocker remains undocumented; deliberate exclusions are recorded in `LIMITATIONS.md`.
 
 GitHub Actions and other hosted CI are intentionally not part of this release gate. See `ROADMAP.md` for the conditions that must be met before reconsideration.
+
+## Active post-alpha development
+
+The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The first Merit-native lexer/source-model slice now passes interpreter/native verification. Complete token coverage and a differential lexer corpus are next; unrelated language expansion and hosted CI remain deferred.

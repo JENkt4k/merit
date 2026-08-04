@@ -1,0 +1,19 @@
+module bootstrap_tokens
+
+pub struct Token {
+    kind: i32;
+    start: i64;
+    length: i64;
+}
+
+pub fn token_kind(token: Token) -> i32 {
+    return token.kind;
+}
+
+pub fn token_start(token: Token) -> i64 {
+    return token.start;
+}
+
+pub fn token_length(token: Token) -> i64 {
+    return token.length;
+}

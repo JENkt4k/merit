@@ -2175,7 +2175,7 @@ class CGenerator:
         if f.return_type!='void':
             if f.return_mode=='borrow':o.append(f'    const {self.ctype(f.return_type)} *_merit_result = NULL;')
             elif f.return_mode=='borrow_mut':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
-            else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES else f'    {self.ctype(f.return_type)} _merit_result = 0;')
+            else:o.append(f'    {self.ctype(f.return_type)} _merit_result = {{0}};' if f.return_type in self.p.enums or f.return_type in self.p.structs or f.return_type in BUILTIN_TYPES or is_vec_type(f.return_type) else f'    {self.ctype(f.return_type)} _merit_result = 0;')
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
         postenv=dict(env);postenv[f.result_binding_id]=(f.return_type,f.return_mode if f.return_mode!='value' else '__result__')

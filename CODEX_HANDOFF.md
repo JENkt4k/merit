@@ -4,7 +4,7 @@
 This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
 Current baseline:
-- 346 tests passing after editable installation
+- 349 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs
@@ -131,6 +131,7 @@ python -m pytest -q
 - Enforced ephemeral-only returned-borrow alpha boundary with explicit HIR/MIR policy
 - Multi-module exact-decimal ledger acceptance with typed errors, filesystem capabilities, stable exports, and ABI verification
 - Arbitrary-precision reference coverage for every decimal rounding mode and bounded arithmetic boundaries
+- First Merit-native replacement-compiler slice with typed byte-span tokens and differential lexer verification
 
 ## Architecture reality
 The compiler is intentionally compact. Most implementation remains in `merit/compiler.py`; project loading and diagnostics are separate packages. Generic declarations are monomorphized into ordinary nominal declarations before the established semantic pipeline.
@@ -161,6 +162,7 @@ This design is useful because all instantiated generic code reuses one semantic 
 - no LLVM backend, package registry, formatter, or LSP
 
 The evidence-based alpha gate and prioritized blockers are maintained in `ALPHA_READINESS.md`.
+The active post-alpha bootstrap contract and staged replacement gates are maintained in `spec/BOOTSTRAP.md` and `ROADMAP.md`.
 
 ## How to work safely
 Use cohesive epic commits with intermediate green test gates. Add compile-fail tests as aggressively as success tests. For each new construct, verify both interpreter behavior and generated-native behavior. Inspect generated C when mutations, borrows, returns, match subjects, or cleanup are involved.

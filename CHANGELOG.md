@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-alpha.2 development — Replacement lexer foundation
+
+- Added the first compiler slice written in Merit: typed, byte-spanned tokenization over an owned source buffer.
+- Added interpreter/native fixtures for identifiers, integers, strings, punctuation, comments, and invalid unterminated strings, plus capability compile-fail coverage and generated-C inspection.
+- Corrected generated-C zero initialization for functions returning monomorphized vectors.
+- Defined the versioned bootstrap source contract and staged non-Python replacement gates.
+
 ## v0.1.0-alpha.1 — 2026-08-04
 
 The first-alpha local release gate is complete: all ordered semantic subsystems, acceptance applications, independent numeric references, generated-C inspections, ABI checks, specifications, and local deterministic verifiers pass. Package version: `0.1.0a1`.

@@ -24,6 +24,16 @@ The alpha does not require stored references, lifetime parameters, async, concur
 
 Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across additional feature sets, deterministic local release tooling, and multiple post-bootstrap releases. Per-module C objects and dependency-granular caching may proceed when they preserve the existing semantic pipeline.
 
+### Active `v0.1.0-alpha.2` bootstrap targets
+
+1. Merit-native source model and lexer with byte-stable spans — in progress; the first executable slice is complete.
+2. Complete accepted-token coverage and differential lexer corpus — next.
+3. Merit-native parser for the bootstrap subset with typed syntax records — pending.
+4. Versioned typed HIR/checker boundary with Python-reference comparison — pending.
+5. MIR and deterministic C emission with stage-0/stage-1 equivalence — pending.
+6. Accepted-alpha corpus compilation without Python in the normal path — pending.
+7. Deterministic local release tooling and multiple post-bootstrap releases — pending.
+
 Reconsider persistent hosted CI only after normal production compilation no longer depends on Python, the typed interfaces have survived several feature sets and releases, and local release/acceptance gates are mature and reproducible.
 
 Async, concurrency, networking, LLVM, richer trait machinery, scientific arrays/tensors, registry/package infrastructure, formatter/LSP work, and broad platform automation remain post-alpha roadmap topics. They must not displace semantic correctness or bootstrap replacement.

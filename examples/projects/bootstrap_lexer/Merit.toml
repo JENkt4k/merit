@@ -1,0 +1,7 @@
+[package]
+name = "bootstrap_lexer"
+entry = "src/lexer.mrt"
+sources = ["src/**/*.mrt"]
+
+[build]
+c_flags = ["-O2"]
