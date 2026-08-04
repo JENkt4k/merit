@@ -278,7 +278,7 @@ Advance the core Merit feature set in complete, testable epic slices while prese
 
 ## Recommended next epic
 Continue alpha-readiness hardening:
-- Complete recursive ordered expression lowering so every nested native C operand evaluates once, left to right, matching the interpreter.
+- Preserve the completed recursive ordered expression lowering: every nested native C operand evaluates once, left to right, matching the interpreter.
 - Decide whether stored reference values and explicit lifetime parameters are in first-alpha scope; keep ephemeral-only rejection unless the full model is implemented.
 - Preserve centralized literal compatibility and range validation when adding new value boundaries.
 - Preserve definite-return analysis when adding new control-flow constructs.
@@ -313,9 +313,9 @@ Continue alpha-readiness hardening:
 - concurrency
 
 ## Suggested implementation order
-1. Add one recursive C expression-lowering result containing ordered prelude statements, value expression, and ownership/type metadata.
-2. Apply it to calls, builtins, constructors, binary operands, conditions, returns, contracts, and vector operations; add side-effect-order parity matrices.
-3. Decide the stored-reference alpha boundary, then introduce unique semantic binding identities before relaxing shadowing and lexical cleanup restrictions.
+1. Replace name-keyed ownership state with unique semantic binding identities before relaxing shadowing and lexical cleanup restrictions.
+2. Decide and enforce the stored-reference alpha boundary.
+3. Preserve ordered expression lowering across all later syntax and backend work.
 
 ## Allocator compatibility checkpoint now available
 - `allocator_compatible(left, right)` has matching interpreter/native behavior.

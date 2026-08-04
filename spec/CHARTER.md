@@ -11,6 +11,7 @@ Merit is a small native compiled language for deterministic, numerically exact, 
 5. Resource acquisition has deterministic release; no mandatory tracing collector exists.
 6. Debug and release builds share bounds, overflow, initialization, contract, and arithmetic semantics.
 7. Post-1.0 source semantics and ABI specifications evolve only through explicit versioning.
+8. Expressions evaluate exactly once from left to right, independent of the native backend's operand-order rules.
 
 ## 0.1 proof obligations
 

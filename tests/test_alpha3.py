@@ -163,7 +163,9 @@ fn main()->i32 { var s:S=S{x:1}; return alter(s); }'''
     assert 'int32_t _merit_assign_value_0 = 2;' in c
     assert 'int32_t *_merit_assign_address_0 = &s->x;' in c
     assert '*_merit_assign_address_0 = _merit_assign_value_0;' in c
-    assert 'merit_alter(&s)' in c
+    borrow_temp = next(line.strip() for line in c.splitlines() if 'merit_S *_merit_expr_' in line and '= &s;' in line)
+    temp_name = borrow_temp.split('*',1)[1].split('=',1)[0].strip()
+    assert f'merit_alter({temp_name})' in c
 
 
 def test_postcondition_result_and_old_interpreter():

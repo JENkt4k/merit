@@ -88,6 +88,10 @@ Generic extraction blanks template text while preserving its newlines. Monomorph
 
 Errors raised before parsing completes, including generic arity and bound validation, are assigned expansion-time source spans. Merged-project loading remaps those spans before returning the structured compiler error.
 
+## Ordered expression lowering
+
+Native lowering recursively produces ordered prelude statements followed by one final C value. Every sibling operand or argument is materialized exactly once from left to right before the enclosing expression executes. Borrowed arguments materialize addresses rather than copying pointees, and loop-condition preludes remain inside the loop so they execute on every condition check. MIR inspection declares `expression_evaluation_order: left_to_right` at program and function scope.
+
 ## Planned decomposition
 
-The next semantic slice introduces a recursive ordered-expression lowering result so generated C never depends on unspecified operand or argument evaluation order. After that, unique binding identities can replace name-keyed ownership state and permit principled shadowing/lexical cleanup. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.
+Unique binding identities are the next semantic slice, replacing name-keyed ownership state and permitting principled shadowing/lexical cleanup. Package decomposition and per-module object generation should preserve the established typed semantic pipeline rather than create parallel paths.

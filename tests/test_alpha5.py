@@ -22,7 +22,7 @@ def test_print_evaluates_mutating_call_once():
     program = parse(source)
     Checker(program).check()
     generated = CGenerator(program).generate()
-    assert generated.count("merit_deposit(&account, 2425)") == 1
+    assert generated.count("= merit_deposit(") == 1
 
 
 def test_new_project_builds_and_runs(tmp_path):

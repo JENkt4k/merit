@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.0-alpha.1 gate — Universal ordered expression lowering
+
+- Added one recursive native expression-lowering path with ordered prelude temporaries and a final value.
+- Guaranteed exactly-once, left-to-right evaluation for user calls, builtins, constructors, enum payloads, binary operands, conditions, returns, contracts, and vector operations.
+- Kept loop-condition preludes inside the loop and materialized borrowed operands as addresses without copying pointees.
+- Declared the language evaluation order in MIR inspection metadata.
+- Added interpreter/native ordering matrices and retained compile-fail loan-conflict coverage.
+
 ## Epoch III — User-defined destructor checkpoint
 
 - Added custom struct destructor declarations with implicit borrowed `self`.

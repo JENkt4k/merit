@@ -46,13 +46,15 @@ def test_replace_owned_local_interpreter_and_native_match(tmp_path):
 
 def test_replace_lowers_rhs_once_before_drop_and_assignment():
     c_source = CGenerator(checked()).generate()
-    replacement = "merit_Buffer _merit_replace_0 = replacement;"
+    replacement = next(line.strip() for line in c_source.splitlines() if "merit_Buffer _merit_replace_" in line)
     assert c_source.count(replacement) == 1
-    address = "merit_Buffer *_merit_replace_address_0 = &current;"
+    suffix=replacement.split('_merit_replace_',1)[1].split(' ',1)[0]
+    address = f"merit_Buffer *_merit_replace_address_{suffix} = &current;"
     assert c_source.count(address) == 1
     assert c_source.index(replacement) < c_source.index(address)
-    assert c_source.index(address) < c_source.index("merit_buffer_drop(_merit_replace_address_0);")
-    assert c_source.index("merit_buffer_drop(_merit_replace_address_0);") < c_source.index("*_merit_replace_address_0 = _merit_replace_0;")
+    drop=f"merit_buffer_drop(_merit_replace_address_{suffix});"
+    assignment=f"*_merit_replace_address_{suffix} = _merit_replace_{suffix};"
+    assert c_source.index(address) < c_source.index(drop) < c_source.index(assignment)
 
 
 def test_replace_is_preserved_in_mir():
@@ -218,9 +220,15 @@ def test_vec_replace_drops_old_element_before_assignment():
     start = c_source.rfind("static ", 0, start)
     body = c_source[start:c_source.index("\n", start)]
     assert body.index("merit_buffer_drop(&v->data[i]);") < body.index("v->data[i]=x;")
-    assert c_source.count("_merit_vec_replace_receiver_0 = &values;") == 1
-    assert c_source.count("_merit_vec_replace_value_0 = replacement;") == 1
-    assert c_source.index("_merit_vec_replace_receiver_0 = &values;") < c_source.index("_merit_vec_replace_index_0 = 0;") < c_source.index("_merit_vec_replace_value_0 = replacement;")
+    call=next(line.strip() for line in c_source.splitlines() if '(void)((merit_vec_replace__Buffer(' in line)
+    arguments=call.split('merit_vec_replace__Buffer(',1)[1].split(')',1)[0].split(',')
+    receiver_name=arguments[0].strip()
+    receiver=next(line.strip() for line in c_source.splitlines() if f'*{receiver_name} = &values;' in line)
+    index_name=arguments[1].strip()
+    value_name=arguments[2].strip()
+    index_line=f'int64_t {index_name} = 0;'
+    value_line=f'merit_Buffer {value_name} = replacement;'
+    assert c_source.index(receiver) < c_source.index(index_line) < c_source.index(value_line) < c_source.index(call)
 
 
 def test_vec_replace_consumes_replacement_source():

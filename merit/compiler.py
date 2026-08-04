@@ -1821,7 +1821,7 @@ class Interpreter:
         return str(v.value)
 
 class CGenerator:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0;self._expr_overrides={};self._address_overrides=set()
     def vec_types(self):
         found=set()
         def add(t):
@@ -2085,8 +2085,9 @@ class CGenerator:
         for c in f.post:self.walk_old(c,old)
         self.old_map={}
         for idx,(key,e) in enumerate(old.items()):
-            t=self.etype(e,env);v=f'_merit_old_{idx}';self.old_map[key]=v;o.append(f'    {self.ctype(t)} {v} = {self.expr(e,env)};')
-        for c in f.pre:o.append(f'    if(!({self.expr(c,env)})) merit_fail("precondition failed in {f.name}",71);')
+            t=self.etype(e,env);v=f'_merit_old_{idx}';self.old_map[key]=v;prelude,value=self.ordered_expr(e,env,t,'    ');o.extend(prelude);o.append(f'    {self.ctype(t)} {v} = {value};')
+        for c in f.pre:
+            prelude,value=self.ordered_expr(c,env,None,'    ');o.extend(prelude);o.append(f'    if(!({value})) merit_fail("precondition failed in {f.name}",71);')
         self.current_return=f.return_type
         if f.return_type!='void':
             if f.return_mode=='borrow':o.append(f'    const {self.ctype(f.return_type)} *_merit_result = NULL;')
@@ -2095,7 +2096,8 @@ class CGenerator:
         for st in f.body:o+=self.stmt(st,env,1)
         o.append('    _merit_epilogue: ;')
         postenv=dict(env);postenv['result']=(f.return_type,f.return_mode if f.return_mode!='value' else '__result__')
-        for c in f.post:o.append(f'    if(!({self.expr(c,postenv)})) merit_fail("postcondition failed in {f.name}",73);')
+        for c in f.post:
+            prelude,value=self.ordered_expr(c,postenv,None,'    ');o.extend(prelude);o.append(f'    if(!({value})) merit_fail("postcondition failed in {f.name}",73);')
         for name,t in self.owned_buffer_cleanup(f):
             o.append(self.drop_binding_line('    ',name,t))
         if f.return_type!='void':o.append('    return _merit_result;')
@@ -2103,36 +2105,127 @@ class CGenerator:
     def checked(self,t,x):
         if t in self.p.bounded or t in self.p.decimals:return f'merit_check_{t}({x})'
         return x
+    def render_expr(self,e,env,expected,overrides,address_overrides):
+        previous=self._expr_overrides;previous_addresses=self._address_overrides;self._expr_overrides=overrides;self._address_overrides=address_overrides
+        try:return self.expr(e,env,expected)
+        finally:self._expr_overrides=previous;self._address_overrides=previous_addresses
+    def rendered_address(self,e,rendered,env):
+        node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.atom_value) in ('borrow','borrow_mut'):return rendered
+        if node.kind in ('call','generic_call'):
+            called,_=resolved_call(node);callee=self.fn.get(called)
+            if callee and callee.return_mode!='value':return rendered
+        return '&'+rendered
+    def expression_pointer_mode(self,e,env):
+        node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.atom_value) in ('borrow','borrow_mut'):return self.env_mode(env,node.atom_value)
+        if node.kind in ('call','generic_call'):
+            called,_=resolved_call(node);callee=self.fn.get(called)
+            if callee and callee.return_mode!='value':return callee.return_mode
+        return None
+    def expression_has_effect(self,e):
+        node=self.p.node(e)
+        if node.kind in ('call','generic_call'):
+            name,args=resolved_call(node)
+            return name!='old' or any(self.expression_has_effect(arg) for arg in args)
+        if node.kind=='field':return self.expression_has_effect(node.field_base)
+        if node.kind=='struct_init':return any(self.expression_has_effect(value) for value in node.field_values.values())
+        if node.kind=='binop':return self.expression_has_effect(node.left) or self.expression_has_effect(node.right)
+        return False
+    def call_argument_specs(self,e,env):
+        name,args=resolved_call(e)
+        variants=[(enum,variant) for enum in self.p.enums.values() for variant in enum.variants if variant.name==name]
+        if variants:
+            variant=variants[0][1]
+            return [] if variant.payload_type is None else [(args[0],variant.payload_type,'value')]
+        if name=='old':return []
+        if name in BUILTIN_SIGS:return [(arg,type_name,mode) for arg,(mode,type_name) in zip(args,BUILTIN_SIGS[name].params)]
+        vec=vec_builtin(name)
+        if vec:
+            op,elem=vec;vector='Vec__'+elem
+            specs={
+                'new':(('Allocator','value'),('i64','value')),
+                'push':((vector,'borrow_mut'),(elem,'value')),
+                'len':((vector,'borrow'),),'allocator':((vector,'borrow'),),
+                'get':((vector,'borrow'),('i64','value')),
+                'set':((vector,'borrow_mut'),('i64','value'),(elem,'value')),
+                'replace':((vector,'borrow_mut'),('i64','value'),(elem,'value')),
+                'pop':((vector,'borrow_mut'),),'drop':((vector,'borrow_mut'),),
+                'transfer':((vector,'borrow_mut'),(vector,'borrow_mut')),
+            }[op]
+            return [(arg,type_name,mode) for arg,(type_name,mode) in zip(args,specs)]
+        if name in ('checked_add','checked_sub','checked_mul','decimal_div'):
+            operand=self.etype(args[0],env);return [(arg,operand,'value') for arg in args]
+        callee=self.fn[name]
+        return [(arg,param.type_name,param.mode) for arg,param in zip(args,callee.params)]
+    def ordered_expr(self,e,env,expected=None,indent=''):
+        node=self.p.node(e);specs=[]
+        if node.kind=='field':specs=[(node.field_base,self.etype(node.field_base,env),'value',False)]
+        elif node.kind=='struct_init':
+            struct=self.p.structs[node.constructed_type]
+            specs=[(node.field_values[field.name],field.type_name,'value',True) for field in struct.fields]
+        elif node.kind in ('call','generic_call'):specs=[(*spec,True) for spec in self.call_argument_specs(e,env)]
+        elif node.kind=='binop':
+            comparison=node.operator in ('==','!=','>=','<=','>','<')
+            operand_type=self.etype(node.left,env) if comparison else (expected or self.etype(node.left,env))
+            specs=[(node.left,operand_type,'value',True),(node.right,operand_type,'value',True)]
+        lines=[];overrides={};address_overrides=set()
+        for child,type_name,mode,force in specs:
+            child_lines,child_value=self.ordered_expr(child,env,type_name,indent)
+            lines.extend(child_lines)
+            if not force and not self.expression_has_effect(child):continue
+            counter=self.temp_counter;self.temp_counter+=1
+            temp=f'_merit_expr_{counter}'
+            pointer_mode=mode if mode in ('borrow','borrow_mut') else self.expression_pointer_mode(child,env)
+            if pointer_mode:
+                pointer=self.rendered_address(child,child_value,env);const='const ' if pointer_mode=='borrow' else ''
+                lines.append(f'{indent}{const}{self.ctype(type_name)} *{temp} = {pointer};')
+                address_overrides.add(id(child))
+            else:
+                lines.append(f'{indent}{self.ctype(type_name)} {temp} = {child_value};')
+            overrides[id(child)]=temp
+        return lines,self.render_expr(e,env,expected,overrides,address_overrides)
+    def ordered_address(self,e,env,indent=''):
+        lines,value=self.ordered_expr(e,env,self.etype(e,env),indent)
+        return lines,self.rendered_address(e,value,env)
     def stmt(self,s,env,i):
         p='    '*i
         node=self.p.node(s);kind=node.kind
-        if kind=='let':env[node.binding_name]=node.declared_type;return [f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {self.checked(node.declared_type,self.expr(node.initializer,env,node.declared_type))};']
+        if kind=='let':
+            prelude,value=self.ordered_expr(node.initializer,env,node.declared_type,p);env[node.binding_name]=node.declared_type
+            return prelude+[f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {self.checked(node.declared_type,value)};']
         if kind=='try_let':
             enum_t=self.etype(node.initializer,env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
             env[node.binding_name]=node.declared_type
-            return [f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.initializer,env)};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {temp}.data.Ok;']
+            prelude,value=self.ordered_expr(node.initializer,env,enum_t,p)
+            return prelude+[f'{p}{self.ctype(enum_t)} {temp} = {value};', f'{p}if ({temp}.tag == merit_{enum_t}_Err) {{', f'{p}    _merit_result = merit_make_{self.current_return}_Err({temp}.data.Err);', f'{p}    goto _merit_epilogue;', f'{p}}}', f'{p}{self.ctype(node.declared_type)} {node.binding_name} = {temp}.data.Ok;']
         if kind=='assign':
             t=self.etype(node.assignment_target,env);index=self.temp_counter;value_temp=f'_merit_assign_value_{index}';address_temp=f'_merit_assign_address_{index}';self.temp_counter+=1
-            return [
-                f'{p}{self.ctype(t)} {value_temp} = {self.checked(t,self.expr(node.assigned_value,env,t))};',
-                f'{p}{self.ctype(t)} *{address_temp} = {self.address_expr(node.assignment_target,env)};',
+            value_lines,value=self.ordered_expr(node.assigned_value,env,t,p);address_lines,address=self.ordered_address(node.assignment_target,env,p)
+            return value_lines+[
+                f'{p}{self.ctype(t)} {value_temp} = {self.checked(t,value)};',
+            ]+address_lines+[
+                f'{p}{self.ctype(t)} *{address_temp} = {address};',
                 f'{p}*{address_temp} = {value_temp};',
             ]
         if kind=='replace':
             t=self.etype(node.assignment_target,env);index=self.temp_counter;temp=f'_merit_replace_{index}';address_temp=f'_merit_replace_address_{index}';self.temp_counter+=1
-            address=self.address_expr(node.assignment_target,env)
-            return [
-                f'{p}{self.ctype(t)} {temp} = {self.expr(node.assigned_value,env,t)};',
+            value_lines,value=self.ordered_expr(node.assigned_value,env,t,p);address_lines,address=self.ordered_address(node.assignment_target,env,p)
+            return value_lines+[
+                f'{p}{self.ctype(t)} {temp} = {value};',
+            ]+address_lines+[
                 f'{p}{self.ctype(t)} *{address_temp} = {address};',
                 self.drop_address_line(p,address_temp,t),
                 f'{p}*{address_temp} = {temp};',
             ]
-        if kind=='return':return [f'{p}_merit_result = {self.checked(self.current_return,self.expr(node.expression,env,self.current_return))};',f'{p}goto _merit_epilogue;']
+        if kind=='return':
+            prelude,value=self.ordered_expr(node.expression,env,self.current_return,p)
+            return prelude+[f'{p}_merit_result = {self.checked(self.current_return,value)};',f'{p}goto _merit_epilogue;']
         if kind=='print':
-            t=self.etype(node.expression,env);x=self.expr(node.expression,env)
+            t=self.etype(node.expression,env);prelude,x=self.ordered_expr(node.expression,env,t,p)
             temp=f'_merit_print_{self.temp_counter}';self.temp_counter+=1
-            lines=[f'{p}{self.ctype(t)} {temp} = {x};']
+            lines=prelude+[f'{p}{self.ctype(t)} {temp} = {x};']
             if t=='String':
                 lines.append(f'{p}printf("%.*s\\n",(int){temp}.len,{temp}.data);')
             elif t=='Buffer':
@@ -2147,36 +2240,15 @@ class CGenerator:
             return lines
         if kind=='expr':
             expression=node.expression
-            if self.p.node(expression).kind in ('call','generic_call'):
-                name,args=resolved_call(expression);vec=vec_builtin(name)
-                if vec and vec[0]=='replace':
-                    elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
-                    receiver_temp=f'_merit_vec_replace_receiver_{counter}'
-                    index_temp=f'_merit_vec_replace_index_{counter}'
-                    value_temp=f'_merit_vec_replace_value_{counter}'
-                    return [
-                        f'{p}{self.ctype("Vec__"+elem)} *{receiver_temp} = {self.address_expr(args[0],env)};',
-                        f'{p}int64_t {index_temp} = {self.expr(args[1],env)};',
-                        f'{p}{self.ctype(elem)} {value_temp} = {self.expr(args[2],env,elem)};',
-                        f'{p}merit_vec_replace__{elem}({receiver_temp}, {index_temp}, {value_temp});',
-                    ]
-                if vec and vec[0]=='transfer':
-                    elem=vec[1];counter=self.temp_counter;self.temp_counter+=1
-                    destination_temp=f'_merit_vec_transfer_destination_{counter}'
-                    source_temp=f'_merit_vec_transfer_source_{counter}'
-                    vector_type=self.ctype('Vec__'+elem)
-                    return [
-                        f'{p}{vector_type} *{destination_temp} = {self.address_expr(args[0],env)};',
-                        f'{p}{vector_type} *{source_temp} = {self.address_expr(args[1],env)};',
-                        f'{p}merit_vec_transfer__{elem}({destination_temp}, {source_temp});',
-                    ]
-            return [f'{p}(void)({self.expr(expression,env)});']
+            prelude,value=self.ordered_expr(expression,env,None,p)
+            return prelude+[f'{p}(void)({value});']
         if kind=='drop':
             t=self.env_type(env,node.binding_name)
             return [self.drop_binding_line(p,node.binding_name,t)]
         if kind=='match':
             enum_t=self.etype(node.expression,env); temp=f'_merit_match_{self.temp_counter}';self.temp_counter+=1
-            o=[f'{p}{self.ctype(enum_t)} {temp} = {self.expr(node.expression,env)};',f'{p}switch ({temp}.tag) {{']
+            prelude,value=self.ordered_expr(node.expression,env,enum_t,p)
+            o=prelude+[f'{p}{self.ctype(enum_t)} {temp} = {value};',f'{p}switch ({temp}.tag) {{']
             enum=self.p.enums[enum_t]
             for arm in node.match_arms:
                 variant=next(v for v in enum.variants if v.name==arm.variant);o.append(f'{p}case merit_{enum_t}_{variant.name}: {{')
@@ -2192,13 +2264,13 @@ class CGenerator:
             o.append(f'{p}/* merit capability end: {node.capability_name} */')
             return o
         if kind=='if':
-            o=[f'{p}if ({self.expr(node.condition,env)}) {{']
+            prelude,value=self.ordered_expr(node.condition,env,None,p);o=prelude+[f'{p}if ({value}) {{']
             for z in node.then_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}} else {{')
             for z in node.else_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
         if kind=='while':
-            o=[f'{p}while ({self.expr(node.condition,env)}) {{']
+            prelude,value=self.ordered_expr(node.condition,env,None,p+'    ');o=[f'{p}while (1) {{']+prelude+[f'{p}    if (!({value})) break;']
             for z in node.nested_body:o+=self.stmt(z,env,i+1)
             o.append(f'{p}}}');return o
         return []
@@ -2228,6 +2300,7 @@ class CGenerator:
         if kind=='binop':return 'i32' if node.operator in ('==','!=','>=','<=','>','<') else self.etype(node.left,env)
     def address_expr(self,e,env):
         rendered=self.expr(e,env)
+        if id(e) in self._address_overrides:return rendered
         node=self.p.node(e)
         if node.kind=='var' and self.env_mode(env,node.operand(0)) in ('borrow','borrow_mut'):
             return rendered
@@ -2236,6 +2309,7 @@ class CGenerator:
             if callee and callee.return_mode!='value':return rendered
         return '&'+rendered
     def expr(self,e,env,expected=None):
+        if id(e) in self._expr_overrides:return self._expr_overrides[id(e)]
         node=self.p.node(e);kind=node.kind
         if kind=='string':
             raw=json.dumps(node.atom_value); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
@@ -2437,8 +2511,8 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
-    return {'module':p.module,'destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
+        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'expression_evaluation_order':'left_to_right','owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
+    return {'module':p.module,'expression_evaluation_order':'left_to_right','destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 
 
 def compile_file(path,out=None):

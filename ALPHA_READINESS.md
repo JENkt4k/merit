@@ -1,10 +1,10 @@
 # Merit Alpha Readiness
 
-Assessment date: 2026-08-03
+Assessment date: 2026-08-04
 
 ## Status
 
-Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared a general-purpose language alpha. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, and C interoperability. The principal semantic blocker is complete portable sequencing of nested side-effecting expressions in generated C. Stored references and lifetime parameters also require an explicit alpha scope decision.
+Merit has a credible systems-core alpha candidate, but it is not yet ready to be declared a general-purpose language alpha. The checked subset has strong interpreter/native equivalence, ownership, exact numerics, generic collections, capability auditing, diagnostics, C interoperability, and portable left-to-right expression evaluation. Stored references and lifetime parameters still require an explicit alpha scope decision, and name-keyed ownership state must be replaced with unique semantic binding identities.
 
 ## Proven gates
 
@@ -20,14 +20,14 @@ Merit has a credible systems-core alpha candidate, but it is not yet ready to be
 | Project diagnostics | Embedded primary/related provenance, generic source maps, cross-module remapping, text/JSON diagnostics | Proven by source/project diagnostic suites |
 | Typed semantic pipeline | Immutable per-kind nodes, typed declarations/parameters/parser intermediates, explicit HIR/MIR serialization, no external node-span maps | Proven by implementation search and semantic metadata tests |
 | Build repeatability | Deterministic project loading and content-addressed merged-translation-unit object cache | Proven; not yet per-module compilation |
+| Portable expression sequencing | Recursive C lowering emits ordered temporaries for calls, builtins, constructors, binary operands, conditions, returns, contracts, and vector operations; MIR declares the order | Proven by parity matrix and generated-C inspection |
 
 The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Alpha blockers
 
-1. **Portable expression sequencing.** Assignment, replacement, printing, owned vector replacement, and zero-copy transfer have explicit temporaries. General nested calls, builtin arguments, constructors, and binary operands can still rely on C argument evaluation order. Complete this with one recursive expression-lowering path that emits ordered prelude temporaries for both native C and inspection metadata.
+1. **Unique binding identity.** Ownership state is keyed by source name, so shadowing is conservatively rejected. Introduce semantic binding IDs before enabling shadowing or implicit cleanup for arbitrary nested lexical scopes.
 2. **Stored-reference scope decision.** Ephemeral returned borrows are safe and tested. Either add reference-typed local storage with explicit lifetime relationships or declare stored references outside the first alpha and retain compile-time rejection.
-3. **Unique binding identity.** Ownership state is keyed by source name, so shadowing is conservatively rejected. Introduce semantic binding IDs before enabling shadowing or implicit cleanup for arbitrary nested lexical scopes.
 
 ## Accepted alpha limitations
 
@@ -48,7 +48,6 @@ The current verified baseline is recorded in `VERIFIED_BASELINE.md`.
 
 ## Recommended execution order
 
-1. Implement recursive ordered expression lowering and add side-effect-order parity matrices.
+1. Introduce unique binding identities, then relax conservative shadowing/scope restrictions.
 2. Decide and document the first-alpha stored-reference boundary.
-3. Introduce unique binding identities, then relax conservative shadowing/scope restrictions.
-4. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.
+3. Re-run the full gate, every project verifier, shared-library foreign-caller tests, and structured diagnostic suites before declaring alpha.

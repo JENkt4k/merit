@@ -502,9 +502,11 @@ def test_vec_transfer_sequences_destination_before_source_in_generated_c():
 capability allocate;
 fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var destination:Vec<i64>=vec_new<i64>(allocator,0); var source:Vec<i64>=vec_new<i64>(allocator,0); vec_transfer<i64>(destination,source); } return 0; }'''
     program=parse(source);Checker(program).check();generated=CGenerator(program).generate()
-    destination='_merit_vec_transfer_destination_0 = &destination;'
-    source_address='_merit_vec_transfer_source_0 = &source;'
-    call='merit_vec_transfer__i64(_merit_vec_transfer_destination_0, _merit_vec_transfer_source_0);'
+    destination=next(line.strip() for line in generated.splitlines() if 'merit_Vec__i64 *_merit_expr_' in line and '= &destination;' in line)
+    source_address=next(line.strip() for line in generated.splitlines() if 'merit_Vec__i64 *_merit_expr_' in line and '= &source;' in line)
+    destination_name=destination.split('*',1)[1].split('=',1)[0].strip()
+    source_name=source_address.split('*',1)[1].split('=',1)[0].strip()
+    call=f'merit_vec_transfer__i64({destination_name}, {source_name})'
     assert generated.index(destination) < generated.index(source_address) < generated.index(call)
 
 
