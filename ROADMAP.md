@@ -26,13 +26,23 @@ Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across
 
 ### Active `v0.1.0-alpha.2` bootstrap targets
 
-1. Merit-native source model and lexer with byte-stable spans — complete.
-2. Complete accepted-token coverage and differential lexer corpus — complete.
-3. Merit-native parser for the bootstrap subset with typed syntax records — in progress; declaration, clause, statement-introducer, and structural-diagnostic indexes are complete.
-4. Versioned typed HIR/checker boundary with Python-reference comparison — pending.
-5. MIR and deterministic C emission with stage-0/stage-1 equivalence — pending.
-6. Accepted-alpha corpus compilation without Python in the normal path — pending.
-7. Deterministic local release tooling and multiple post-bootstrap releases — pending.
+1. Complete typed statement syntax records — in progress; statement kinds and deterministic envelopes are complete, typed operands remain.
+2. Complete expression precedence and typed expression records — pending.
+3. Complete typed effects, capability, precondition, and postcondition operands — pending; clause introducers are indexed.
+4. Complete deterministic parser recovery — pending; initial structural recovery and diagnostics are implemented.
+5. Establish an explicit trivia-preserving CST-to-AST boundary — pending.
+6. Define typed AST records for the accepted alpha language — pending.
+7. Lower AST into typed HIR — pending.
+8. Differentially compare reference and bootstrap HIR over the accepted corpus — pending.
+9. Implement semantic checking over HIR — pending.
+10. Implement ownership, contracts, capabilities, and exact numeric rules over HIR — pending.
+11. Lower checked HIR into deterministic MIR — pending.
+12. Emit C only from MIR — pending.
+13. Establish stage-0/stage-1 compiler equivalence — pending.
+14. Compile the complete accepted alpha corpus without Python in the normal path — pending.
+15. Begin self-hosting only after the bootstrap compiler qualifies as trusted — pending.
+
+The Merit-native lexer and its independent token/span corpus are complete prerequisites. The current syntax index is a parser-development artifact, not yet the CST or AST.
 
 Reconsider persistent hosted CI only after normal production compilation no longer depends on Python, the typed interfaces have survived several feature sets and releases, and local release/acceptance gates are mature and reproducible.
 

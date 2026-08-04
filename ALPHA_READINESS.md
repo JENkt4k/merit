@@ -10,7 +10,7 @@ Merit has closed its `v0.1.0-alpha.1` local release gate. The checked subset has
 
 | Gate | Evidence | Status |
 |---|---|---|
-| Interpreter/native equivalence | `scripts/test.sh` runs the full pytest suite and eight project verifiers | Proven for covered programs |
+| Interpreter/native equivalence | `scripts/test.sh` runs the full pytest suite and nine project verifiers, including the post-alpha bootstrap fixture | Proven for covered programs |
 | Exact numerics | Checked primitive/bounded/decimal helpers, trap-aware MIR folding, `spec/NUMERICS.md` | Proven for implemented numeric types |
 | Ownership and deterministic destruction | Shared `TypeTable`/`OwnershipEffects`, custom-destructor parity, owned parameter/temporary/`try`/match tests | Proven for accepted ownership forms |
 | Generic traits and collections | User trait coherence, project-wide monomorphization, allocator-retaining and nested `Vec<T>`, trait/collection acceptance projects | Proven within documented trait limits |

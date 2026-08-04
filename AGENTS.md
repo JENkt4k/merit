@@ -30,4 +30,12 @@ merit-project verify examples/projects/text_pipeline
 ```
 
 ## Current checkpoint
-The **`v0.1.0-alpha.1` local release gate is complete**. `STATUS.md`, `ALPHA_READINESS.md`, and `VERIFIED_BASELINE.md` record the result. Do not broaden the language without a newly assigned post-alpha subsystem; preserve every alpha gate when continuing work.
+The **`v0.1.0-alpha.1` local release gate is complete**. The active target is **`v0.1.0-alpha.2`**, eliminating Python from the normal compiler path while retaining it as the reference oracle. `STATUS.md`, `ROADMAP.md`, `spec/BOOTSTRAP.md`, and `BOOTSTRAP_STATUS.md` define the active gates.
+
+Keep reference, bootstrap, trusted, and self-hosted compiler stages distinct. Follow this pipeline without collapsing boundaries:
+
+```text
+Source -> Lexer -> Tokens -> CST -> AST -> HIR -> semantic/ownership/contracts/capabilities -> MIR -> deterministic C -> native compilation
+```
+
+The immediate order is typed statements, precedence-aware expressions, typed clause operands, deterministic recovery, explicit CST-to-AST lowering, AST, HIR, semantic checking, MIR, and only then C emission and stage equivalence. Do not broaden the language during bootstrap.

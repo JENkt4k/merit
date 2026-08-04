@@ -404,6 +404,24 @@ fn statement_kind(borrow source: Buffer, borrow token: Token) -> i32 {
     return 0;
 }
 
+fn statement_span_end(borrow source: Buffer, borrow tokens: Vec<Token>, start_index: i64, kind: i32) -> i64 {
+    var index: i64 = checked_add(start_index, 1);
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if token.kind == 4 {
+            let punctuation: i64 = buffer_get(source, token.start);
+            if kind >= 25 {
+                if kind <= 28 {
+                    if punctuation == 123 { return checked_add(token.start, token.length); }
+                }
+            }
+            if punctuation == 59 { return checked_add(token.start, token.length); }
+        }
+        index = checked_add(index, 1);
+    }
+    return buffer_len(source);
+}
+
 fn parse_top_level(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<SyntaxNode>
 requires_caps [allocate]
 {
@@ -436,7 +454,8 @@ requires_caps [allocate]
         } else {
             let kind: i32 = statement_kind(source, token);
             if kind != 0 {
-                let node: SyntaxNode = SyntaxNode { kind: kind, start: token.start, length: token.length };
+                let end: i64 = statement_span_end(source, tokens, index, kind);
+                let node: SyntaxNode = SyntaxNode { kind: kind, start: token.start, length: end - token.start };
                 vec_push<SyntaxNode>(nodes, node);
             }
         }

@@ -22,3 +22,7 @@ byte locations.
 The syntax index recognizes `let`, `var`, `return`, `print`, `drop`, `if`,
 `while`, `match`, `with capability`, and `replace` statement introducers at any
 nested body depth. Statement operands remain a subsequent parser slice.
+
+Simple statement envelopes extend through their semicolon; control statements
+extend through the opening body brace. Missing terminators produce a stable
+end-of-input envelope for deterministic recovery.

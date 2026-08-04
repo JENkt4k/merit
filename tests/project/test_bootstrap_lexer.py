@@ -97,10 +97,22 @@ def reference_syntax(source, tokens):
             if syntax_kind <= 10 and index + 1 < len(tokens) and tokens[index + 1][0] == 1:
                 _, name_start, name_length = tokens[index + 1]
                 end = name_start + name_length
+            elif syntax_kind >= 20:
+                end = statement_end(data, tokens, index, syntax_kind)
             nodes.append((syntax_kind, start, end - start))
         if token_kind == 4 and text == b"{":
             depth += 1
     return nodes
+
+
+def statement_end(data, tokens, start_index, kind):
+    for token_kind, start, length in tokens[start_index + 1:]:
+        text = data[start:start + length]
+        if token_kind == 4 and 25 <= kind <= 28 and text == b"{":
+            return start + length
+        if token_kind == 4 and text == b";":
+            return start + length
+    return len(data)
 
 
 def reference_diagnostics(source, tokens):
@@ -174,6 +186,7 @@ def project_with_source(tmp_path, source_text):
         'module { } } struct Open {',
         'module contracts\nfn checked(value:i32)->i32 effects [read] requires_caps [io] requires value >= 0; ensures result >= value; { return value; }',
         'module statements\nfn all()->i32 { let x:i32=0; var y:i32=1; print(x); drop(y); if x { replace(x,1); } while y { return 0; } match(x) { A => { return 1; } } with capability io { print(y); } return 2; }',
+        'module incomplete\nfn value()->i32 { return 1',
     ],
 )
 def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_text):

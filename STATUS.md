@@ -6,7 +6,7 @@ Status date: 2026-08-04
 
 The `v0.1.0-alpha.1` local release gate is complete. Package metadata uses the PEP 440 equivalent version `0.1.0a1`.
 
-The Python-hosted compiler and C11 backend currently pass 346 local tests and eight interpreter/native acceptance verifiers, including the ledger application. The full command is `./scripts/test.sh`. `VERIFIED_BASELINE.md` records the exact evidence.
+The reference compiler, C11 backend, and bootstrap fixtures currently pass 363 local tests and nine interpreter/native acceptance verifiers, including the ledger application and Merit-native compiler fixture. The full command is `./scripts/test.sh`. `VERIFIED_BASELINE.md` records the exact evidence and `BOOTSTRAP_STATUS.md` records compiler-quality metrics.
 
 ## Completed alpha gates
 
@@ -24,4 +24,6 @@ GitHub Actions and other hosted CI are intentionally not part of this release ga
 
 ## Active post-alpha development
 
-The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The Merit-native lexer/source model now covers identifiers/keywords, exact numerics, strings, maximal operators, comments, invalid strings, and byte-stable spans against an independent differential corpus. The typed parser indexes every top-level declaration, function contract/capability clause, and accepted statement introducer while emitting deterministic structural diagnostics. Statement operands and precedence-aware expressions are next. Unrelated language expansion and hosted CI remain deferred.
+The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The Merit-native lexer/source model now covers identifiers/keywords, exact numerics, strings, maximal operators, comments, invalid strings, and byte-stable spans against an independent differential corpus. The typed parser indexes declarations, clauses, and all accepted statements; statement envelopes now provide deterministic operand boundaries and end-of-input recovery. Typed operands and precedence-aware expressions are next. Unrelated language expansion and hosted CI remain deferred.
+
+Python remains the semantic and diagnostic reference oracle. The Merit implementation is a bootstrap compiler only; it is neither trusted nor self-hosted. Trust requires complete accepted/rejected corpus parity, stable AST/HIR/MIR contracts, deterministic stage agreement, and a clean release cycle. Self-hosting begins only after trust and requires reproducible stage-1/stage-2 equivalence.
