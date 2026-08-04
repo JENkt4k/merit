@@ -167,10 +167,57 @@ def reference_expression(source):
                 if data[closing_start:closing_start + closing_length] == b")":
                     end = closing_start + closing_length
                     cursor += 1
-            return push(33, start, end - start, child)
+            return postfix(push(33, start, end - start, child))
         cursor += 1
         kind = {1: 30, 2: 31, 3: 32}.get(token_kind, 39)
-        return push(kind, start, length)
+        return postfix(push(kind, start, length))
+
+    def postfix(left):
+        nonlocal cursor
+        while cursor < len(tokens):
+            _, start, length = tokens[cursor]
+            text = data[start:start + length]
+            if text == b"(":
+                cursor += 1
+                arguments = -1
+                if cursor < len(tokens):
+                    _, possible_start, possible_length = tokens[cursor]
+                    possible = data[possible_start:possible_start + possible_length]
+                else:
+                    possible = b""
+                if possible != b")":
+                    arguments = comparison()
+                    while cursor < len(tokens):
+                        _, comma_start, comma_length = tokens[cursor]
+                        if data[comma_start:comma_start + comma_length] != b",":
+                            break
+                        cursor += 1
+                        next_argument = comparison()
+                        argument_start = nodes[arguments][1]
+                        argument_end = nodes[next_argument][1] + nodes[next_argument][2]
+                        arguments = push(37, argument_start, argument_end - argument_start, arguments, next_argument)
+                end = start + length
+                if cursor < len(tokens):
+                    _, closing_start, closing_length = tokens[cursor]
+                    if data[closing_start:closing_start + closing_length] == b")":
+                        end = closing_start + closing_length
+                        cursor += 1
+                call_start = nodes[left][1]
+                left = push(34, call_start, end - call_start, left, arguments)
+            elif text == b".":
+                cursor += 1
+                field_index = -1
+                end = start + length
+                if cursor < len(tokens) and tokens[cursor][0] == 1:
+                    _, field_start, field_length = tokens[cursor]
+                    field_index = push(30, field_start, field_length)
+                    end = field_start + field_length
+                    cursor += 1
+                receiver_start = nodes[left][1]
+                left = push(35, receiver_start, end - receiver_start, left, field_index)
+            else:
+                break
+        return left
 
     def combine(kind, left, right):
         start = nodes[left][1]
@@ -288,7 +335,7 @@ def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_t
     assert native == expected
 
 
-@pytest.mark.parametrize("expression", ["1+2*3", "(1+2)*3", "a-b-c", "a==b+1", '"value"', "a/2+4"])
+@pytest.mark.parametrize("expression", ["1+2*3", "(1+2)*3", "a-b-c", "a==b+1", '"value"', "a/2+4", "f()", "f(1,2+3)", "account.balance+1", "f(g(1)).value"])
 def test_bootstrap_expression_precedence_matches_independent_reference(tmp_path, expression):
     project, project_root = project_with_expression(tmp_path, expression)
     expected = expected_output(DEFAULT_SOURCE, expression)

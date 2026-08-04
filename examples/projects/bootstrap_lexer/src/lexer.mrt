@@ -548,6 +548,87 @@ requires_caps [allocate]
     return index;
 }
 
+fn parse_postfix_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>, base: i64) -> i64
+requires_caps [allocate]
+{
+    var left: i64 = base;
+    var active: i32 = 1;
+    while (active) {
+        if cursor.index >= vec_len<Token>(tokens) { return left; }
+        let token: Token = vec_get<Token>(tokens, cursor.index);
+        var handled: i32 = 0;
+        if token.kind == 4 {
+            let punctuation: i64 = buffer_get(source, token.start);
+            if punctuation == 40 {
+                handled = 1;
+                cursor.index = checked_add(cursor.index, 1);
+                var arguments: i64 = -1;
+                var has_arguments: i32 = 1;
+                if cursor.index < vec_len<Token>(tokens) {
+                    let possible_closing: Token = vec_get<Token>(tokens, cursor.index);
+                    if possible_closing.kind == 4 {
+                        if buffer_get(source, possible_closing.start) == 41 { has_arguments = 0; }
+                    }
+                }
+                if (has_arguments) {
+                    arguments = parse_comparison_expression(source, tokens, cursor, nodes);
+                    var reading_arguments: i32 = 1;
+                    while (reading_arguments) {
+                        if cursor.index >= vec_len<Token>(tokens) { reading_arguments = 0; }
+                        else {
+                            let separator: Token = vec_get<Token>(tokens, cursor.index);
+                            if separator.kind == 4 {
+                                if buffer_get(source, separator.start) == 44 {
+                                    cursor.index = checked_add(cursor.index, 1);
+                                    let next_argument: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
+                                    let first_argument: ExpressionNode = vec_get<ExpressionNode>(nodes, arguments);
+                                    let last_argument: ExpressionNode = vec_get<ExpressionNode>(nodes, next_argument);
+                                    let argument_end: i64 = checked_add(last_argument.start, last_argument.length);
+                                    let list: ExpressionNode = ExpressionNode { kind: 37, start: first_argument.start, length: argument_end - first_argument.start, left: arguments, right: next_argument };
+                                    arguments = push_expression(nodes, list);
+                                } else { reading_arguments = 0; }
+                            } else { reading_arguments = 0; }
+                        }
+                    }
+                }
+                let callee: ExpressionNode = vec_get<ExpressionNode>(nodes, left);
+                var end: i64 = checked_add(token.start, token.length);
+                if cursor.index < vec_len<Token>(tokens) {
+                    let closing: Token = vec_get<Token>(tokens, cursor.index);
+                    if closing.kind == 4 {
+                        if buffer_get(source, closing.start) == 41 {
+                            end = checked_add(closing.start, closing.length);
+                            cursor.index = checked_add(cursor.index, 1);
+                        }
+                    }
+                }
+                let call: ExpressionNode = ExpressionNode { kind: 34, start: callee.start, length: end - callee.start, left: left, right: arguments };
+                left = push_expression(nodes, call);
+            }
+            if punctuation == 46 {
+                handled = 1;
+                cursor.index = checked_add(cursor.index, 1);
+                var field_index: i64 = -1;
+                var end: i64 = checked_add(token.start, token.length);
+                if cursor.index < vec_len<Token>(tokens) {
+                    let field: Token = vec_get<Token>(tokens, cursor.index);
+                    if field.kind == 1 {
+                        let field_node: ExpressionNode = ExpressionNode { kind: 30, start: field.start, length: field.length, left: -1, right: -1 };
+                        field_index = push_expression(nodes, field_node);
+                        end = checked_add(field.start, field.length);
+                        cursor.index = checked_add(cursor.index, 1);
+                    }
+                }
+                let receiver: ExpressionNode = vec_get<ExpressionNode>(nodes, left);
+                let access: ExpressionNode = ExpressionNode { kind: 35, start: receiver.start, length: end - receiver.start, left: left, right: field_index };
+                left = push_expression(nodes, access);
+            }
+        }
+        if handled == 0 { active = 0; }
+    }
+    return left;
+}
+
 fn parse_primary_expression(borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut cursor: ParseCursor, borrow_mut nodes: Vec<ExpressionNode>) -> i64
 requires_caps [allocate]
 {
@@ -571,7 +652,8 @@ requires_caps [allocate]
                 }
             }
             let group: ExpressionNode = ExpressionNode { kind: 33, start: token.start, length: end - token.start, left: child, right: -1 };
-            return push_expression(nodes, group);
+            let grouped: i64 = push_expression(nodes, group);
+            return parse_postfix_expression(source, tokens, cursor, nodes, grouped);
         }
     }
     var kind: i32 = 39;
@@ -580,7 +662,8 @@ requires_caps [allocate]
     if token.kind == 3 { kind = 32; }
     cursor.index = checked_add(cursor.index, 1);
     let atom: ExpressionNode = ExpressionNode { kind: kind, start: token.start, length: token.length, left: -1, right: -1 };
-    return push_expression(nodes, atom);
+    let primary: i64 = push_expression(nodes, atom);
+    return parse_postfix_expression(source, tokens, cursor, nodes, primary);
 }
 
 fn combine_expression(borrow_mut nodes: Vec<ExpressionNode>, left: i64, right: i64, kind: i32) -> i64
