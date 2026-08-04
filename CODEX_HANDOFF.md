@@ -4,7 +4,7 @@
 This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
 Current baseline:
-- 349 tests passing after editable installation
+- 354 tests passing after editable installation
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs

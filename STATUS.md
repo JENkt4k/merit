@@ -24,4 +24,4 @@ GitHub Actions and other hosted CI are intentionally not part of this release ga
 
 ## Active post-alpha development
 
-The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The first Merit-native lexer/source-model slice now passes interpreter/native verification. Complete token coverage and a differential lexer corpus are next; unrelated language expansion and hosted CI remain deferred.
+The next target is `v0.1.0-alpha.2`, focused on replacing the Python-hosted normal compilation path. The Merit-native lexer/source model now covers identifiers/keywords, exact numerics, strings, maximal operators, comments, invalid strings, and byte-stable spans against an independent differential corpus. A typed bootstrap parser is next; unrelated language expansion and hosted CI remain deferred.

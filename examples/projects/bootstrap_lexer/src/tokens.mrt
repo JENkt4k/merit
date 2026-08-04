@@ -6,14 +6,14 @@ pub struct Token {
     length: i64;
 }
 
-pub fn token_kind(token: Token) -> i32 {
+pub fn token_kind(borrow token: Token) -> i32 {
     return token.kind;
 }
 
-pub fn token_start(token: Token) -> i64 {
+pub fn token_start(borrow token: Token) -> i64 {
     return token.start;
 }
 
-pub fn token_length(token: Token) -> i64 {
+pub fn token_length(borrow token: Token) -> i64 {
     return token.length;
 }

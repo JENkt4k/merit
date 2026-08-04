@@ -4,6 +4,7 @@
 
 - Added the first compiler slice written in Merit: typed, byte-spanned tokenization over an owned source buffer.
 - Added interpreter/native fixtures for identifiers, integers, strings, punctuation, comments, and invalid unterminated strings, plus capability compile-fail coverage and generated-C inspection.
+- Added maximal two-byte operator spans, decimal/exponent numeric spans, CRLF/escape fixtures, and an independent byte-for-byte token oracle.
 - Corrected generated-C zero initialization for functions returning monomorphized vectors.
 - Defined the versioned bootstrap source contract and staged non-Python replacement gates.
 

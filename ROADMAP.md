@@ -26,9 +26,9 @@ Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across
 
 ### Active `v0.1.0-alpha.2` bootstrap targets
 
-1. Merit-native source model and lexer with byte-stable spans — in progress; the first executable slice is complete.
-2. Complete accepted-token coverage and differential lexer corpus — next.
-3. Merit-native parser for the bootstrap subset with typed syntax records — pending.
+1. Merit-native source model and lexer with byte-stable spans — complete.
+2. Complete accepted-token coverage and differential lexer corpus — complete.
+3. Merit-native parser for the bootstrap subset with typed syntax records — next.
 4. Versioned typed HIR/checker boundary with Python-reference comparison — pending.
 5. MIR and deterministic C emission with stage-0/stage-1 equivalence — pending.
 6. Accepted-alpha corpus compilation without Python in the normal path — pending.

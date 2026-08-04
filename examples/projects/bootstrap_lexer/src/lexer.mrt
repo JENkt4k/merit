@@ -45,13 +45,38 @@ fn scan_identifier(borrow source: Buffer, start: i64, source_length: i64) -> i64
     return cursor;
 }
 
-fn scan_number(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
-    var cursor: i64 = checked_add(start, 1);
+fn scan_digits(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
+    var cursor: i64 = start;
     while (cursor < source_length) {
         if (is_digit(buffer_get(source, cursor))) {
             cursor = checked_add(cursor, 1);
         } else {
             return cursor;
+        }
+    }
+    return cursor;
+}
+
+fn scan_number(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
+    var cursor: i64 = scan_digits(source, start, source_length);
+    if (cursor < source_length) {
+        if buffer_get(source, cursor) == 46 {
+            cursor = scan_digits(source, checked_add(cursor, 1), source_length);
+        }
+    }
+    if (cursor < source_length) {
+        let exponent: i64 = buffer_get(source, cursor);
+        var has_exponent: i32 = 0;
+        if exponent == 69 { has_exponent = 1; }
+        if exponent == 101 { has_exponent = 1; }
+        if (has_exponent) {
+            cursor = checked_add(cursor, 1);
+            if (cursor < source_length) {
+                let sign: i64 = buffer_get(source, cursor);
+                if sign == 43 { cursor = checked_add(cursor, 1); }
+                else { if sign == 45 { cursor = checked_add(cursor, 1); } }
+            }
+            cursor = scan_digits(source, cursor, source_length);
         }
     }
     return cursor;
@@ -101,6 +126,20 @@ fn string_is_closed(borrow source: Buffer, start: i64, end: i64) -> i32 {
     return 0;
 }
 
+fn punctuation_length(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
+    let next_index: i64 = checked_add(start, 1);
+    if (next_index >= source_length) { return 1; }
+    let first: i64 = buffer_get(source, start);
+    let second: i64 = buffer_get(source, next_index);
+    if first == 45 { if second == 62 { return 2; } }
+    if first == 61 { if second == 62 { return 2; } if second == 61 { return 2; } }
+    if first == 33 { if second == 61 { return 2; } }
+    if first == 62 { if second == 61 { return 2; } }
+    if first == 60 { if second == 61 { return 2; } }
+    if first == 58 { if second == 58 { return 2; } }
+    return 1;
+}
+
 fn lex(borrow source: Buffer, allocator: Allocator) -> Vec<Token>
 requires_caps [allocate]
 {
@@ -132,7 +171,7 @@ requires_caps [allocate]
                                 kind = 5;
                             }
                         } else {
-                            cursor = checked_add(cursor, 1);
+                            cursor = checked_add(cursor, punctuation_length(source, cursor, source_length));
                         }
                     }
                 }
@@ -150,15 +189,14 @@ fn main() -> i32 {
         let source: Buffer = buffer_from_string(allocator, "let total: i64 = 42;\nprint(\"ok\", total + 1); // ok\n");
         let tokens: Vec<Token> = lex(source, allocator);
         print(vec_len<Token>(tokens));
-        print(token_kind(vec_get<Token>(tokens, 0)));
-        print(token_kind(vec_get<Token>(tokens, vec_len<Token>(tokens) - 1)));
         var index: i64 = 0;
-        var span_bytes: i64 = 0;
         while (index < vec_len<Token>(tokens)) {
-            span_bytes = checked_add(span_bytes, token_length(vec_get<Token>(tokens, index)));
+            let token: Token = vec_get<Token>(tokens, index);
+            print(token_kind(token));
+            print(token_start(token));
+            print(token_length(token));
             index = checked_add(index, 1);
         }
-        print(span_bytes);
         drop(tokens);
         drop(source);
     }

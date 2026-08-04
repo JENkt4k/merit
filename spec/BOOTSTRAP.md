@@ -12,7 +12,7 @@ The first replacement slice consumes an owned UTF-8 `Buffer` and produces typed 
 Token { kind: i32, start: i64, length: i64 }
 ```
 
-Kinds are identifier (`1`), decimal integer (`2`), quoted string (`3`), punctuation (`4`), and invalid unterminated string (`5`). ASCII whitespace and `//` line comments are discarded. Strings include their quotes in the byte span and skip the byte following a backslash while scanning. Every emitted span is non-empty and contained within the input buffer.
+Kinds are identifier/keyword (`1`), exact numeric literal (`2`), quoted string (`3`), punctuation (`4`), and invalid unterminated string (`5`). Numeric spans accept decimal fractions and signed decimal exponents after an initial digit sequence; a leading sign remains punctuation for the parser to interpret contextually. ASCII whitespace and `//` line comments are discarded. Strings include their quotes in the byte span and skip the byte following a backslash while scanning. The sequences `->`, `=>`, `==`, `!=`, `>=`, `<=`, and `::` are maximal two-byte punctuation spans; other punctuation is one byte. Every emitted span is non-empty and contained within the input buffer.
 
 `examples/projects/bootstrap_lexer` is the executable contract fixture. Its interpreter and native output must match, allocation must remain capability-gated, owned token storage must be destroyed exactly once, and generated C must retain ordered source reads before token insertion.
 
