@@ -11,7 +11,7 @@ fn view(borrow value: Value) -> borrow Value { return value; }
 fn edit(borrow_mut value: Value) -> borrow_mut Value { return value; }
 ```
 
-Borrowed results must originate from one consistent borrowed parameter, and mutable results require a `borrow_mut` origin. Callers may use returned borrows ephemerally for field access or pass them onward to a compatible borrow parameter. Mutable results support direct field assignment and owned-field replacement. The interpreter preserves object identity and native C lowers the result as a pointer. Returned borrows cannot be stored in owned bindings, passed by value, or escalated from shared to mutable access.
+Borrowed results must originate from one consistent borrowed parameter, and mutable results require an unbroken `borrow_mut` origin. A borrowed-return function may relay another validated borrowed result; its lifetime is mapped transitively back to the relaying function's ultimate parameter. Callers may use returned borrows ephemerally for field access or pass them onward to a compatible borrow parameter. The derived loan remains live across the enclosing call's argument evaluation, so that call cannot also move its origin. Mutable results support direct field assignment and owned-field replacement. The interpreter preserves object identity and native C lowers the result as a pointer. Returned borrows cannot be stored in owned bindings, passed by value, or escalated from shared to mutable access.
 
 Generated C signatures preserve mutability: shared borrow parameters and results are `const T *`, while mutable borrows are `T *`.
 Postconditions observe borrowed `result` through the same alias/pointer semantics in both execution paths.

@@ -998,38 +998,47 @@ class Checker:
             if node.kind=='with_cap' and self.block_definitely_returns(node.nested_body):return True
         return False
     def check_borrowed_return(self,f):
-        params={param.name:param for param in f.params}
-        def returns(body):
-            for statement in body:
-                node=self.p.node(statement)
-                if node.kind=='return':yield statement,node
-                elif node.kind in ('with_cap','while'):yield from returns(node.nested_body)
-                elif node.kind=='if':yield from returns(node.then_body);yield from returns(node.else_body)
-                elif node.kind=='match':
-                    for arm in node.match_arms:yield from returns(arm.body)
         found=False;origins=set()
-        for statement,node in returns(f.body):
-            found=True; expression=self.p.node(node.expression)
-            if expression.kind!='var' or expression.atom_value not in params or params[expression.atom_value].mode not in ('borrow','borrow_mut'):
+        for statement,expression in self.return_expressions(f.body):
+            found=True;origin=self.borrowed_expression_origin(f,expression,{f.name})
+            if origin is None:
                 self.fail('M5300: borrowed return must originate from a borrowed parameter',statement)
-            param=params[expression.atom_value]
-            origins.add(param.name)
-            if f.return_mode=='borrow_mut' and param.mode!='borrow_mut':
-                self.fail(f'M5301: borrow_mut return requires borrow_mut parameter {param.name}',statement)
+            origins.add(origin)
+            if f.return_mode=='borrow_mut' and self.borrowed_expression_mode(f,expression)!='borrow_mut':
+                if self.p.node(expression).kind=='var':self.fail(f'M5301: borrow_mut return requires borrow_mut parameter {origin}',statement)
+                self.fail(f'M5308: borrow_mut return cannot relay shared borrowed result from {origin}',statement)
         if not found:self.fail('M5303: borrowed-return function must return a borrowed parameter',f)
         if len(origins)!=1:self.fail('M5305: borrowed return must have one consistent parameter origin',f)
-    def borrowed_return_origin(self,f):
-        def expressions(body):
-            for statement in body:
-                node=self.p.node(statement)
-                if node.kind=='return':yield node.expression
-                elif node.kind in ('with_cap','while'):yield from expressions(node.nested_body)
-                elif node.kind=='if':yield from expressions(node.then_body);yield from expressions(node.else_body)
-                elif node.kind=='match':
-                    for arm in node.match_arms:yield from expressions(arm.body)
-        expression=next(expressions(f.body),None)
-        node=self.p.node(expression) if expression is not None else None
-        return node.atom_value if node and node.kind=='var' else None
+    def return_expressions(self,body):
+        for statement in body:
+            node=self.p.node(statement)
+            if node.kind=='return':yield statement,node.expression
+            elif node.kind in ('with_cap','while'):yield from self.return_expressions(node.nested_body)
+            elif node.kind=='if':yield from self.return_expressions(node.then_body);yield from self.return_expressions(node.else_body)
+            elif node.kind=='match':
+                for arm in node.match_arms:yield from self.return_expressions(arm.body)
+    def borrowed_expression_mode(self,f,e):
+        node=self.p.node(e)
+        if node.kind=='var':
+            param=next((param for param in f.params if param.name==node.atom_value),None)
+            return param.mode if param else None
+        return self.borrowed_call_mode(e)
+    def borrowed_expression_origin(self,f,e,visiting=None):
+        visiting=set() if visiting is None else set(visiting);node=self.p.node(e)
+        if node.kind=='var':
+            param=next((param for param in f.params if param.name==node.atom_value),None)
+            return param.name if param and param.mode in ('borrow','borrow_mut') else None
+        if node.kind not in ('call','generic_call'):return None
+        name,args=resolved_call(node);callee=self.fn.get(name)
+        if not callee or callee.return_mode=='value' or name in visiting:return None
+        origin=self.borrowed_return_origin(callee,visiting|{name})
+        index=next((index for index,param in enumerate(callee.params) if param.name==origin),None)
+        return self.borrowed_expression_origin(f,args[index],visiting) if index is not None else None
+    def borrowed_return_origin(self,f,visiting=None):
+        visiting=set() if visiting is None else set(visiting)
+        origins={self.borrowed_expression_origin(f,expression,visiting|{f.name}) for _,expression in self.return_expressions(f.body)}
+        origins.discard(None)
+        return next(iter(origins)) if len(origins)==1 else None
     def borrowed_call_mode(self,e):
         node=e if isinstance(e,SemanticNodeView) else self.p.node(e)
         if node.kind not in ('call','generic_call'):return None
@@ -1366,7 +1375,10 @@ class Checker:
                         for pr,pm in loans:
                             if pr==root and ('borrow_mut' in (mode,pm)): raise CompileError(f'M5003: conflicting loans of {root}')
                         loans.append((root,mode))
-                    if mode=='value': self.consume_owned_source(arg,at,env,f'passing argument {idx} to {name}')
+                    if mode=='value':
+                        if root and self.types.get(pt).owned and any(previous_root==root for previous_root,_ in loans):
+                            self.fail(f'M5307: cannot move {root} while its borrowed result is live for call to {name}',arg)
+                        self.consume_owned_source(arg,at,env,f'passing argument {idx} to {name}')
                 return ret
             if name not in self.fn:self.fail(f'M3004: unknown function {name}',e)
             callee=self.fn[name];missing=set(callee.requires_caps)-caps
@@ -1391,7 +1403,10 @@ class Checker:
                 if param.mode=='borrow_mut':
                     if not root: raise CompileError(f'M5004: borrow_mut argument {param.name} must be an addressable binding')
                     if not env[root].mutable: raise CompileError(f'M5005: borrow_mut argument {root} is not mutable')
-                if param.mode=='value':self.consume_owned_source(arg,at,env,f'passing argument {param.name} to {name}')
+                if param.mode=='value':
+                    if root and self.types.get(param.type_name).owned and any(previous_root==root for previous_root,_,_ in loans):
+                        self.fail(f'M5307: cannot move {root} while its borrowed result is live for call to {name}',arg)
+                    self.consume_owned_source(arg,at,env,f'passing argument {param.name} to {name}')
             return callee.return_type
         if tag=='binop':
             a=self.expr_type(node.left,env,caps,fn);b=self.expr_type(node.right,env,caps,fn)
@@ -2332,7 +2347,12 @@ def semantic_payload(value,p):
     return value
 
 def hir(p):
-    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'destructors':[{'type':d.type_name,'body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p) for f in p.functions]}
+    checker=Checker(p)
+    def lower_function(f):
+        lowered=f.to_dict(lambda value:semantic_payload(value,p)) if isinstance(f,FunctionDecl) else semantic_payload(dict(f),p)
+        if isinstance(f,FunctionDecl) and f.return_mode!='value':lowered['borrowed_origin']=checker.borrowed_return_origin(f)
+        return lowered
+    return {'module':p.module,'types':{'decimal':[dataclasses.asdict(x) for x in p.decimals.values()],'bounded':[dataclasses.asdict(x) for x in p.bounded.values()],'enum':[dataclasses.asdict(x) for x in p.enums.values()],'trait':[dataclasses.asdict(x) for x in p.traits.values()],'struct':[{'name':s.name,'stable_abi':s.stable_abi,'fields':[dataclasses.asdict(f) for f in s.fields]} for s in p.structs.values()]},'type_semantics':TypeTable(p).all(),'impls':[dataclasses.asdict(x) for x in p.impls],'destructors':[{'type':d.type_name,'body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 def reachable_mir_blocks(blocks):
     by_id={block['id']:block for block in blocks}; reachable=set(); pending=[0]
     while pending:
@@ -2367,7 +2387,7 @@ def fold_constant_mir_branches(p,blocks):
         block['terminator']={'kind':'goto','target':terminator['then'] if value!=0 else terminator['else'],'folded_condition':terminator['condition']}
     return blocks
 def mir(p):
-    types=TypeTable(p);ownership_model=OwnershipEffects(p,types)
+    types=TypeTable(p);ownership_model=OwnershipEffects(p,types);checker=Checker(p)
     def lower_function(f):
         blocks=[]
         next_id=0
@@ -2417,7 +2437,7 @@ def mir(p):
             if name not in ownership.explicit_drops and name not in ownership.consumed_roots
         )
         sites={name:(dataclasses.asdict(span) if span else None) for name,span in ownership.consumption_sites}
-        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
+        return {'name':f.name,'params':semantic_payload(f.params,p),'return':f.return_type,'return_mode':f.return_mode,'borrowed_origin':checker.borrowed_return_origin(f) if f.return_mode!='value' else None,'owned_locals':locals_order,'explicit_drops':sorted(ownership.explicit_drops),'consumed_roots':sorted(ownership.consumed_roots),'consumption_sites':sites,'semantic_blocks':semantic_payload(blocks,p)}
     return {'module':p.module,'destructors':[{'type':d.type_name,'semantic_body':semantic_payload(d.body,p),'provenance':semantic_payload(d.provenance,p)} for d in p.destructors.values()],'functions':[lower_function(f) for f in p.functions]}
 
 

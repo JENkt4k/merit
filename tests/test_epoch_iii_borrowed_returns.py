@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, compile_file, hir, parse
+from merit.compiler import CGenerator, Checker, CompileError, Interpreter, compile_file, hir, mir, parse
 from merit.project.build import build, build_shared, check, interpret
 from merit.project.loader import load_project
 
@@ -67,6 +67,77 @@ fn expose_mut(borrow_mut value:Value)->borrow_mut Value { return value; }
 fn update(borrow_mut value:Value)->i32 { value.number=23; return value.number; }
 fn main()->i32 { var value:Value=Value{number:1}; print(update(expose_mut(value))); print(value.number); return 0; }'''
     assert parity(source_text,tmp_path) == ('23\n23\n','23\n23\n')
+
+
+def test_validated_borrowed_return_can_relay_shared_origin(tmp_path):
+    source_text='''module relayed_shared_borrow
+stable("v1") struct Value { number:i32; }
+fn expose(borrow value:Value)->borrow Value { return value; }
+fn relay(borrow value:Value)->borrow Value { return expose(value); }
+fn main()->i32 { let value:Value=Value{number:41}; print(relay(value).number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('41\n','41\n')
+
+
+def test_relayed_borrow_origin_is_explicit_in_hir_and_mir():
+    source_text='''module relayed_borrow_ir
+stable("v1") struct Value { number:i32; }
+fn expose(borrow input:Value)->borrow Value { return input; }
+fn relay(borrow value:Value)->borrow Value { return expose(value); }
+fn main()->i32 { return 0; }'''
+    program=parse(source_text);Checker(program).check()
+    assert hir(program)['functions'][1]['borrowed_origin'] == 'value'
+    lowered=mir(program)['functions'][1]
+    assert lowered['return_mode'] == 'borrow'
+    assert lowered['borrowed_origin'] == 'value'
+
+
+def test_validated_borrowed_return_can_relay_mutable_origin(tmp_path):
+    source_text='''module relayed_mutable_borrow
+stable("v1") struct Value { number:i32; }
+fn expose_mut(borrow_mut value:Value)->borrow_mut Value { return value; }
+fn relay_mut(borrow_mut value:Value)->borrow_mut Value { return expose_mut(value); }
+fn main()->i32 { var value:Value=Value{number:1}; relay_mut(value).number=43; print(value.number); return 0; }'''
+    assert parity(source_text,tmp_path) == ('43\n','43\n')
+
+
+def test_mutable_relay_rejects_shared_intermediate():
+    source_text='''module invalid_mutable_relay
+stable("v1") struct Value { number:i32; }
+fn expose(borrow value:Value)->borrow Value { return value; }
+fn relay_mut(borrow_mut value:Value)->borrow_mut Value { return expose(value); }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5308: borrow_mut return cannot relay shared borrowed result from value'):
+        Checker(parse(source_text)).check()
+
+
+def test_relayed_borrow_requires_one_consistent_caller_origin():
+    source_text='''module inconsistent_relayed_borrow
+stable("v1") struct Value { number:i32; }
+fn expose(borrow value:Value)->borrow Value { return value; }
+fn choose(borrow left:Value,borrow right:Value)->borrow Value { if left.number { return expose(left); } else { return expose(right); } }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5305: borrowed return must have one consistent parameter origin'):
+        Checker(parse(source_text)).check()
+
+
+def test_cyclic_borrowed_relays_cannot_establish_an_origin():
+    source_text='''module cyclic_borrowed_relay
+stable("v1") struct Value { number:i32; }
+fn first(borrow value:Value)->borrow Value { return second(value); }
+fn second(borrow value:Value)->borrow Value { return first(value); }
+fn main()->i32 { return 0; }'''
+    with pytest.raises(CompileError,match='M5300: borrowed return must originate from a borrowed parameter'):
+        Checker(parse(source_text)).check()
+
+
+def test_caller_cannot_move_origin_while_relayed_borrow_argument_is_live():
+    source_text='''module borrowed_origin_move_conflict
+stable("v1") struct Value { number:i32; }
+fn expose(borrow value:Value)->borrow Value { return value; }
+fn observe_and_consume(borrow view:Value,owned:Value)->i32 { return view.number+owned.number; }
+fn main()->i32 { let value:Value=Value{number:1}; return observe_and_consume(expose(value),value); }'''
+    with pytest.raises(CompileError,match='M5307: cannot move value while its borrowed result is live for call to observe_and_consume'):
+        Checker(parse(source_text)).check()
 
 
 def test_borrowed_return_cannot_be_stored_as_owned_value():
@@ -157,14 +228,17 @@ def test_borrowed_views_are_stable_shared_library_pointers(tmp_path):
     class Record(ctypes.Structure):
         _fields_=[('number',ctypes.c_int32)]
     library=ctypes.CDLL(str(library_path))
-    for name in ('merit_view_record','merit_edit_record'):
+    for name in ('merit_view_record','merit_edit_record','merit_view_record_relay','merit_edit_record_relay'):
         function=getattr(library,name)
         function.argtypes=[ctypes.POINTER(Record)]
         function.restype=ctypes.POINTER(Record)
     record=Record(31)
     assert library.merit_view_record(ctypes.byref(record)).contents.number == 31
+    assert library.merit_view_record_relay(ctypes.byref(record)).contents.number == 31
     library.merit_edit_record(ctypes.byref(record)).contents.number=37
     assert record.number == 37
+    library.merit_edit_record_relay(ctypes.byref(record)).contents.number=41
+    assert record.number == 41
 
 
 def test_generated_c_signatures_preserve_borrow_constness():

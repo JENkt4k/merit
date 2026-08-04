@@ -9,3 +9,11 @@ pub fn view_record(borrow value: Record) -> borrow Record {
 pub fn edit_record(borrow_mut value: Record) -> borrow_mut Record {
     return value;
 }
+
+pub fn view_record_relay(borrow value: Record) -> borrow Record {
+    return view_record(value);
+}
+
+pub fn edit_record_relay(borrow_mut value: Record) -> borrow_mut Record {
+    return edit_record(value);
+}

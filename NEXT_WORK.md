@@ -396,6 +396,14 @@ Continue alpha-readiness hardening:
 ## Acceptance gates
 The checkpoint is complete only when all of these pass:
 
+### Caller lifetime tracking for validated borrowed returns
+- direct and transitively relayed borrowed results identify one ultimate borrowed parameter in HIR and MIR.
+- shared and mutable relays preserve interpreter/native identity, C pointer constness, and cross-module behavior.
+- a mutable relay cannot pass through a shared borrowed result.
+- inconsistent or cyclic relays cannot establish a valid origin.
+- a derived loan remains live through its enclosing call, preventing that call from moving the same owned origin.
+- borrowed results remain ephemeral: storing, returning as owned, or passing by value is rejected.
+
 ### Positive
 - owned locals, fields, and mutable borrows can be replaced explicitly.
 - owned vector elements can be replaced with checked indexing.
