@@ -7,6 +7,7 @@
 - Added maximal two-byte operator spans, decimal/exponent numeric spans, CRLF/escape fixtures, and an independent byte-for-byte token oracle.
 - Corrected generated-C zero initialization for functions returning monomorphized vectors.
 - Defined the versioned bootstrap source contract and staged non-Python replacement gates.
+- Added `bootstrap-syntax-v1`, a typed top-level declaration index with brace-depth isolation, independent span comparison, capability compile-fail coverage, and ordered generated-C inspection.
 
 ## v0.1.0-alpha.1 — 2026-08-04
 

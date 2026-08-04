@@ -9,3 +9,8 @@ Token kinds are identifiers/keywords (`1`), exact numerics (`2`), strings (`3`),
 (`4`), and invalid unterminated strings (`5`). Whitespace and line comments are
 discarded. The accepted two-byte punctuation sequences are emitted as maximal
 spans: `->`, `=>`, `==`, `!=`, `>=`, `<=`, and `::`.
+
+The project also produces the first typed syntax boundary: byte-spanned module,
+function, struct, enum, capability, numeric-type, trait, impl, and destructor
+declaration records. Brace-depth tracking excludes nested impl methods from the
+top-level declaration index.

@@ -1,0 +1,19 @@
+module bootstrap_syntax
+
+pub struct SyntaxNode {
+    kind: i32;
+    start: i64;
+    length: i64;
+}
+
+pub fn syntax_kind(borrow node: SyntaxNode) -> i32 {
+    return node.kind;
+}
+
+pub fn syntax_start(borrow node: SyntaxNode) -> i64 {
+    return node.start;
+}
+
+pub fn syntax_length(borrow node: SyntaxNode) -> i64 {
+    return node.length;
+}

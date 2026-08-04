@@ -16,10 +16,22 @@ Kinds are identifier/keyword (`1`), exact numeric literal (`2`), quoted string (
 
 `examples/projects/bootstrap_lexer` is the executable contract fixture. Its interpreter and native output must match, allocation must remain capability-gated, owned token storage must be destroyed exactly once, and generated C must retain ordered source reads before token insertion.
 
+## Versioned syntax contract: bootstrap-syntax-v1
+
+The initial parser boundary recognizes top-level declaration introducers while tracking brace depth, so trait/impl/function bodies cannot leak nested declarations into the module surface.
+
+```text
+SyntaxNode { kind: i32, start: i64, length: i64 }
+```
+
+Kinds are module (`1`), function (`2`), struct (`3`), enum (`4`), capability (`5`), decimal (`6`), bounded (`7`), trait (`8`), impl (`9`), and destructor (`10`). A node begins at its declaration keyword and extends through the following identifier when present. This first syntax contract is intentionally a declaration index, not yet a complete grammar tree; parameters, fields, clauses, statements, and expressions remain the next parser slices.
+
+The differential corpus compares every syntax kind and byte span with an independent reference, including a fixture containing all declaration kinds and a nested impl method that must not appear as a top-level function.
+
 ## Staged replacement gates
 
 1. Extend `bootstrap-lex-v1` to the complete accepted token vocabulary and differential fixtures.
-2. Parse the bootstrap language subset into typed syntax records with deterministic diagnostics.
+2. Expand `bootstrap-syntax-v1` from its top-level declaration index into typed declaration, clause, statement, and expression records with deterministic diagnostics.
 3. Construct versioned typed HIR and MIR that can be compared with the Python reference output.
 4. Emit deterministic C and prove stage-0/stage-1 equivalence.
 5. Expand the subset until the replacement compiler builds the accepted alpha corpus without Python in the normal compilation path.

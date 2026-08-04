@@ -14,7 +14,7 @@ from merit.project.loader import load_project
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
 MANIFEST = PROJECT / "Merit.toml"
-DEFAULT_SOURCE = 'let total: i64 = 42;\nprint("ok", total + 1); // ok\n'
+DEFAULT_SOURCE = 'module demo\nfn main()->i32 { print("ok"); return 0; }\n'
 
 
 def reference_tokens(source):
@@ -75,8 +75,30 @@ def reference_tokens(source):
 
 def expected_output(source):
     tokens = reference_tokens(source)
-    values = [len(tokens), *(value for token in tokens for value in token)]
+    syntax = reference_syntax(source, tokens)
+    values = [len(tokens), *(value for token in tokens for value in token), -1, len(syntax), *(value for node in syntax for value in node)]
     return "".join(f"{value}\n" for value in values)
+
+
+def reference_syntax(source, tokens):
+    data = source.encode("utf-8")
+    kinds = {b"module": 1, b"fn": 2, b"struct": 3, b"enum": 4, b"capability": 5, b"decimal": 6, b"bounded": 7, b"trait": 8, b"impl": 9, b"destructor": 10}
+    nodes = []
+    depth = 0
+    for index, (token_kind, start, length) in enumerate(tokens):
+        text = data[start:start + length]
+        if token_kind == 4 and text == b"}" and depth > 0:
+            depth -= 1
+        syntax_kind = kinds.get(text, 0) if depth == 0 else 0
+        if syntax_kind:
+            end = start + length
+            if index + 1 < len(tokens) and tokens[index + 1][0] == 1:
+                _, name_start, name_length = tokens[index + 1]
+                end = name_start + name_length
+            nodes.append((syntax_kind, start, end - start))
+        if token_kind == 4 and text == b"{":
+            depth += 1
+    return nodes
 
 
 EXPECTED = expected_output(DEFAULT_SOURCE)
@@ -91,11 +113,14 @@ def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     assert native == EXPECTED
     generated = c_path.read_text()
     assert "merit_Vec__Token _merit_result = {0};" in generated
+    assert "merit_Vec__SyntaxNode _merit_result = {0};" in generated
     lexer_body = generated[generated.rindex("merit_Vec__Token merit_lex("):generated.index("int32_t main(")]
     assert lexer_body.index("merit_buffer_get(_merit_expr_") < lexer_body.index("merit_vec_push__Token(")
     operations = {(site["operation"], site["capability"]) for site in checker.hazardous_operations}
     assert ("vec_new__Token", "allocate") in operations
     assert ("vec_push__Token", "allocate") in operations
+    assert ("vec_new__SyntaxNode", "allocate") in operations
+    assert ("vec_push__SyntaxNode", "allocate") in operations
 
 
 def project_with_source(tmp_path, source_text):
@@ -119,6 +144,7 @@ def project_with_source(tmp_path, source_text):
         'left=>right == other != final <= upper',
         '"escaped \\\" quote" @',
         '0.00 12.5 1e6 2.5e-3',
+        'module all\ncapability io; decimal Money(8,2,half_even); bounded Count(i32,0,9); struct S { value:i32; } enum E { A } trait T { fn run()->i32; } impl T for S { fn run()->i32 { return 1; } } destructor S { return 0; } fn main()->i32 { return 0; }',
     ],
 )
 def test_bootstrap_lexer_matches_independent_reference_corpus(tmp_path, source_text):
@@ -135,4 +161,12 @@ def test_bootstrap_lexer_allocation_is_compile_fail_without_capability_contract(
     lexer = next(function for function in project.program.functions if function.name == "lex")
     lexer.requires_caps = []
     with pytest.raises(CompileError, match="vec_new__Token requires capabilities"):
+        check(project)
+
+
+def test_bootstrap_parser_allocation_is_compile_fail_without_capability_contract():
+    project = load_project(MANIFEST)
+    parser = next(function for function in project.program.functions if function.name == "parse_top_level")
+    parser.requires_caps = []
+    with pytest.raises(CompileError, match="vec_new__SyntaxNode requires capabilities"):
         check(project)
