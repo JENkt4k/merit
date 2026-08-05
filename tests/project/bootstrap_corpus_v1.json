@@ -1,0 +1,74 @@
+{
+  "contract": "bootstrap-corpus-v1",
+  "source_cases": [
+    {
+      "id": "unterminated-string",
+      "source": "\"unterminated",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "comments-identifiers-numerics",
+      "source": "alpha_1 007\r\n// ignored\nbeta",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "operators-qualified-name",
+      "source": "fn value()->i32 { if value>=1 { return value::next; } }",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "paired-operators",
+      "source": "left=>right == other != final <= upper",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "escaped-string-invalid-punctuation",
+      "source": "\"escaped \\\\\\\" quote\" @",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "exact-numeric-spans",
+      "source": "0.00 12.5 1e6 2.5e-3",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "all-top-level-declarations",
+      "source": "module all\ncapability io; decimal Money(8,2,half_even); bounded Count(i32,0,9); struct S { value:i32; } enum E { A } trait T { fn run()->i32; } impl T for S { fn run()->i32 { return 1; } } destructor S { return 0; } fn main()->i32 { return 0; }",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "malformed-braces-and-name",
+      "source": "module { } } struct Open {",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "function-contract-clauses",
+      "source": "module contracts\nfn checked(value:i32)->i32 effects [read] requires_caps [io] requires value >= 0; ensures result >= value; { return value; }",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "all-statement-envelopes",
+      "source": "module statements\nfn all()->i32 { let x:i32=0; var y:i32=1; print(x); drop(y); if x { replace(x,1); } while y { return 0; } match(x) { A => { return 1; } } with capability io { print(y); } return 2; }",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    },
+    {
+      "id": "truncated-function-body",
+      "source": "module incomplete\nfn value()->i32 { return 1",
+      "compare": ["tokens", "syntax", "diagnostics", "interpreter", "native"]
+    }
+  ],
+  "expression_cases": [
+    {"id": "precedence-product", "expression": "1+2*3", "root_kind": "add"},
+    {"id": "explicit-group", "expression": "(1+2)*3", "root_kind": "multiply"},
+    {"id": "left-associative-subtract", "expression": "a-b-c", "root_kind": "subtract"},
+    {"id": "comparison-last", "expression": "a==b+1", "root_kind": "equal"},
+    {"id": "string-atom", "expression": "\"value\"", "root_kind": "string"},
+    {"id": "division-before-addition", "expression": "a/2+4", "root_kind": "add"},
+    {"id": "empty-call", "expression": "f()", "root_kind": "call"},
+    {"id": "argument-sequence", "expression": "f(1,2+3)", "root_kind": "call"},
+    {"id": "field-before-addition", "expression": "account.balance+1", "root_kind": "add"},
+    {"id": "nested-call-field", "expression": "f(g(1)).value", "root_kind": "field"},
+    {"id": "direct-constructor-field", "expression": "Point { x:1, y:2+3 }.x", "root_kind": "field"},
+    {"id": "single-generic-call", "expression": "identity<i64>(1)", "root_kind": "call"}
+  ]
+}
