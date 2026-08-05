@@ -7,7 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
-from merit.bootstrap.corpus import KNOWN_STAGES, load_corpus
+from merit.bootstrap.corpus import KNOWN_STAGES
+from merit.bootstrap.repository_corpus import load_repository_corpus
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +16,7 @@ DEFAULT_MANIFEST = ROOT / "tests/project/bootstrap_corpus_v1.json"
 
 
 def report_data(manifest: Path) -> dict[str, object]:
-    corpus = load_corpus(manifest)
+    corpus = load_repository_corpus(manifest)
     return {
         "schema": corpus.schema,
         "cases": len(corpus.cases),
