@@ -19,6 +19,7 @@ from merit.bootstrap.parity import (
     markdown_summary,
     observe,
 )
+from merit.bootstrap.repository_corpus import load_repository_corpus
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,18 +38,18 @@ def minimal_data(**case_overrides):
 
 
 def test_repository_bootstrap_corpus_is_valid_and_queryable():
-    corpus = load_corpus(MANIFEST)
+    corpus = load_repository_corpus(MANIFEST)
     assert corpus.schema == CORPUS_SCHEMA
     assert len(corpus.cases) == 23
     assert len(corpus.by_kind("source")) == 11
     assert len(corpus.by_kind("expression")) == 12
     assert len(corpus.for_stage("ast")) == 12
-    assert corpus.by_id("expr-precedence").text == "1+2*3"
+    assert corpus.by_id("precedence-product").text == "1+2*3"
     assert corpus.stage_counts()["tokens"] == 11
 
 
 def test_corpus_canonical_json_round_trips():
-    corpus = load_corpus(MANIFEST)
+    corpus = load_repository_corpus(MANIFEST)
     encoded = canonical_corpus_json(corpus)
     assert parse_corpus(json.loads(encoded)) == corpus
     assert " " not in encoded
@@ -67,7 +68,7 @@ def test_corpus_canonical_json_round_trips():
         (minimal_data(compare=[]), "non-empty list"),
         (minimal_data(compare=["unknown"]), "unknown bootstrap stage"),
         (minimal_data(compare=["ast", "ast", "expressions"]), "repeats compare stage"),
-        (minimal_data(compare=["ast"]), "must also compare expressions"),
+        (minimal_data(compare=["ast"]), "must compare expressions"),
         (minimal_data(kind="expression", compare=["tokens"]), "must compare expressions"),
         (minimal_data(kind="source", compare=["syntax"]), "must compare tokens"),
     ],
@@ -134,7 +135,7 @@ def observations_for(corpus, *, mismatch=None, stages=("ast",)):
 
 
 def test_complete_ast_parity_report_for_repository_corpus():
-    corpus = load_corpus(MANIFEST)
+    corpus = load_repository_corpus(MANIFEST)
     report = build_parity_report(corpus, observations_for(corpus), stages=["ast"])
     assert report.complete
     assert report.matched == 12
@@ -149,23 +150,23 @@ def test_complete_ast_parity_report_for_repository_corpus():
 
 
 def test_parity_report_identifies_exact_mismatch():
-    corpus = load_corpus(MANIFEST)
+    corpus = load_repository_corpus(MANIFEST)
     report = build_parity_report(
         corpus,
-        observations_for(corpus, mismatch=("expr-precedence", "ast")),
+        observations_for(corpus, mismatch=("precedence-product", "ast")),
         stages=["ast"],
     )
     assert not report.complete
     assert report.matched == 11
     assert report.total == 12
-    assert [(item.case_id, item.stage) for item in report.mismatches()] == [("expr-precedence", "ast")]
+    assert [(item.case_id, item.stage) for item in report.mismatches()] == [("precedence-product", "ast")]
     summary = markdown_summary(report)
     assert "FAIL: 11/12" in summary
-    assert "`expr-precedence` / `ast`" in summary
+    assert "`precedence-product` / `ast`" in summary
 
 
 def test_report_can_select_multiple_stages():
-    corpus = load_corpus(MANIFEST)
+    corpus = load_repository_corpus(MANIFEST)
     stages = ("expressions", "ast")
     report = build_parity_report(corpus, observations_for(corpus, stages=stages), stages=stages)
     assert report.total == 24
@@ -174,11 +175,7 @@ def test_report_can_select_multiple_stages():
 
 @pytest.mark.parametrize(
     "case_id, stage, implementation",
-    [
-        ("", "ast", "reference"),
-        ("case", "unknown", "reference"),
-        ("case", "ast", "other"),
-    ],
+    [("", "ast", "reference"), ("case", "unknown", "reference"), ("case", "ast", "other")],
 )
 def test_invalid_observations_are_rejected(case_id, stage, implementation):
     with pytest.raises(ParityContractError):
@@ -203,12 +200,7 @@ def test_duplicate_observations_are_rejected():
 def test_extra_observations_are_rejected():
     corpus = parse_corpus(minimal_data())
     observations = observations_for(corpus)
-    observations.extend(
-        [
-            observe("unknown", "ast", "reference", {}),
-            observe("unknown", "ast", "bootstrap", {}),
-        ]
-    )
+    observations.extend([observe("unknown", "ast", "reference", {}), observe("unknown", "ast", "bootstrap", {})])
     with pytest.raises(ParityContractError, match="do not belong"):
         build_parity_report(corpus, observations, stages=["ast"])
 
@@ -220,11 +212,7 @@ def test_unknown_selected_stage_is_rejected():
 
 
 def test_ast_fingerprints_ignore_mapping_order_but_preserve_semantics():
-    records = [
-        (31, 0, 1, -1, -1),
-        (31, 2, 1, -1, -1),
-        (50, 0, 3, 0, 1),
-    ]
+    records = [(31, 0, 1, -1, -1), (31, 2, 1, -1, -1), (50, 0, 3, 0, 1)]
     ast = lower_expression_ast(records)
     encoded = canonical_ast_json(ast)
     assert canonical_digest(encoded) == canonical_digest(canonical_ast_json(ast))
