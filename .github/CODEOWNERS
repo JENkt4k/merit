@@ -1,0 +1,5 @@
+# Keep bootstrap-critical automation visible to the repository owner.
+.github/ @JENkt4k
+scripts/ci.sh @JENkt4k
+docs/LOCAL_GATE.md @JENkt4k
+docs/CI_DECISION.md @JENkt4k
