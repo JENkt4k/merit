@@ -1,0 +1,41 @@
+name: Local Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: merit-local-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Python 3.11 / Ubuntu / system C compiler
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install Merit and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-build-isolation -e ".[dev]"
+
+      - name: Run clean-environment gate
+        run: bash scripts/ci.sh
