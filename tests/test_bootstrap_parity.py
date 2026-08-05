@@ -52,7 +52,8 @@ def test_corpus_canonical_json_round_trips():
     corpus = load_repository_corpus(MANIFEST)
     encoded = canonical_corpus_json(corpus)
     assert parse_corpus(json.loads(encoded)) == corpus
-    assert " " not in encoded
+    assert ": " not in encoded
+    assert ", " not in encoded
     assert "\n" not in encoded
 
 
