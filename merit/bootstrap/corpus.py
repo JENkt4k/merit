@@ -13,7 +13,7 @@ from typing import Iterable, Mapping, Sequence
 
 
 CORPUS_SCHEMA = "bootstrap-corpus-v1"
-KNOWN_STAGES = frozenset({"tokens", "syntax", "diagnostics", "expressions", "ast", "hir", "mir", "native"})
+KNOWN_STAGES = frozenset({"tokens", "syntax", "diagnostics", "expressions", "ast", "hir", "mir", "interpreter", "native"})
 KNOWN_KINDS = frozenset({"source", "expression"})
 
 
