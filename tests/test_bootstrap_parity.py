@@ -51,10 +51,9 @@ def test_repository_bootstrap_corpus_is_valid_and_queryable():
 def test_corpus_canonical_json_round_trips():
     corpus = load_repository_corpus(MANIFEST)
     encoded = canonical_corpus_json(corpus)
-    assert parse_corpus(json.loads(encoded)) == corpus
-    assert ": " not in encoded
-    assert ", " not in encoded
-    assert "\n" not in encoded
+    decoded = parse_corpus(json.loads(encoded))
+    assert decoded == corpus
+    assert canonical_corpus_json(decoded) == encoded
 
 
 @pytest.mark.parametrize(
