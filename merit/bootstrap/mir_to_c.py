@@ -74,8 +74,7 @@ def _instruction(instruction: MirInstruction) -> list[str]:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
         if instruction.numeric_policy not in {"exact", "checked", "floating"}:
             raise MirToCError(f"numeric policy not supported by core C emission: {instruction.numeric_policy}")
-        expression = f"{operands[0]} {_BINARY[instruction.symbol]} {operands[1]}"
-        return [f"{result} = {expression};"]
+        return [f"{result} = {operands[0]} {_BINARY[instruction.symbol]} {operands[1]};"]
     if kind == "convert":
         if result is None or len(operands) != 1:
             raise MirToCError("convert instruction requires one operand and a result")
@@ -116,8 +115,7 @@ def _terminator(terminator: MirTerminator, return_type: str) -> list[str]:
 
 def emit_c_function(function: MirFunction) -> str:
     return_type = _type(function.return_type)
-    name = _identifier(function.name)
-    lines = [f"{return_type} {name}(void) {{"]
+    lines = [f"{return_type} {_identifier(function.name)}(void) {{"]
     for local in function.locals:
         local_type = _type(local.type)
         if local_type == "void":
@@ -136,16 +134,21 @@ def emit_c_function(function: MirFunction) -> str:
 
 
 def emit_c_module(module: MirModule) -> str:
-    functions = "\n\n".join(emit_c_function(function) for function in module.functions)
-    return "\n".join([
+    instructions = [instruction for function in module.functions for block in function.blocks for instruction in block.instructions]
+    needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
+    needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
+    prelude = [
         "/* generated from bootstrap-mir-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
         "#include <stdlib.h>",
         "",
-        "static void merit_contract_failure(const char *kind) { (void)kind; abort(); }",
-        "static void merit_capability_check(const char *capability) { (void)capability; }",
-        "",
-        functions,
-        "",
-    ])
+    ]
+    if needs_contract:
+        prelude.append("static void merit_contract_failure(const char *kind) { (void)kind; abort(); }")
+    if needs_capability:
+        prelude.append("static void merit_capability_check(const char *capability) { (void)capability; }")
+    if needs_contract or needs_capability:
+        prelude.append("")
+    functions = "\n\n".join(emit_c_function(function) for function in module.functions)
+    return "\n".join([*prelude, functions, ""])
