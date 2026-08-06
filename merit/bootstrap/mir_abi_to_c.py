@@ -8,7 +8,7 @@ parameter is bound to its declared MIR local at function entry.
 
 from __future__ import annotations
 
-from merit.bootstrap.mir_abi import MirAbiError, MirAbiModule, MirFunctionSignature
+from merit.bootstrap.mir_abi import MirAbiModule, MirFunctionSignature
 from merit.bootstrap.mir_contract import MirFunction, MirInstruction
 from merit.bootstrap.mir_to_c import (
     MirToCError,
@@ -110,7 +110,11 @@ def emit_c_abi_function(
             continue
         lines.append(f"    {local_type} {_local(local.local_id)} = 0;")
     for index, parameter in enumerate(signature.parameters):
-        lines.append(f"    {_type(parameter.type)} {_local(parameter.local_id)} = p{index};")
+        local_name = _local(parameter.local_id)
+        lines.append(f"    {_type(parameter.type)} {local_name} = p{index};")
+        # Keep deliberately unused parameters warning-clean under -Werror while
+        # retaining an explicit MIR-local binding for later ownership passes.
+        lines.append(f"    (void){local_name};")
     lines.append(f"    goto b{function.entry_block};")
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
