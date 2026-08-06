@@ -10,3 +10,4 @@ dist/
 *.o
 *.obj
 *.exe
+.vscode/settings.json
