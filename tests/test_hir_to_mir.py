@@ -69,7 +69,7 @@ def test_binding_ids_become_stable_source_local_ids():
     assert source_ids == [7, 12]
     assert function.locals[0].mutable is True
     assert function.locals[1].ownership == "owned"
-    assert function.blocks[0].instructions[1].operands == (0,)
+    assert function.blocks[0].instructions[1].operands == (2,)
 
 
 def test_checked_conversion_preserves_policy():
@@ -88,10 +88,10 @@ def test_call_constructor_move_and_borrow_are_ordered():
     binding = HirBinding(0, "item", I64, ownership="owned")
     nodes = [
         HirNode(0, "identifier", I64, binding_id=0, ownership="owned"),
-        HirNode(1, "borrow", I64, children=(0,), ownership="borrowed"),
+        HirNode(1, "borrow", I64, children=(0,), binding_id=0, ownership="borrowed"),
         HirNode(2, "call", I64, children=(1,), symbol="inspect"),
         HirNode(3, "constructor", HirType("Box", (I64,)), children=(2,), symbol="Box", ownership="owned"),
-        HirNode(4, "move", HirType("Box", (I64,)), children=(3,), ownership="moved"),
+        HirNode(4, "move", HirType("Box", (I64,)), children=(3,), binding_id=0, ownership="moved"),
         HirNode(5, "return", HirType("Box", (I64,)), children=(4,)),
         HirNode(6, "function", HirType("Box", (I64,)), children=(5,), symbol="pipeline"),
     ]
