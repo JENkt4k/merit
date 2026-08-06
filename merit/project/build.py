@@ -5,6 +5,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,12 +15,92 @@ from merit.compiler import CGenerator, Checker, Interpreter
 from .loader import LoadedProject
 
 
+class NativeBuildError(RuntimeError):
+    """A native toolchain command failed with actionable diagnostics."""
+
+
 def check(project: LoadedProject) -> Checker:
     return Checker(project.program).check()
 
 
-def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path, pic: bool = False) -> Path:
+def _compiler() -> str:
     compiler = os.environ.get("CC", "cc")
+    if shutil.which(compiler) is None:
+        raise NativeBuildError(
+            f"C compiler {compiler!r} was not found on PATH. "
+            "Install GCC or Clang, or set the CC environment variable."
+        )
+    return compiler
+
+
+def _display_command(command: list[str]) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def _run_native_command(
+    command: list[str],
+    *,
+    phase: str,
+    artifacts: tuple[Path, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        errors="replace",
+    )
+    if completed.returncode == 0:
+        return completed
+
+    details = [
+        f"native {phase} failed with exit code {completed.returncode}",
+        f"command: {_display_command(command)}",
+    ]
+    if artifacts:
+        details.append("artifacts:")
+        details.extend(f"  {artifact.resolve()}" for artifact in artifacts)
+    if completed.stdout:
+        details.extend(("stdout:", completed.stdout.rstrip()))
+    if completed.stderr:
+        details.extend(("stderr:", completed.stderr.rstrip()))
+    raise NativeBuildError("\n".join(details))
+
+
+def _native_executable_path(output: Path, platform: str | None = None) -> Path:
+    platform = platform or sys.platform
+    if platform.startswith("win") and output.suffix.lower() != ".exe":
+        return output.with_suffix(".exe")
+    return output
+
+
+def _temporary_object_path(cache_dir: Path, object_path: Path) -> Path:
+    """Reserve a unique name but let the compiler create the output file.
+
+    Pre-created output files can be held open briefly by Windows antivirus or
+    indexing software. Creating a name and unlinking it before invoking GCC
+    avoids that race while preserving atomic replacement into the cache.
+    """
+
+    descriptor, name = tempfile.mkstemp(
+        prefix=f"{object_path.stem}-",
+        suffix=f".tmp{object_path.suffix}",
+        dir=cache_dir,
+    )
+    os.close(descriptor)
+    temporary_path = Path(name)
+    temporary_path.unlink()
+    return temporary_path
+
+
+def compile_cached_object(
+    project: LoadedProject,
+    c_path: Path,
+    cache_root: Path,
+    pic: bool = False,
+) -> Path:
+    compiler = _compiler()
     compiler_path = Path(shutil.which(compiler) or compiler).resolve()
     digest = hashlib.sha256()
     digest.update(c_path.read_bytes())
@@ -36,15 +117,21 @@ def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path
     object_path = cache_dir / f"{digest.hexdigest()[:24]}.o"
     if object_path.exists():
         return object_path
-    temporary_handle = tempfile.NamedTemporaryFile(prefix=object_path.stem+"-",suffix=".tmp",dir=cache_dir,delete=False)
-    temporary_path = Path(temporary_handle.name);temporary_handle.close()
+
+    temporary_path = _temporary_object_path(cache_dir, object_path)
     command = [compiler, "-std=c11", "-Wall", "-Wextra"]
     if pic:
         command.append("-fPIC")
-    command.extend((*project.manifest.c_flags, "-c", str(c_path), "-o", str(temporary_path)))
+    command.extend(
+        (*project.manifest.c_flags, "-c", str(c_path), "-o", str(temporary_path))
+    )
     try:
-        subprocess.run(command, check=True)
-        os.replace(temporary_path,object_path)
+        _run_native_command(
+            command,
+            phase="compilation",
+            artifacts=(c_path, temporary_path),
+        )
+        os.replace(temporary_path, object_path)
     finally:
         temporary_path.unlink(missing_ok=True)
     return object_path
@@ -52,20 +139,32 @@ def compile_cached_object(project: LoadedProject, c_path: Path, cache_root: Path
 
 def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     check(project)
-    output = output.resolve()
+    output = _native_executable_path(output.resolve())
     output.parent.mkdir(parents=True, exist_ok=True)
     c_path = output.with_suffix(".c")
     h_path = output.with_suffix(".h")
     generator = CGenerator(project.program)
-    c_path.write_text(generator.generate())
-    h_path.write_text(generator.header())
+    c_path.write_text(generator.generate(), encoding="utf-8", newline="\n")
+    h_path.write_text(generator.header(), encoding="utf-8", newline="\n")
     object_path = compile_cached_object(project, c_path, output.parent)
-    command = [os.environ.get("CC", "cc"), str(object_path), *project.manifest.c_flags, "-o", str(output)]
-    subprocess.run(command, check=True)
+    command = [
+        _compiler(),
+        str(object_path),
+        *project.manifest.c_flags,
+        "-o",
+        str(output),
+    ]
+    _run_native_command(
+        command,
+        phase="linking",
+        artifacts=(c_path, h_path, object_path, output),
+    )
     return c_path, h_path, output
 
 
-def shared_library_policy(platform: str | None = None) -> tuple[str, tuple[str, ...], bool]:
+def shared_library_policy(
+    platform: str | None = None,
+) -> tuple[str, tuple[str, ...], bool]:
     platform = platform or sys.platform
     if platform == "darwin":
         return ".dylib", ("-dynamiclib",), True
@@ -76,7 +175,7 @@ def shared_library_policy(platform: str | None = None) -> tuple[str, tuple[str, 
 
 def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     check(project)
-    suffix,link_flags,pic=shared_library_policy()
+    suffix, link_flags, pic = shared_library_policy()
     library = output.resolve()
     if library.suffix != suffix:
         library = library.with_suffix(suffix)
@@ -84,11 +183,22 @@ def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path
     c_path = library.with_suffix(".c")
     h_path = library.with_suffix(".h")
     generator = CGenerator(project.program)
-    c_path.write_text(generator.generate())
-    h_path.write_text(generator.header())
+    c_path.write_text(generator.generate(), encoding="utf-8", newline="\n")
+    h_path.write_text(generator.header(), encoding="utf-8", newline="\n")
     object_path = compile_cached_object(project, c_path, library.parent, pic=pic)
-    command = [os.environ.get("CC", "cc"), *link_flags, str(object_path), *project.manifest.c_flags, "-o", str(library)]
-    subprocess.run(command, check=True)
+    command = [
+        _compiler(),
+        *link_flags,
+        str(object_path),
+        *project.manifest.c_flags,
+        "-o",
+        str(library),
+    ]
+    _run_native_command(
+        command,
+        phase="shared-library linking",
+        artifacts=(c_path, h_path, object_path, library),
+    )
     return c_path, h_path, library
 
 
