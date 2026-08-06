@@ -1,13 +1,13 @@
 """Deterministic lowering from ``bootstrap-hir-v1`` to ``bootstrap-mir-v1``.
 
-This is the first executable bridge between the versioned semantic and
-operational contracts.  It intentionally supports a small, explicit core and
-rejects unsupported HIR rather than inventing backend semantics.
+The bridge supports ordered straight-line operations and structured ``if``,
+``while``, and integer/default ``match`` control flow. Unsupported HIR is
+rejected rather than approximated.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from merit.bootstrap.hir_contract import HirModule, HirNode, HirType
 from merit.bootstrap.mir_contract import (
@@ -23,16 +23,18 @@ from merit.bootstrap.mir_contract import (
 
 
 class HirToMirError(ValueError):
-    """Raised when checked HIR cannot be represented by the core lowerer."""
+    """Raised when checked HIR cannot be represented by the lowerer."""
 
 
 _VALUE_KINDS = frozenset({
     "literal", "identifier", "binary", "conversion", "call", "constructor",
     "move", "borrow",
 })
-_STATEMENT_KINDS = frozenset({
+_SIMPLE_STATEMENT_KINDS = frozenset({
     "let", "assign", "drop", "contract_check", "capability_scope", "return",
 })
+_CONTROL_KINDS = frozenset({"if", "while", "match"})
+_STATEMENT_KINDS = _SIMPLE_STATEMENT_KINDS | _CONTROL_KINDS | {"block"}
 
 
 def _mir_type(type_: HirType) -> MirType:
@@ -46,6 +48,13 @@ def _span(node: HirNode) -> SourceSpan | None:
 
 
 @dataclass
+class _BlockBuilder:
+    block_id: int
+    instructions: list[MirInstruction] = field(default_factory=list)
+    terminator: MirTerminator | None = None
+
+
+@dataclass
 class _FunctionLowerer:
     module: HirModule
     function: HirNode
@@ -55,10 +64,10 @@ class _FunctionLowerer:
         self.binding_locals: dict[int, int] = {}
         self.value_locals: dict[int, int] = {}
         self.locals: list[MirLocal] = []
-        self.instructions: list[MirInstruction] = []
+        self.blocks: list[_BlockBuilder] = []
         self.next_local = 0
         self.next_instruction = 0
-        self.terminator: MirTerminator | None = None
+        self.current = self._new_block()
 
         for binding in sorted(self.module.bindings, key=lambda item: item.binding_id):
             local_id = self._new_local(
@@ -69,6 +78,19 @@ class _FunctionLowerer:
                 source_binding_id=binding.binding_id,
             )
             self.binding_locals[binding.binding_id] = local_id
+
+    def _new_block(self) -> _BlockBuilder:
+        block = _BlockBuilder(len(self.blocks))
+        self.blocks.append(block)
+        return block
+
+    def _switch_to(self, block: _BlockBuilder) -> None:
+        self.current = block
+
+    def _terminate(self, terminator: MirTerminator) -> None:
+        if self.current.terminator is not None:
+            raise HirToMirError(f"MIR block {self.current.block_id} already has a terminator")
+        self.current.terminator = terminator
 
     def _new_local(
         self,
@@ -118,7 +140,11 @@ class _FunctionLowerer:
         contract_kind: str = "none",
         capabilities: tuple[str, ...] = (),
     ) -> None:
-        self.instructions.append(MirInstruction(
+        if self.current.terminator is not None:
+            raise HirToMirError(
+                f"instruction for HIR node {node.node_id} appears after a terminator"
+            )
+        self.current.instructions.append(MirInstruction(
             self.next_instruction,
             kind,
             result,
@@ -150,7 +176,6 @@ class _FunctionLowerer:
             raise HirToMirError(
                 f"HIR node {node.node_id} kind {node.kind!r} is not a supported value"
             )
-
         if node.kind == "identifier":
             if node.binding_id is None or node.binding_id not in self.binding_locals:
                 raise HirToMirError(f"identifier node {node.node_id} has no resolved binding")
@@ -202,15 +227,163 @@ class _FunctionLowerer:
             self._emit(node, node.kind, result=result, operands=(operand,))
         return result
 
+    def _lower_sequence(self, node_ids: tuple[int, ...]) -> None:
+        for node_id in node_ids:
+            if self.current.terminator is not None:
+                raise HirToMirError(f"statement node {node_id} appears after a terminator")
+            node = self.by_id[node_id]
+            if node.kind in _STATEMENT_KINDS:
+                self.lower_statement(node)
+            elif node.kind in _VALUE_KINDS:
+                self.lower_value(node)
+            else:
+                raise HirToMirError(
+                    f"function {self.function.symbol} contains unsupported HIR kind {node.kind!r}"
+                )
+
+    def _lower_block(self, node: HirNode) -> None:
+        if node.kind != "block":
+            raise HirToMirError(f"expected block node, found {node.kind!r}")
+        self._lower_sequence(node.children)
+
+    def _lower_if(self, node: HirNode) -> None:
+        if len(node.children) not in {2, 3}:
+            raise HirToMirError(
+                f"if node {node.node_id} requires condition, then block, and optional else block"
+            )
+        condition = self.lower_value(self._child(node, 0))
+        then_node = self._child(node, 1)
+        else_node = self._child(node, 2) if len(node.children) == 3 else None
+        if then_node.kind != "block" or (else_node is not None and else_node.kind != "block"):
+            raise HirToMirError(f"if node {node.node_id} branches must be block nodes")
+
+        then_block = self._new_block()
+        else_block = self._new_block()
+        join_block = self._new_block()
+        self._terminate(MirTerminator(
+            "branch",
+            operands=(condition,),
+            targets=(then_block.block_id, else_block.block_id),
+            span=_span(node),
+        ))
+
+        self._switch_to(then_block)
+        self._lower_block(then_node)
+        if self.current.terminator is None:
+            self._terminate(MirTerminator("jump", targets=(join_block.block_id,)))
+
+        self._switch_to(else_block)
+        if else_node is not None:
+            self._lower_block(else_node)
+        if self.current.terminator is None:
+            self._terminate(MirTerminator("jump", targets=(join_block.block_id,)))
+
+        self._switch_to(join_block)
+
+    def _lower_while(self, node: HirNode) -> None:
+        if len(node.children) != 2:
+            raise HirToMirError(f"while node {node.node_id} requires condition and body block")
+        condition_node = self._child(node, 0)
+        body_node = self._child(node, 1)
+        if body_node.kind != "block":
+            raise HirToMirError(f"while node {node.node_id} body must be a block node")
+
+        condition_block = self._new_block()
+        body_block = self._new_block()
+        exit_block = self._new_block()
+        self._terminate(MirTerminator("jump", targets=(condition_block.block_id,)))
+
+        self._switch_to(condition_block)
+        self.value_locals.pop(condition_node.node_id, None)
+        condition = self.lower_value(condition_node)
+        self._terminate(MirTerminator(
+            "branch",
+            operands=(condition,),
+            targets=(body_block.block_id, exit_block.block_id),
+            span=_span(node),
+        ))
+
+        self._switch_to(body_block)
+        self._lower_block(body_node)
+        if self.current.terminator is None:
+            self._terminate(MirTerminator("jump", targets=(condition_block.block_id,)))
+
+        self._switch_to(exit_block)
+
+    def _lower_match(self, node: HirNode) -> None:
+        if len(node.children) < 2:
+            raise HirToMirError(f"match node {node.node_id} requires a value and at least one arm")
+        value = self.lower_value(self._child(node, 0))
+        arms = [self.by_id[child] for child in node.children[1:]]
+        if any(arm.kind != "match_arm" for arm in arms):
+            raise HirToMirError(
+                f"match node {node.node_id} children after the value must be match arms"
+            )
+
+        cases: list[int] = []
+        case_arms: list[HirNode] = []
+        default_arm: HirNode | None = None
+        for arm in arms:
+            if len(arm.children) != 1 or self._child(arm, 0).kind != "block":
+                raise HirToMirError(f"match arm {arm.node_id} requires exactly one block")
+            if arm.value is None:
+                if default_arm is not None:
+                    raise HirToMirError(f"match node {node.node_id} has multiple default arms")
+                default_arm = arm
+            elif isinstance(arm.value, int):
+                cases.append(arm.value)
+                case_arms.append(arm)
+            else:
+                raise HirToMirError(
+                    f"match arm {arm.node_id} case value must be an integer or null"
+                )
+        if default_arm is None:
+            raise HirToMirError(f"match node {node.node_id} requires a default arm")
+        if len(set(cases)) != len(cases):
+            raise HirToMirError(f"match node {node.node_id} has duplicate case values")
+
+        arm_blocks = [self._new_block() for _ in case_arms]
+        default_block = self._new_block()
+        join_block = self._new_block()
+        targets = tuple(block.block_id for block in arm_blocks) + (default_block.block_id,)
+        self._terminate(MirTerminator(
+            "switch",
+            operands=(value,),
+            targets=targets,
+            cases=tuple(cases),
+            span=_span(node),
+        ))
+
+        for arm, block in zip(case_arms, arm_blocks):
+            self._switch_to(block)
+            self._lower_block(self._child(arm, 0))
+            if self.current.terminator is None:
+                self._terminate(MirTerminator("jump", targets=(join_block.block_id,)))
+
+        self._switch_to(default_block)
+        self._lower_block(self._child(default_arm, 0))
+        if self.current.terminator is None:
+            self._terminate(MirTerminator("jump", targets=(join_block.block_id,)))
+
+        self._switch_to(join_block)
+
     def lower_statement(self, node: HirNode) -> None:
         if node.kind not in _STATEMENT_KINDS:
             raise HirToMirError(
                 f"HIR node {node.node_id} kind {node.kind!r} is not a supported statement"
             )
-        if self.terminator is not None:
+        if self.current.terminator is not None:
             raise HirToMirError(f"statement node {node.node_id} appears after a terminator")
 
-        if node.kind in {"let", "assign"}:
+        if node.kind == "block":
+            self._lower_block(node)
+        elif node.kind == "if":
+            self._lower_if(node)
+        elif node.kind == "while":
+            self._lower_while(node)
+        elif node.kind == "match":
+            self._lower_match(node)
+        elif node.kind in {"let", "assign"}:
             if node.binding_id is None or node.binding_id not in self.binding_locals:
                 raise HirToMirError(f"{node.kind} node {node.node_id} has no resolved binding")
             if len(node.children) != 1:
@@ -226,28 +399,22 @@ class _FunctionLowerer:
             if len(node.children) != 1:
                 raise HirToMirError(f"contract node {node.node_id} requires one condition")
             condition = self.lower_value(self._child(node, 0))
-            contract_kind = node.symbol or "invariant"
             self._emit(
                 node,
                 "contract_check",
                 operands=(condition,),
-                contract_kind=contract_kind,
+                contract_kind=node.symbol or "invariant",
             )
         elif node.kind == "capability_scope":
             self._emit(node, "capability_check", capabilities=node.capabilities)
-            for child_id in node.children:
-                child = self.by_id[child_id]
-                if child.kind in _STATEMENT_KINDS:
-                    self.lower_statement(child)
-                else:
-                    self.lower_value(child)
+            self._lower_sequence(node.children)
         elif node.kind == "return":
             if len(node.children) > 1:
                 raise HirToMirError(f"return node {node.node_id} accepts at most one value")
             operands = ()
             if node.children:
                 operands = (self.lower_value(self._child(node, 0)),)
-            self.terminator = MirTerminator("return", operands=operands, span=_span(node))
+            self._terminate(MirTerminator("return", operands=operands, span=_span(node)))
 
     def lower(self) -> MirFunction:
         if self.function.kind != "function":
@@ -255,41 +422,34 @@ class _FunctionLowerer:
         if not self.function.symbol:
             raise HirToMirError(f"function node {self.function.node_id} requires a symbol")
 
-        for child_id in self.function.children:
-            child = self.by_id[child_id]
-            if child.kind in _STATEMENT_KINDS:
-                self.lower_statement(child)
-            elif child.kind in _VALUE_KINDS:
-                self.lower_value(child)
-            else:
-                raise HirToMirError(
-                    f"function {self.function.symbol} contains unsupported HIR kind {child.kind!r}"
-                )
+        self._lower_sequence(self.function.children)
+        if self.current.terminator is None:
+            self._terminate(MirTerminator("return"))
 
-        if self.terminator is None:
-            self.terminator = MirTerminator("return")
-        block = MirBlock(0, tuple(self.instructions), self.terminator)
+        blocks = tuple(
+            MirBlock(
+                block.block_id,
+                tuple(block.instructions),
+                block.terminator or MirTerminator("unreachable"),
+            )
+            for block in self.blocks
+        )
         return MirFunction(
             self.function.symbol,
             _mir_type(self.function.type),
             tuple(self.locals),
-            (block,),
+            blocks,
             0,
             self.function.capabilities,
         )
 
 
 def lower_hir_to_mir(module: HirModule) -> MirModule:
-    """Lower all function roots in a checked HIR module into canonical MIR.
-
-    Roots must be function nodes.  The supported core is intentionally strict;
-    unsupported control flow and aggregate operations fail with deterministic
-    ``HirToMirError`` messages rather than being approximated.
-    """
+    """Lower all function roots in checked HIR into canonical MIR."""
 
     by_id = {node.node_id: node for node in module.nodes}
-    functions: list[MirFunction] = []
-    for root_id in module.roots:
-        root = by_id[root_id]
-        functions.append(_FunctionLowerer(module, root).lower())
+    functions = [
+        _FunctionLowerer(module, by_id[root_id]).lower()
+        for root_id in module.roots
+    ]
     return MirModule(module.name, tuple(functions))
