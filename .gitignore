@@ -1,5 +1,6 @@
 __pycache__/
 .venv/
+.vscode/
 .pytest_cache/
 *.py[cod]
 *.egg-info/
@@ -9,3 +10,4 @@ dist/
 *.o
 *.obj
 *.exe
+.vscode/settings.json
