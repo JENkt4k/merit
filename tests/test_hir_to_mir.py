@@ -156,13 +156,13 @@ def test_invalid_core_shapes_fail_deterministically(nodes, message):
         lower_hir_to_mir(module(nodes))
 
 
-def test_unsupported_control_flow_fails_instead_of_approximating():
+def test_malformed_if_fails_instead_of_approximating():
     nodes = [
         HirNode(0, "literal", BOOL, value=True),
         HirNode(1, "if", UNIT, children=(0,)),
         HirNode(2, "function", UNIT, children=(1,), symbol="branch"),
     ]
-    with pytest.raises(HirToMirError, match="unsupported HIR kind 'if'"):
+    with pytest.raises(HirToMirError, match="requires condition"):
         lower_hir_to_mir(module(nodes))
 
 
