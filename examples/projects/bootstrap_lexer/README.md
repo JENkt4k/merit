@@ -48,3 +48,10 @@ flat physical record for every parser record. Differential tests reconstruct an
 independent flat oracle from the Python reference parser and compare both Merit
 interpreter and generated-native output across the manifest expression corpus,
 including nested grouping provenance.
+
+The same tests independently reconstruct the canonical recursive
+`bootstrap-ast-v1` tree from those native flat records and compare it with the
+Python `ast_contract` oracle, including stable compact JSON serialization. The
+native checkpoint therefore proves both the stage-0 storage representation and
+the versioned external AST meaning; later HIR work can consume the canonical
+meaning without depending on the physical flat layout.
