@@ -1,0 +1,316 @@
+module bootstrap_statements
+import bootstrap_tokens;
+
+capability allocate;
+
+// bootstrap-statement-v1 keeps statement envelopes separate from typed operands.
+// Records point into the deterministic operand stream by first_operand/count.
+pub struct StatementRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    first_operand: i64;
+    operand_count: i64;
+}
+
+// Operand kinds:
+// 1 binding name, 2 declared type, 3 expression, 4 capability name.
+pub struct StatementOperand {
+    kind: i32;
+    start: i64;
+    length: i64;
+}
+
+pub fn statement_record_kind(borrow record: StatementRecord) -> i32 { return record.kind; }
+pub fn statement_record_start(borrow record: StatementRecord) -> i64 { return record.start; }
+pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return record.length; }
+pub fn statement_record_first_operand(borrow record: StatementRecord) -> i64 { return record.first_operand; }
+pub fn statement_record_operand_count(borrow record: StatementRecord) -> i64 { return record.operand_count; }
+
+pub fn statement_operand_kind(borrow operand: StatementOperand) -> i32 { return operand.kind; }
+pub fn statement_operand_start(borrow operand: StatementOperand) -> i64 { return operand.start; }
+pub fn statement_operand_length(borrow operand: StatementOperand) -> i64 { return operand.length; }
+
+fn token_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
+    return buffer_get(source, checked_add(token_start(token), offset));
+}
+
+fn matches_packed_ascii(borrow source: Buffer, borrow token: Token, packed: i64, length: i64) -> i32 {
+    if token_length(token) != length { return 0; }
+    var remaining: i64 = packed;
+    var offset: i64 = 0;
+    while offset < length {
+        let quotient: i64 = remaining / 256;
+        let expected: i64 = remaining - quotient * 256;
+        if token_byte(source, token, offset) != expected { return 0; }
+        remaining = quotient;
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn statement_kind(borrow source: Buffer, borrow token: Token) -> i32 {
+    if matches_packed_ascii(source, token, 7628140, 3) { return 20; } // let
+    if matches_packed_ascii(source, token, 7496054, 3) { return 21; } // var
+    if matches_packed_ascii(source, token, 121437875889522, 6) { return 22; } // return
+    if matches_packed_ascii(source, token, 500068610672, 5) { return 23; } // print
+    if matches_packed_ascii(source, token, 1886351972, 4) { return 24; } // drop
+    if matches_packed_ascii(source, token, 26217, 2) { return 25; } // if
+    if matches_packed_ascii(source, token, 435610544247, 5) { return 26; } // while
+    if matches_packed_ascii(source, token, 448345170285, 5) { return 27; } // match
+    if matches_packed_ascii(source, token, 1752459639, 4) { return 28; } // with
+    if matches_packed_ascii(source, token, 28538242730059122, 7) { return 29; } // replace
+    return 0;
+}
+
+fn punctuation(borrow source: Buffer, borrow token: Token, byte: i64) -> i32 {
+    if token_kind(token) != 4 { return 0; }
+    if token_length(token) != 1 { return 0; }
+    if token_byte(source, token, 0) != byte { return 0; }
+    return 1;
+}
+
+fn token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
+}
+
+fn statement_end(borrow source: Buffer, borrow tokens: Vec<Token>, start_index: i64, kind: i32) -> i64 {
+    var index: i64 = checked_add(start_index, 1);
+    var paren_depth: i64 = 0;
+    var bracket_depth: i64 = 0;
+    while index < vec_len<Token>(tokens) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if punctuation(source, token, 40) { paren_depth = checked_add(paren_depth, 1); }
+        if punctuation(source, token, 41) { if paren_depth > 0 { paren_depth = checked_sub(paren_depth, 1); } }
+        if punctuation(source, token, 91) { bracket_depth = checked_add(bracket_depth, 1); }
+        if punctuation(source, token, 93) { if bracket_depth > 0 { bracket_depth = checked_sub(bracket_depth, 1); } }
+        if paren_depth == 0 {
+            if bracket_depth == 0 {
+                if kind >= 25 {
+                    if kind <= 28 {
+                        if punctuation(source, token, 123) { return token_end(token); }
+                    }
+                }
+                if punctuation(source, token, 59) { return token_end(token); }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return buffer_len(source);
+}
+
+fn top_level_delimiter_index(borrow source: Buffer, borrow tokens: Vec<Token>, start_index: i64, byte: i64) -> i64 {
+    var index: i64 = start_index;
+    var paren_depth: i64 = 0;
+    var bracket_depth: i64 = 0;
+    var brace_depth: i64 = 0;
+    while index < vec_len<Token>(tokens) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if punctuation(source, token, byte) {
+            if paren_depth == 0 {
+                if bracket_depth == 0 {
+                    if brace_depth == 0 { return index; }
+                }
+            }
+        }
+        if punctuation(source, token, 40) { paren_depth = checked_add(paren_depth, 1); }
+        if punctuation(source, token, 41) { if paren_depth > 0 { paren_depth = checked_sub(paren_depth, 1); } }
+        if punctuation(source, token, 91) { bracket_depth = checked_add(bracket_depth, 1); }
+        if punctuation(source, token, 93) { if bracket_depth > 0 { bracket_depth = checked_sub(bracket_depth, 1); } }
+        if punctuation(source, token, 123) { brace_depth = checked_add(brace_depth, 1); }
+        if punctuation(source, token, 125) { if brace_depth > 0 { brace_depth = checked_sub(brace_depth, 1); } }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn push_operand_span(borrow_mut operands: Vec<StatementOperand>, kind: i32, borrow tokens: Vec<Token>, first: i64, last_exclusive: i64)
+requires_caps [allocate]
+{
+    if first < 0 { return; }
+    if last_exclusive <= first { return; }
+    if first >= vec_len<Token>(tokens) { return; }
+    let last_index: i64 = checked_sub(last_exclusive, 1);
+    if last_index >= vec_len<Token>(tokens) { return; }
+    let first_token: Token = vec_get<Token>(tokens, first);
+    let last_token: Token = vec_get<Token>(tokens, last_index);
+    let end: i64 = token_end(last_token);
+    let operand: StatementOperand = StatementOperand {
+        kind: kind,
+        start: token_start(first_token),
+        length: end - token_start(first_token)
+    };
+    vec_push<StatementOperand>(operands, operand);
+}
+
+fn binding_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64) -> i64 {
+    var count: i64 = 0;
+    let name_index: i64 = checked_add(index, 1);
+    if name_index < vec_len<Token>(tokens) {
+        let name: Token = vec_get<Token>(tokens, name_index);
+        if token_kind(name) == 1 { count = checked_add(count, 1); }
+    }
+    let colon_index: i64 = checked_add(index, 2);
+    let type_index: i64 = checked_add(index, 3);
+    if type_index < vec_len<Token>(tokens) {
+        let colon: Token = vec_get<Token>(tokens, colon_index);
+        let type_token: Token = vec_get<Token>(tokens, type_index);
+        if punctuation(source, colon, 58) {
+            if token_kind(type_token) == 1 { count = checked_add(count, 1); }
+        }
+    }
+    let equals: i64 = top_level_delimiter_index(source, tokens, checked_add(index, 1), 61);
+    if equals >= 0 {
+        let semicolon: i64 = top_level_delimiter_index(source, tokens, checked_add(equals, 1), 59);
+        if semicolon > checked_add(equals, 1) { count = checked_add(count, 1); }
+    }
+    return count;
+}
+
+fn statement_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
+    if kind == 20 { return binding_operand_count(source, tokens, index); }
+    if kind == 21 { return binding_operand_count(source, tokens, index); }
+    if kind == 28 {
+        let cap_index: i64 = checked_add(index, 2);
+        if cap_index < vec_len<Token>(tokens) {
+            let cap: Token = vec_get<Token>(tokens, cap_index);
+            if token_kind(cap) == 1 { return 1; }
+        }
+        return 0;
+    }
+    if kind == 29 {
+        let open_index: i64 = checked_add(index, 1);
+        if open_index >= vec_len<Token>(tokens) { return 0; }
+        let open: Token = vec_get<Token>(tokens, open_index);
+        if punctuation(source, open, 40) == 0 { return 0; }
+        let comma: i64 = top_level_delimiter_index(source, tokens, checked_add(open_index, 1), 44);
+        if comma < 0 { return 0; }
+        let close: i64 = top_level_delimiter_index(source, tokens, checked_add(comma, 1), 41);
+        var count: i64 = 0;
+        if comma > checked_add(open_index, 1) { count = checked_add(count, 1); }
+        if close > checked_add(comma, 1) { count = checked_add(count, 1); }
+        return count;
+    }
+    let operand_start: i64 = checked_add(index, 1);
+    if operand_start >= vec_len<Token>(tokens) { return 0; }
+    var delimiter_byte: i64 = 59;
+    if kind >= 25 { if kind <= 27 { delimiter_byte = 123; } }
+    let delimiter: i64 = top_level_delimiter_index(source, tokens, operand_start, delimiter_byte);
+    if delimiter > operand_start { return 1; }
+    return 0;
+}
+
+pub fn parse_statement_records(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<StatementRecord>
+requires_caps [allocate]
+{
+    var records: Vec<StatementRecord> = vec_new<StatementRecord>(allocator, 8);
+    var index: i64 = 0;
+    var brace_depth: i64 = 0;
+    var operand_cursor: i64 = 0;
+    while index < vec_len<Token>(tokens) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if punctuation(source, token, 125) {
+            if brace_depth > 0 { brace_depth = checked_sub(brace_depth, 1); }
+        }
+        if brace_depth > 0 {
+            let kind: i32 = statement_kind(source, token);
+            if kind != 0 {
+                let end: i64 = statement_end(source, tokens, index, kind);
+                let count: i64 = statement_operand_count(source, tokens, index, kind);
+                let record: StatementRecord = StatementRecord {
+                    kind: kind,
+                    start: token_start(token),
+                    length: end - token_start(token),
+                    first_operand: operand_cursor,
+                    operand_count: count
+                };
+                vec_push<StatementRecord>(records, record);
+                operand_cursor = checked_add(operand_cursor, count);
+            }
+        }
+        if punctuation(source, token, 123) { brace_depth = checked_add(brace_depth, 1); }
+        index = checked_add(index, 1);
+    }
+    return records;
+}
+
+fn emit_binding_operands(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, borrow_mut operands: Vec<StatementOperand>)
+requires_caps [allocate]
+{
+    let name_index: i64 = checked_add(index, 1);
+    if name_index < vec_len<Token>(tokens) {
+        let name: Token = vec_get<Token>(tokens, name_index);
+        if token_kind(name) == 1 { push_operand_span(operands, 1, tokens, name_index, checked_add(name_index, 1)); }
+    }
+    let colon_index: i64 = checked_add(index, 2);
+    let type_index: i64 = checked_add(index, 3);
+    if type_index < vec_len<Token>(tokens) {
+        let colon: Token = vec_get<Token>(tokens, colon_index);
+        let type_token: Token = vec_get<Token>(tokens, type_index);
+        if punctuation(source, colon, 58) {
+            if token_kind(type_token) == 1 { push_operand_span(operands, 2, tokens, type_index, checked_add(type_index, 1)); }
+        }
+    }
+    let equals: i64 = top_level_delimiter_index(source, tokens, checked_add(index, 1), 61);
+    if equals >= 0 {
+        let first: i64 = checked_add(equals, 1);
+        let semicolon: i64 = top_level_delimiter_index(source, tokens, first, 59);
+        if semicolon > first { push_operand_span(operands, 3, tokens, first, semicolon); }
+    }
+}
+
+fn emit_statement_operands(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32, borrow_mut operands: Vec<StatementOperand>)
+requires_caps [allocate]
+{
+    if kind == 20 { emit_binding_operands(source, tokens, index, operands); return; }
+    if kind == 21 { emit_binding_operands(source, tokens, index, operands); return; }
+    if kind == 28 {
+        let cap_index: i64 = checked_add(index, 2);
+        if cap_index < vec_len<Token>(tokens) {
+            let cap: Token = vec_get<Token>(tokens, cap_index);
+            if token_kind(cap) == 1 { push_operand_span(operands, 4, tokens, cap_index, checked_add(cap_index, 1)); }
+        }
+        return;
+    }
+    if kind == 29 {
+        let open_index: i64 = checked_add(index, 1);
+        if open_index >= vec_len<Token>(tokens) { return; }
+        let open: Token = vec_get<Token>(tokens, open_index);
+        if punctuation(source, open, 40) == 0 { return; }
+        let first: i64 = checked_add(open_index, 1);
+        let comma: i64 = top_level_delimiter_index(source, tokens, first, 44);
+        if comma < 0 { return; }
+        if comma > first { push_operand_span(operands, 3, tokens, first, comma); }
+        let second: i64 = checked_add(comma, 1);
+        let close: i64 = top_level_delimiter_index(source, tokens, second, 41);
+        if close > second { push_operand_span(operands, 3, tokens, second, close); }
+        return;
+    }
+    let first: i64 = checked_add(index, 1);
+    if first >= vec_len<Token>(tokens) { return; }
+    var delimiter_byte: i64 = 59;
+    if kind >= 25 { if kind <= 27 { delimiter_byte = 123; } }
+    let delimiter: i64 = top_level_delimiter_index(source, tokens, first, delimiter_byte);
+    if delimiter > first { push_operand_span(operands, 3, tokens, first, delimiter); }
+}
+
+pub fn parse_statement_operands(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<StatementOperand>
+requires_caps [allocate]
+{
+    var operands: Vec<StatementOperand> = vec_new<StatementOperand>(allocator, 16);
+    var index: i64 = 0;
+    var brace_depth: i64 = 0;
+    while index < vec_len<Token>(tokens) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if punctuation(source, token, 125) {
+            if brace_depth > 0 { brace_depth = checked_sub(brace_depth, 1); }
+        }
+        if brace_depth > 0 {
+            let kind: i32 = statement_kind(source, token);
+            if kind != 0 { emit_statement_operands(source, tokens, index, kind, operands); }
+        }
+        if punctuation(source, token, 123) { brace_depth = checked_add(brace_depth, 1); }
+        index = checked_add(index, 1);
+    }
+    return operands;
+}
