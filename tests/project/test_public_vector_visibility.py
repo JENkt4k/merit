@@ -49,6 +49,20 @@ def test_public_function_may_return_vec_of_public_type(tmp_path):
     assert "empty" in project.program.exports
 
 
+def test_public_function_may_expose_nested_vec_of_public_type(tmp_path):
+    manifest = _write_project(
+        tmp_path / "public_nested_vec",
+        "module visibility_vec\n"
+        "pub struct Item { value:i32; }\n"
+        "pub fn count_nested(borrow items:Vec<Vec<Item>>)->i64 { return 0; }\n"
+        "fn main()->i32 { return 0; }\n",
+    )
+
+    project = load_project(manifest)
+
+    assert "count_nested" in project.program.exports
+
+
 def test_public_function_cannot_hide_private_type_inside_vec(tmp_path):
     manifest = _write_project(
         tmp_path / "private_vec",
@@ -80,5 +94,21 @@ def test_public_function_cannot_return_vec_of_private_type(tmp_path):
     with pytest.raises(
         ProjectError,
         match=r"public function empty exposes private type Vec__Secret",
+    ):
+        load_project(manifest)
+
+
+def test_nested_vec_cannot_launder_private_element_visibility(tmp_path):
+    manifest = _write_project(
+        tmp_path / "private_nested_vec",
+        "module visibility_vec\n"
+        "struct Secret { value:i32; }\n"
+        "pub fn count_nested(borrow secrets:Vec<Vec<Secret>>)->i64 { return 0; }\n"
+        "fn main()->i32 { return 0; }\n",
+    )
+
+    with pytest.raises(
+        ProjectError,
+        match=r"public function count_nested exposes private type Vec__Vec__Secret",
     ):
         load_project(manifest)
