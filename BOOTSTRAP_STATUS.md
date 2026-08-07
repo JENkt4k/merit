@@ -6,7 +6,8 @@ Scope: `v0.1.0-alpha.2` replacement-compiler development. Python remains the ind
 
 | Metric | Current result |
 |---|---|
-| Hosted clean-environment regression suite | 671 passed, 1 skipped on Ubuntu / Python 3.11 / system C compiler |
+| Total tests passing | 671 on the latest fully green hosted checkpoint; the current head adds two nested-vector visibility regressions and is pending its final rerun |
+| Hosted clean-environment regression suite | Latest fully green checkpoint: 671 passed, 1 skipped on Ubuntu / Python 3.11 / system C compiler |
 | Windows native smoke gate | Passing on Windows / Python 3.11 / MSYS2 UCRT64 GCC |
 | Compile-pass tests | Not yet separately instrumented across the whole suite; tracked as a reporting blocker |
 | Compile-fail tests | Not yet separately instrumented across the whole suite; bootstrap capability and malformed-contract cases are explicit |
@@ -19,6 +20,9 @@ Scope: `v0.1.0-alpha.2` replacement-compiler development. Python remains the ind
 | HIR differential cases | 0; bootstrap HIR not implemented |
 | Interpreter/native parity | 9 / 9 acceptance projects plus the versioned bootstrap differential corpus |
 | Bootstrap/reference parity | 100% for the explicitly covered token/syntax/diagnostic/expression/AST corpus; not a whole-language percentage |
+| Reference compiler source | Not remeasured in this checkpoint; Python remains the independent reference implementation |
+| Merit-native compiler source | Not remeasured in this checkpoint; this slice adds the native expression AST lowering to the bootstrap project |
+| Generated C size | Not remeasured in this checkpoint; generated size remains evidence rather than an optimization target |
 | Specification implemented | `bootstrap-lex-v1`; partial `bootstrap-syntax-v1`; partial `bootstrap-expression-v1`; expression-stage `bootstrap-ast-v1` lowering |
 | Known semantic blockers | typed statement/clause operands; qualified and multi-type constructors; expression recovery; trivia-preserving CST; whole-alpha AST coverage; HIR/MIR bootstrap stages; whole-suite pass/fail instrumentation |
 
@@ -37,6 +41,6 @@ Malformed record streams are rejected with stable native contract codes for empt
 
 ## Public collection visibility checkpoint
 
-The AST API exposed an existing project-loader defect: `Vec<T>` was rejected from a public signature because the lowered monomorph name `Vec__T` was treated as an unrelated private type. Public-surface visibility now propagates recursively through the builtin vector container: `Vec<T>` is public exactly when `T` is public. Wrapping a private type in one or more vectors does not launder its visibility. Focused positive and negative project tests lock this rule down.
+The AST API exposed an existing project-loader defect: `Vec<T>` was rejected from a public signature because the lowered monomorph name `Vec__T` was treated as an unrelated private type. Public-surface visibility now propagates recursively through the builtin vector container: `Vec<T>` is public exactly when `T` is public. Wrapping a private type in one or more vectors does not launder its visibility. Focused positive and negative project tests lock this rule down, including nested vectors.
 
 Generated sizes and source-line counts are evidence rather than optimization targets and are intentionally omitted from this checkpoint until the replacement compiler source is remeasured consistently. Do not use covered-corpus parity to claim bootstrap replacement, trust, or self-hosting.
