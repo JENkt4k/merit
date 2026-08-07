@@ -24,6 +24,21 @@ pub struct ParseCursor {
     index: i64;
 }
 
+// Flat, deterministic bootstrap-ast-v1 storage. Every parser record lowers to
+// one record at the same index. Group records copy their canonical child and
+// link grouping provenance through group_parent, so recursive canonical JSON
+// can be reconstructed without recursive owned storage in the bootstrap.
+pub struct AstNodeRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    left: i64;
+    right: i64;
+    group_start: i64;
+    group_length: i64;
+    group_parent: i64;
+}
+
 pub fn syntax_kind(borrow node: SyntaxNode) -> i32 {
     return node.kind;
 }
@@ -53,3 +68,142 @@ pub fn expression_start(borrow node: ExpressionNode) -> i64 { return node.start;
 pub fn expression_length(borrow node: ExpressionNode) -> i64 { return node.length; }
 pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }
 pub fn expression_right(borrow node: ExpressionNode) -> i64 { return node.right; }
+
+pub fn ast_kind(borrow node: AstNodeRecord) -> i32 { return node.kind; }
+pub fn ast_start(borrow node: AstNodeRecord) -> i64 { return node.start; }
+pub fn ast_length(borrow node: AstNodeRecord) -> i64 { return node.length; }
+pub fn ast_left(borrow node: AstNodeRecord) -> i64 { return node.left; }
+pub fn ast_right(borrow node: AstNodeRecord) -> i64 { return node.right; }
+pub fn ast_group_start(borrow node: AstNodeRecord) -> i64 { return node.group_start; }
+pub fn ast_group_length(borrow node: AstNodeRecord) -> i64 { return node.group_length; }
+pub fn ast_group_parent(borrow node: AstNodeRecord) -> i64 { return node.group_parent; }
+
+fn ast_known_kind(kind: i32) -> i32 {
+    if kind == 30 { return 1; }
+    if kind == 31 { return 1; }
+    if kind == 32 { return 1; }
+    if kind == 33 { return 1; }
+    if kind == 34 { return 1; }
+    if kind == 35 { return 1; }
+    if kind == 36 { return 1; }
+    if kind == 37 { return 1; }
+    if kind == 38 { return 1; }
+    if kind == 39 { return 1; }
+    if kind >= 40 { if kind <= 45 { return 1; } }
+    if kind == 50 { return 1; }
+    if kind == 51 { return 1; }
+    if kind == 60 { return 1; }
+    if kind == 61 { return 1; }
+    if kind == 70 { return 1; }
+    return 0;
+}
+
+fn ast_atom_kind(kind: i32) -> i32 {
+    if kind == 30 { return 1; }
+    if kind == 31 { return 1; }
+    if kind == 32 { return 1; }
+    if kind == 39 { return 1; }
+    return 0;
+}
+
+fn ast_required_pair_kind(kind: i32) -> i32 {
+    if kind == 35 { return 1; }
+    if kind >= 40 { if kind <= 45 { return 1; } }
+    if kind == 50 { return 1; }
+    if kind == 51 { return 1; }
+    if kind == 60 { return 1; }
+    if kind == 61 { return 1; }
+    return 0;
+}
+
+fn ast_optional_right_kind(kind: i32) -> i32 {
+    if kind == 34 { return 1; }
+    if kind == 36 { return 1; }
+    if kind == 37 { return 1; }
+    if kind == 38 { return 1; }
+    if kind == 70 { return 1; }
+    return 0;
+}
+
+fn ast_child_is_before(child: i64, current: i64) -> i32 {
+    if (child < 0) { return 0; }
+    if (child >= current) { return 0; }
+    return 1;
+}
+
+// Returns zero for a valid bootstrap-expression-v1 postorder stream.
+// Nonzero values are stable contract errors, not source parse diagnostics:
+// 1 negative span, 2 unknown kind, 3 malformed group child,
+// 4 atom with children, 5 required child not earlier, 6 optional child invalid,
+// 7 unclassified known kind, 8 empty stream.
+pub fn validate_expression_ast_records(borrow expressions: Vec<ExpressionNode>) -> i32 {
+    if vec_len<ExpressionNode>(expressions) == 0 { return 8; }
+    var index: i64 = 0;
+    while (index < vec_len<ExpressionNode>(expressions)) {
+        let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
+        if expression.start < 0 { return 1; }
+        if expression.length < 0 { return 1; }
+        if ast_known_kind(expression.kind) == 0 { return 2; }
+        if expression.kind == 33 {
+            if ast_child_is_before(expression.left, index) == 0 { return 3; }
+            if expression.right != -1 { return 3; }
+        } else {
+            if (ast_atom_kind(expression.kind)) {
+                if expression.left != -1 { return 4; }
+                if expression.right != -1 { return 4; }
+            } else {
+                if (ast_required_pair_kind(expression.kind)) {
+                    if ast_child_is_before(expression.left, index) == 0 { return 5; }
+                    if ast_child_is_before(expression.right, index) == 0 { return 5; }
+                } else {
+                    if (ast_optional_right_kind(expression.kind)) {
+                        if ast_child_is_before(expression.left, index) == 0 { return 6; }
+                        if expression.right != -1 {
+                            if ast_child_is_before(expression.right, index) == 0 { return 6; }
+                        }
+                    } else { return 7; }
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+pub fn lower_expression_ast_records(borrow expressions: Vec<ExpressionNode>, allocator: Allocator) -> Vec<AstNodeRecord>
+requires_caps [allocate]
+{
+    var nodes: Vec<AstNodeRecord> = vec_new<AstNodeRecord>(allocator, vec_len<ExpressionNode>(expressions));
+    var index: i64 = 0;
+    while (index < vec_len<ExpressionNode>(expressions)) {
+        let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
+        if expression.kind == 33 {
+            let child: AstNodeRecord = vec_get<AstNodeRecord>(nodes, expression.left);
+            let grouped: AstNodeRecord = AstNodeRecord {
+                kind: child.kind,
+                start: child.start,
+                length: child.length,
+                left: child.left,
+                right: child.right,
+                group_start: expression.start,
+                group_length: expression.length,
+                group_parent: expression.left
+            };
+            vec_push<AstNodeRecord>(nodes, grouped);
+        } else {
+            let node: AstNodeRecord = AstNodeRecord {
+                kind: expression.kind,
+                start: expression.start,
+                length: expression.length,
+                left: expression.left,
+                right: expression.right,
+                group_start: -1,
+                group_length: 0,
+                group_parent: -1
+            };
+            vec_push<AstNodeRecord>(nodes, node);
+        }
+        index = checked_add(index, 1);
+    }
+    return nodes;
+}
