@@ -203,6 +203,21 @@ def _split_generic_params(text: str) -> list[str]:
     return parts
 
 
+def _public_surface_type(type_name: str, public_types: set[str]) -> bool:
+    """Return whether a lowered type can appear in a public module surface.
+
+    Vec<T> is lowered to the synthesized name Vec__T.  The container is a
+    builtin public type, so its visibility is exactly the visibility of T.
+    Applying the rule recursively also handles nested vectors without making a
+    private element type public merely because it is wrapped in a collection.
+    """
+    if type_name in public_types:
+        return True
+    if type_name.startswith("Vec__"):
+        return _public_surface_type(type_name[len("Vec__"):], public_types)
+    return False
+
+
 def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
     owner: dict[str, SourceUnit] = {}
     variants: dict[str, SourceUnit] = {}
@@ -291,17 +306,17 @@ def _check_visibility(units: tuple[SourceUnit, ...]) -> None:
             if function.name not in unit.exports:continue
             exposed=[function.return_type,*[param.type_name for param in function.params]]
             for type_name in exposed:
-                if type_name not in public_types:
+                if not _public_surface_type(type_name, public_types):
                     raise ProjectError(f"public function {function.name} exposes private type {type_name}")
         for struct in unit.program.structs.values():
             if struct.name not in unit.exports:continue
             for field in struct.fields:
-                if field.type_name not in public_types:
+                if not _public_surface_type(field.type_name, public_types):
                     raise ProjectError(f"public struct {struct.name} exposes private type {field.type_name}")
         for enum in unit.program.enums.values():
             if enum.name not in unit.exports:continue
             for variant in enum.variants:
-                if variant.payload_type and variant.payload_type not in public_types:
+                if variant.payload_type and not _public_surface_type(variant.payload_type, public_types):
                     raise ProjectError(f"public enum {enum.name} exposes private type {variant.payload_type}")
 
 
