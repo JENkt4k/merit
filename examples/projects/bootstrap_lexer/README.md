@@ -26,3 +26,25 @@ nested body depth. Statement operands remain a subsequent parser slice.
 Simple statement envelopes extend through their semicolon; control statements
 extend through the opening body brace. Missing terminators produce a stable
 end-of-input envelope for deterministic recovery.
+
+## Native AST boundary
+
+`bootstrap-expression-v1` expression records now have a Merit-native lowering
+boundary for `bootstrap-ast-v1`. `AstNodeRecord` is deterministic postorder
+storage using the existing numeric expression kinds plus source spans and child
+indices. Explicit parser group nodes are removed from semantic AST meaning.
+Their source spans are retained as grouping provenance through `group_start`,
+`group_length`, and `group_parent` links, allowing arbitrarily nested grouping
+without recursive owned stage-0 storage.
+
+`validate_expression_ast_records` rejects malformed postorder streams before
+AST lowering: negative spans, unknown kinds, malformed groups, atom children,
+forward required/optional child references, and empty streams have stable
+contract codes. These are bootstrap contract failures rather than source parse
+diagnostics.
+
+`lower_expression_ast_records` requires the `allocate` capability and emits one
+flat physical record for every parser record. Differential tests reconstruct an
+independent flat oracle from the Python reference parser and compare both Merit
+interpreter and generated-native output across the manifest expression corpus,
+including nested grouping provenance.
