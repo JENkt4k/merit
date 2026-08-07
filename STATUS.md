@@ -8,7 +8,7 @@ The `v0.1.0-alpha.1` local release gate is complete. Package metadata uses the P
 
 Development is now on `v0.1.0-alpha.2`, whose purpose is to remove Python from the normal compiler path without broadening the language. Python remains the independent semantic/diagnostic oracle until the replacement compiler qualifies as trusted.
 
-The current hosted clean-environment gate passes **671 tests with 1 skipped test and all 9 acceptance projects** on Ubuntu/Python 3.11/system C, while the focused Windows/Python 3.11/MSYS2 UCRT64 GCC native smoke gate also passes.
+The latest fully green hosted clean-environment checkpoint passed **671 tests with 1 skipped test and all 9 acceptance projects** on Ubuntu/Python 3.11/system C, while the focused Windows/Python 3.11/MSYS2 UCRT64 GCC native smoke gate also passed. The current branch adds two further nested-vector visibility regressions and is rerunning that gate.
 
 ## Completed alpha gates
 
@@ -16,6 +16,7 @@ The current hosted clean-environment gate passes **671 tests with 1 skipped test
 - Ownership, moves, drops, cleanup, interpreter frames, and C names use deterministic semantic binding IDs.
 - Returned borrows are validated and ephemeral-only; stored references and lifetime parameters are outside this alpha.
 - Exact decimals, bounded integers, explicit allocation, capability-specific hazards, typed errors, stable layouts, shared-library builds, and interpreter/native equivalence are implemented for the documented subset.
+- The exact-decimal ledger application remains the substantial multi-module acceptance gate, including typed errors, filesystem capabilities, explicit allocation, stable exports, and foreign ABI verification.
 - The arbitrary-precision decimal and unbounded-integer references validate every rounding policy and bounded arithmetic boundaries in both runtimes.
 
 ## Release-gate result
