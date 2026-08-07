@@ -116,10 +116,10 @@ def _native_environment(working_temp: Path | None = None) -> dict[str, str]:
         if entry and entry.casefold() not in {ucrt_bin.casefold(), usr_bin.casefold()}
     )
     environment["PATH"] = os.pathsep.join(entries)
-    environment.setdefault("MSYSTEM", "UCRT64")
-    environment.setdefault("MINGW_PREFIX", "/ucrt64")
-    environment.setdefault("MSYSTEM_PREFIX", "/ucrt64")
-    environment.setdefault("CHERE_INVOKING", "1")
+    environment["MSYSTEM"] = "UCRT64"
+    environment["MINGW_PREFIX"] = "/ucrt64"
+    environment["MSYSTEM_PREFIX"] = "/ucrt64"
+    environment["CHERE_INVOKING"] = "1"
 
     # These variables can redirect GCC internals to another installation and
     # caused silent cc1 failures in ordinary PowerShell sessions.
