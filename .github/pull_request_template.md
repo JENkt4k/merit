@@ -12,10 +12,16 @@ Describe the cohesive change and the Merit milestone or correctness issue it adv
 ## Validation
 
 - [ ] Focused tests pass
-- [ ] `bash scripts/ci.sh` passes locally
+- [ ] `bash scripts/ci.sh` passes locally on Linux, or the hosted Linux gate is green
+- [ ] `.\scripts\test-windows.ps1` passes when the change affects native builds, paths, filesystems, generated C, or subprocess behavior
+- [ ] All nine acceptance projects pass
 - [ ] Relevant generated C or serialized AST/HIR/MIR was inspected
 - [ ] Compile-fail coverage was added or updated where applicable
 - [ ] Documentation and status metrics are current
+
+## Platform notes
+
+Record the Python version, compiler, operating system, and any unavailable hosted runners. When hosted CI is unavailable, include the exact local gate command and result.
 
 ## Scope control
 

@@ -15,22 +15,74 @@ from merit.compiler import CGenerator, Checker, Interpreter
 from .loader import LoadedProject
 
 
-class NativeBuildError(RuntimeError):
-    """A native toolchain command failed with actionable diagnostics."""
+class NativeBuildError(subprocess.CalledProcessError):
+    """A native toolchain command failed with actionable diagnostics.
+
+    This remains a ``CalledProcessError`` for compatibility with callers that
+    historically caught subprocess failures, while presenting a deterministic
+    human-readable message with commands and artifact locations.
+    """
+
+    def __init__(
+        self,
+        returncode: int,
+        command: list[str],
+        message: str,
+        *,
+        stdout: str | None = None,
+        stderr: str | None = None,
+    ) -> None:
+        super().__init__(returncode, command, output=stdout, stderr=stderr)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def check(project: LoadedProject) -> Checker:
     return Checker(project.program).check()
 
 
+def _windows_msys2_root() -> Path | None:
+    configured = os.environ.get("MSYS2_ROOT")
+    candidates = [
+        Path(configured) if configured else None,
+        Path("C:/msys64"),
+        Path("D:/msys64"),
+    ]
+    for candidate in candidates:
+        if candidate is not None and (candidate / "ucrt64" / "bin" / "gcc.exe").is_file():
+            return candidate.resolve()
+    return None
+
+
 def _compiler() -> str:
-    compiler = os.environ.get("CC", "cc")
-    if shutil.which(compiler) is None:
-        raise NativeBuildError(
-            f"C compiler {compiler!r} was not found on PATH. "
-            "Install GCC or Clang, or set the CC environment variable."
-        )
-    return compiler
+    configured = os.environ.get("CC")
+    if configured:
+        resolved = shutil.which(configured)
+        if resolved is None and not Path(configured).is_file():
+            raise NativeBuildError(
+                127,
+                [configured],
+                f"C compiler {configured!r} was not found. "
+                "Install GCC or Clang, or correct the CC environment variable.",
+            )
+        return configured
+
+    for candidate in ("cc", "gcc", "clang"):
+        if shutil.which(candidate):
+            return candidate
+
+    if os.name == "nt":
+        root = _windows_msys2_root()
+        if root is not None:
+            return str(root / "ucrt64" / "bin" / "gcc.exe")
+
+    raise NativeBuildError(
+        127,
+        ["cc"],
+        "No supported C compiler was found. Install GCC or Clang, or set CC.",
+    )
 
 
 def _display_command(command: list[str]) -> str:
@@ -39,17 +91,64 @@ def _display_command(command: list[str]) -> str:
     return shlex.join(command)
 
 
+def _native_environment(working_temp: Path | None = None) -> dict[str, str]:
+    environment = os.environ.copy()
+
+    if working_temp is not None:
+        working_temp.mkdir(parents=True, exist_ok=True)
+        environment["TEMP"] = str(working_temp)
+        environment["TMP"] = str(working_temp)
+
+    if os.name != "nt":
+        return environment
+
+    root = _windows_msys2_root()
+    if root is None:
+        return environment
+
+    ucrt_bin = str(root / "ucrt64" / "bin")
+    usr_bin = str(root / "usr" / "bin")
+    existing = environment.get("PATH", "")
+    entries = [ucrt_bin, usr_bin]
+    entries.extend(
+        entry
+        for entry in existing.split(os.pathsep)
+        if entry and entry.casefold() not in {ucrt_bin.casefold(), usr_bin.casefold()}
+    )
+    environment["PATH"] = os.pathsep.join(entries)
+    environment["MSYSTEM"] = "UCRT64"
+    environment["MINGW_PREFIX"] = "/ucrt64"
+    environment["MSYSTEM_PREFIX"] = "/ucrt64"
+    environment["CHERE_INVOKING"] = "1"
+
+    # These variables can redirect GCC internals to another installation and
+    # caused silent cc1 failures in ordinary PowerShell sessions.
+    for name in (
+        "GCC_EXEC_PREFIX",
+        "COMPILER_PATH",
+        "LIBRARY_PATH",
+        "CPATH",
+        "C_INCLUDE_PATH",
+        "CPLUS_INCLUDE_PATH",
+    ):
+        environment.pop(name, None)
+
+    return environment
+
+
 def _run_native_command(
     command: list[str],
     *,
     phase: str,
     artifacts: tuple[Path, ...] = (),
+    environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         command,
         text=True,
         capture_output=True,
         errors="replace",
+        env=environment,
     )
     if completed.returncode == 0:
         return completed
@@ -65,7 +164,13 @@ def _run_native_command(
         details.extend(("stdout:", completed.stdout.rstrip()))
     if completed.stderr:
         details.extend(("stderr:", completed.stderr.rstrip()))
-    raise NativeBuildError("\n".join(details))
+    raise NativeBuildError(
+        completed.returncode,
+        command,
+        "\n".join(details),
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
 
 
 def _native_executable_path(output: Path, platform: str | None = None) -> Path:
@@ -130,6 +235,7 @@ def compile_cached_object(
             command,
             phase="compilation",
             artifacts=(c_path, temporary_path),
+            environment=_native_environment(cache_dir),
         )
         os.replace(temporary_path, object_path)
     finally:
@@ -158,6 +264,7 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
         command,
         phase="linking",
         artifacts=(c_path, h_path, object_path, output),
+        environment=_native_environment(output.parent / ".merit-cache"),
     )
     return c_path, h_path, output
 
@@ -198,6 +305,7 @@ def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path
         command,
         phase="shared-library linking",
         artifacts=(c_path, h_path, object_path, library),
+        environment=_native_environment(library.parent / ".merit-cache"),
     )
     return c_path, h_path, library
 

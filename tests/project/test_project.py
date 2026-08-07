@@ -93,7 +93,7 @@ def test_build_shared_exports_c_callable_merit_functions(tmp_path):
     )
     project = load_project(project_root / "Merit.toml")
     _, header, library = build_shared(project, project_root / "build" / "libshared_api")
-    assert library.suffix == ".so"
+    assert library.suffix == shared_library_policy()[0]
     assert "int32_t merit_increment(int32_t value);" in header.read_text()
     assert "merit_private_helper" not in header.read_text()
     assert "merit_Secret" not in header.read_text()
