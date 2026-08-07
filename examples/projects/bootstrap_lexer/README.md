@@ -21,11 +21,37 @@ byte locations.
 
 The syntax index recognizes `let`, `var`, `return`, `print`, `drop`, `if`,
 `while`, `match`, `with capability`, and `replace` statement introducers at any
-nested body depth. Statement operands remain a subsequent parser slice.
+nested body depth. Typed operand records now sit behind those deterministic
+envelopes.
 
 Simple statement envelopes extend through their semicolon; control statements
 extend through the opening body brace. Missing terminators produce a stable
 end-of-input envelope for deterministic recovery.
+
+## Typed statement operands
+
+`bootstrap-statement-v1` adds flat `StatementRecord` and `StatementOperand`
+streams without embedding recursive expression ownership into statement
+storage. Each statement record points at a contiguous operand range, so the
+physical representation remains deterministic and stage-0-friendly.
+
+Operands distinguish binding names, declared types, expression sources, and
+capability names. The accepted statement families map to operands in language
+order: `let`/`var` bind name/type/initializer, `return`/`print`/`drop` carry one
+expression, `if`/`while`/`match` carry their controlling expression, `with
+capability` carries its capability name, and `replace` carries target then
+replacement expressions.
+
+Delimiter discovery tracks nested parentheses, brackets, and braces. In
+particular, commas inside nested calls or indexing forms do not split a
+`replace` operand. Differential tests compare the complete record and operand
+streams against an independent Python token-level oracle in both the Merit
+interpreter and generated native executable.
+
+Expression operands remain source boundaries at this contract layer. A later
+integration gate can feed every expression operand into the versioned
+`bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline without coupling
+statement discovery to expression-tree storage.
 
 ## Native AST boundary
 
