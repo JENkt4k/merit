@@ -80,7 +80,6 @@ def _inject_ast_probe(source: str) -> str:
             print(ast_group_parent(ast_node));
             ast_index = checked_add(ast_index, 1);
         }
-        drop(ast_nodes);
 '''
     marker = "        drop(expressions);\n"
     assert marker in source
