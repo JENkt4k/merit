@@ -126,8 +126,8 @@ fn ast_optional_right_kind(kind: i32) -> i32 {
 }
 
 fn ast_child_is_before(child: i64, current: i64) -> i32 {
-    if child < 0 { return 0; }
-    if child >= current { return 0; }
+    if (child < 0) { return 0; }
+    if (child >= current) { return 0; }
     return 1;
 }
 
