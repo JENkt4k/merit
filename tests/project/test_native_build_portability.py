@@ -86,13 +86,13 @@ def test_native_environment_uses_controlled_temp_directory(tmp_path):
     assert tmp_path.is_dir()
 
 
-def test_native_environment_preserves_unix_environment(monkeypatch, tmp_path):
-    monkeypatch.setattr(os, "name", "posix")
+def test_native_environment_preserves_host_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("MERIT_SENTINEL", "present")
     environment = _native_environment(tmp_path)
     assert environment["MERIT_SENTINEL"] == "present"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="MSYS2 UCRT64 environment is Windows-specific")
 def test_native_environment_configures_msys2_ucrt64(monkeypatch, tmp_path):
     root = tmp_path / "msys64"
     gcc = root / "ucrt64" / "bin" / "gcc.exe"
@@ -100,7 +100,6 @@ def test_native_environment_configures_msys2_ucrt64(monkeypatch, tmp_path):
     gcc.write_bytes(b"")
     (root / "usr" / "bin").mkdir(parents=True)
 
-    monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setenv("MSYS2_ROOT", str(root))
     monkeypatch.setenv("PATH", "C:\\Windows\\System32")
     monkeypatch.setenv("GCC_EXEC_PREFIX", "bad")
