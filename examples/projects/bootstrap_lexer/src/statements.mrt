@@ -33,7 +33,7 @@ fn stmt_token_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i
 }
 
 fn stmt_matches_ascii(borrow source: Buffer, borrow token: Token, packed: i64, length: i64) -> i32 {
-    if token_length(token) != length { return 0; }
+    if (token_length(token) != length) { return 0; }
     if packed == 7628140 {
         if stmt_token_byte(source, token, 0) != 108 { return 0; }
         if stmt_token_byte(source, token, 1) != 101 { return 0; }
@@ -128,7 +128,7 @@ fn stmt_kind(borrow source: Buffer, borrow token: Token) -> i32 {
 fn stmt_punctuation(borrow source: Buffer, borrow token: Token, byte: i64) -> i32 {
     if token_kind(token) != 4 { return 0; }
     if token_length(token) != 1 { return 0; }
-    if stmt_token_byte(source, token, 0) != byte { return 0; }
+    if (stmt_token_byte(source, token, 0) != byte) { return 0; }
     return 1;
 }
 
@@ -186,7 +186,7 @@ fn stmt_push_span(borrow_mut operands: Vec<StatementOperand>, kind: i32, borrow 
 requires_caps [allocate]
 {
     if first < 0 { return 0; }
-    if last_exclusive <= first { return 0; }
+    if (last_exclusive <= first) { return 0; }
     if first >= vec_len<Token>(tokens) { return 0; }
     let last_index: i64 = checked_sub(last_exclusive, 1);
     if last_index >= vec_len<Token>(tokens) { return 0; }
@@ -221,7 +221,7 @@ fn stmt_binding_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
     if equals >= 0 {
         let first: i64 = checked_add(equals, 1);
         let semicolon: i64 = stmt_find_top_level(source, tokens, first, 59);
-        if semicolon > first { count = checked_add(count, 1); }
+        if (semicolon > first) { count = checked_add(count, 1); }
     }
     return count;
 }
@@ -248,8 +248,8 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         let second: i64 = checked_add(comma, 1);
         let close: i64 = stmt_find_top_level(source, tokens, second, 41);
         var count: i64 = 0;
-        if comma > first { count = checked_add(count, 1); }
-        if close > second { count = checked_add(count, 1); }
+        if (comma > first) { count = checked_add(count, 1); }
+        if (close > second) { count = checked_add(count, 1); }
         return count;
     }
     let first: i64 = checked_add(index, 1);
@@ -257,7 +257,7 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
     var delimiter: i64 = 59;
     if kind >= 25 { if kind <= 27 { delimiter = 123; } }
     let end_index: i64 = stmt_find_top_level(source, tokens, first, delimiter);
-    if end_index > first { return 1; }
+    if (end_index > first) { return 1; }
     return 0;
 }
 
@@ -317,7 +317,7 @@ requires_caps [allocate]
     if equals >= 0 {
         let first: i64 = checked_add(equals, 1);
         let semicolon: i64 = stmt_find_top_level(source, tokens, first, 59);
-        if semicolon > first {
+        if (semicolon > first) {
             let pushed_initializer: i32 = stmt_push_span(operands, 3, tokens, first, semicolon);
         }
     }
@@ -353,12 +353,12 @@ requires_caps [allocate]
         let first: i64 = checked_add(open_index, 1);
         let comma: i64 = stmt_find_top_level(source, tokens, first, 44);
         if comma < 0 { return 0; }
-        if comma > first {
+        if (comma > first) {
             let pushed_target: i32 = stmt_push_span(operands, 3, tokens, first, comma);
         }
         let second: i64 = checked_add(comma, 1);
         let close: i64 = stmt_find_top_level(source, tokens, second, 41);
-        if close > second {
+        if (close > second) {
             let pushed_replacement: i32 = stmt_push_span(operands, 3, tokens, second, close);
         }
         return 0;
@@ -368,7 +368,7 @@ requires_caps [allocate]
     var delimiter: i64 = 59;
     if kind >= 25 { if kind <= 27 { delimiter = 123; } }
     let end_index: i64 = stmt_find_top_level(source, tokens, first, delimiter);
-    if end_index > first {
+    if (end_index > first) {
         let pushed_expression: i32 = stmt_push_span(operands, 3, tokens, first, end_index);
     }
     return 0;
