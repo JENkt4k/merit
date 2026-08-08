@@ -1,0 +1,322 @@
+module bootstrap_clauses
+import bootstrap_tokens;
+
+capability allocate;
+
+// bootstrap-clause-v1 keeps function clause envelopes separate from typed operands.
+pub struct ClauseRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    first_operand: i64;
+    operand_count: i64;
+}
+
+// Operand kinds: 1 effect name, 2 required capability name, 3 expression source.
+pub struct ClauseOperand {
+    kind: i32;
+    start: i64;
+    length: i64;
+}
+
+pub fn clause_record_kind(borrow record: ClauseRecord) -> i32 { return record.kind; }
+pub fn clause_record_start(borrow record: ClauseRecord) -> i64 { return record.start; }
+pub fn clause_record_length(borrow record: ClauseRecord) -> i64 { return record.length; }
+pub fn clause_record_first_operand(borrow record: ClauseRecord) -> i64 { return record.first_operand; }
+pub fn clause_record_operand_count(borrow record: ClauseRecord) -> i64 { return record.operand_count; }
+pub fn clause_operand_kind(borrow operand: ClauseOperand) -> i32 { return operand.kind; }
+pub fn clause_operand_start(borrow operand: ClauseOperand) -> i64 { return operand.start; }
+pub fn clause_operand_length(borrow operand: ClauseOperand) -> i64 { return operand.length; }
+
+fn clause_token_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
+    return buffer_get(source, checked_add(token_start(token), offset));
+}
+
+fn clause_matches_effects(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token_length(token) != 7 { return 0; }
+    if clause_token_byte(source, token, 0) != 101 { return 0; }
+    if clause_token_byte(source, token, 1) != 102 { return 0; }
+    if clause_token_byte(source, token, 2) != 102 { return 0; }
+    if clause_token_byte(source, token, 3) != 101 { return 0; }
+    if clause_token_byte(source, token, 4) != 99 { return 0; }
+    if clause_token_byte(source, token, 5) != 116 { return 0; }
+    if clause_token_byte(source, token, 6) != 115 { return 0; }
+    return 1;
+}
+
+fn clause_matches_requires_caps(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token_length(token) != 13 { return 0; }
+    if clause_token_byte(source, token, 0) != 114 { return 0; }
+    if clause_token_byte(source, token, 1) != 101 { return 0; }
+    if clause_token_byte(source, token, 2) != 113 { return 0; }
+    if clause_token_byte(source, token, 3) != 117 { return 0; }
+    if clause_token_byte(source, token, 4) != 105 { return 0; }
+    if clause_token_byte(source, token, 5) != 114 { return 0; }
+    if clause_token_byte(source, token, 6) != 101 { return 0; }
+    if clause_token_byte(source, token, 7) != 115 { return 0; }
+    if clause_token_byte(source, token, 8) != 95 { return 0; }
+    if clause_token_byte(source, token, 9) != 99 { return 0; }
+    if clause_token_byte(source, token, 10) != 97 { return 0; }
+    if clause_token_byte(source, token, 11) != 112 { return 0; }
+    if clause_token_byte(source, token, 12) != 115 { return 0; }
+    return 1;
+}
+
+fn clause_matches_requires(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token_length(token) != 8 { return 0; }
+    if clause_token_byte(source, token, 0) != 114 { return 0; }
+    if clause_token_byte(source, token, 1) != 101 { return 0; }
+    if clause_token_byte(source, token, 2) != 113 { return 0; }
+    if clause_token_byte(source, token, 3) != 117 { return 0; }
+    if clause_token_byte(source, token, 4) != 105 { return 0; }
+    if clause_token_byte(source, token, 5) != 114 { return 0; }
+    if clause_token_byte(source, token, 6) != 101 { return 0; }
+    if clause_token_byte(source, token, 7) != 115 { return 0; }
+    return 1;
+}
+
+fn clause_matches_ensures(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token_length(token) != 7 { return 0; }
+    if clause_token_byte(source, token, 0) != 101 { return 0; }
+    if clause_token_byte(source, token, 1) != 110 { return 0; }
+    if clause_token_byte(source, token, 2) != 115 { return 0; }
+    if clause_token_byte(source, token, 3) != 117 { return 0; }
+    if clause_token_byte(source, token, 4) != 114 { return 0; }
+    if clause_token_byte(source, token, 5) != 101 { return 0; }
+    if clause_token_byte(source, token, 6) != 115 { return 0; }
+    return 1;
+}
+
+fn clause_kind(borrow source: Buffer, borrow token: Token) -> i32 {
+    if token_kind(token) != 1 { return 0; }
+    if clause_matches_effects(source, token) { return 11; }
+    if clause_matches_requires_caps(source, token) { return 12; }
+    if clause_matches_requires(source, token) { return 13; }
+    if clause_matches_ensures(source, token) { return 14; }
+    return 0;
+}
+
+fn clause_punctuation(borrow source: Buffer, borrow token: Token, byte: i64) -> i32 {
+    if token_kind(token) != 4 { return 0; }
+    if token_length(token) != 1 { return 0; }
+    if (clause_token_byte(source, token, 0) != byte) { return 0; }
+    return 1;
+}
+
+fn clause_token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
+}
+
+fn clause_find_list_close(borrow source: Buffer, borrow tokens: Vec<Token>, open_index: i64) -> i64 {
+    var index: i64 = open_index;
+    var brackets: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if clause_punctuation(source, token, 91) { brackets = checked_add(brackets, 1); }
+        if clause_punctuation(source, token, 93) {
+            if brackets == 1 { return index; }
+            if brackets > 0 { brackets = checked_sub(brackets, 1); }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn clause_find_expression_end(borrow source: Buffer, borrow tokens: Vec<Token>, start_index: i64) -> i64 {
+    var index: i64 = start_index;
+    var parens: i64 = 0;
+    var brackets: i64 = 0;
+    var braces: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if clause_punctuation(source, token, 59) {
+            if parens == 0 { if brackets == 0 { if braces == 0 { return index; } } }
+        }
+        if clause_punctuation(source, token, 40) { parens = checked_add(parens, 1); }
+        if clause_punctuation(source, token, 41) { if parens > 0 { parens = checked_sub(parens, 1); } }
+        if clause_punctuation(source, token, 91) { brackets = checked_add(brackets, 1); }
+        if clause_punctuation(source, token, 93) { if brackets > 0 { brackets = checked_sub(brackets, 1); } }
+        if clause_punctuation(source, token, 123) { braces = checked_add(braces, 1); }
+        if clause_punctuation(source, token, 125) { if braces > 0 { braces = checked_sub(braces, 1); } }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn clause_end(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
+    if kind == 11 {
+        let open_index: i64 = checked_add(index, 1);
+        if open_index < vec_len<Token>(tokens) {
+            let open: Token = vec_get<Token>(tokens, open_index);
+            if clause_punctuation(source, open, 91) {
+                let close_index: i64 = clause_find_list_close(source, tokens, open_index);
+                if close_index >= 0 {
+                    let close: Token = vec_get<Token>(tokens, close_index);
+                    return clause_token_end(close);
+                }
+            }
+        }
+        return buffer_len(source);
+    }
+    if kind == 12 {
+        let open_index: i64 = checked_add(index, 1);
+        if open_index < vec_len<Token>(tokens) {
+            let open: Token = vec_get<Token>(tokens, open_index);
+            if clause_punctuation(source, open, 91) {
+                let close_index: i64 = clause_find_list_close(source, tokens, open_index);
+                if close_index >= 0 {
+                    let close: Token = vec_get<Token>(tokens, close_index);
+                    return clause_token_end(close);
+                }
+            }
+        }
+        return buffer_len(source);
+    }
+    let first: i64 = checked_add(index, 1);
+    let semicolon: i64 = clause_find_expression_end(source, tokens, first);
+    if semicolon >= 0 {
+        let token: Token = vec_get<Token>(tokens, semicolon);
+        return clause_token_end(token);
+    }
+    return buffer_len(source);
+}
+
+fn clause_list_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64) -> i64 {
+    let open_index: i64 = checked_add(index, 1);
+    if open_index >= vec_len<Token>(tokens) { return 0; }
+    let open: Token = vec_get<Token>(tokens, open_index);
+    if clause_punctuation(source, open, 91) == 0 { return 0; }
+    let close_index: i64 = clause_find_list_close(source, tokens, open_index);
+    if close_index < 0 { return 0; }
+    var cursor: i64 = checked_add(open_index, 1);
+    var count: i64 = 0;
+    while (cursor < close_index) {
+        let token: Token = vec_get<Token>(tokens, cursor);
+        if token_kind(token) == 1 { count = checked_add(count, 1); }
+        cursor = checked_add(cursor, 1);
+    }
+    return count;
+}
+
+fn clause_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
+    if kind == 11 { return clause_list_operand_count(source, tokens, index); }
+    if kind == 12 { return clause_list_operand_count(source, tokens, index); }
+    let first: i64 = checked_add(index, 1);
+    let semicolon: i64 = clause_find_expression_end(source, tokens, first);
+    if (semicolon > first) { return 1; }
+    return 0;
+}
+
+fn clause_push_operand(borrow_mut operands: Vec<ClauseOperand>, kind: i32, borrow tokens: Vec<Token>, first: i64, last_exclusive: i64) -> i32
+requires_caps [allocate]
+{
+    if first < 0 { return 0; }
+    if (last_exclusive <= first) { return 0; }
+    if first >= vec_len<Token>(tokens) { return 0; }
+    let last_index: i64 = checked_sub(last_exclusive, 1);
+    if last_index >= vec_len<Token>(tokens) { return 0; }
+    let first_token: Token = vec_get<Token>(tokens, first);
+    let last_token: Token = vec_get<Token>(tokens, last_index);
+    let operand: ClauseOperand = ClauseOperand {
+        kind: kind,
+        start: token_start(first_token),
+        length: clause_token_end(last_token) - token_start(first_token)
+    };
+    vec_push<ClauseOperand>(operands, operand);
+    return 1;
+}
+
+fn clause_push_list_operands(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, operand_kind: i32, borrow_mut operands: Vec<ClauseOperand>) -> i64
+requires_caps [allocate]
+{
+    let open_index: i64 = checked_add(index, 1);
+    if open_index >= vec_len<Token>(tokens) { return 0; }
+    let open: Token = vec_get<Token>(tokens, open_index);
+    if clause_punctuation(source, open, 91) == 0 { return 0; }
+    let close_index: i64 = clause_find_list_close(source, tokens, open_index);
+    if close_index < 0 { return 0; }
+    var cursor: i64 = checked_add(open_index, 1);
+    var pushed: i64 = 0;
+    while (cursor < close_index) {
+        let token: Token = vec_get<Token>(tokens, cursor);
+        if token_kind(token) == 1 {
+            let operand: ClauseOperand = ClauseOperand {
+                kind: operand_kind,
+                start: token_start(token),
+                length: token_length(token)
+            };
+            vec_push<ClauseOperand>(operands, operand);
+            pushed = checked_add(pushed, 1);
+        }
+        cursor = checked_add(cursor, 1);
+    }
+    return pushed;
+}
+
+pub fn parse_clause_records(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ClauseRecord>
+requires_caps [allocate]
+{
+    var records: Vec<ClauseRecord> = vec_new<ClauseRecord>(allocator, 8);
+    var index: i64 = 0;
+    var depth: i64 = 0;
+    var operand_cursor: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if clause_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
+        if depth == 0 {
+            let kind: i32 = clause_kind(source, token);
+            if kind != 0 {
+                let count: i64 = clause_operand_count(source, tokens, index, kind);
+                let record: ClauseRecord = ClauseRecord {
+                    kind: kind,
+                    start: token_start(token),
+                    length: clause_end(source, tokens, index, kind) - token_start(token),
+                    first_operand: operand_cursor,
+                    operand_count: count
+                };
+                vec_push<ClauseRecord>(records, record);
+                operand_cursor = checked_add(operand_cursor, count);
+            }
+        }
+        if clause_punctuation(source, token, 123) { depth = checked_add(depth, 1); }
+        index = checked_add(index, 1);
+    }
+    return records;
+}
+
+pub fn parse_clause_operands(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ClauseOperand>
+requires_caps [allocate]
+{
+    var operands: Vec<ClauseOperand> = vec_new<ClauseOperand>(allocator, 8);
+    var index: i64 = 0;
+    var depth: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if clause_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
+        if depth == 0 {
+            let kind: i32 = clause_kind(source, token);
+            if kind == 11 {
+                clause_push_list_operands(source, tokens, index, 1, operands);
+            } else {
+                if kind == 12 {
+                    clause_push_list_operands(source, tokens, index, 2, operands);
+                } else {
+                    if kind == 13 {
+                        let first: i64 = checked_add(index, 1);
+                        let semicolon: i64 = clause_find_expression_end(source, tokens, first);
+                        clause_push_operand(operands, 3, tokens, first, semicolon);
+                    } else {
+                        if kind == 14 {
+                            let first: i64 = checked_add(index, 1);
+                            let semicolon: i64 = clause_find_expression_end(source, tokens, first);
+                            clause_push_operand(operands, 3, tokens, first, semicolon);
+                        }
+                    }
+                }
+            }
+        }
+        if clause_punctuation(source, token, 123) { depth = checked_add(depth, 1); }
+        index = checked_add(index, 1);
+    }
+    return operands;
+}
