@@ -87,7 +87,7 @@ fn clause_matches_ensures(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
-fn clause_kind(borrow source: Buffer, borrow token: Token) -> i32 {
+fn clause_v1_kind(borrow source: Buffer, borrow token: Token) -> i32 {
     if token_kind(token) != 1 { return 0; }
     if clause_matches_effects(source, token) { return 11; }
     if clause_matches_requires_caps(source, token) { return 12; }
@@ -264,7 +264,7 @@ requires_caps [allocate]
         let token: Token = vec_get<Token>(tokens, index);
         if clause_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
         if depth == 0 {
-            let kind: i32 = clause_kind(source, token);
+            let kind: i32 = clause_v1_kind(source, token);
             if kind != 0 {
                 let count: i64 = clause_operand_count(source, tokens, index, kind);
                 let record: ClauseRecord = ClauseRecord {
@@ -294,7 +294,7 @@ requires_caps [allocate]
         let token: Token = vec_get<Token>(tokens, index);
         if clause_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
         if depth == 0 {
-            let kind: i32 = clause_kind(source, token);
+            let kind: i32 = clause_v1_kind(source, token);
             if kind == 11 {
                 clause_push_list_operands(source, tokens, index, 1, operands);
             } else {
