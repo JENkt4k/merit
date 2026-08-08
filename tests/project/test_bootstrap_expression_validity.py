@@ -55,15 +55,33 @@ fn main() -> i32 {{
 '''
 
 
+def _promote_probe_to_entry(project_root: Path) -> Path:
+    # The copied bootstrap fixture already has a main in lexer.mrt. A temporary
+    # probe can become the project entry only if the fixture main is no longer
+    # named main; keep the rest of bootstrap_lexer_core byte-for-byte intact so
+    # the probe still exercises the real public lexer/expression implementation.
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer = lexer_path.read_text(encoding="utf-8")
+    marker = "fn main() -> i32 {"
+    assert lexer.count(marker) == 1
+    lexer_path.write_text(
+        lexer.replace(marker, "fn bootstrap_fixture_main() -> i32 {", 1),
+        encoding="utf-8",
+    )
+
+    manifest = project_root / "Merit.toml"
+    text = manifest.read_text(encoding="utf-8")
+    text = text.replace('entry = "src/lexer.mrt"', 'entry = "src/validity_probe.mrt"')
+    manifest.write_text(text, encoding="utf-8")
+    return manifest
+
+
 def _project_with_probe(tmp_path: Path, expression: str):
     project_root = tmp_path / "bootstrap_expression_validity"
     shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
     probe_path = project_root / "src/validity_probe.mrt"
     probe_path.write_text(_probe_source(expression), encoding="utf-8")
-    manifest = project_root / "Merit.toml"
-    text = manifest.read_text(encoding="utf-8")
-    text = text.replace('entry = "src/lexer.mrt"', 'entry = "src/validity_probe.mrt"')
-    manifest.write_text(text, encoding="utf-8")
+    manifest = _promote_probe_to_entry(project_root)
     return load_project(manifest), project_root
 
 
@@ -109,10 +127,7 @@ fn main() -> i32 {
 }
 '''
     (project_root / "src/validity_probe.mrt").write_text(probe, encoding="utf-8")
-    manifest = project_root / "Merit.toml"
-    text = manifest.read_text(encoding="utf-8")
-    text = text.replace('entry = "src/lexer.mrt"', 'entry = "src/validity_probe.mrt"')
-    manifest.write_text(text, encoding="utf-8")
+    manifest = _promote_probe_to_entry(project_root)
     project = load_project(manifest)
 
     assert interpret(project) == "4\n4\n"
