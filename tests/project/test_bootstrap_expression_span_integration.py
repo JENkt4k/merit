@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 
@@ -47,7 +46,16 @@ def _adjust_expression_records(expression: str, offset: int):
 
 def _adjust_ast_records(expression: str, offset: int):
     adjusted = []
-    for kind, start, length, left, right, group_start, group_length, group_parent in NATIVE_AST.reference_ast_records(expression):
+    for (
+        kind,
+        start,
+        length,
+        left,
+        right,
+        group_start,
+        group_length,
+        group_parent,
+    ) in NATIVE_AST.reference_ast_records(expression):
         adjusted.append(
             (
                 kind,
@@ -67,8 +75,16 @@ def _expression_operands(source: str):
     _, statement_operands = STATEMENTS.reference_statement_records(source)
     _, clause_operands = CLAUSES.reference_clause_records(source)
     return [
-        *( (1, index, operand) for index, operand in enumerate(statement_operands) if operand[0] == 3 ),
-        *( (2, index, operand) for index, operand in enumerate(clause_operands) if operand[0] == 3 ),
+        *(
+            (1, index, operand)
+            for index, operand in enumerate(statement_operands)
+            if operand[0] == 3
+        ),
+        *(
+            (2, index, operand)
+            for index, operand in enumerate(clause_operands)
+            if operand[0] == 3
+        ),
     ]
 
 
@@ -91,7 +107,7 @@ def expected_span_payload(source: str):
     return result
 
 
-def _probe_loop(vector_type: str, operand_type: str, prefix: str, category: int) -> str:
+def _probe_loop(operand_type: str, prefix: str, category: int) -> str:
     return f'''        var {prefix}_index: i64 = 0;
         while ({prefix}_index < vec_len<{operand_type}>({prefix}_operands)) {{
             let operand: {operand_type} = vec_get<{operand_type}>({prefix}_operands, {prefix}_index);
@@ -139,51 +155,68 @@ def _probe_loop(vector_type: str, operand_type: str, prefix: str, category: int)
 '''
 
 
-def _inject_probe(source: str) -> str:
-    source = source.replace(
-        "import bootstrap_syntax;\n",
-        "import bootstrap_syntax;\n"
-        "import bootstrap_statements;\n"
-        "import bootstrap_clauses;\n"
-        "import bootstrap_expression_spans;\n",
-        1,
-    )
-    probe = (
-        '''        let statement_operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
+def _probe_source(source_text: str) -> str:
+    return (
+        '''module bootstrap_expression_span_probe
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_lexer_core;
+import bootstrap_statements;
+import bootstrap_clauses;
+import bootstrap_expression_spans;
+
+capability allocate;
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+'''
+        + "        let source: Buffer = buffer_from_string(allocator, "
+        + json.dumps(source_text)
+        + ");\n"
+        + '''        let tokens: Vec<Token> = lex(source, allocator);
+        let statement_operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
         let clause_operands: Vec<ClauseOperand> = parse_clause_operands(source, tokens, allocator);
         print(-10);
 '''
-        + _probe_loop("Vec<StatementOperand>", "StatementOperand", "statement", 1)
-        + _probe_loop("Vec<ClauseOperand>", "ClauseOperand", "clause", 2)
+        + _probe_loop("StatementOperand", "statement", 1)
+        + _probe_loop("ClauseOperand", "clause", 2)
         + '''        print(-11);
         drop(clause_operands);
         drop(statement_operands);
+        drop(tokens);
+        drop(source);
+    }
+    return 0;
+}
 '''
     )
-    marker = "        drop(expressions);\n"
-    assert marker in source
-    return source.replace(marker, probe + marker, 1)
 
 
 def _project_with_source(tmp_path, source_text: str):
     project_root = tmp_path / "bootstrap_expression_span_integration"
     shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+
+    # The fixture's normal entry module has its own main. Keep the production
+    # module graph unchanged and give the differential probe a separate entry.
     lexer_path = project_root / "src/lexer.mrt"
-    source = lexer_path.read_text(encoding="utf-8")
-    replacement = (
-        "        let source: Buffer = buffer_from_string(allocator, "
-        f"{json.dumps(source_text)});"
+    lexer_source = lexer_path.read_text(encoding="utf-8")
+    renamed = lexer_source.replace(
+        "fn main() -> i32 {", "fn bootstrap_lexer_fixture_main() -> i32 {", 1
     )
-    source, replacements = re.subn(
-        r"^        let source: Buffer = buffer_from_string\(allocator, .+\);$",
-        lambda _: replacement,
-        source,
-        count=1,
-        flags=re.MULTILINE,
+    assert renamed != lexer_source
+    lexer_path.write_text(renamed, encoding="utf-8")
+
+    probe_path = project_root / "src/expression_span_probe.mrt"
+    probe_path.write_text(_probe_source(source_text), encoding="utf-8")
+
+    manifest_path = project_root / "Merit.toml"
+    manifest = manifest_path.read_text(encoding="utf-8")
+    manifest = manifest.replace(
+        'entry = "src/lexer.mrt"', 'entry = "src/expression_span_probe.mrt"', 1
     )
-    assert replacements == 1
-    lexer_path.write_text(_inject_probe(source), encoding="utf-8")
-    return load_project(project_root / "Merit.toml"), project_root
+    manifest_path.write_text(manifest, encoding="utf-8")
+    return load_project(manifest_path), project_root
 
 
 def _parse_probe(output: str):
@@ -254,7 +287,12 @@ def test_span_oracle_keeps_following_block_outside_condition_expression():
         "if value != limit { return 1; } return 0; }\n"
     )
     payload = expected_span_payload(source)
-    condition = next(item for item in payload if item[0] == 1 and item[3] == len("value != limit"))
+    condition = next(
+        item for item in payload if item[0] == 1 and item[3] == len("value != limit")
+    )
     assert condition[5][-1][0] == 41
-    assert condition[5][-1][1:3] == (source.index("value != limit"), len("value != limit"))
+    assert condition[5][-1][1:3] == (
+        source.index("value != limit"),
+        len("value != limit"),
+    )
     assert all(record[0] != 70 for record in condition[5])
