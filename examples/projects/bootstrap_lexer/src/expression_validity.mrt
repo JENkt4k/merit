@@ -1,0 +1,42 @@
+module bootstrap_expression_validity
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_expression_spans;
+
+capability allocate;
+
+// Stable bootstrap-expression-validity-v1 result codes:
+// 0 complete valid expression
+// 1 malformed expression-record structure
+// 2 parser emitted an explicit invalid expression node
+// 3 root expression does not consume exactly the requested source span
+// 4 invalid requested source span
+pub fn validate_expression_parse(borrow expressions: Vec<ExpressionNode>, start: i64, length: i64) -> i32 {
+    if (start < 0) { return 4; }
+    if (length < 0) { return 4; }
+    if (validate_expression_ast_records(expressions) != 0) { return 1; }
+
+    var index: i64 = 0;
+    while (index < vec_len<ExpressionNode>(expressions)) {
+        let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
+        if (expression_kind(expression) == 39) { return 2; }
+        index = checked_add(index, 1);
+    }
+
+    let root_index: i64 = checked_sub(vec_len<ExpressionNode>(expressions), 1);
+    let root: ExpressionNode = vec_get<ExpressionNode>(expressions, root_index);
+    if (expression_start(root) != start) { return 3; }
+    if (expression_length(root) != length) { return 3; }
+    return 0;
+}
+
+pub fn validate_expression_span_parse(borrow source: Buffer, borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> i32
+requires_caps [allocate]
+{
+    if (start < 0) { return 4; }
+    if (length < 0) { return 4; }
+    let expressions: Vec<ExpressionNode> = parse_expression_span(source, tokens, start, length, allocator);
+    let result: i32 = validate_expression_parse(expressions, start, length);
+    drop(expressions);
+    return result;
+}
