@@ -53,6 +53,30 @@ integration gate can feed every expression operand into the versioned
 `bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline without coupling
 statement discovery to expression-tree storage.
 
+## Typed function clause operands
+
+`bootstrap-clause-v1` adds the same flat, deterministic operand boundary for
+function-level `effects`, `requires_caps`, `requires`, and `ensures` clauses.
+`ClauseRecord` values point into one shared `ClauseOperand` stream, preserving
+source order without introducing semantic ownership or recursive expression
+storage.
+
+Effect-list items are kind-1 operands, required-capability names are kind-2
+operands, and pre/postcondition expression sources are kind-3 operands. Empty
+lists remain valid zero-operand records. Contract expression termination tracks
+parentheses, brackets, and braces, so nested calls and direct constructors do
+not truncate the outer contract at an internal delimiter.
+
+Clause discovery follows the existing syntax-index brace-depth rule: only
+introducers at depth zero are indexed, while clause-like identifiers inside
+function bodies are ignored. Differential tests compare complete records and
+operand streams against an independent Python token oracle through both the
+Merit interpreter and generated native C executable.
+
+This checkpoint defines source roles and boundaries only. Effect validation,
+capability authorization, boolean contract typing, `old()` rules, and contract
+execution remain semantic responsibilities of the later HIR/checking stages.
+
 ## Native AST boundary
 
 `bootstrap-expression-v1` expression records now have a Merit-native lowering
