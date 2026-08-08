@@ -141,7 +141,7 @@ fn punctuation_length(borrow source: Buffer, start: i64, source_length: i64) -> 
     return 1;
 }
 
-fn lex(borrow source: Buffer, allocator: Allocator) -> Vec<Token>
+pub fn lex(borrow source: Buffer, allocator: Allocator) -> Vec<Token>
 requires_caps [allocate]
 {
     var tokens: Vec<Token> = vec_new<Token>(allocator, 16);
@@ -821,7 +821,7 @@ requires_caps [allocate]
     return left;
 }
 
-fn parse_expression_tokens(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ExpressionNode>
+pub fn parse_expression_tokens(borrow source: Buffer, borrow tokens: Vec<Token>, allocator: Allocator) -> Vec<ExpressionNode>
 requires_caps [allocate]
 {
     var nodes: Vec<ExpressionNode> = vec_new<ExpressionNode>(allocator, 8);

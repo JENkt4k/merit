@@ -1,0 +1,63 @@
+module bootstrap_expression_spans
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_lexer_core;
+
+capability allocate;
+
+fn expression_span_token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
+}
+
+fn expression_span_contains(borrow token: Token, start: i64, end: i64) -> i32 {
+    if (token_start(token) < start) { return 0; }
+    if (expression_span_token_end(token) > end) { return 0; }
+    return 1;
+}
+
+pub fn expression_span_tokens(borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> Vec<Token>
+requires_caps [allocate]
+{
+    var selected: Vec<Token> = vec_new<Token>(allocator, 8);
+    if (start >= 0) {
+        if (length >= 0) {
+            let end: i64 = checked_add(start, length);
+            var index: i64 = 0;
+            while (index < vec_len<Token>(tokens)) {
+                let token: Token = vec_get<Token>(tokens, index);
+                if (expression_span_contains(token, start, end)) {
+                    vec_push<Token>(selected, token);
+                }
+                index = checked_add(index, 1);
+            }
+        }
+    }
+    return selected;
+}
+
+pub fn parse_expression_span(borrow source: Buffer, borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> Vec<ExpressionNode>
+requires_caps [allocate]
+{
+    let selected: Vec<Token> = expression_span_tokens(tokens, start, length, allocator);
+    let expressions: Vec<ExpressionNode> = parse_expression_tokens(source, selected, allocator);
+    drop(selected);
+    return expressions;
+}
+
+pub fn validate_expression_span_ast(borrow source: Buffer, borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> i32
+requires_caps [allocate]
+{
+    let expressions: Vec<ExpressionNode> = parse_expression_span(source, tokens, start, length, allocator);
+    let result: i32 = validate_expression_ast_records(expressions);
+    drop(expressions);
+    return result;
+}
+
+pub fn lower_expression_span_ast(borrow source: Buffer, borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> Vec<AstNodeRecord>
+requires_caps [allocate]
+{
+    let expressions: Vec<ExpressionNode> = parse_expression_span(source, tokens, start, length, allocator);
+    let ast: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
+    drop(expressions);
+    return ast;
+}
