@@ -256,8 +256,8 @@ requires_caps [allocate]
 fn stmt_emit_operands(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32, borrow_mut operands: Vec<StatementOperand>) -> i32
 requires_caps [allocate]
 {
-    if kind == 20 { return stmt_emit_binding(source, tokens, index, operands); }
-    if kind == 21 { return stmt_emit_binding(source, tokens, index, operands); }
+    if kind == 20 { stmt_emit_binding(source, tokens, index, operands); return 0; }
+    if kind == 21 { stmt_emit_binding(source, tokens, index, operands); return 0; }
     if kind == 28 {
         let cap_index: i64 = checked_add(index, 2);
         if cap_index < vec_len<Token>(tokens) {
