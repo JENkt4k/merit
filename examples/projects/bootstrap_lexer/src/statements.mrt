@@ -34,16 +34,81 @@ fn stmt_token_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i
 
 fn stmt_matches_ascii(borrow source: Buffer, borrow token: Token, packed: i64, length: i64) -> i32 {
     if token_length(token) != length { return 0; }
-    var remaining: i64 = packed;
-    var offset: i64 = 0;
-    while offset < length {
-        let quotient: i64 = remaining / 256;
-        let expected: i64 = remaining - quotient * 256;
-        if stmt_token_byte(source, token, offset) != expected { return 0; }
-        remaining = quotient;
-        offset = checked_add(offset, 1);
+    if packed == 7628140 {
+        if stmt_token_byte(source, token, 0) != 108 { return 0; }
+        if stmt_token_byte(source, token, 1) != 101 { return 0; }
+        if stmt_token_byte(source, token, 2) != 116 { return 0; }
+        return 1;
     }
-    return 1;
+    if packed == 7496054 {
+        if stmt_token_byte(source, token, 0) != 118 { return 0; }
+        if stmt_token_byte(source, token, 1) != 97 { return 0; }
+        if stmt_token_byte(source, token, 2) != 114 { return 0; }
+        return 1;
+    }
+    if packed == 121437875889522 {
+        if stmt_token_byte(source, token, 0) != 114 { return 0; }
+        if stmt_token_byte(source, token, 1) != 101 { return 0; }
+        if stmt_token_byte(source, token, 2) != 116 { return 0; }
+        if stmt_token_byte(source, token, 3) != 117 { return 0; }
+        if stmt_token_byte(source, token, 4) != 114 { return 0; }
+        if stmt_token_byte(source, token, 5) != 110 { return 0; }
+        return 1;
+    }
+    if packed == 500068610672 {
+        if stmt_token_byte(source, token, 0) != 112 { return 0; }
+        if stmt_token_byte(source, token, 1) != 114 { return 0; }
+        if stmt_token_byte(source, token, 2) != 105 { return 0; }
+        if stmt_token_byte(source, token, 3) != 110 { return 0; }
+        if stmt_token_byte(source, token, 4) != 116 { return 0; }
+        return 1;
+    }
+    if packed == 1886351972 {
+        if stmt_token_byte(source, token, 0) != 100 { return 0; }
+        if stmt_token_byte(source, token, 1) != 114 { return 0; }
+        if stmt_token_byte(source, token, 2) != 111 { return 0; }
+        if stmt_token_byte(source, token, 3) != 112 { return 0; }
+        return 1;
+    }
+    if packed == 26217 {
+        if stmt_token_byte(source, token, 0) != 105 { return 0; }
+        if stmt_token_byte(source, token, 1) != 102 { return 0; }
+        return 1;
+    }
+    if packed == 435610544247 {
+        if stmt_token_byte(source, token, 0) != 119 { return 0; }
+        if stmt_token_byte(source, token, 1) != 104 { return 0; }
+        if stmt_token_byte(source, token, 2) != 105 { return 0; }
+        if stmt_token_byte(source, token, 3) != 108 { return 0; }
+        if stmt_token_byte(source, token, 4) != 101 { return 0; }
+        return 1;
+    }
+    if packed == 448345170285 {
+        if stmt_token_byte(source, token, 0) != 109 { return 0; }
+        if stmt_token_byte(source, token, 1) != 97 { return 0; }
+        if stmt_token_byte(source, token, 2) != 116 { return 0; }
+        if stmt_token_byte(source, token, 3) != 99 { return 0; }
+        if stmt_token_byte(source, token, 4) != 104 { return 0; }
+        return 1;
+    }
+    if packed == 1752459639 {
+        if stmt_token_byte(source, token, 0) != 119 { return 0; }
+        if stmt_token_byte(source, token, 1) != 105 { return 0; }
+        if stmt_token_byte(source, token, 2) != 116 { return 0; }
+        if stmt_token_byte(source, token, 3) != 104 { return 0; }
+        return 1;
+    }
+    if packed == 28538242730059122 {
+        if stmt_token_byte(source, token, 0) != 114 { return 0; }
+        if stmt_token_byte(source, token, 1) != 101 { return 0; }
+        if stmt_token_byte(source, token, 2) != 112 { return 0; }
+        if stmt_token_byte(source, token, 3) != 108 { return 0; }
+        if stmt_token_byte(source, token, 4) != 97 { return 0; }
+        if stmt_token_byte(source, token, 5) != 99 { return 0; }
+        if stmt_token_byte(source, token, 6) != 101 { return 0; }
+        return 1;
+    }
+    return 0;
 }
 
 fn stmt_kind(borrow source: Buffer, borrow token: Token) -> i32 {
