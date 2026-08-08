@@ -26,12 +26,12 @@ Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across
 
 ### Active `v0.1.0-alpha.2` bootstrap targets
 
-1. Complete typed statement syntax records — in progress; statement kinds and deterministic envelopes are complete, typed operands remain.
+1. Complete typed statement syntax records — complete; deterministic statement envelopes and typed binding/type/expression/capability operand ranges are differentially verified through interpreter and native execution.
 2. Complete expression precedence and typed expression records — in progress; direct constructors and single-type generic calls join atoms, postfix, arithmetic, and comparisons; qualified/multi-type constructors and full recovery remain.
-3. Complete typed effects, capability, precondition, and postcondition operands — pending; clause introducers are indexed.
+3. Complete typed effects, capability, precondition, and postcondition operands — complete; `bootstrap-clause-v1` records preserve ordered effect/capability names and contract-expression source spans without performing semantic validation.
 4. Complete deterministic parser recovery — pending; initial structural recovery and diagnostics are implemented.
 5. Establish an explicit trivia-preserving CST-to-AST boundary — pending.
-6. Define typed AST records for the accepted alpha language — pending.
+6. Define typed AST records for the accepted alpha language — in progress; expression-stage `bootstrap-ast-v1` lowering is differentially verified, while statement/clause expression operands remain source-oriented integration boundaries.
 7. Lower AST into typed HIR — pending.
 8. Differentially compare reference and bootstrap HIR over the accepted corpus — pending.
 9. Implement semantic checking over HIR — pending.
@@ -42,7 +42,9 @@ Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across
 14. Compile the complete accepted alpha corpus without Python in the normal path — pending.
 15. Begin self-hosting only after the bootstrap compiler qualifies as trusted — pending.
 
-The Merit-native lexer and its independent token/span corpus are complete prerequisites. The current syntax index is a parser-development artifact, not yet the CST or AST.
+The Merit-native lexer and its independent token/span corpus are complete prerequisites. The current syntax index plus versioned statement/clause operand records are parser-development artifacts, not yet the trivia-preserving CST or whole-language AST.
+
+The next front-end integration work should connect kind-3 statement/clause expression spans to the existing `bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline while keeping source-boundary discovery and expression-tree construction independently testable. Qualified/multi-type constructors and deterministic malformed-expression recovery can then close the remaining expression parser gap before the CST boundary is finalized.
 
 Reconsider persistent hosted CI only after normal production compilation no longer depends on Python, the typed interfaces have survived several feature sets and releases, and local release/acceptance gates are mature and reproducible.
 

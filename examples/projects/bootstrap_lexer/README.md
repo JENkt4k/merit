@@ -21,11 +21,61 @@ byte locations.
 
 The syntax index recognizes `let`, `var`, `return`, `print`, `drop`, `if`,
 `while`, `match`, `with capability`, and `replace` statement introducers at any
-nested body depth. Statement operands remain a subsequent parser slice.
+nested body depth. Typed operand records now sit behind those deterministic
+envelopes.
 
 Simple statement envelopes extend through their semicolon; control statements
 extend through the opening body brace. Missing terminators produce a stable
 end-of-input envelope for deterministic recovery.
+
+## Typed statement operands
+
+`bootstrap-statement-v1` adds flat `StatementRecord` and `StatementOperand`
+streams without embedding recursive expression ownership into statement
+storage. Each statement record points at a contiguous operand range, so the
+physical representation remains deterministic and stage-0-friendly.
+
+Operands distinguish binding names, declared types, expression sources, and
+capability names. The accepted statement families map to operands in language
+order: `let`/`var` bind name/type/initializer, `return`/`print`/`drop` carry one
+expression, `if`/`while`/`match` carry their controlling expression, `with
+capability` carries its capability name, and `replace` carries target then
+replacement expressions.
+
+Delimiter discovery tracks nested parentheses, brackets, and braces. In
+particular, commas inside nested calls or indexing forms do not split a
+`replace` operand. Differential tests compare the complete record and operand
+streams against an independent Python token-level oracle in both the Merit
+interpreter and generated native executable.
+
+Expression operands remain source boundaries at this contract layer. A later
+integration gate can feed every expression operand into the versioned
+`bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline without coupling
+statement discovery to expression-tree storage.
+
+## Typed function clause operands
+
+`bootstrap-clause-v1` adds the same flat, deterministic operand boundary for
+function-level `effects`, `requires_caps`, `requires`, and `ensures` clauses.
+`ClauseRecord` values point into one shared `ClauseOperand` stream, preserving
+source order without introducing semantic ownership or recursive expression
+storage.
+
+Effect-list items are kind-1 operands, required-capability names are kind-2
+operands, and pre/postcondition expression sources are kind-3 operands. Empty
+lists remain valid zero-operand records. Contract expression termination tracks
+parentheses, brackets, and braces, so nested calls and direct constructors do
+not truncate the outer contract at an internal delimiter.
+
+Clause discovery follows the existing syntax-index brace-depth rule: only
+introducers at depth zero are indexed, while clause-like identifiers inside
+function bodies are ignored. Differential tests compare complete records and
+operand streams against an independent Python token oracle through both the
+Merit interpreter and generated native C executable.
+
+This checkpoint defines source roles and boundaries only. Effect validation,
+capability authorization, boolean contract typing, `old()` rules, and contract
+execution remain semantic responsibilities of the later HIR/checking stages.
 
 ## Native AST boundary
 
