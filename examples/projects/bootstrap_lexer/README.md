@@ -48,10 +48,9 @@ particular, commas inside nested calls or indexing forms do not split a
 streams against an independent Python token-level oracle in both the Merit
 interpreter and generated native executable.
 
-Expression operands remain source boundaries at this contract layer. A later
-integration gate can feed every expression operand into the versioned
-`bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline without coupling
-statement discovery to expression-tree storage.
+Expression operands remain source boundaries at this contract layer; the
+`bootstrap-expression-span-v1` adapter described below connects kind-3 operands
+to the versioned expression/AST pipeline without changing statement storage.
 
 ## Typed function clause operands
 
@@ -76,6 +75,27 @@ Merit interpreter and generated native C executable.
 This checkpoint defines source roles and boundaries only. Effect validation,
 capability authorization, boolean contract typing, `old()` rules, and contract
 execution remain semantic responsibilities of the later HIR/checking stages.
+
+## Expression span integration
+
+`bootstrap-expression-span-v1` composes the statement/clause source-boundary
+contracts with the existing expression parser and native AST lowerer. The
+adapter filters the complete source token stream to tokens fully contained in a
+kind-3 operand span, preserving absolute byte offsets, and then delegates to
+`parse_expression_tokens`.
+
+The filtered-token boundary prevents tokens belonging to the enclosing syntax
+from changing expression meaning. For example, the body brace following
+`if value != limit {` is outside the condition span and cannot be interpreted
+as a direct-constructor postfix on `limit`.
+
+`validate_expression_span_ast` and `lower_expression_span_ast` delegate to the
+existing `bootstrap-ast-v1` validation and lowering functions. No second
+expression grammar or AST semantics are introduced. Differential integration
+tests obtain spans from the independent statement/clause token oracles, parse
+the isolated source with the independent expression oracle, restore absolute
+source offsets, and compare complete expression and flat AST streams through
+both Merit interpretation and generated native execution.
 
 ## Native AST boundary
 
