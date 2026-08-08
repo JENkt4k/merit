@@ -10,8 +10,8 @@ fn expression_span_token_end(borrow token: Token) -> i64 {
 }
 
 fn expression_span_contains(borrow token: Token, start: i64, end: i64) -> i32 {
-    if token_start(token) < start { return 0; }
-    if expression_span_token_end(token) > end { return 0; }
+    if (token_start(token) < start) { return 0; }
+    if (expression_span_token_end(token) > end) { return 0; }
     return 1;
 }
 
@@ -19,13 +19,13 @@ pub fn expression_span_tokens(borrow tokens: Vec<Token>, start: i64, length: i64
 requires_caps [allocate]
 {
     var selected: Vec<Token> = vec_new<Token>(allocator, 8);
-    if start < 0 { return selected; }
-    if length < 0 { return selected; }
+    if (start < 0) { return selected; }
+    if (length < 0) { return selected; }
     let end: i64 = checked_add(start, length);
     var index: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
-        if expression_span_contains(token, start, end) {
+        if (expression_span_contains(token, start, end)) {
             vec_push<Token>(selected, token);
         }
         index = checked_add(index, 1);
