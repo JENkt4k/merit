@@ -47,7 +47,7 @@ pub fn lower_primitive_hir_record(
     group_parent_value: i64
 ) -> HirExpressionRecord
 {
-    if group_parent_value >= 0 {
+    if (group_parent_value >= 0) {
         return HirExpressionRecord {
             kind: 3,
             start: group_start_value,
@@ -72,7 +72,7 @@ pub fn lower_primitive_hir_record(
         };
     }
     let symbol: i32 = hir_binary_symbol(ast_kind_code);
-    if symbol != 0 {
+    if (symbol != 0) {
         return HirExpressionRecord {
             kind: 2,
             start: ast_start_value,
@@ -117,15 +117,15 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
             if node.kind == 2 {
                 if node.left < 0 { return 5; }
                 if node.right < 0 { return 5; }
-                if node.left >= index { return 5; }
-                if node.right >= index { return 5; }
+                if (node.left >= index) { return 5; }
+                if (node.right >= index) { return 5; }
                 if node.symbol < 1 { return 5; }
                 if node.symbol > 4 { return 5; }
                 if node.numeric_policy != 2 { return 6; }
             } else {
                 if node.kind == 3 {
                     if node.left < 0 { return 7; }
-                    if node.left >= index { return 7; }
+                    if (node.left >= index) { return 7; }
                     if node.right != -1 { return 7; }
                     if node.symbol != 0 { return 7; }
                     if node.numeric_policy != 0 { return 7; }
