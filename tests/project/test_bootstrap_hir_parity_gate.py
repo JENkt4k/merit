@@ -61,7 +61,23 @@ requires_caps [allocate]
     let tokens: Vec<Token> = lex(source, allocator);
     let expressions: Vec<ExpressionNode> = parse_expression_tokens(source, tokens, allocator);
     let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
-    let hir_nodes: Vec<HirExpressionRecord> = lower_primitive_hir_records(ast_nodes, allocator);
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, vec_len<AstNodeRecord>(ast_nodes));
+    var ast_index: i64 = 0;
+    while (ast_index < vec_len<AstNodeRecord>(ast_nodes)) {{
+        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
+        let hir: HirExpressionRecord = lower_primitive_hir_record(
+            ast_kind(ast),
+            ast_start(ast),
+            ast_length(ast),
+            ast_left(ast),
+            ast_right(ast),
+            ast_group_start(ast),
+            ast_group_length(ast),
+            ast_group_parent(ast)
+        );
+        vec_push<HirExpressionRecord>(hir_nodes, hir);
+        ast_index = checked_add(ast_index, 1);
+    }}
     print(validate_primitive_hir_records(hir_nodes));
     print(vec_len<HirExpressionRecord>(hir_nodes));
     var index: i64 = 0;
