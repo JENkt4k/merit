@@ -30,9 +30,9 @@ fn hir_binary_symbol(kind: i32) -> i32 {
 }
 
 // First bootstrap-hir-v1 executable slice:
-// kind 1 = exact numeric literal, kind 2 = primitive integer binary.
-// type_code 1 = i64; numeric policy 1 = exact, 2 = checked.
-// Group records disappear semantically by copying their already-lowered child.
+// kind 1 = exact numeric literal, kind 2 = primitive integer binary,
+// kind 3 = grouping alias to a prior native record. type_code 1 = i64;
+// numeric policy 0 = none, 1 = exact, 2 = checked.
 pub fn lower_primitive_hir_records(borrow ast_nodes: Vec<AstNodeRecord>, allocator: Allocator) -> Vec<HirExpressionRecord>
 requires_caps [allocate]
 {
@@ -41,8 +41,17 @@ requires_caps [allocate]
     while (index < vec_len<AstNodeRecord>(ast_nodes)) {
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
         if ast_group_parent(ast) >= 0 {
-            let parent: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, ast_group_parent(ast));
-            vec_push<HirExpressionRecord>(hir_nodes, parent);
+            let alias: HirExpressionRecord = HirExpressionRecord {
+                kind: 3,
+                start: ast_group_start(ast),
+                length: ast_group_length(ast),
+                left: ast_group_parent(ast),
+                right: -1,
+                symbol: 0,
+                type_code: 1,
+                numeric_policy: 0
+            };
+            vec_push<HirExpressionRecord>(hir_nodes, alias);
         } else {
             if ast_kind(ast) == 31 {
                 let literal: HirExpressionRecord = HirExpressionRecord {
@@ -91,7 +100,8 @@ requires_caps [allocate]
 }
 
 // Stable validation errors: 0 valid; 1 empty; 2 unsupported kind/type;
-// 3 invalid span; 4 malformed literal; 5 malformed binary; 6 bad policy.
+// 3 invalid span; 4 malformed literal; 5 malformed binary; 6 bad policy;
+// 7 malformed grouping alias.
 pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) -> i32 {
     if vec_len<HirExpressionRecord>(nodes) == 0 { return 1; }
     var index: i64 = 0;
@@ -115,7 +125,15 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
                 if node.symbol < 1 { return 5; }
                 if node.symbol > 4 { return 5; }
                 if node.numeric_policy != 2 { return 6; }
-            } else { return 2; }
+            } else {
+                if node.kind == 3 {
+                    if node.left < 0 { return 7; }
+                    if node.left >= index { return 7; }
+                    if node.right != -1 { return 7; }
+                    if node.symbol != 0 { return 7; }
+                    if node.numeric_policy != 0 { return 7; }
+                } else { return 2; }
+            }
         }
         index = checked_add(index, 1);
     }
