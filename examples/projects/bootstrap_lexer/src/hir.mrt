@@ -1,5 +1,4 @@
 module bootstrap_hir
-import bootstrap_syntax;
 
 pub struct HirExpressionRecord {
     kind: i32;
@@ -29,74 +28,72 @@ fn hir_binary_symbol(kind: i32) -> i32 {
     return 0;
 }
 
-// First bootstrap-hir-v1 executable slice:
+// First bootstrap-hir-v1 executable slice. The public boundary deliberately
+// accepts only scalar AST fields: a module must not leak another module's type
+// through its own exported signature. Callers obtain these fields through the
+// public bootstrap-ast-v1 accessors.
+//
 // kind 1 = exact numeric literal, kind 2 = primitive integer binary,
 // kind 3 = grouping alias to a prior native record. type_code 1 = i64;
 // numeric policy 0 = none, 1 = exact, 2 = checked.
-pub fn lower_primitive_hir_records(borrow ast_nodes: Vec<AstNodeRecord>, allocator: Allocator) -> Vec<HirExpressionRecord>
-requires_caps [allocate]
+pub fn lower_primitive_hir_record(
+    ast_kind_code: i32,
+    ast_start_value: i64,
+    ast_length_value: i64,
+    ast_left_value: i64,
+    ast_right_value: i64,
+    group_start_value: i64,
+    group_length_value: i64,
+    group_parent_value: i64
+) -> HirExpressionRecord
 {
-    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, vec_len<AstNodeRecord>(ast_nodes));
-    var index: i64 = 0;
-    while (index < vec_len<AstNodeRecord>(ast_nodes)) {
-        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
-        if ast_group_parent(ast) >= 0 {
-            let alias: HirExpressionRecord = HirExpressionRecord {
-                kind: 3,
-                start: ast_group_start(ast),
-                length: ast_group_length(ast),
-                left: ast_group_parent(ast),
-                right: -1,
-                symbol: 0,
-                type_code: 1,
-                numeric_policy: 0
-            };
-            vec_push<HirExpressionRecord>(hir_nodes, alias);
-        } else {
-            if ast_kind(ast) == 31 {
-                let literal: HirExpressionRecord = HirExpressionRecord {
-                    kind: 1,
-                    start: ast_start(ast),
-                    length: ast_length(ast),
-                    left: -1,
-                    right: -1,
-                    symbol: 0,
-                    type_code: 1,
-                    numeric_policy: 1
-                };
-                vec_push<HirExpressionRecord>(hir_nodes, literal);
-            } else {
-                let symbol: i32 = hir_binary_symbol(ast_kind(ast));
-                if symbol != 0 {
-                    let binary: HirExpressionRecord = HirExpressionRecord {
-                        kind: 2,
-                        start: ast_start(ast),
-                        length: ast_length(ast),
-                        left: ast_left(ast),
-                        right: ast_right(ast),
-                        symbol: symbol,
-                        type_code: 1,
-                        numeric_policy: 2
-                    };
-                    vec_push<HirExpressionRecord>(hir_nodes, binary);
-                } else {
-                    let unsupported: HirExpressionRecord = HirExpressionRecord {
-                        kind: 0,
-                        start: ast_start(ast),
-                        length: ast_length(ast),
-                        left: -1,
-                        right: -1,
-                        symbol: 0,
-                        type_code: 1,
-                        numeric_policy: 0
-                    };
-                    vec_push<HirExpressionRecord>(hir_nodes, unsupported);
-                }
-            }
-        }
-        index = checked_add(index, 1);
+    if group_parent_value >= 0 {
+        return HirExpressionRecord {
+            kind: 3,
+            start: group_start_value,
+            length: group_length_value,
+            left: group_parent_value,
+            right: -1,
+            symbol: 0,
+            type_code: 1,
+            numeric_policy: 0
+        };
     }
-    return hir_nodes;
+    if ast_kind_code == 31 {
+        return HirExpressionRecord {
+            kind: 1,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: -1,
+            right: -1,
+            symbol: 0,
+            type_code: 1,
+            numeric_policy: 1
+        };
+    }
+    let symbol: i32 = hir_binary_symbol(ast_kind_code);
+    if symbol != 0 {
+        return HirExpressionRecord {
+            kind: 2,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: ast_left_value,
+            right: ast_right_value,
+            symbol: symbol,
+            type_code: 1,
+            numeric_policy: 2
+        };
+    }
+    return HirExpressionRecord {
+        kind: 0,
+        start: ast_start_value,
+        length: ast_length_value,
+        left: -1,
+        right: -1,
+        symbol: 0,
+        type_code: 1,
+        numeric_policy: 0
+    };
 }
 
 // Stable validation errors: 0 valid; 1 empty; 2 unsupported kind/type;
