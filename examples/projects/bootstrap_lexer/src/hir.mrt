@@ -9,6 +9,7 @@ pub struct HirExpressionRecord {
     symbol: i32;
     type_code: i32;
     numeric_policy: i32;
+    binding_id: i64;
 }
 
 pub fn hir_kind(borrow node: HirExpressionRecord) -> i32 { return node.kind; }
@@ -19,22 +20,66 @@ pub fn hir_right(borrow node: HirExpressionRecord) -> i64 { return node.right; }
 pub fn hir_symbol(borrow node: HirExpressionRecord) -> i32 { return node.symbol; }
 pub fn hir_type_code(borrow node: HirExpressionRecord) -> i32 { return node.type_code; }
 pub fn hir_numeric_policy(borrow node: HirExpressionRecord) -> i32 { return node.numeric_policy; }
+pub fn hir_binding_id(borrow node: HirExpressionRecord) -> i64 { return node.binding_id; }
 
 fn hir_binary_symbol(kind: i32) -> i32 {
     if kind == 50 { return 1; }
     if kind == 51 { return 2; }
     if kind == 60 { return 3; }
     if kind == 61 { return 4; }
+    if kind == 40 { return 5; }
+    if kind == 41 { return 6; }
+    if kind == 42 { return 7; }
+    if kind == 43 { return 8; }
+    if kind == 44 { return 9; }
+    if kind == 45 { return 10; }
     return 0;
 }
 
-// First bootstrap-hir-v1 executable slice. The public boundary deliberately
-// accepts only scalar AST fields: a module must not leak another module's type
-// through its own exported signature. Callers obtain these fields through the
-// public bootstrap-ast-v1 accessors.
+// Return the deterministic first-occurrence binding ID for source text that
+// exactly matches a previously recorded identifier span, or -1 when unseen.
+// The caller owns the two parallel vectors and records a new span when -1 is
+// returned. This keeps semantic binding assignment in Merit-native execution
+// while avoiding a string/map dependency in the bootstrap project.
+pub fn hir_find_binding_id(
+    borrow source: Buffer,
+    borrow starts: Vec<i64>,
+    borrow lengths: Vec<i64>,
+    start: i64,
+    length: i64
+) -> i64
+{
+    var candidate: i64 = 0;
+    while (candidate < vec_len<i64>(starts)) {
+        let candidate_length: i64 = vec_get<i64>(lengths, candidate);
+        if candidate_length == length {
+            let candidate_start: i64 = vec_get<i64>(starts, candidate);
+            var offset: i64 = 0;
+            var equal: i32 = 1;
+            while (offset < length) {
+                if buffer_get(source, checked_add(candidate_start, offset)) != buffer_get(source, checked_add(start, offset)) {
+                    equal = 0;
+                    offset = length;
+                } else {
+                    offset = checked_add(offset, 1);
+                }
+            }
+            if (equal) { return candidate; }
+        }
+        candidate = checked_add(candidate, 1);
+    }
+    return -1;
+}
+
+// Executable bootstrap-hir-v1 expression slice. The public boundary accepts
+// only scalar AST fields, preserving module ownership of exported types.
 //
-// kind 1 = exact numeric literal, kind 2 = primitive integer binary,
-// kind 3 = grouping alias to a prior native record. type_code 1 = i64;
+// kind 1 = exact numeric literal
+// kind 2 = primitive integer arithmetic
+// kind 3 = grouping alias to a prior native record
+// kind 4 = resolved identifier
+// kind 5 = comparison
+// type code 1 = i64, 2 = bool
 // numeric policy 0 = none, 1 = exact, 2 = checked.
 pub fn lower_primitive_hir_record(
     ast_kind_code: i32,
@@ -44,7 +89,8 @@ pub fn lower_primitive_hir_record(
     ast_right_value: i64,
     group_start_value: i64,
     group_length_value: i64,
-    group_parent_value: i64
+    group_parent_value: i64,
+    binding_id_value: i64
 ) -> HirExpressionRecord
 {
     if (group_parent_value >= 0) {
@@ -56,7 +102,8 @@ pub fn lower_primitive_hir_record(
             right: -1,
             symbol: 0,
             type_code: 1,
-            numeric_policy: 0
+            numeric_policy: 0,
+            binding_id: -1
         };
     }
     if ast_kind_code == 31 {
@@ -68,20 +115,48 @@ pub fn lower_primitive_hir_record(
             right: -1,
             symbol: 0,
             type_code: 1,
-            numeric_policy: 1
+            numeric_policy: 1,
+            binding_id: -1
+        };
+    }
+    if ast_kind_code == 30 {
+        return HirExpressionRecord {
+            kind: 4,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: -1,
+            right: -1,
+            symbol: 0,
+            type_code: 1,
+            numeric_policy: 0,
+            binding_id: binding_id_value
         };
     }
     let symbol: i32 = hir_binary_symbol(ast_kind_code);
-    if (symbol != 0) {
+    if (symbol >= 1) {
+        if (symbol <= 4) {
+            return HirExpressionRecord {
+                kind: 2,
+                start: ast_start_value,
+                length: ast_length_value,
+                left: ast_left_value,
+                right: ast_right_value,
+                symbol: symbol,
+                type_code: 1,
+                numeric_policy: 2,
+                binding_id: -1
+            };
+        }
         return HirExpressionRecord {
-            kind: 2,
+            kind: 5,
             start: ast_start_value,
             length: ast_length_value,
             left: ast_left_value,
             right: ast_right_value,
             symbol: symbol,
-            type_code: 1,
-            numeric_policy: 2
+            type_code: 2,
+            numeric_policy: 1,
+            binding_id: -1
         };
     }
     return HirExpressionRecord {
@@ -92,35 +167,39 @@ pub fn lower_primitive_hir_record(
         right: -1,
         symbol: 0,
         type_code: 1,
-        numeric_policy: 0
+        numeric_policy: 0,
+        binding_id: -1
     };
 }
 
 // Stable validation errors: 0 valid; 1 empty; 2 unsupported kind/type;
-// 3 invalid span; 4 malformed literal; 5 malformed binary; 6 bad policy;
-// 7 malformed grouping alias.
+// 3 invalid span; 4 malformed literal; 5 malformed arithmetic/comparison;
+// 6 bad policy; 7 malformed grouping alias; 8 malformed identifier.
 pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) -> i32 {
     if vec_len<HirExpressionRecord>(nodes) == 0 { return 1; }
     var index: i64 = 0;
     while (index < vec_len<HirExpressionRecord>(nodes)) {
         let node: HirExpressionRecord = vec_get<HirExpressionRecord>(nodes, index);
         if node.kind == 0 { return 2; }
-        if node.type_code != 1 { return 2; }
         if node.start < 0 { return 3; }
         if node.length < 0 { return 3; }
         if node.kind == 1 {
+            if node.type_code != 1 { return 2; }
             if node.left != -1 { return 4; }
             if node.right != -1 { return 4; }
             if node.symbol != 0 { return 4; }
+            if node.binding_id != -1 { return 4; }
             if node.numeric_policy != 1 { return 6; }
         } else {
             if node.kind == 2 {
+                if node.type_code != 1 { return 2; }
                 if node.left < 0 { return 5; }
                 if node.right < 0 { return 5; }
                 if (node.left >= index) { return 5; }
                 if (node.right >= index) { return 5; }
                 if node.symbol < 1 { return 5; }
                 if node.symbol > 4 { return 5; }
+                if node.binding_id != -1 { return 5; }
                 if node.numeric_policy != 2 { return 6; }
             } else {
                 if node.kind == 3 {
@@ -128,8 +207,30 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
                     if (node.left >= index) { return 7; }
                     if node.right != -1 { return 7; }
                     if node.symbol != 0 { return 7; }
+                    if node.binding_id != -1 { return 7; }
                     if node.numeric_policy != 0 { return 7; }
-                } else { return 2; }
+                } else {
+                    if node.kind == 4 {
+                        if node.type_code != 1 { return 2; }
+                        if node.left != -1 { return 8; }
+                        if node.right != -1 { return 8; }
+                        if node.symbol != 0 { return 8; }
+                        if node.binding_id < 0 { return 8; }
+                        if node.numeric_policy != 0 { return 8; }
+                    } else {
+                        if node.kind == 5 {
+                            if node.type_code != 2 { return 2; }
+                            if node.left < 0 { return 5; }
+                            if node.right < 0 { return 5; }
+                            if (node.left >= index) { return 5; }
+                            if (node.right >= index) { return 5; }
+                            if node.symbol < 5 { return 5; }
+                            if node.symbol > 10 { return 5; }
+                            if node.binding_id != -1 { return 5; }
+                            if node.numeric_policy != 1 { return 6; }
+                        } else { return 2; }
+                    }
+                }
             }
         }
         index = checked_add(index, 1);
