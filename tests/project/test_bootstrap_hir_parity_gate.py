@@ -68,8 +68,8 @@ requires_caps [allocate]
     while (ast_index < vec_len<AstNodeRecord>(ast_nodes)) {{
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
         var binding_id: i64 = -1;
-        if ast_kind(ast) == 30 {{
-            if ast_group_parent(ast) < 0 {{
+        if (ast_kind(ast) == 30) {{
+            if (ast_group_parent(ast) < 0) {{
                 binding_id = hir_find_binding_id(
                     source,
                     binding_starts,
@@ -77,7 +77,7 @@ requires_caps [allocate]
                     ast_start(ast),
                     ast_length(ast)
                 );
-                if binding_id < 0 {{
+                if (binding_id < 0) {{
                     binding_id = vec_len<i64>(binding_starts);
                     vec_push<i64>(binding_starts, ast_start(ast));
                     vec_push<i64>(binding_lengths, ast_length(ast));
