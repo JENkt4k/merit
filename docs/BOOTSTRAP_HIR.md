@@ -53,6 +53,8 @@ Conversions require one of:
 
 `none` is permitted only for nodes where the policy is not applicable.
 
+Merit's primitive integer arithmetic is checked, so the first executable `i64` HIR slice emits `checked` for binary arithmetic. Exact numeric literal nodes retain the literal spelling and use the `exact` numeric policy.
+
 ## Ownership modes
 
 The v1 interchange recognizes:
@@ -72,12 +74,32 @@ Nodes use deterministic postorder references: every child ID must be lower than 
 
 Roots identify top-level semantic declarations or executable units. Every root, child, and binding reference must resolve inside the module.
 
+## Executable primitive expression slice
+
+The first measured HIR slice covers the repository corpus cases `precedence-product` (`1+2*3`) and `explicit-group` (`(1+2)*3`). They are deliberately self-contained numeric expressions so the first gate can verify typed HIR without pretending unresolved identifiers already have binding semantics.
+
+The typed boundary supplies resolved type `i64`. `merit.bootstrap.hir_expression.lower_primitive_expression_hir` independently lowers the canonical Python AST into `bootstrap-hir-v1`. `bootstrap_hir.lower_primitive_hir_records` performs the corresponding lowering in Merit and emits flat `HirExpressionRecord` data for interpreter/native comparison.
+
+The native flat contract uses:
+
+- kind `1`: exact numeric literal
+- kind `2`: primitive binary arithmetic
+- kind `3`: grouping alias to an earlier native record
+- type code `1`: `i64`
+- numeric policy `1`: exact
+- numeric policy `2`: checked
+
+Grouping aliases exist only to bridge parser record indexing. `merit.bootstrap.hir_parity` collapses them before canonical HIR construction, so parentheses do not create semantic HIR nodes or perturb canonical node IDs.
+
+`tests/project/test_bootstrap_hir_parity_gate.py` runs one temporary Merit probe over every corpus case marked `hir`, captures both interpreted and native record streams, reconstructs canonical HIR, and requires the shared parity engine to report complete HIR parity. Interpreter/native record equality is an independent requirement.
+
 ## Adoption sequence
 
-1. Lower one primitive expression slice from AST to HIR in both compilers.
-2. Serialize both artifacts with `canonical_hir_json()`.
-3. Feed them into the parity engine from `merit.bootstrap.parity`.
+1. **Complete:** lower the first primitive typed expression slice from AST to HIR in both compilers.
+2. **Complete:** serialize and compare both artifacts through the shared parity engine.
+3. Expand the typed expression slice through identifiers/bindings and comparisons once semantic binding/type information is available at the replacement boundary.
 4. Expand vertically through decimals, contracts, structures, ownership, generics, capabilities, and the ledger application.
-5. Do not lower to MIR until the corresponding HIR slice is semantically checked and parity-tested.
+5. Do not claim a later HIR slice until its semantic inputs are checked and parity-tested.
+6. Do not lower new semantic coverage to MIR until the corresponding HIR slice is stable.
 
 The contract may be extended only through a new version when an incompatible semantic distinction is required.

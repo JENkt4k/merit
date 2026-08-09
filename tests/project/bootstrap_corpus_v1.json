@@ -58,8 +58,8 @@
     }
   ],
   "expression_cases": [
-    {"id": "precedence-product", "expression": "1+2*3", "root_kind": "add"},
-    {"id": "explicit-group", "expression": "(1+2)*3", "root_kind": "multiply"},
+    {"id": "precedence-product", "expression": "1+2*3", "root_kind": "add", "compare": ["expressions", "ast", "hir"]},
+    {"id": "explicit-group", "expression": "(1+2)*3", "root_kind": "multiply", "compare": ["expressions", "ast", "hir"]},
     {"id": "left-associative-subtract", "expression": "a-b-c", "root_kind": "subtract"},
     {"id": "comparison-last", "expression": "a==b+1", "root_kind": "equal"},
     {"id": "string-atom", "expression": "\"value\"", "root_kind": "string"},
