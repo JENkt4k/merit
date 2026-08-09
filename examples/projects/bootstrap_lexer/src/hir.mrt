@@ -1,0 +1,123 @@
+module bootstrap_hir
+import bootstrap_syntax;
+
+pub struct HirExpressionRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    left: i64;
+    right: i64;
+    symbol: i32;
+    type_code: i32;
+    numeric_policy: i32;
+}
+
+pub fn hir_kind(borrow node: HirExpressionRecord) -> i32 { return node.kind; }
+pub fn hir_start(borrow node: HirExpressionRecord) -> i64 { return node.start; }
+pub fn hir_length(borrow node: HirExpressionRecord) -> i64 { return node.length; }
+pub fn hir_left(borrow node: HirExpressionRecord) -> i64 { return node.left; }
+pub fn hir_right(borrow node: HirExpressionRecord) -> i64 { return node.right; }
+pub fn hir_symbol(borrow node: HirExpressionRecord) -> i32 { return node.symbol; }
+pub fn hir_type_code(borrow node: HirExpressionRecord) -> i32 { return node.type_code; }
+pub fn hir_numeric_policy(borrow node: HirExpressionRecord) -> i32 { return node.numeric_policy; }
+
+fn hir_binary_symbol(kind: i32) -> i32 {
+    if kind == 50 { return 1; }
+    if kind == 51 { return 2; }
+    if kind == 60 { return 3; }
+    if kind == 61 { return 4; }
+    return 0;
+}
+
+// First bootstrap-hir-v1 executable slice:
+// kind 1 = exact numeric literal, kind 2 = primitive integer binary.
+// type_code 1 = i64; numeric policy 1 = exact, 2 = checked.
+// Group records disappear semantically by copying their already-lowered child.
+pub fn lower_primitive_hir_records(borrow ast_nodes: Vec<AstNodeRecord>, allocator: Allocator) -> Vec<HirExpressionRecord>
+requires_caps [allocate]
+{
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, vec_len<AstNodeRecord>(ast_nodes));
+    var index: i64 = 0;
+    while (index < vec_len<AstNodeRecord>(ast_nodes)) {
+        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
+        if ast_group_parent(ast) >= 0 {
+            let parent: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, ast_group_parent(ast));
+            vec_push<HirExpressionRecord>(hir_nodes, parent);
+        } else {
+            if ast_kind(ast) == 31 {
+                let literal: HirExpressionRecord = HirExpressionRecord {
+                    kind: 1,
+                    start: ast_start(ast),
+                    length: ast_length(ast),
+                    left: -1,
+                    right: -1,
+                    symbol: 0,
+                    type_code: 1,
+                    numeric_policy: 1
+                };
+                vec_push<HirExpressionRecord>(hir_nodes, literal);
+            } else {
+                let symbol: i32 = hir_binary_symbol(ast_kind(ast));
+                if symbol != 0 {
+                    let binary: HirExpressionRecord = HirExpressionRecord {
+                        kind: 2,
+                        start: ast_start(ast),
+                        length: ast_length(ast),
+                        left: ast_left(ast),
+                        right: ast_right(ast),
+                        symbol: symbol,
+                        type_code: 1,
+                        numeric_policy: 2
+                    };
+                    vec_push<HirExpressionRecord>(hir_nodes, binary);
+                } else {
+                    let unsupported: HirExpressionRecord = HirExpressionRecord {
+                        kind: 0,
+                        start: ast_start(ast),
+                        length: ast_length(ast),
+                        left: -1,
+                        right: -1,
+                        symbol: 0,
+                        type_code: 1,
+                        numeric_policy: 0
+                    };
+                    vec_push<HirExpressionRecord>(hir_nodes, unsupported);
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return hir_nodes;
+}
+
+// Stable validation errors: 0 valid; 1 empty; 2 unsupported kind/type;
+// 3 invalid span; 4 malformed literal; 5 malformed binary; 6 bad policy.
+pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) -> i32 {
+    if vec_len<HirExpressionRecord>(nodes) == 0 { return 1; }
+    var index: i64 = 0;
+    while (index < vec_len<HirExpressionRecord>(nodes)) {
+        let node: HirExpressionRecord = vec_get<HirExpressionRecord>(nodes, index);
+        if node.kind == 0 { return 2; }
+        if node.type_code != 1 { return 2; }
+        if node.start < 0 { return 3; }
+        if node.length < 0 { return 3; }
+        if node.kind == 1 {
+            if node.left != -1 { return 4; }
+            if node.right != -1 { return 4; }
+            if node.symbol != 0 { return 4; }
+            if node.numeric_policy != 1 { return 6; }
+        } else {
+            if node.kind == 2 {
+                if node.left < 0 { return 5; }
+                if node.right < 0 { return 5; }
+                if node.left >= index { return 5; }
+                if node.right >= index { return 5; }
+                if node.symbol < 1 { return 5; }
+                if node.symbol > 4 { return 5; }
+                if node.numeric_policy != 2 { return 6; }
+            } else { return 2; }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
