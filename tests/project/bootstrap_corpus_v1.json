@@ -60,10 +60,10 @@
   "expression_cases": [
     {"id": "precedence-product", "expression": "1+2*3", "root_kind": "add", "compare": ["expressions", "ast", "hir"]},
     {"id": "explicit-group", "expression": "(1+2)*3", "root_kind": "multiply", "compare": ["expressions", "ast", "hir"]},
-    {"id": "left-associative-subtract", "expression": "a-b-c", "root_kind": "subtract"},
-    {"id": "comparison-last", "expression": "a==b+1", "root_kind": "equal"},
+    {"id": "left-associative-subtract", "expression": "a-b-c", "root_kind": "subtract", "compare": ["expressions", "ast", "hir"]},
+    {"id": "comparison-last", "expression": "a==b+1", "root_kind": "equal", "compare": ["expressions", "ast", "hir"]},
     {"id": "string-atom", "expression": "\"value\"", "root_kind": "string"},
-    {"id": "division-before-addition", "expression": "a/2+4", "root_kind": "add"},
+    {"id": "division-before-addition", "expression": "a/2+4", "root_kind": "add", "compare": ["expressions", "ast", "hir"]},
     {"id": "empty-call", "expression": "f()", "root_kind": "call"},
     {"id": "argument-sequence", "expression": "f(1,2+3)", "root_kind": "call"},
     {"id": "field-before-addition", "expression": "account.balance+1", "root_kind": "add"},
