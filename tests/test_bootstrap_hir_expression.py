@@ -236,7 +236,13 @@ def test_resolved_field_uses_receiver_type_and_omits_field_symbol_node():
         ([(3, 0, 1, 0, -1, 0, 1, 0, -1)], "non-postorder child"),
         ([(4, 0, 1, -1, -1, 0, 1, 0, -1)], "binding ID"),
         ([(5, 0, 1, -1, -1, 5, 2, 1, -1)], "non-postorder child"),
-        ([(6, 0, 3, 0, -1, 0, 1, 0, -1)], "non-symbol"),
+        (
+            [
+                (1, 0, 1, -1, -1, 0, 1, 1, -1),
+                (6, 0, 1, 0, -1, 0, 1, 0, -1),
+            ],
+            "non-symbol",
+        ),
         ([(9, 0, 1, -1, -1, 0, 1, 0, -2)], "symbol reference"),
         ([(8, 0, 1, -1, -1, 0, 0, 0, -1)], "argument child"),
     ],
