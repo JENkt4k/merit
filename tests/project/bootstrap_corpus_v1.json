@@ -25,6 +25,6 @@
     {"id":"field-before-addition","expression":"account.balance+1","root_kind":"add","compare":["expressions","ast","hir"]},
     {"id":"nested-call-field","expression":"f(g(1)).value","root_kind":"field","compare":["expressions","ast","hir"]},
     {"id":"direct-constructor-field","expression":"Point { x:1, y:2+3 }.x","root_kind":"field","compare":["expressions","ast","hir"]},
-    {"id":"single-generic-call","expression":"identity<i64>(1)","root_kind":"call"}
+    {"id":"single-generic-call","expression":"identity<i64>(1)","root_kind":"call","compare":["expressions","ast","hir"]}
   ]
 }
