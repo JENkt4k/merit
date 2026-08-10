@@ -26,6 +26,8 @@ _KIND_CALL = 6
 _KIND_FIELD = 7
 _KIND_ARGUMENT_SEQUENCE = 8
 _KIND_SYMBOL_REFERENCE = 9
+_KIND_CONSTRUCTOR = 10
+_KIND_FIELD_INITIALIZER = 11
 _TYPE_I64 = 1
 _TYPE_BOOL = 2
 _POLICY_NONE = 0
@@ -55,6 +57,7 @@ def lower_native_primitive_hir_records(
     *,
     module_name: str = "expression",
     type_names: Mapping[int, HirType] | None = None,
+    constructor_fields: Mapping[str, tuple[str, ...]] | None = None,
 ) -> HirModule:
     materialized = tuple(tuple(int(value) for value in record) for record in records)
     if not materialized:
@@ -74,10 +77,12 @@ def lower_native_primitive_hir_records(
                 raise NativeHirContractError(f"type code {code} has conflicting definitions")
             types[code] = type_
 
+    constructors = {} if constructor_fields is None else dict(constructor_fields)
     nodes: list[HirNode] = []
     native_to_canonical: dict[int, int] = {}
-    argument_lists: dict[int, tuple[int, ...]] = {}
+    sequence_items: dict[int, tuple[int, ...]] = {}
     symbol_references: dict[int, str] = {}
+    field_initializers: dict[int, tuple[str, int]] = {}
     binding_names: dict[int, str] = {}
     binding_types: dict[int, HirType] = {}
 
@@ -101,15 +106,20 @@ def lower_native_primitive_hir_records(
                 f"record {current} references unresolved value child {native_index}"
             ) from error
 
-    def argument_ids(native_index: int, current: int) -> tuple[int, ...]:
+    def raw_sequence_items(native_index: int, current: int) -> tuple[int, ...]:
         if native_index < 0 or native_index >= current:
             raise NativeHirContractError(
                 f"record {current} has non-postorder argument child {native_index}"
             )
-        sequence = argument_lists.get(native_index)
+        sequence = sequence_items.get(native_index)
         if sequence is not None:
             return sequence
-        return (child_id(native_index, current),)
+        return (native_index,)
+
+    def argument_ids(native_index: int, current: int) -> tuple[int, ...]:
+        return tuple(
+            child_id(item, current) for item in raw_sequence_items(native_index, current)
+        )
 
     def symbol_name(native_index: int, current: int) -> str:
         if native_index < 0 or native_index >= current:
@@ -122,6 +132,17 @@ def lower_native_primitive_hir_records(
             raise NativeHirContractError(
                 f"record {current} references non-symbol record {native_index}"
             ) from error
+
+    def initializer_entries(native_index: int, current: int) -> tuple[tuple[str, int], ...]:
+        entries: list[tuple[str, int]] = []
+        for item in raw_sequence_items(native_index, current):
+            try:
+                entries.append(field_initializers[item])
+            except KeyError as error:
+                raise NativeHirContractError(
+                    f"record {current} references non-initializer record {item}"
+                ) from error
+        return tuple(entries)
 
     for index, record in enumerate(materialized):
         if len(record) != 9:
@@ -175,7 +196,23 @@ def lower_native_primitive_hir_records(
                 or binding_id != -1
             ):
                 raise NativeHirContractError(f"argument sequence {index} has invalid fields")
-            argument_lists[index] = argument_ids(left, index) + argument_ids(right, index)
+            sequence_items[index] = (
+                raw_sequence_items(left, index) + raw_sequence_items(right, index)
+            )
+            continue
+
+        if kind == _KIND_FIELD_INITIALIZER:
+            if (
+                type_code != 0
+                or symbol_code != 0
+                or policy_code != _POLICY_NONE
+                or binding_id != -1
+            ):
+                raise NativeHirContractError(f"field initializer {index} has invalid fields")
+            field_initializers[index] = (
+                symbol_name(left, index),
+                child_id(right, index),
+            )
             continue
 
         if kind == _KIND_LITERAL:
@@ -188,7 +225,9 @@ def lower_native_primitive_hir_records(
                     f"literal record {index} has invalid child/symbol fields"
                 )
             if policy_code != _POLICY_EXACT:
-                raise NativeHirContractError(f"literal record {index} must use exact policy")
+                raise NativeHirContractError(
+                    f"literal record {index} must use exact policy"
+                )
             node_id = len(nodes)
             nodes.append(
                 HirNode(
@@ -248,7 +287,9 @@ def lower_native_primitive_hir_records(
                 raise NativeHirContractError(f"binary record {index} has binding ID")
             if kind == _KIND_ARITHMETIC:
                 if type_code != _TYPE_I64 or not 1 <= symbol_code <= 4:
-                    raise NativeHirContractError(f"arithmetic record {index} has invalid type/symbol")
+                    raise NativeHirContractError(
+                        f"arithmetic record {index} has invalid type/symbol"
+                    )
                 if policy_code != _POLICY_CHECKED:
                     raise NativeHirContractError(
                         f"arithmetic record {index} must use checked policy"
@@ -257,7 +298,9 @@ def lower_native_primitive_hir_records(
                 policy = "checked"
             else:
                 if type_code != _TYPE_BOOL or not 5 <= symbol_code <= 10:
-                    raise NativeHirContractError(f"comparison record {index} has invalid type/symbol")
+                    raise NativeHirContractError(
+                        f"comparison record {index} has invalid type/symbol"
+                    )
                 if policy_code != _POLICY_EXACT:
                     raise NativeHirContractError(
                         f"comparison record {index} must use exact policy"
@@ -321,6 +364,46 @@ def lower_native_primitive_hir_records(
             native_to_canonical[index] = node_id
             continue
 
+        if kind == _KIND_CONSTRUCTOR:
+            if symbol_code != 0 or policy_code != _POLICY_NONE or binding_id != -1:
+                raise NativeHirContractError(
+                    f"constructor record {index} has invalid fields"
+                )
+            result_type = resolved_type(type_code, index)
+            symbol = symbol_name(left, index)
+            entries = () if right == -1 else initializer_entries(right, index)
+            expected = constructors.get(symbol)
+            if expected is None:
+                raise NativeHirContractError(
+                    f"constructor {symbol!r} has no explicit field order"
+                )
+            provided: dict[str, int] = {}
+            for name, value in entries:
+                if name in provided:
+                    raise NativeHirContractError(
+                        f"constructor {symbol!r} repeats field {name!r}"
+                    )
+                provided[name] = value
+            if set(provided) != set(expected):
+                raise NativeHirContractError(
+                    f"constructor {symbol!r} fields do not match explicit signature"
+                )
+            children = tuple(provided[name] for name in expected)
+            node_id = len(nodes)
+            nodes.append(
+                HirNode(
+                    node_id,
+                    "constructor",
+                    result_type,
+                    children=children,
+                    span=SourceSpan(start, length),
+                    symbol=symbol,
+                    ownership="value",
+                )
+            )
+            native_to_canonical[index] = node_id
+            continue
+
         raise NativeHirContractError(f"record {index} has unsupported kind {kind}")
 
     if not nodes:
@@ -328,19 +411,19 @@ def lower_native_primitive_hir_records(
     if binding_names:
         expected_ids = list(range(max(binding_names) + 1))
         if sorted(binding_names) != expected_ids:
-            raise NativeHirContractError("native binding IDs must be dense first-occurrence IDs")
+            raise NativeHirContractError(
+                "native binding IDs must be dense first-occurrence IDs"
+            )
     bindings = tuple(
-        HirBinding(
-            binding_id,
-            binding_names[binding_id],
-            binding_types[binding_id],
-        )
+        HirBinding(binding_id, binding_names[binding_id], binding_types[binding_id])
         for binding_id in sorted(binding_names)
     )
     try:
         root = native_to_canonical[len(materialized) - 1]
     except KeyError as error:
-        raise NativeHirContractError("final native HIR record is not a semantic value") from error
+        raise NativeHirContractError(
+            "final native HIR record is not a semantic value"
+        ) from error
     return HirModule(module_name, bindings, tuple(nodes), (root,))
 
 
@@ -351,12 +434,14 @@ def primitive_hir_parity_observations(
     source: str,
     *,
     type_names: Mapping[int, HirType] | None = None,
+    constructor_fields: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[StageObservation, StageObservation]:
     bootstrap = lower_native_primitive_hir_records(
         native_records,
         source,
         module_name=reference.name,
         type_names=type_names,
+        constructor_fields=constructor_fields,
     )
     return (
         observe(case_id, "hir", "reference", canonical_hir_json(reference)),

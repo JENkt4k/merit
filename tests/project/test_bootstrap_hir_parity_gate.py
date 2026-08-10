@@ -10,6 +10,7 @@ import subprocess
 from merit.bootstrap.ast_contract import lower_expression_ast
 from merit.bootstrap.hir_contract import HirType
 from merit.bootstrap.hir_expression import (
+    HirConstructorSignature,
     HirFieldSignature,
     HirFunctionSignature,
     lower_resolved_expression_hir,
@@ -28,6 +29,7 @@ REFERENCE_PATH = Path(__file__).with_name("test_bootstrap_lexer.py")
 I64 = HirType("i64")
 ACCOUNT = HirType("Account")
 RECORD = HirType("Record")
+POINT = HirType("Point")
 
 
 def _load_reference_module():
@@ -47,7 +49,9 @@ def _case_semantics(case_id: str):
     bindings: tuple[tuple[str, HirType], ...] = ()
     functions: tuple[HirFunctionSignature, ...] = ()
     fields: tuple[HirFieldSignature, ...] = ()
+    constructors: tuple[HirConstructorSignature, ...] = ()
     type_names: dict[int, HirType] = {}
+    constructor_fields: dict[str, tuple[str, ...]] = {}
     case_kind = 0
 
     if case_id == "left-associative-subtract":
@@ -75,21 +79,40 @@ def _case_semantics(case_id: str):
         fields = (HirFieldSignature(RECORD, "value", I64),)
         type_names = {4: RECORD}
         case_kind = 4
+    elif case_id == "direct-constructor-field":
+        constructors = (
+            HirConstructorSignature("Point", POINT, (("x", I64), ("y", I64))),
+        )
+        fields = (HirFieldSignature(POINT, "x", I64),)
+        type_names = {5: POINT}
+        constructor_fields = {"Point": ("x", "y")}
+        case_kind = 5
 
-    return bindings, functions, fields, type_names, case_kind
+    return (
+        bindings,
+        functions,
+        fields,
+        constructors,
+        type_names,
+        constructor_fields,
+        case_kind,
+    )
 
 
 def _probe_source(cases) -> str:
-    calls = []
+    declarations = []
+    executions = []
     for index, case in enumerate(cases):
-        _, _, _, _, case_kind = _case_semantics(case.case_id)
+        _, _, _, _, _, _, case_kind = _case_semantics(case.case_id)
         literal = json.dumps(case.text)
-        calls.append(
-            f"        let source_{index}: Buffer = buffer_from_string(allocator, {literal});\n"
+        declarations.append(
+            f"        let source_{index}: Buffer = buffer_from_string(allocator, {literal});"
+        )
+        executions.append(
             f"        emit_hir_case(source_{index}, allocator, {case_kind});\n"
             f"        drop(source_{index});"
         )
-    body = "\n".join(calls)
+    body = "\n".join(declarations + executions)
     return f'''module bootstrap_hir_parity_probe
 import bootstrap_tokens;
 import bootstrap_syntax;
@@ -108,21 +131,26 @@ fn ast_identifier_is_symbol(borrow ast_nodes: Vec<AstNodeRecord>, index: i64) ->
         if (ast_kind(parent) == 35) {{
             if (ast_right(parent) == index) {{ return 1; }}
         }}
+        if (ast_kind(parent) == 38) {{
+            if (ast_left(parent) == index) {{ return 1; }}
+        }}
+        if (ast_kind(parent) == 70) {{
+            if (ast_left(parent) == index) {{ return 1; }}
+        }}
         parent_index = checked_add(parent_index, 1);
     }}
     return 0;
 }}
 
-fn resolved_hir_type_code(borrow ast_nodes: Vec<AstNodeRecord>, index: i64, case_kind: i32) -> i32 {{
+fn resolved_hir_type_code(
+    borrow ast_nodes: Vec<AstNodeRecord>,
+    index: i64,
+    case_kind: i32
+) -> i32 {{
     let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
-    if (ast_group_parent(ast) >= 0) {{
-        let parent: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_group_parent(ast));
-        if (ast_kind(parent) == 30) {{
-            if (case_kind == 3) {{ return 3; }}
-        }}
-        return 1;
-    }}
+    if (ast_group_parent(ast) >= 0) {{ return 1; }}
     if (ast_kind(ast) == 37) {{ return 0; }}
+    if (ast_kind(ast) == 38) {{ return 0; }}
     if (ast_kind(ast) == 30) {{
         if (ast_identifier_is_symbol(ast_nodes, index)) {{ return 0; }}
         if (case_kind == 3) {{ return 3; }}
@@ -135,6 +163,10 @@ fn resolved_hir_type_code(borrow ast_nodes: Vec<AstNodeRecord>, index: i64, case
         }}
         return 1;
     }}
+    if (ast_kind(ast) == 70) {{
+        if (case_kind == 5) {{ return 5; }}
+    }}
+    if (ast_kind(ast) == 35) {{ return 1; }}
     if (ast_kind(ast) == 40) {{ return 2; }}
     if (ast_kind(ast) == 41) {{ return 2; }}
     if (ast_kind(ast) == 42) {{ return 2; }}
@@ -150,7 +182,10 @@ requires_caps [allocate]
     let tokens: Vec<Token> = lex(source, allocator);
     let expressions: Vec<ExpressionNode> = parse_expression_tokens(source, tokens, allocator);
     let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
-    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, vec_len<AstNodeRecord>(ast_nodes));
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(
+        allocator,
+        vec_len<AstNodeRecord>(ast_nodes)
+    );
     var binding_starts: Vec<i64> = vec_new<i64>(allocator, 4);
     var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 4);
     var ast_index: i64 = 0;
@@ -274,7 +309,15 @@ def _parse_probe_output(output: str, case_count: int):
 def _reference_hir(case):
     records = REFERENCE.reference_expression(case.text)
     ast = lower_expression_ast(records)
-    bindings, functions, fields, _, _ = _case_semantics(case.case_id)
+    (
+        bindings,
+        functions,
+        fields,
+        constructors,
+        _,
+        _,
+        _,
+    ) = _case_semantics(case.case_id)
     return lower_resolved_expression_hir(
         ast,
         case.text,
@@ -282,6 +325,7 @@ def _reference_hir(case):
         bindings=bindings,
         functions=functions,
         fields=fields,
+        constructors=constructors,
         module_name=case.case_id,
     )
 
@@ -290,7 +334,7 @@ def _observations(cases, actual):
     observations = []
     for case, (validation, records) in zip(cases, actual, strict=True):
         assert validation == 0, case.case_id
-        _, _, _, type_names, _ = _case_semantics(case.case_id)
+        _, _, _, _, type_names, constructor_fields, _ = _case_semantics(case.case_id)
         observations.extend(
             primitive_hir_parity_observations(
                 case.case_id,
@@ -298,6 +342,7 @@ def _observations(cases, actual):
                 records,
                 case.text,
                 type_names=type_names,
+                constructor_fields=constructor_fields,
             )
         )
     return observations
@@ -316,6 +361,7 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         "argument-sequence",
         "field-before-addition",
         "nested-call-field",
+        "direct-constructor-field",
     ]
     project, project_root = _project_with_probe(tmp_path, cases)
 
@@ -324,7 +370,7 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         corpus, _observations(cases, interpreted), stages=["hir"]
     )
     assert interpreted_report.complete, markdown_summary(interpreted_report)
-    assert interpreted_report.stage_counts() == {"hir": (9, 9)}
+    assert interpreted_report.stage_counts() == {"hir": (10, 10)}
 
     _, _, executable = build(project, project_root / "hir_parity")
     native_output = subprocess.run(
@@ -335,6 +381,6 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         corpus, _observations(cases, native), stages=["hir"]
     )
     assert native_report.complete, markdown_summary(native_report)
-    assert native_report.stage_counts() == {"hir": (9, 9)}
+    assert native_report.stage_counts() == {"hir": (10, 10)}
 
     assert native == interpreted
