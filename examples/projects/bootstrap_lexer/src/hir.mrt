@@ -38,9 +38,6 @@ fn hir_binary_symbol(kind: i32) -> i32 {
 
 // Return the deterministic first-occurrence binding ID for source text that
 // exactly matches a previously recorded identifier span, or -1 when unseen.
-// The caller owns the two parallel vectors and records a new span when -1 is
-// returned. This keeps semantic binding assignment in Merit-native execution
-// while avoiding a string/map dependency in the bootstrap project.
 pub fn hir_find_binding_id(
     borrow source: Buffer,
     borrow starts: Vec<i64>,
@@ -71,17 +68,20 @@ pub fn hir_find_binding_id(
     return -1;
 }
 
-// Executable bootstrap-hir-v1 expression slice. The public boundary accepts
-// only scalar AST fields, preserving module ownership of exported types.
-//
+// Executable bootstrap-hir-v1 flat record kinds.
 // kind 1 = exact numeric literal
 // kind 2 = primitive integer arithmetic
 // kind 3 = grouping alias to a prior native record
-// kind 4 = resolved identifier
+// kind 4 = resolved value identifier
 // kind 5 = comparison
-// type code 1 = i64, 2 = bool
+// kind 6 = resolved call; left is symbol record, right is optional argument record
+// kind 7 = resolved field; left is receiver, right is field-symbol record
+// kind 8 = argument sequence alias; left/right retain source argument order
+// kind 9 = non-value symbol reference used by call/field records
+// type code 0 = structural/no value, 1 = i64, 2 = bool; additional positive
+// codes are supplied explicitly by the semantic test boundary.
 // numeric policy 0 = none, 1 = exact, 2 = checked.
-pub fn lower_primitive_hir_record(
+pub fn lower_resolved_hir_record(
     ast_kind_code: i32,
     ast_start_value: i64,
     ast_length_value: i64,
@@ -90,7 +90,8 @@ pub fn lower_primitive_hir_record(
     group_start_value: i64,
     group_length_value: i64,
     group_parent_value: i64,
-    binding_id_value: i64
+    binding_id_value: i64,
+    resolved_type_code: i32
 ) -> HirExpressionRecord
 {
     if (group_parent_value >= 0) {
@@ -101,7 +102,7 @@ pub fn lower_primitive_hir_record(
             left: group_parent_value,
             right: -1,
             symbol: 0,
-            type_code: 1,
+            type_code: resolved_type_code,
             numeric_policy: 0,
             binding_id: -1
         };
@@ -114,12 +115,25 @@ pub fn lower_primitive_hir_record(
             left: -1,
             right: -1,
             symbol: 0,
-            type_code: 1,
+            type_code: resolved_type_code,
             numeric_policy: 1,
             binding_id: -1
         };
     }
     if (ast_kind_code == 30) {
+        if (binding_id_value == -2) {
+            return HirExpressionRecord {
+                kind: 9,
+                start: ast_start_value,
+                length: ast_length_value,
+                left: -1,
+                right: -1,
+                symbol: 0,
+                type_code: 0,
+                numeric_policy: 0,
+                binding_id: -2
+            };
+        }
         return HirExpressionRecord {
             kind: 4,
             start: ast_start_value,
@@ -127,22 +141,61 @@ pub fn lower_primitive_hir_record(
             left: -1,
             right: -1,
             symbol: 0,
-            type_code: 1,
+            type_code: resolved_type_code,
             numeric_policy: 0,
             binding_id: binding_id_value
         };
     }
-    let symbol: i32 = hir_binary_symbol(ast_kind_code);
-    if (symbol >= 1) {
-        if (symbol <= 4) {
+    if (ast_kind_code == 34) {
+        return HirExpressionRecord {
+            kind: 6,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: ast_left_value,
+            right: ast_right_value,
+            symbol: 0,
+            type_code: resolved_type_code,
+            numeric_policy: 0,
+            binding_id: -1
+        };
+    }
+    if (ast_kind_code == 35) {
+        return HirExpressionRecord {
+            kind: 7,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: ast_left_value,
+            right: ast_right_value,
+            symbol: 0,
+            type_code: resolved_type_code,
+            numeric_policy: 0,
+            binding_id: -1
+        };
+    }
+    if (ast_kind_code == 37) {
+        return HirExpressionRecord {
+            kind: 8,
+            start: ast_start_value,
+            length: ast_length_value,
+            left: ast_left_value,
+            right: ast_right_value,
+            symbol: 0,
+            type_code: 0,
+            numeric_policy: 0,
+            binding_id: -1
+        };
+    }
+    let binary_symbol: i32 = hir_binary_symbol(ast_kind_code);
+    if (binary_symbol >= 1) {
+        if (binary_symbol <= 4) {
             return HirExpressionRecord {
                 kind: 2,
                 start: ast_start_value,
                 length: ast_length_value,
                 left: ast_left_value,
                 right: ast_right_value,
-                symbol: symbol,
-                type_code: 1,
+                symbol: binary_symbol,
+                type_code: resolved_type_code,
                 numeric_policy: 2,
                 binding_id: -1
             };
@@ -153,7 +206,7 @@ pub fn lower_primitive_hir_record(
             length: ast_length_value,
             left: ast_left_value,
             right: ast_right_value,
-            symbol: symbol,
+            symbol: binary_symbol,
             type_code: 2,
             numeric_policy: 1,
             binding_id: -1
@@ -166,15 +219,43 @@ pub fn lower_primitive_hir_record(
         left: -1,
         right: -1,
         symbol: 0,
-        type_code: 1,
+        type_code: resolved_type_code,
         numeric_policy: 0,
         binding_id: -1
     };
 }
 
+// Compatibility entry for the original i64-only primitive/binding slice.
+pub fn lower_primitive_hir_record(
+    ast_kind_code: i32,
+    ast_start_value: i64,
+    ast_length_value: i64,
+    ast_left_value: i64,
+    ast_right_value: i64,
+    group_start_value: i64,
+    group_length_value: i64,
+    group_parent_value: i64,
+    binding_id_value: i64
+) -> HirExpressionRecord
+{
+    return lower_resolved_hir_record(
+        ast_kind_code,
+        ast_start_value,
+        ast_length_value,
+        ast_left_value,
+        ast_right_value,
+        group_start_value,
+        group_length_value,
+        group_parent_value,
+        binding_id_value,
+        1
+    );
+}
+
 // Stable validation errors: 0 valid; 1 empty; 2 unsupported kind/type;
 // 3 invalid span; 4 malformed literal; 5 malformed arithmetic/comparison;
-// 6 bad policy; 7 malformed grouping alias; 8 malformed identifier.
+// 6 bad policy; 7 malformed grouping alias; 8 malformed identifier;
+// 9 malformed call/field; 10 malformed sequence; 11 malformed symbol ref.
 pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) -> i32 {
     if (vec_len<HirExpressionRecord>(nodes) == 0) { return 1; }
     var index: i64 = 0;
@@ -184,7 +265,7 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
         if (node.start < 0) { return 3; }
         if (node.length < 0) { return 3; }
         if (node.kind == 1) {
-            if (node.type_code != 1) { return 2; }
+            if (node.type_code <= 0) { return 2; }
             if (node.left != -1) { return 4; }
             if (node.right != -1) { return 4; }
             if (node.symbol != 0) { return 4; }
@@ -211,7 +292,7 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
                     if (node.numeric_policy != 0) { return 7; }
                 } else {
                     if (node.kind == 4) {
-                        if (node.type_code != 1) { return 2; }
+                        if (node.type_code <= 0) { return 2; }
                         if (node.left != -1) { return 8; }
                         if (node.right != -1) { return 8; }
                         if (node.symbol != 0) { return 8; }
@@ -228,7 +309,48 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
                             if (node.symbol > 10) { return 5; }
                             if (node.binding_id != -1) { return 5; }
                             if (node.numeric_policy != 1) { return 6; }
-                        } else { return 2; }
+                        } else {
+                            if (node.kind == 6) {
+                                if (node.type_code <= 0) { return 2; }
+                                if (node.left < 0) { return 9; }
+                                if (node.left >= index) { return 9; }
+                                if (node.right >= index) { return 9; }
+                                if (node.symbol != 0) { return 9; }
+                                if (node.binding_id != -1) { return 9; }
+                                if (node.numeric_policy != 0) { return 9; }
+                            } else {
+                                if (node.kind == 7) {
+                                    if (node.type_code <= 0) { return 2; }
+                                    if (node.left < 0) { return 9; }
+                                    if (node.right < 0) { return 9; }
+                                    if (node.left >= index) { return 9; }
+                                    if (node.right >= index) { return 9; }
+                                    if (node.symbol != 0) { return 9; }
+                                    if (node.binding_id != -1) { return 9; }
+                                    if (node.numeric_policy != 0) { return 9; }
+                                } else {
+                                    if (node.kind == 8) {
+                                        if (node.type_code != 0) { return 10; }
+                                        if (node.left < 0) { return 10; }
+                                        if (node.right < 0) { return 10; }
+                                        if (node.left >= index) { return 10; }
+                                        if (node.right >= index) { return 10; }
+                                        if (node.symbol != 0) { return 10; }
+                                        if (node.binding_id != -1) { return 10; }
+                                        if (node.numeric_policy != 0) { return 10; }
+                                    } else {
+                                        if (node.kind == 9) {
+                                            if (node.type_code != 0) { return 11; }
+                                            if (node.left != -1) { return 11; }
+                                            if (node.right != -1) { return 11; }
+                                            if (node.symbol != 0) { return 11; }
+                                            if (node.binding_id != -2) { return 11; }
+                                            if (node.numeric_policy != 0) { return 11; }
+                                        } else { return 2; }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
