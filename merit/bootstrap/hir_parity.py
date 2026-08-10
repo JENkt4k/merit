@@ -179,7 +179,10 @@ def lower_native_primitive_hir_records(
             continue
 
         if kind == _KIND_LITERAL:
-            type_ = resolved_type(type_code, index)
+            if type_code != _TYPE_I64:
+                raise NativeHirContractError(
+                    f"record {index} has unsupported type code {type_code}"
+                )
             if left != -1 or right != -1 or symbol_code != 0 or binding_id != -1:
                 raise NativeHirContractError(
                     f"literal record {index} has invalid child/symbol fields"
@@ -191,7 +194,7 @@ def lower_native_primitive_hir_records(
                 HirNode(
                     node_id,
                     "literal",
-                    type_,
+                    i64,
                     span=SourceSpan(start, length),
                     value=source[start : start + length],
                     numeric_policy="exact",
