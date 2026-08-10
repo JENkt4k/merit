@@ -33,6 +33,8 @@ HIR must not contain:
 
 Node IDs and binding IDs are part of the comparison contract. They must be assigned deterministically from source traversal and semantic binding creation, not memory allocation order.
 
+Call nodes may carry `generic_arguments`, an ordered tuple of resolved `HirType` values. The field is omitted from canonical JSON for non-generic calls, so this is an additive `bootstrap-hir-v1` distinction rather than an incompatible schema change.
+
 ## Numeric policies
 
 Binary operations require one of:
@@ -80,7 +82,7 @@ The first measured slice covered `precedence-product` (`1+2*3`) and `explicit-gr
 
 The second measured slice added `left-associative-subtract` (`a-b-c`), `comparison-last` (`a==b+1`), and `division-before-addition` (`a/2+4`). The test boundary supplies an ordered resolved environment in which fixture identifiers are `i64`. That order defines canonical binding IDs on the reference side. The Merit-native probe independently assigns the same IDs by first occurrence of unique identifier source text, using byte-for-byte span comparison rather than Python-side name resolution.
 
-The third measured slice adds `empty-call` (`f()`), `argument-sequence` (`f(1,2+3)`), `field-before-addition` (`account.balance+1`), and `nested-call-field` (`f(g(1)).value`). Semantic resolution remains explicit at the replacement boundary:
+The third measured slice added `empty-call` (`f()`), `argument-sequence` (`f(1,2+3)`), `field-before-addition` (`account.balance+1`), and `nested-call-field` (`f(g(1)).value`). Semantic resolution remains explicit at the replacement boundary:
 
 - function signatures provide resolved callable symbols, ordered parameter types, and result types;
 - field signatures provide the resolved receiver type, field symbol, and result type;
@@ -90,7 +92,11 @@ The third measured slice adds `empty-call` (`f()`), `argument-sequence` (`f(1,2+
 - field HIR contains only the receiver value as a child and carries the resolved field symbol on the field node;
 - call HIR contains only argument values as children and carries the resolved callable symbol on the call node.
 
-`merit.bootstrap.hir_expression.lower_resolved_expression_hir` lowers the canonical Python AST using these explicit semantic environments. The Merit bootstrap project emits flat `HirExpressionRecord` data containing resolved binding IDs, operand/result types, operator codes, source spans, structural symbol/sequence records, and numeric policies. `merit.bootstrap.hir_parity` validates and reconstructs canonical HIR before differential comparison.
+The fourth measured slice added `direct-constructor-field` (`Point { x:1, y:2+3 }.x`). Constructor identities, result types, declaration-order field identities, and field types are supplied explicitly. Parser field-initializer and sequence records remain structural; canonical constructor children are emitted in declaration order rather than source-map iteration order. This raises measured executable HIR parity to 10/12.
+
+The fifth measured slice adds `single-generic-call` (`identity<i64>(1)`). The semantic boundary supplies a generic function signature `identity<T>(T) -> T` plus the known concrete type symbol `i64`. Reference lowering substitutes the explicit type argument into parameter and result types. The Merit-native path preserves the parser's single-type generic application as a structural symbol span (`identity<i64>`); canonical reconstruction resolves that span to callable symbol `identity` plus ordered generic argument `[i64]`. The base function name and type-argument identifier remain semantic symbols and do not consume value binding IDs. When green, this raises measured executable HIR parity to 11/12.
+
+`merit.bootstrap.hir_expression.lower_resolved_expression_hir` lowers the canonical Python AST using these explicit semantic environments. The Merit bootstrap project emits flat `HirExpressionRecord` data containing resolved binding IDs, operand/result types, operator codes, source spans, structural symbol/sequence records, and numeric policies. `merit.bootstrap.hir_parity` validates the base flat contract; `merit.bootstrap.hir_generic_parity` performs the additional canonical split of a supported single-type generic symbol span.
 
 The native flat contract uses:
 
@@ -102,32 +108,34 @@ The native flat contract uses:
 - kind `6`: resolved call; the left record identifies the callable symbol and the optional right record supplies arguments
 - kind `7`: resolved field; the left record is the receiver and the right record identifies the field symbol
 - kind `8`: structural argument sequence, flattened during canonical reconstruction
-- kind `9`: non-value symbol reference for call/field names
+- kind `9`: non-value symbol reference for call/field/generic names
+- kind `10`: resolved aggregate constructor
+- kind `11`: structural constructor field initializer
 - type code `0`: structural/no value
 - type code `1`: `i64`
 - type code `2`: `bool`
-- additional positive type codes: explicitly supplied resolved fixture types such as `Account` and `Record`
+- additional positive type codes: explicitly supplied resolved fixture types such as `Account`, `Record`, and `Point`
 - numeric policy `0`: none
 - numeric policy `1`: exact
 - numeric policy `2`: checked
 
 Arithmetic operator codes `1..4` are `+`, `-`, `*`, `/`. Comparison operator codes `5..10` are `==`, `!=`, `>=`, `<=`, `>`, `<`.
 
-Grouping aliases exist only to bridge parser record indexing. `merit.bootstrap.hir_parity` collapses them before canonical HIR construction, so parentheses do not create semantic HIR nodes or perturb canonical node IDs. Structural argument-sequence and symbol-reference records are likewise removed before canonical HIR is constructed.
+Grouping aliases exist only to bridge parser record indexing. `merit.bootstrap.hir_parity` collapses them before canonical HIR construction, so parentheses do not create semantic HIR nodes or perturb canonical node IDs. Structural argument-sequence, field-initializer, and symbol-reference records are likewise removed before canonical HIR is constructed.
 
 `tests/project/test_bootstrap_hir_parity_gate.py` runs one temporary Merit probe over every corpus case marked `hir`, captures both interpreted and native record streams, reconstructs canonical HIR, and requires the shared parity engine to report complete HIR parity. Interpreter/native record equality is an independent requirement.
 
-When this call/field slice is green, measured executable HIR parity is 9/12 expression corpus cases. The remaining three cases require distinct semantic work rather than more of the same resolver surface: string literals, direct aggregate construction, and generic application/call resolution.
+With aggregate construction merged, measured executable HIR parity is 10/12 expression corpus cases. When the generic-call slice is green, it becomes 11/12. The sole remaining expression case is non-numeric string literal typing.
 
 ## Adoption sequence
 
 1. **Complete:** lower primitive numeric expressions from AST to HIR in both compilers.
 2. **Complete:** serialize and compare those artifacts through the shared parity engine.
 3. **Complete:** resolve simple identifier bindings, preserve deterministic binding IDs, and type comparison results as `bool`.
-4. **Complete when this slice is green:** resolve ordinary calls and field accesses from explicit semantic inputs and raise measured HIR parity to 9/12.
-5. Add aggregate construction only after constructor/type/field identities are explicit at the replacement boundary.
-6. Add generic application/calls only after generic symbol and type-argument resolution is explicit.
-7. Add non-numeric literal typing without weakening exact-literal semantics.
+4. **Complete:** resolve ordinary calls and field accesses from explicit semantic inputs and raise measured HIR parity to 9/12.
+5. **Complete:** lower aggregate construction with explicit constructor/type/field identities and raise parity to 10/12.
+6. **Complete when this slice is green:** preserve explicit generic symbol and type-argument resolution and raise parity to 11/12.
+7. Add non-numeric literal typing without weakening exact numeric literal semantics.
 8. Expand vertically through decimals, contracts, structures, ownership, generics, capabilities, and the ledger application.
 9. Do not claim a later HIR slice until its semantic inputs are checked and parity-tested.
 10. Do not lower new semantic coverage to MIR until the corresponding HIR slice is stable.
