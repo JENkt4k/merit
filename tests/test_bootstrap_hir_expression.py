@@ -5,9 +5,12 @@ import pytest
 from merit.bootstrap.ast_contract import AstNode
 from merit.bootstrap.hir_contract import HirType, canonical_hir_json
 from merit.bootstrap.hir_expression import (
+    HirFieldSignature,
+    HirFunctionSignature,
     PrimitiveHirLoweringError,
     lower_bound_expression_hir,
     lower_primitive_expression_hir,
+    lower_resolved_expression_hir,
 )
 from merit.bootstrap.hir_parity import (
     NativeHirContractError,
@@ -17,6 +20,8 @@ from merit.bootstrap.hir_parity import (
 
 I64 = HirType("i64")
 BOOL = HirType("bool")
+ACCOUNT = HirType("Account")
+RECORD = HirType("Record")
 
 
 def _precedence_ast() -> AstNode:
@@ -119,6 +124,106 @@ def test_native_bound_records_match_reference_comparison_hir():
     assert canonical_hir_json(native) == canonical_hir_json(reference)
 
 
+def test_resolved_empty_call_uses_symbol_without_creating_binding_node():
+    callee = AstNode("identifier", 0, 1)
+    root = AstNode("call", 0, 3, (callee,))
+    reference = lower_resolved_expression_hir(
+        root,
+        "f()",
+        expected_type=I64,
+        functions=(HirFunctionSignature("f", (), I64),),
+        module_name="empty-call",
+    )
+    assert reference.bindings == ()
+    assert len(reference.nodes) == 1
+    assert reference.nodes[0].kind == "call"
+    assert reference.nodes[0].symbol == "f"
+    assert reference.nodes[0].children == ()
+
+    native = lower_native_primitive_hir_records(
+        [
+            (9, 0, 1, -1, -1, 0, 0, 0, -2),
+            (6, 0, 3, 0, -1, 0, 1, 0, -1),
+        ],
+        "f()",
+        module_name="empty-call",
+    )
+    assert canonical_hir_json(native) == canonical_hir_json(reference)
+
+
+def test_resolved_call_flattens_argument_sequence_in_source_order():
+    source = "f(1,2+3)"
+    callee = AstNode("identifier", 0, 1)
+    one = AstNode("exact_numeric", 2, 1)
+    two = AstNode("exact_numeric", 4, 1)
+    three = AstNode("exact_numeric", 6, 1)
+    add = AstNode("add", 4, 3, (two, three))
+    arguments = AstNode("sequence", 2, 5, (one, add))
+    root = AstNode("call", 0, 8, (callee, arguments))
+    reference = lower_resolved_expression_hir(
+        root,
+        source,
+        expected_type=I64,
+        functions=(HirFunctionSignature("f", (I64, I64), I64),),
+        module_name="argument-sequence",
+    )
+    assert [node.kind for node in reference.nodes] == [
+        "literal", "literal", "literal", "binary", "call"
+    ]
+    assert reference.nodes[-1].children == (0, 3)
+    assert reference.nodes[-1].symbol == "f"
+
+    native = lower_native_primitive_hir_records(
+        [
+            (9, 0, 1, -1, -1, 0, 0, 0, -2),
+            (1, 2, 1, -1, -1, 0, 1, 1, -1),
+            (1, 4, 1, -1, -1, 0, 1, 1, -1),
+            (1, 6, 1, -1, -1, 0, 1, 1, -1),
+            (2, 4, 3, 2, 3, 1, 1, 2, -1),
+            (8, 2, 5, 1, 4, 0, 0, 0, -1),
+            (6, 0, 8, 0, 5, 0, 1, 0, -1),
+        ],
+        source,
+        module_name="argument-sequence",
+    )
+    assert canonical_hir_json(native) == canonical_hir_json(reference)
+
+
+def test_resolved_field_uses_receiver_type_and_omits_field_symbol_node():
+    source = "account.balance+1"
+    account = AstNode("identifier", 0, 7)
+    balance = AstNode("identifier", 8, 7)
+    field = AstNode("field", 0, 15, (account, balance))
+    one = AstNode("exact_numeric", 16, 1)
+    root = AstNode("add", 0, 17, (field, one))
+    reference = lower_resolved_expression_hir(
+        root,
+        source,
+        expected_type=I64,
+        bindings=(("account", ACCOUNT),),
+        fields=(HirFieldSignature(ACCOUNT, "balance", I64),),
+        module_name="field-before-addition",
+    )
+    assert [node.kind for node in reference.nodes] == ["identifier", "field", "literal", "binary"]
+    assert reference.nodes[0].type == ACCOUNT
+    assert reference.nodes[1].children == (0,)
+    assert reference.nodes[1].symbol == "balance"
+
+    native = lower_native_primitive_hir_records(
+        [
+            (4, 0, 7, -1, -1, 0, 3, 0, 0),
+            (9, 8, 7, -1, -1, 0, 0, 0, -2),
+            (7, 0, 15, 0, 1, 0, 1, 0, -1),
+            (1, 16, 1, -1, -1, 0, 1, 1, -1),
+            (2, 0, 17, 2, 3, 1, 1, 2, -1),
+        ],
+        source,
+        module_name="field-before-addition",
+        type_names={3: ACCOUNT},
+    )
+    assert canonical_hir_json(native) == canonical_hir_json(reference)
+
+
 @pytest.mark.parametrize(
     "records,message",
     [
@@ -131,6 +236,9 @@ def test_native_bound_records_match_reference_comparison_hir():
         ([(3, 0, 1, 0, -1, 0, 1, 0, -1)], "non-postorder child"),
         ([(4, 0, 1, -1, -1, 0, 1, 0, -1)], "binding ID"),
         ([(5, 0, 1, -1, -1, 5, 2, 1, -1)], "non-postorder child"),
+        ([(6, 0, 3, 0, -1, 0, 1, 0, -1)], "non-symbol"),
+        ([(9, 0, 1, -1, -1, 0, 1, 0, -2)], "symbol reference"),
+        ([(8, 0, 1, -1, -1, 0, 0, 0, -1)], "argument child"),
     ],
 )
 def test_malformed_native_hir_is_rejected(records, message):
@@ -157,4 +265,22 @@ def test_reference_rejects_untyped_unsupported_or_unresolved_shapes():
     with pytest.raises(PrimitiveHirLoweringError, match="outside source"):
         lower_primitive_expression_hir(
             AstNode("exact_numeric", 3, 1), "1", expected_type=I64
+        )
+    with pytest.raises(PrimitiveHirLoweringError, match="unresolved function"):
+        lower_resolved_expression_hir(
+            AstNode("call", 0, 3, (AstNode("identifier", 0, 1),)),
+            "f()",
+            expected_type=I64,
+        )
+    with pytest.raises(PrimitiveHirLoweringError, match="unresolved field"):
+        lower_resolved_expression_hir(
+            AstNode(
+                "field",
+                0,
+                3,
+                (AstNode("identifier", 0, 1), AstNode("identifier", 2, 1)),
+            ),
+            "a.b",
+            expected_type=I64,
+            bindings=(("a", ACCOUNT),),
         )
