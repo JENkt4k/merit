@@ -101,6 +101,7 @@ class HirNode:
     numeric_policy: str = "none"
     conversion_policy: str = "none"
     capabilities: tuple[str, ...] = ()
+    generic_arguments: tuple[HirType, ...] = ()
 
     def __post_init__(self) -> None:
         if self.node_id < 0:
@@ -119,6 +120,8 @@ class HirNode:
             raise HirContractError("capability requirements must be unique")
         if any(not capability for capability in self.capabilities):
             raise HirContractError("capability names must be non-empty")
+        if self.generic_arguments and self.kind != "call":
+            raise HirContractError("generic arguments are only valid on call nodes")
 
     def to_data(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -140,6 +143,8 @@ class HirNode:
             data["value"] = self.value
         if self.capabilities:
             data["capabilities"] = list(self.capabilities)
+        if self.generic_arguments:
+            data["generic_arguments"] = [argument.to_data() for argument in self.generic_arguments]
         return data
 
 
@@ -281,10 +286,13 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
             raise HirContractError("node entries must be objects")
         raw_children = raw.get("children", [])
         raw_capabilities = raw.get("capabilities", [])
+        raw_generic_arguments = raw.get("generic_arguments", [])
         if not isinstance(raw_children, list) or not all(isinstance(v, int) for v in raw_children):
             raise HirContractError("node children must be integer lists")
         if not isinstance(raw_capabilities, list) or not all(isinstance(v, str) for v in raw_capabilities):
             raise HirContractError("node capabilities must be string lists")
+        if not isinstance(raw_generic_arguments, list):
+            raise HirContractError("node generic arguments must be type lists")
         binding_id = raw.get("binding_id")
         nodes.append(HirNode(
             int(raw.get("id", -1)),
@@ -299,6 +307,7 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
             str(raw.get("numeric_policy", "none")),
             str(raw.get("conversion_policy", "none")),
             tuple(raw_capabilities),
+            tuple(parse_hir_type(argument) for argument in raw_generic_arguments),
         ))
     if not all(isinstance(root, int) for root in raw_roots):
         raise HirContractError("roots must be integer node IDs")
