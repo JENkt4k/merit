@@ -9,7 +9,7 @@ import subprocess
 
 from merit.bootstrap.ast_contract import lower_expression_ast
 from merit.bootstrap.hir_contract import HirType
-from merit.bootstrap.hir_expression import lower_primitive_expression_hir
+from merit.bootstrap.hir_expression import lower_bound_expression_hir
 from merit.bootstrap.hir_parity import primitive_hir_parity_observations
 from merit.bootstrap.parity import build_parity_report, markdown_summary
 from merit.bootstrap.repository_corpus import load_repository_corpus
@@ -62,9 +62,28 @@ requires_caps [allocate]
     let expressions: Vec<ExpressionNode> = parse_expression_tokens(source, tokens, allocator);
     let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
     var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, vec_len<AstNodeRecord>(ast_nodes));
+    var binding_starts: Vec<i64> = vec_new<i64>(allocator, 4);
+    var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 4);
     var ast_index: i64 = 0;
     while (ast_index < vec_len<AstNodeRecord>(ast_nodes)) {{
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
+        var binding_id: i64 = -1;
+        if (ast_kind(ast) == 30) {{
+            if (ast_group_parent(ast) < 0) {{
+                binding_id = hir_find_binding_id(
+                    source,
+                    binding_starts,
+                    binding_lengths,
+                    ast_start(ast),
+                    ast_length(ast)
+                );
+                if (binding_id < 0) {{
+                    binding_id = vec_len<i64>(binding_starts);
+                    vec_push<i64>(binding_starts, ast_start(ast));
+                    vec_push<i64>(binding_lengths, ast_length(ast));
+                }}
+            }}
+        }}
         let hir: HirExpressionRecord = lower_primitive_hir_record(
             ast_kind(ast),
             ast_start(ast),
@@ -73,7 +92,8 @@ requires_caps [allocate]
             ast_right(ast),
             ast_group_start(ast),
             ast_group_length(ast),
-            ast_group_parent(ast)
+            ast_group_parent(ast),
+            binding_id
         );
         vec_push<HirExpressionRecord>(hir_nodes, hir);
         ast_index = checked_add(ast_index, 1);
@@ -91,8 +111,11 @@ requires_caps [allocate]
         print(hir_symbol(node));
         print(hir_type_code(node));
         print(hir_numeric_policy(node));
+        print(hir_binding_id(node));
         index = checked_add(index, 1);
     }}
+    drop(binding_lengths);
+    drop(binding_starts);
     drop(hir_nodes);
     drop(ast_nodes);
     drop(expressions);
@@ -141,13 +164,13 @@ def _parse_probe_output(output: str, case_count: int):
         validation = values[cursor]
         count = values[cursor + 1]
         cursor += 2
-        field_count = count * 8
+        field_count = count * 9
         assert cursor + field_count <= len(values)
         fields = values[cursor : cursor + field_count]
         cursor += field_count
         records = [
-            tuple(fields[index : index + 8])
-            for index in range(0, len(fields), 8)
+            tuple(fields[index : index + 9])
+            for index in range(0, len(fields), 9)
         ]
         cases.append((validation, records))
     assert cursor == len(values)
@@ -157,8 +180,19 @@ def _parse_probe_output(output: str, case_count: int):
 def _reference_hir(case):
     records = REFERENCE.reference_expression(case.text)
     ast = lower_expression_ast(records)
-    return lower_primitive_expression_hir(
-        ast, case.text, expected_type=I64, module_name=case.case_id
+    binding_names: list[str] = []
+    for kind, start, length, _, _ in records:
+        if kind != 30:
+            continue
+        name = case.text[start : start + length]
+        if name not in binding_names:
+            binding_names.append(name)
+    return lower_bound_expression_hir(
+        ast,
+        case.text,
+        expected_type=I64,
+        bindings=((name, I64) for name in binding_names),
+        module_name=case.case_id,
     )
 
 
@@ -174,10 +208,16 @@ def _observations(cases, actual):
     return observations
 
 
-def test_repository_primitive_expression_hir_has_real_interpreter_and_native_parity(tmp_path):
+def test_repository_bound_expression_hir_has_real_interpreter_and_native_parity(tmp_path):
     corpus = load_repository_corpus(MANIFEST)
     cases = corpus.for_stage("hir")
-    assert [case.case_id for case in cases] == ["precedence-product", "explicit-group"]
+    assert [case.case_id for case in cases] == [
+        "precedence-product",
+        "explicit-group",
+        "left-associative-subtract",
+        "comparison-last",
+        "division-before-addition",
+    ]
     expressions = [case.text for case in cases]
     project, project_root = _project_with_probe(tmp_path, expressions)
 
@@ -186,7 +226,7 @@ def test_repository_primitive_expression_hir_has_real_interpreter_and_native_par
         corpus, _observations(cases, interpreted), stages=["hir"]
     )
     assert interpreted_report.complete, markdown_summary(interpreted_report)
-    assert interpreted_report.stage_counts() == {"hir": (2, 2)}
+    assert interpreted_report.stage_counts() == {"hir": (5, 5)}
 
     _, _, executable = build(project, project_root / "hir_parity")
     native_output = subprocess.run(
@@ -197,6 +237,6 @@ def test_repository_primitive_expression_hir_has_real_interpreter_and_native_par
         corpus, _observations(cases, native), stages=["hir"]
     )
     assert native_report.complete, markdown_summary(native_report)
-    assert native_report.stage_counts() == {"hir": (2, 2)}
+    assert native_report.stage_counts() == {"hir": (5, 5)}
 
     assert native == interpreted
