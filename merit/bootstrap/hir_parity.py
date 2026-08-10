@@ -109,7 +109,7 @@ def lower_native_primitive_hir_records(
     def raw_sequence_items(native_index: int, current: int) -> tuple[int, ...]:
         if native_index < 0 or native_index >= current:
             raise NativeHirContractError(
-                f"record {current} has non-postorder sequence child {native_index}"
+                f"record {current} has non-postorder argument child {native_index}"
             )
         sequence = sequence_items.get(native_index)
         if sequence is not None:
