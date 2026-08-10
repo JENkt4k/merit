@@ -1,0 +1,25 @@
+module bootstrap_hir_generics
+
+import bootstrap_hir;
+
+// bootstrap-expression-v1 currently supports a single explicit type argument.
+// Preserve the entire generic application source span as a structural symbol
+// reference. Canonical HIR reconstruction resolves the base symbol and type
+// argument from this immutable span.
+pub fn lower_generic_apply_hir_record(
+    ast_start_value: i64,
+    ast_length_value: i64
+) -> HirExpressionRecord
+{
+    return HirExpressionRecord {
+        kind: 9,
+        start: ast_start_value,
+        length: ast_length_value,
+        left: -1,
+        right: -1,
+        symbol: 0,
+        type_code: 0,
+        numeric_policy: 0,
+        binding_id: -2
+    };
+}
