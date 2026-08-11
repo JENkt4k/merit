@@ -105,6 +105,7 @@ class MirInstruction:
     conversion_policy: str = "none"
     contract_kind: str = "none"
     capabilities: tuple[str, ...] = ()
+    specialization: tuple[MirType, ...] = ()
 
     def __post_init__(self) -> None:
         if self.instruction_id < 0:
@@ -127,6 +128,8 @@ class MirInstruction:
             raise MirContractError("capability requirements must be unique")
         if any(not capability for capability in self.capabilities):
             raise MirContractError("capability names must be non-empty")
+        if self.specialization and self.kind != "call":
+            raise MirContractError("generic specialization is only valid on call instructions")
 
     def to_data(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -148,6 +151,8 @@ class MirInstruction:
             data["span"] = self.span.to_data()
         if self.capabilities:
             data["capabilities"] = list(self.capabilities)
+        if self.specialization:
+            data["specialization"] = [argument.to_data() for argument in self.specialization]
         return data
 
 
@@ -380,12 +385,15 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
                     raise MirContractError("instruction entries must be objects")
                 operands = raw.get("operands", [])
                 caps = raw.get("capabilities", [])
+                specialization = raw.get("specialization", [])
                 if not isinstance(operands, list) or not all(isinstance(value, int) for value in operands):
                     raise MirContractError("instruction operands must be integer lists")
                 if not isinstance(caps, list) or not all(isinstance(value, str) for value in caps):
                     raise MirContractError("instruction capabilities must be string lists")
+                if not isinstance(specialization, list):
+                    raise MirContractError("instruction specialization must be a type list")
                 result = raw.get("result")
-                instructions.append(MirInstruction(int(raw.get("id", -1)), str(raw.get("kind", "")), None if result is None else int(result), tuple(operands), raw.get("symbol") if isinstance(raw.get("symbol"), str) else None, raw.get("value"), _parse_span(raw.get("span")), str(raw.get("ownership", "none")), str(raw.get("numeric_policy", "none")), str(raw.get("conversion_policy", "none")), str(raw.get("contract_kind", "none")), tuple(caps)))
+                instructions.append(MirInstruction(int(raw.get("id", -1)), str(raw.get("kind", "")), None if result is None else int(result), tuple(operands), raw.get("symbol") if isinstance(raw.get("symbol"), str) else None, raw.get("value"), _parse_span(raw.get("span")), str(raw.get("ownership", "none")), str(raw.get("numeric_policy", "none")), str(raw.get("conversion_policy", "none")), str(raw.get("contract_kind", "none")), tuple(caps), tuple(parse_mir_type(argument) for argument in specialization)))
             term_operands = terminator_data.get("operands", [])
             targets = terminator_data.get("targets", [])
             cases = terminator_data.get("cases", [])
