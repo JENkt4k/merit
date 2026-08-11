@@ -141,18 +141,7 @@ requires_caps [allocate]
         ast_index = checked_add(ast_index, 1);
     }}
 
-    if (validate_primitive_hir_records(hir_nodes) != 0) {{
-        print(90);
-        print(0);
-        drop(binding_lengths);
-        drop(binding_starts);
-        drop(hir_nodes);
-        drop(ast_nodes);
-        drop(expressions);
-        drop(tokens);
-        return 90;
-    }}
-
+    let hir_validation: i32 = validate_primitive_hir_records(hir_nodes);
     let binding_count: i64 = vec_len<i64>(binding_starts);
     let hir_count: i64 = vec_len<HirExpressionRecord>(hir_nodes);
     var local_ids: Vec<i64> = vec_new<i64>(allocator, hir_count);
@@ -247,7 +236,12 @@ requires_caps [allocate]
         hir_index = checked_add(hir_index, 1);
     }}
 
-    print(validate_expression_mir_records(mir_nodes));
+    let mir_validation: i32 = validate_expression_mir_records(mir_nodes);
+    if (hir_validation != 0) {{
+        print(checked_add(90, hir_validation));
+    }} else {{
+        print(mir_validation);
+    }}
     print(vec_len<MirExpressionRecord>(mir_nodes));
     var index: i64 = 0;
     while (index < vec_len<MirExpressionRecord>(mir_nodes)) {{
