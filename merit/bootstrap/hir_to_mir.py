@@ -139,6 +139,7 @@ class _FunctionLowerer:
         conversion_policy: str = "none",
         contract_kind: str = "none",
         capabilities: tuple[str, ...] = (),
+        specialization: tuple[MirType, ...] = (),
     ) -> None:
         if self.current.terminator is not None:
             raise HirToMirError(
@@ -157,6 +158,7 @@ class _FunctionLowerer:
             conversion_policy,
             contract_kind,
             capabilities,
+            specialization,
         ))
         self.next_instruction += 1
 
@@ -214,7 +216,14 @@ class _FunctionLowerer:
             operands = tuple(self.lower_value(self.by_id[child]) for child in node.children)
             if not node.symbol:
                 raise HirToMirError(f"call node {node.node_id} requires a resolved symbol")
-            self._emit(node, "call", result=result, operands=operands, symbol=node.symbol)
+            self._emit(
+                node,
+                "call",
+                result=result,
+                operands=operands,
+                symbol=node.symbol,
+                specialization=tuple(_mir_type(argument) for argument in node.generic_arguments),
+            )
         elif node.kind == "field":
             if len(node.children) != 1:
                 raise HirToMirError(f"field node {node.node_id} requires one receiver")
