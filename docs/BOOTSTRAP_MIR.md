@@ -47,6 +47,10 @@ Typed string literals use the existing `const` instruction. Their exact quoted
 source spelling is retained as the constant value, the resolved `string` type is
 carried by the result local, and their numeric policy is `none`.
 
+Field HIR lowers to `load_field` with one explicit receiver local and one resolved
+field symbol. Calls and constructors carry resolved symbols and ordered operand
+locals; symbol names are not value bindings and do not consume local IDs.
+
 ## Terminators
 
 Supported terminators are:
@@ -102,38 +106,53 @@ required. Functions also record their complete declared capability set.
 
 ## Measured expression boundary
 
-The executable Merit-native MIR boundary currently covers six expression-corpus
-cases whose checked HIR requires:
+The executable Merit-native MIR boundary covers eleven expression-corpus cases
+once this branch passes its hosted gate. The measured surface includes:
 
 - exact/checked numeric constants and arithmetic
 - resolved source bindings
 - typed comparisons
 - structural grouping aliases
 - typed non-numeric string constants
+- resolved ordinary calls, including empty and ordered multi-argument calls
+- nested calls
+- typed field loads
+- aggregate construction with declaration-ordered operands
+- call/constructor/field composition
 
-The replacement emits flat MIR records from Merit itself. In particular, the
-native path owns:
+Two native record families are intentionally used. The original primitive record
+remains frozen for arithmetic, bindings, comparisons, groups, and strings. The
+additive composite record carries resolved symbol spans and explicit ordered
+operand markers for calls and construction, plus receiver identity for field
+loads. Both record streams preserve root-first temporary allocation while
+emitting instructions postorder.
+
+The native path owns:
 
 - source-binding local identity
 - root-first temporary-local allocation
 - postorder instruction emission
-- operand-local references
+- operand-local references and call/constructor operand order
+- resolved call, constructor, and field symbol identity
 - binary operator identity
 - explicit numeric policy
 - resolved result type codes
 - source spans and canonical HIR provenance
 
-The Python parity adapter validates and serializes those already-made decisions;
-it does not re-run HIR-to-MIR lowering. The repository gate compares the result
-against the existing Python `lower_hir_to_mir` oracle and independently requires
-Merit interpreter/native record equality.
+Python adapters validate and serialize those already-made decisions; they do not
+re-run HIR-to-MIR lowering or infer symbols/operands from expression spelling.
+The repository gates compare canonical output against the Python
+`lower_hir_to_mir` oracle and independently require Merit interpreter/native
+record equality.
 
-This boundary is intentionally narrower than the complete expression HIR
-boundary. Calls require a native MIR representation for resolved callee identity
-and ordered argument locals; generic calls additionally need specialization
-identity. Field HIR also requires a dedicated `load_field` lowering rule before
-those expression cases can be promoted safely. These semantics are not inferred
-from source text by the parity adapter.
+### Remaining expression gap
+
+`identity<i64>(1)` remains outside measured MIR parity. HIR correctly preserves
+its generic argument, but `bootstrap-mir-v1` call instructions currently carry
+only the resolved callee symbol and operand locals. Promoting that case before
+MIR gains explicit specialization metadata would certify an information-losing
+boundary. The next expression-MIR contract revision should preserve generic
+specialization identity directly rather than reconstructing it from source.
 
 ## Non-goals
 
@@ -149,11 +168,11 @@ This contract does not:
 ## Adoption sequence
 
 1. Lower checked HIR into canonical `bootstrap-mir-v1` in the Python oracle.
-2. Emit a measured expression MIR slice from the Merit-native compiler.
-3. Add `mir` observations to the existing parity engine and require exact
-   interpreter/native agreement.
-4. Expand exact MIR parity through calls, construction, fields, generics,
-   decimal, contracts, ownership, and capability examples.
-5. Make deterministic C emission consume MIR only.
-6. Expand vertically until all nine acceptance projects pass through the new
-   pipeline.
+2. Emit measured expression MIR from the Merit-native compiler.
+3. Require exact interpreter/native agreement in the shared parity engine.
+4. Complete generic-call MIR identity, then close the expression corpus at 12/12.
+5. Expand vertically through statements, contracts, control flow, ownership,
+   capabilities, modules, and the acceptance applications.
+6. Make deterministic C emission consume replacement MIR only.
+7. Remove the Python compiler from the trusted production path after whole-pipeline
+   differential replacement is proven.

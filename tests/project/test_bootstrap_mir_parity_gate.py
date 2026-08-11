@@ -8,6 +8,7 @@ import shutil
 import subprocess
 
 from merit.bootstrap.ast_contract import lower_expression_ast
+from merit.bootstrap.corpus import BootstrapCorpus
 from merit.bootstrap.hir_contract import HirType
 from merit.bootstrap.hir_expression import lower_resolved_expression_hir
 from merit.bootstrap.mir_contract import MirType, canonical_mir_json
@@ -28,6 +29,14 @@ MANIFEST = ROOT / "tests/project/bootstrap_corpus_v1.json"
 REFERENCE_PATH = Path(__file__).with_name("test_bootstrap_lexer.py")
 I64 = HirType("i64")
 STRING = HirType("string")
+PRIMITIVE_CASE_IDS = (
+    "precedence-product",
+    "explicit-group",
+    "left-associative-subtract",
+    "comparison-last",
+    "string-atom",
+    "division-before-addition",
+)
 
 
 def _load_reference_module():
@@ -207,9 +216,6 @@ requires_caps [allocate]
         initialize_index = checked_add(initialize_index, 1);
     }}
 
-    // HIR records are postorder, while MIR temporary locals are allocated when
-    // entering a value node. Walk root-first with an explicit stack so the native
-    // replacement owns deterministic local numbering rather than the adapter.
     var stack: Vec<i64> = vec_new<i64>(allocator, hir_count);
     vec_push<i64>(stack, checked_sub(hir_count, 1));
     var next_temporary: i64 = binding_count;
@@ -238,23 +244,13 @@ requires_caps [allocate]
         }}
     }}
 
-    // Canonical HIR IDs remain postorder and structural grouping aliases do not
-    // consume IDs. Resolve aliases only after the semantic child has an ID/local.
     var next_hir_id: i64 = 0;
     var canonical_index: i64 = 0;
     while (canonical_index < hir_count) {{
         let current: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, canonical_index);
         if (hir_kind(current) == 3) {{
-            vec_set<i64>(
-                local_ids,
-                canonical_index,
-                vec_get<i64>(local_ids, hir_left(current))
-            );
-            vec_set<i64>(
-                canonical_ids,
-                canonical_index,
-                vec_get<i64>(canonical_ids, hir_left(current))
-            );
+            vec_set<i64>(local_ids, canonical_index, vec_get<i64>(local_ids, hir_left(current)));
+            vec_set<i64>(canonical_ids, canonical_index, vec_get<i64>(canonical_ids, hir_left(current)));
         }} else {{
             vec_set<i64>(canonical_ids, canonical_index, next_hir_id);
             next_hir_id = checked_add(next_hir_id, 1);
@@ -291,39 +287,21 @@ requires_caps [allocate]
     }}
 
     let mir_validation: i32 = validate_expression_mir_records(mir_nodes);
-    if (hir_validation != 0) {{
-        print(checked_add(90, hir_validation));
-    }} else {{
-        print(mir_validation);
-    }}
+    if (hir_validation != 0) {{ print(checked_add(90, hir_validation)); }} else {{ print(mir_validation); }}
     print(vec_len<MirExpressionRecord>(mir_nodes));
     var index: i64 = 0;
     while (index < vec_len<MirExpressionRecord>(mir_nodes)) {{
         let node: MirExpressionRecord = vec_get<MirExpressionRecord>(mir_nodes, index);
-        print(mir_kind(node));
-        print(mir_start(node));
-        print(mir_length(node));
-        print(mir_result(node));
-        print(mir_left(node));
-        print(mir_right(node));
-        print(mir_symbol(node));
-        print(mir_type_code(node));
-        print(mir_numeric_policy(node));
-        print(mir_binding_id(node));
-        print(mir_hir_node_id(node));
+        print(mir_kind(node)); print(mir_start(node)); print(mir_length(node));
+        print(mir_result(node)); print(mir_left(node)); print(mir_right(node));
+        print(mir_symbol(node)); print(mir_type_code(node)); print(mir_numeric_policy(node));
+        print(mir_binding_id(node)); print(mir_hir_node_id(node));
         index = checked_add(index, 1);
     }}
 
-    drop(mir_nodes);
-    drop(stack);
-    drop(canonical_ids);
-    drop(local_ids);
-    drop(binding_lengths);
-    drop(binding_starts);
-    drop(hir_nodes);
-    drop(ast_nodes);
-    drop(expressions);
-    drop(tokens);
+    drop(mir_nodes); drop(stack); drop(canonical_ids); drop(local_ids);
+    drop(binding_lengths); drop(binding_starts); drop(hir_nodes); drop(ast_nodes);
+    drop(expressions); drop(tokens);
     return 0;
 }}
 
@@ -347,9 +325,7 @@ def _project_with_probe(tmp_path: Path, cases):
     )
     assert replacements == 1
     lexer_path.write_text(lexer, encoding="utf-8")
-    (project_root / "src/mir_parity_probe.mrt").write_text(
-        _probe_source(cases), encoding="utf-8"
-    )
+    (project_root / "src/mir_parity_probe.mrt").write_text(_probe_source(cases), encoding="utf-8")
     manifest = project_root / "Merit.toml"
     text = manifest.read_text(encoding="utf-8").replace(
         'entry = "src/lexer.mrt"', 'entry = "src/mir_parity_probe.mrt"'
@@ -371,12 +347,7 @@ def _parse_probe_output(output: str, case_count: int):
         assert cursor + field_count <= len(values)
         fields = values[cursor : cursor + field_count]
         cursor += field_count
-        parsed.append(
-            (
-                validation,
-                [tuple(fields[index : index + 11]) for index in range(0, len(fields), 11)],
-            )
-        )
+        parsed.append((validation, [tuple(fields[index:index + 11]) for index in range(0, len(fields), 11)]))
     assert cursor == len(values)
     return parsed
 
@@ -389,68 +360,41 @@ def _observations(cases, actual):
         if case.case_id == "string-atom":
             reference = lower_expression_hir_to_mir(reference_hir)
             bootstrap = lower_native_expression_mir_records(
-                records,
-                case.text,
-                module_name=case.case_id,
-                type_names={6: MirType("string")},
+                records, case.text, module_name=case.case_id, type_names={6: MirType("string")}
             )
-            observations.extend(
-                (
-                    observe(
-                        case.case_id,
-                        "mir",
-                        "reference",
-                        canonical_mir_json(reference),
-                    ),
-                    observe(
-                        case.case_id,
-                        "mir",
-                        "bootstrap",
-                        canonical_mir_json(bootstrap),
-                    ),
-                )
-            )
+            observations.extend((
+                observe(case.case_id, "mir", "reference", canonical_mir_json(reference)),
+                observe(case.case_id, "mir", "bootstrap", canonical_mir_json(bootstrap)),
+            ))
         else:
-            observations.extend(
-                expression_mir_parity_observations(
-                    case.case_id,
-                    reference_hir,
-                    records,
-                    case.text,
-                )
-            )
+            observations.extend(expression_mir_parity_observations(
+                case.case_id, reference_hir, records, case.text
+            ))
     return observations
 
 
 def test_repository_primitive_expression_mir_has_real_interpreter_and_native_parity(tmp_path):
     corpus = load_repository_corpus(MANIFEST)
-    cases = corpus.for_stage("mir")
-    assert [case.case_id for case in cases] == [
-        "precedence-product",
-        "explicit-group",
-        "left-associative-subtract",
-        "comparison-last",
-        "string-atom",
-        "division-before-addition",
-    ]
+    cases = tuple(corpus.by_id(case_id) for case_id in PRIMITIVE_CASE_IDS)
+    subset = BootstrapCorpus(corpus.schema, cases)
     project, project_root = _project_with_probe(tmp_path, cases)
 
     interpreted = _parse_probe_output(interpret(project), len(cases))
     interpreted_report = build_parity_report(
-        corpus, _observations(cases, interpreted), stages=["mir"]
+        subset, _observations(cases, interpreted), stages=["mir"]
     )
     assert interpreted_report.complete, markdown_summary(interpreted_report)
     assert interpreted_report.stage_counts() == {"mir": (6, 6)}
 
     _, _, executable = build(project, project_root / "mir_parity")
-    native_output = subprocess.run(
-        [str(executable)], check=True, text=True, capture_output=True
-    ).stdout
-    native = _parse_probe_output(native_output, len(cases))
+    native = _parse_probe_output(
+        subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout,
+        len(cases),
+    )
     assert native == interpreted
 
     native_report = build_parity_report(
-        corpus, _observations(cases, native), stages=["mir"]
+        subset, _observations(cases, native), stages=["mir"]
     )
     assert native_report.complete, markdown_summary(native_report)
     assert native_report.stage_counts() == {"mir": (6, 6)}
