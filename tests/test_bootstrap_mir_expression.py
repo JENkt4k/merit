@@ -10,6 +10,7 @@ from merit.bootstrap.mir_parity import NativeMirExpressionError, lower_native_ex
 
 I64 = HirType("i64")
 BOOL = HirType("bool")
+STRING = HirType("string")
 
 
 def _hir(nodes, *, bindings=(), root=None, name="expr"):
@@ -107,6 +108,36 @@ def test_native_binding_and_comparison_records_preserve_source_local_identity():
     )
     assert canonical_mir_json(native) == canonical_mir_json(reference)
     assert [local.source_binding_id for local in native.functions[0].locals] == [0, 1, None]
+
+
+def test_native_string_constant_matches_reference_mir_exactly():
+    source = '"value"'
+    reference = lower_expression_hir_to_mir(
+        _hir(
+            [
+                HirNode(
+                    0,
+                    "literal",
+                    STRING,
+                    value=source,
+                    span=SourceSpan(0, len(source)),
+                    numeric_policy="none",
+                )
+            ],
+            name="string-atom",
+        )
+    )
+    native = lower_native_expression_mir_records(
+        [(1, 0, len(source), 0, -1, -1, 0, 6, 0, -1, 0)],
+        source,
+        module_name="string-atom",
+        type_names={6: MirType("string")},
+    )
+    assert canonical_mir_json(native) == canonical_mir_json(reference)
+    instruction = native.functions[0].blocks[0].instructions[0]
+    assert instruction.kind == "const"
+    assert instruction.value == source
+    assert instruction.numeric_policy == "none"
 
 
 def test_native_group_alias_does_not_allocate_or_emit_instruction():
