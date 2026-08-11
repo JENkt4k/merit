@@ -1,0 +1,55 @@
+module bootstrap_mir_cfg
+
+// Additive bootstrap-function-mir-v1 CFG records. Native lowering owns block
+// allocation, target ordering, switch case ordering, and terminator selection.
+// Kinds: 10 block, 11 jump, 12 branch, 13 switch-case, 14 switch-default,
+// 15 return, 16 unreachable.
+pub struct MirCfgRecord {
+    kind: i32;
+    block_id: i64;
+    operand: i64;
+    target_a: i64;
+    target_b: i64;
+    case_value: i64;
+    ordinal: i64;
+}
+
+pub fn cfg_kind(borrow record: MirCfgRecord) -> i32 { return record.kind; }
+pub fn cfg_block_id(borrow record: MirCfgRecord) -> i64 { return record.block_id; }
+pub fn cfg_operand(borrow record: MirCfgRecord) -> i64 { return record.operand; }
+pub fn cfg_target_a(borrow record: MirCfgRecord) -> i64 { return record.target_a; }
+pub fn cfg_target_b(borrow record: MirCfgRecord) -> i64 { return record.target_b; }
+pub fn cfg_case_value(borrow record: MirCfgRecord) -> i64 { return record.case_value; }
+pub fn cfg_ordinal(borrow record: MirCfgRecord) -> i64 { return record.ordinal; }
+
+pub fn cfg_block(block_id: i64, ordinal: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 10, block_id: block_id, operand: -1, target_a: -1, target_b: -1, case_value: 0, ordinal: ordinal };
+}
+
+pub fn cfg_jump(block_id: i64, target: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 11, block_id: block_id, operand: -1, target_a: target, target_b: -1, case_value: 0, ordinal: 0 };
+}
+
+pub fn cfg_branch(block_id: i64, condition_local: i64, true_target: i64, false_target: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 12, block_id: block_id, operand: condition_local, target_a: true_target, target_b: false_target, case_value: 0, ordinal: 0 };
+}
+
+pub fn cfg_switch_case(block_id: i64, value_local: i64, case_value: i64, target: i64, ordinal: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 13, block_id: block_id, operand: value_local, target_a: target, target_b: -1, case_value: case_value, ordinal: ordinal };
+}
+
+pub fn cfg_switch_default(block_id: i64, value_local: i64, target: i64, ordinal: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 14, block_id: block_id, operand: value_local, target_a: target, target_b: -1, case_value: 0, ordinal: ordinal };
+}
+
+pub fn cfg_return(block_id: i64, value_local: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 15, block_id: block_id, operand: value_local, target_a: -1, target_b: -1, case_value: 0, ordinal: 0 };
+}
+
+pub fn cfg_return_unit(block_id: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 15, block_id: block_id, operand: -1, target_a: -1, target_b: -1, case_value: 0, ordinal: 0 };
+}
+
+pub fn cfg_unreachable(block_id: i64) -> MirCfgRecord {
+    return MirCfgRecord { kind: 16, block_id: block_id, operand: -1, target_a: -1, target_b: -1, case_value: 0, ordinal: 0 };
+}
