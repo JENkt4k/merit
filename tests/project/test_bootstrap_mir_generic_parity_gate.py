@@ -47,7 +47,7 @@ def _reference_hir(case):
         case.text,
         expected_type=I64,
         functions=(HirFunctionSignature("identity", (TYPE_T,), TYPE_T, ("T",)),),
-        generic_types={"i64": I64},
+        types=(I64,),
         module_name=case.case_id,
     )
 
