@@ -1,0 +1,38 @@
+module bootstrap_hir_strings
+
+import bootstrap_hir;
+
+// Non-numeric literals carry semantic type information but no numeric policy.
+// Type code 6 is the replacement-boundary fixture identity for `string`.
+pub fn lower_string_hir_record(
+    ast_start_value: i64,
+    ast_length_value: i64,
+    resolved_type_code: i32
+) -> HirExpressionRecord
+{
+    return HirExpressionRecord {
+        kind: 12,
+        start: ast_start_value,
+        length: ast_length_value,
+        left: -1,
+        right: -1,
+        symbol: 0,
+        type_code: resolved_type_code,
+        numeric_policy: 0,
+        binding_id: -1
+    };
+}
+
+// Stable local validation for the additive non-numeric literal record.
+pub fn validate_string_hir_record(borrow node: HirExpressionRecord) -> i32 {
+    if (hir_kind(node) != 12) { return 1; }
+    if (hir_start(node) < 0) { return 2; }
+    if (hir_length(node) < 2) { return 2; }
+    if (hir_left(node) != -1) { return 3; }
+    if (hir_right(node) != -1) { return 3; }
+    if (hir_symbol(node) != 0) { return 3; }
+    if (hir_type_code(node) <= 0) { return 4; }
+    if (hir_numeric_policy(node) != 0) { return 5; }
+    if (hir_binding_id(node) != -1) { return 3; }
+    return 0;
+}
