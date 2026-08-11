@@ -1,0 +1,162 @@
+module bootstrap_mir_composite
+
+// Additive flat record for the composite-expression replacement boundary.
+// Kinds: 1 const, 2 binary, 3 binding, 4 call, 5 field load,
+// 6 construct, 7 ordered operand marker.
+pub struct MirCompositeRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    result: i64;
+    left: i64;
+    right: i64;
+    symbol_start: i64;
+    symbol_length: i64;
+    symbol_code: i32;
+    type_code: i32;
+    numeric_policy: i32;
+    binding_id: i64;
+    hir_node_id: i64;
+    owner_hir_id: i64;
+    ordinal: i64;
+}
+
+pub fn composite_kind(borrow node: MirCompositeRecord) -> i32 { return node.kind; }
+pub fn composite_start(borrow node: MirCompositeRecord) -> i64 { return node.start; }
+pub fn composite_length(borrow node: MirCompositeRecord) -> i64 { return node.length; }
+pub fn composite_result(borrow node: MirCompositeRecord) -> i64 { return node.result; }
+pub fn composite_left(borrow node: MirCompositeRecord) -> i64 { return node.left; }
+pub fn composite_right(borrow node: MirCompositeRecord) -> i64 { return node.right; }
+pub fn composite_symbol_start(borrow node: MirCompositeRecord) -> i64 { return node.symbol_start; }
+pub fn composite_symbol_length(borrow node: MirCompositeRecord) -> i64 { return node.symbol_length; }
+pub fn composite_symbol_code(borrow node: MirCompositeRecord) -> i32 { return node.symbol_code; }
+pub fn composite_type_code(borrow node: MirCompositeRecord) -> i32 { return node.type_code; }
+pub fn composite_numeric_policy(borrow node: MirCompositeRecord) -> i32 { return node.numeric_policy; }
+pub fn composite_binding_id(borrow node: MirCompositeRecord) -> i64 { return node.binding_id; }
+pub fn composite_hir_node_id(borrow node: MirCompositeRecord) -> i64 { return node.hir_node_id; }
+pub fn composite_owner_hir_id(borrow node: MirCompositeRecord) -> i64 { return node.owner_hir_id; }
+pub fn composite_ordinal(borrow node: MirCompositeRecord) -> i64 { return node.ordinal; }
+
+pub fn composite_const(start: i64, length: i64, result: i64, type_code: i32, hir_node_id: i64) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 1, start: start, length: length, result: result,
+        left: -1, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: type_code, numeric_policy: 0,
+        binding_id: -1, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn composite_binary(
+    start: i64, length: i64, result: i64, left: i64, right: i64,
+    symbol_code: i32, type_code: i32, numeric_policy: i32, hir_node_id: i64
+) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 2, start: start, length: length, result: result,
+        left: left, right: right, symbol_start: -1, symbol_length: 0,
+        symbol_code: symbol_code, type_code: type_code, numeric_policy: numeric_policy,
+        binding_id: -1, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn composite_binding(
+    start: i64, length: i64, binding_id: i64, type_code: i32, hir_node_id: i64
+) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 3, start: start, length: length, result: binding_id,
+        left: -1, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: type_code, numeric_policy: 0,
+        binding_id: binding_id, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn composite_operand(result: i64, owner_hir_id: i64, ordinal: i64) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 7, start: 0, length: 0, result: result,
+        left: -1, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: 0, numeric_policy: 0,
+        binding_id: -1, hir_node_id: -1, owner_hir_id: owner_hir_id, ordinal: ordinal
+    };
+}
+
+pub fn composite_call(
+    start: i64, length: i64, result: i64,
+    symbol_start: i64, symbol_length: i64, type_code: i32, hir_node_id: i64
+) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 4, start: start, length: length, result: result,
+        left: -1, right: -1, symbol_start: symbol_start, symbol_length: symbol_length,
+        symbol_code: 0, type_code: type_code, numeric_policy: 0,
+        binding_id: -1, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn composite_field(
+    start: i64, length: i64, result: i64, receiver: i64,
+    symbol_start: i64, symbol_length: i64, type_code: i32, hir_node_id: i64
+) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 5, start: start, length: length, result: result,
+        left: receiver, right: -1, symbol_start: symbol_start, symbol_length: symbol_length,
+        symbol_code: 0, type_code: type_code, numeric_policy: 0,
+        binding_id: -1, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn composite_construct(
+    start: i64, length: i64, result: i64,
+    symbol_start: i64, symbol_length: i64, type_code: i32, hir_node_id: i64
+) -> MirCompositeRecord {
+    return MirCompositeRecord {
+        kind: 6, start: start, length: length, result: result,
+        left: -1, right: -1, symbol_start: symbol_start, symbol_length: symbol_length,
+        symbol_code: 0, type_code: type_code, numeric_policy: 0,
+        binding_id: -1, hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn validate_composite_mir_records(borrow nodes: Vec<MirCompositeRecord>) -> i32 {
+    if (vec_len<MirCompositeRecord>(nodes) == 0) { return 1; }
+    var index: i64 = 0;
+    while (index < vec_len<MirCompositeRecord>(nodes)) {
+        let node: MirCompositeRecord = vec_get<MirCompositeRecord>(nodes, index);
+        if (node.kind < 1) { return 2; }
+        if (node.kind > 7) { return 2; }
+        if (node.start < 0) { return 3; }
+        if (node.length < 0) { return 3; }
+        if (node.kind == 7) {
+            if (node.result < 0) { return 4; }
+            if (node.owner_hir_id < 0) { return 4; }
+            if (node.ordinal < 0) { return 4; }
+            if (node.type_code != 0) { return 4; }
+        } else {
+            if (node.result < 0) { return 5; }
+            if (node.type_code <= 0) { return 5; }
+            if (node.hir_node_id < 0) { return 5; }
+        }
+        if (node.kind == 2) {
+            if (node.left < 0) { return 6; }
+            if (node.right < 0) { return 6; }
+            if (node.symbol_code < 1) { return 6; }
+            if (node.symbol_code > 10) { return 6; }
+        }
+        if (node.kind == 3) {
+            if (node.binding_id < 0) { return 7; }
+            if (node.result != node.binding_id) { return 7; }
+        }
+        if (node.kind == 4) {
+            if (node.symbol_start < 0) { return 8; }
+            if (node.symbol_length <= 0) { return 8; }
+        }
+        if (node.kind == 5) {
+            if (node.left < 0) { return 9; }
+            if (node.symbol_start < 0) { return 9; }
+            if (node.symbol_length <= 0) { return 9; }
+        }
+        if (node.kind == 6) {
+            if (node.symbol_start < 0) { return 10; }
+            if (node.symbol_length <= 0) { return 10; }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
