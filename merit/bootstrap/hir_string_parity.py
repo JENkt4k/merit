@@ -1,4 +1,4 @@
-"""Canonical reconstruction for the non-numeric string-literal HIR slice."""
+"""Canonical reconstruction for complete bootstrap expression HIR parity."""
 
 from __future__ import annotations
 
@@ -26,14 +26,7 @@ def lower_native_complete_expression_hir_records(
     constructor_fields: Mapping[str, tuple[str, ...]] | None = None,
     generic_types: Mapping[str, HirType] | None = None,
 ) -> HirModule:
-    """Reconstruct canonical HIR, including the isolated string-literal root slice.
-
-    String literals are intentionally non-numeric: their source spelling is
-    preserved verbatim, their semantic type is supplied by the checked boundary,
-    and their numeric policy remains absent. The current expression grammar has
-    no operators over strings, so a string record is required to be the sole
-    native record until such operators acquire an explicit semantic contract.
-    """
+    """Reconstruct canonical HIR for every current expression-corpus semantic kind."""
 
     materialized = tuple(tuple(int(value) for value in record) for record in records)
     string_records = [record for record in materialized if record[0] == _KIND_STRING_LITERAL]
@@ -49,7 +42,7 @@ def lower_native_complete_expression_hir_records(
     if len(materialized) != 1 or len(string_records) != 1:
         raise NativeStringHirError("string HIR v1 currently requires an isolated literal root")
 
-    kind, start, length, left, right, symbol, type_code, policy, binding_id = materialized[0]
+    _, start, length, left, right, symbol, type_code, policy, binding_id = materialized[0]
     if start < 0 or length < 2 or start + length > len(source):
         raise NativeStringHirError("string literal span is outside source text")
     if left != -1 or right != -1 or symbol != 0 or binding_id != -1:
@@ -75,12 +68,18 @@ def string_hir_parity_observations(
     source: str,
     *,
     type_names: Mapping[int, HirType] | None = None,
+    constructor_fields: Mapping[str, tuple[str, ...]] | None = None,
+    generic_types: Mapping[str, HirType] | None = None,
 ) -> tuple[StageObservation, StageObservation]:
+    """Compare reference HIR with the complete native expression adapter."""
+
     bootstrap = lower_native_complete_expression_hir_records(
         native_records,
         source,
         module_name=reference.name,
         type_names=type_names,
+        constructor_fields=constructor_fields,
+        generic_types=generic_types,
     )
     return (
         observe(case_id, "hir", "reference", canonical_hir_json(reference)),

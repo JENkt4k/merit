@@ -15,7 +15,7 @@ from merit.bootstrap.hir_expression import (
     HirFunctionSignature,
     lower_resolved_expression_hir,
 )
-from merit.bootstrap.hir_generic_parity import generic_hir_parity_observations
+from merit.bootstrap.hir_string_parity import string_hir_parity_observations
 from merit.bootstrap.parity import build_parity_report, markdown_summary
 from merit.bootstrap.repository_corpus import load_repository_corpus
 from merit.project.build import build, interpret
@@ -27,6 +27,7 @@ PROJECT = ROOT / "examples/projects/bootstrap_lexer"
 MANIFEST = ROOT / "tests/project/bootstrap_corpus_v1.json"
 REFERENCE_PATH = Path(__file__).with_name("test_bootstrap_lexer.py")
 I64 = HirType("i64")
+STRING = HirType("string")
 TYPE_T = HirType("T")
 ACCOUNT = HirType("Account")
 RECORD = HirType("Record")
@@ -60,6 +61,9 @@ def _case_semantics(case_id: str):
         bindings = (("a", I64), ("b", I64), ("c", I64))
     elif case_id == "comparison-last":
         bindings = (("a", I64), ("b", I64))
+    elif case_id == "string-atom":
+        type_names = {6: STRING}
+        case_kind = 7
     elif case_id == "division-before-addition":
         bindings = (("a", I64),)
     elif case_id == "empty-call":
@@ -128,6 +132,7 @@ import bootstrap_syntax;
 import bootstrap_lexer_core;
 import bootstrap_hir;
 import bootstrap_hir_generics;
+import bootstrap_hir_strings;
 
 capability allocate;
 
@@ -163,6 +168,9 @@ fn resolved_hir_type_code(
 ) -> i32 {{
     let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
     if (ast_group_parent(ast) >= 0) {{ return 1; }}
+    if (ast_kind(ast) == 32) {{
+        if (case_kind == 7) {{ return 6; }}
+    }}
     if (ast_kind(ast) == 36) {{ return 0; }}
     if (ast_kind(ast) == 37) {{ return 0; }}
     if (ast_kind(ast) == 38) {{ return 0; }}
@@ -199,6 +207,13 @@ fn lower_probe_hir_record(
 ) -> HirExpressionRecord
 {{
     let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
+    if (ast_kind(ast) == 32) {{
+        return lower_string_hir_record(
+            ast_start(ast),
+            ast_length(ast),
+            resolved_hir_type_code(ast_nodes, ast_index, case_kind)
+        );
+    }}
     if (ast_kind(ast) == 36) {{
         return lower_generic_apply_hir_record(ast_start(ast), ast_length(ast));
     }}
@@ -214,6 +229,15 @@ fn lower_probe_hir_record(
         binding_id,
         resolved_hir_type_code(ast_nodes, ast_index, case_kind)
     );
+}}
+
+fn validate_probe_hir_records(borrow nodes: Vec<HirExpressionRecord>, case_kind: i32) -> i32 {{
+    if (case_kind == 7) {{
+        if (vec_len<HirExpressionRecord>(nodes) != 1) {{ return 1; }}
+        let node: HirExpressionRecord = vec_get<HirExpressionRecord>(nodes, 0);
+        return validate_string_hir_record(node);
+    }}
+    return validate_primitive_hir_records(nodes);
 }}
 
 fn emit_hir_case(borrow source: Buffer, allocator: Allocator, case_kind: i32) -> i32
@@ -261,7 +285,7 @@ requires_caps [allocate]
         vec_push<HirExpressionRecord>(hir_nodes, hir);
         ast_index = checked_add(ast_index, 1);
     }}
-    print(validate_primitive_hir_records(hir_nodes));
+    print(validate_probe_hir_records(hir_nodes, case_kind));
     print(vec_len<HirExpressionRecord>(hir_nodes));
     var index: i64 = 0;
     while (index < vec_len<HirExpressionRecord>(hir_nodes)) {{
@@ -353,10 +377,11 @@ def _reference_hir(case):
         generic_types,
         _,
     ) = _case_semantics(case.case_id)
+    expected_type = STRING if case.case_id == "string-atom" else I64
     return lower_resolved_expression_hir(
         ast,
         case.text,
-        expected_type=I64,
+        expected_type=expected_type,
         bindings=bindings,
         functions=functions,
         fields=fields,
@@ -381,7 +406,7 @@ def _observations(cases, actual):
             _,
         ) = _case_semantics(case.case_id)
         observations.extend(
-            generic_hir_parity_observations(
+            string_hir_parity_observations(
                 case.case_id,
                 _reference_hir(case),
                 records,
@@ -402,6 +427,7 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         "explicit-group",
         "left-associative-subtract",
         "comparison-last",
+        "string-atom",
         "division-before-addition",
         "empty-call",
         "argument-sequence",
@@ -417,7 +443,7 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         corpus, _observations(cases, interpreted), stages=["hir"]
     )
     assert interpreted_report.complete, markdown_summary(interpreted_report)
-    assert interpreted_report.stage_counts() == {"hir": (11, 11)}
+    assert interpreted_report.stage_counts() == {"hir": (12, 12)}
 
     _, _, executable = build(project, project_root / "hir_parity")
     native_output = subprocess.run(
@@ -428,6 +454,6 @@ def test_repository_resolved_expression_hir_has_real_interpreter_and_native_pari
         corpus, _observations(cases, native), stages=["hir"]
     )
     assert native_report.complete, markdown_summary(native_report)
-    assert native_report.stage_counts() == {"hir": (11, 11)}
+    assert native_report.stage_counts() == {"hir": (12, 12)}
 
     assert native == interpreted
