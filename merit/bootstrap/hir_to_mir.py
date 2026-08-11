@@ -27,7 +27,7 @@ class HirToMirError(ValueError):
 
 
 _VALUE_KINDS = frozenset({
-    "literal", "identifier", "binary", "conversion", "call", "constructor",
+    "literal", "identifier", "binary", "conversion", "call", "field", "constructor",
     "move", "borrow",
 })
 _SIMPLE_STATEMENT_KINDS = frozenset({
@@ -215,6 +215,19 @@ class _FunctionLowerer:
             if not node.symbol:
                 raise HirToMirError(f"call node {node.node_id} requires a resolved symbol")
             self._emit(node, "call", result=result, operands=operands, symbol=node.symbol)
+        elif node.kind == "field":
+            if len(node.children) != 1:
+                raise HirToMirError(f"field node {node.node_id} requires one receiver")
+            if not node.symbol:
+                raise HirToMirError(f"field node {node.node_id} requires a resolved symbol")
+            receiver = self.lower_value(self._child(node, 0))
+            self._emit(
+                node,
+                "load_field",
+                result=result,
+                operands=(receiver,),
+                symbol=node.symbol,
+            )
         elif node.kind == "constructor":
             operands = tuple(self.lower_value(self.by_id[child]) for child in node.children)
             if not node.symbol:
