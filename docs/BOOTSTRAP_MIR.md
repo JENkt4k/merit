@@ -96,6 +96,37 @@ to parity tests before C is generated.
 invariants. `capability_check` instructions list the exact capabilities being
 required. Functions also record their complete declared capability set.
 
+## Measured primitive expression boundary
+
+The first executable Merit-native MIR boundary covers the five expression-corpus
+cases whose checked HIR requires only:
+
+- exact/checked numeric constants and arithmetic
+- resolved source bindings
+- typed comparisons
+- structural grouping aliases
+
+The replacement emits flat MIR records from Merit itself. In particular, the
+native path owns:
+
+- source-binding local identity
+- root-first temporary-local allocation
+- postorder instruction emission
+- operand-local references
+- binary operator identity
+- explicit numeric policy
+- source spans and canonical HIR provenance
+
+The Python parity adapter validates and serializes those already-made decisions;
+it does not re-run HIR-to-MIR lowering. The repository gate compares the result
+against the existing Python `lower_hir_to_mir` oracle and independently requires
+Merit interpreter/native record equality.
+
+This boundary is intentionally narrower than the now-complete expression HIR
+boundary. Calls and constructors are representable by the Python MIR lowerer,
+while field HIR currently requires a dedicated MIR lowering rule before the
+remaining expression corpus can be promoted safely.
+
 ## Non-goals
 
 This contract does not:
@@ -105,15 +136,16 @@ This contract does not:
 - choose register allocation
 - add LLVM
 - define async, concurrency, networking, or package behavior
-- claim that the Merit-native compiler emits MIR yet
+- claim that all compiler paths emit Merit-native MIR yet
 
 ## Adoption sequence
 
-1. Lower a small checked HIR slice into `bootstrap-mir-v1` in the Python oracle.
-2. Emit the same canonical MIR from the Merit-native compiler.
-3. Add `mir` observations to the existing parity engine.
-4. Reach exact MIR parity for primitive, decimal, contract, ownership, and
-   capability examples.
+1. Lower checked HIR into canonical `bootstrap-mir-v1` in the Python oracle.
+2. Emit a measured primitive expression MIR slice from the Merit-native compiler.
+3. Add `mir` observations to the existing parity engine and require exact
+   interpreter/native agreement.
+4. Expand exact MIR parity through calls, construction, fields, strings,
+   generics, decimal, contracts, ownership, and capability examples.
 5. Make deterministic C emission consume MIR only.
 6. Expand vertically until all nine acceptance projects pass through the new
    pipeline.

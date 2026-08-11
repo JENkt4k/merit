@@ -14,12 +14,12 @@
     {"id":"truncated-function-body","source":"module incomplete\nfn value()->i32 { return 1","compare":["tokens","syntax","diagnostics","interpreter","native"]}
   ],
   "expression_cases": [
-    {"id":"precedence-product","expression":"1+2*3","root_kind":"add","compare":["expressions","ast","hir"]},
-    {"id":"explicit-group","expression":"(1+2)*3","root_kind":"multiply","compare":["expressions","ast","hir"]},
-    {"id":"left-associative-subtract","expression":"a-b-c","root_kind":"subtract","compare":["expressions","ast","hir"]},
-    {"id":"comparison-last","expression":"a==b+1","root_kind":"equal","compare":["expressions","ast","hir"]},
+    {"id":"precedence-product","expression":"1+2*3","root_kind":"add","compare":["expressions","ast","hir","mir"]},
+    {"id":"explicit-group","expression":"(1+2)*3","root_kind":"multiply","compare":["expressions","ast","hir","mir"]},
+    {"id":"left-associative-subtract","expression":"a-b-c","root_kind":"subtract","compare":["expressions","ast","hir","mir"]},
+    {"id":"comparison-last","expression":"a==b+1","root_kind":"equal","compare":["expressions","ast","hir","mir"]},
     {"id":"string-atom","expression":"\"value\"","root_kind":"string","compare":["expressions","ast","hir"]},
-    {"id":"division-before-addition","expression":"a/2+4","root_kind":"add","compare":["expressions","ast","hir"]},
+    {"id":"division-before-addition","expression":"a/2+4","root_kind":"add","compare":["expressions","ast","hir","mir"]},
     {"id":"empty-call","expression":"f()","root_kind":"call","compare":["expressions","ast","hir"]},
     {"id":"argument-sequence","expression":"f(1,2+3)","root_kind":"call","compare":["expressions","ast","hir"]},
     {"id":"field-before-addition","expression":"account.balance+1","root_kind":"add","compare":["expressions","ast","hir"]},
