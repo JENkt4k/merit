@@ -8,14 +8,26 @@ Scope: replacement-compiler development after the stable alpha reference compile
 
 | Metric | Result |
 |---|---|
+| Total tests passing | 758 passed, 1 skipped on the latest fully green hosted baseline |
 | Hosted pytest | 758 passed, 1 skipped on Ubuntu / Python 3.11 / system C compiler |
 | Windows native smoke | Passing on Python 3.11 / MSYS2 UCRT64 GCC |
+| Compile-pass tests | Covered throughout positive semantic/project tests; whole-suite count is not yet separately instrumented |
+| Compile-fail tests | Explicit negative semantic, ownership, capability, visibility, and malformed-contract cases exist; whole-suite count is not yet separately instrumented |
 | Acceptance projects | 9 / 9 |
+| Lexer differential cases | Complete for the versioned bootstrap token/span corpus |
+| Parser differential cases | Complete for the current syntax/diagnostic corpus and all 12 expression cases |
+| AST differential cases | 12 / 12 expression cases with malformed-record validation |
+| HIR differential cases | 12 / 12 expression cases |
 | Expression parser differential corpus | 12 / 12 |
 | Canonical expression AST parity | 12 / 12 |
 | Canonical expression HIR parity | 12 / 12 |
-| Canonical expression MIR parity | 6 / 12 verified before this branch |
+| Canonical expression MIR parity | 6 / 12 verified before this branch; 11 / 12 target on this branch |
 | Interpreter/native parity | Exact for every measured replacement record stream plus 9 / 9 acceptance projects |
+| Bootstrap/reference parity | 100% for explicitly covered replacement stages/cases; not a whole-language replacement percentage |
+| Reference compiler source | Python alpha compiler remains the independent semantic oracle; source size is not remeasured in this checkpoint |
+| Merit-native compiler source | Replacement lexer/parser/AST/HIR expression boundary is complete; MIR replacement is expanding; source size is not remeasured in this checkpoint |
+| Generated C size | Not remeasured in this checkpoint; generated size remains evidence rather than an optimization target |
+| Known semantic blockers | Generic specialization identity is not yet represented in bootstrap MIR; whole-function/control-flow/ownership/capability replacement and MIR-only C emission remain open |
 | Reference compiler | Feature-rich alpha implementation; remains the independent semantic oracle |
 | Replacement compiler | Lexer/parser/AST/HIR expression boundary complete; MIR replacement expanding |
 | Self-hosted/trusted replacement | Not yet |
