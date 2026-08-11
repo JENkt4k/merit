@@ -1,0 +1,97 @@
+module bootstrap_mir_generics
+
+// Additive record family for generic-call specialization identity in MIR.
+// Kinds: 1 const, 2 generic call, 3 ordered operand marker.
+pub struct MirGenericRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    result: i64;
+    operand: i64;
+    symbol_start: i64;
+    symbol_length: i64;
+    type_code: i32;
+    specialization_type_code: i32;
+    hir_node_id: i64;
+    owner_hir_id: i64;
+    ordinal: i64;
+}
+
+pub fn generic_kind(borrow node: MirGenericRecord) -> i32 { return node.kind; }
+pub fn generic_start(borrow node: MirGenericRecord) -> i64 { return node.start; }
+pub fn generic_length(borrow node: MirGenericRecord) -> i64 { return node.length; }
+pub fn generic_result(borrow node: MirGenericRecord) -> i64 { return node.result; }
+pub fn generic_operand(borrow node: MirGenericRecord) -> i64 { return node.operand; }
+pub fn generic_symbol_start(borrow node: MirGenericRecord) -> i64 { return node.symbol_start; }
+pub fn generic_symbol_length(borrow node: MirGenericRecord) -> i64 { return node.symbol_length; }
+pub fn generic_type_code(borrow node: MirGenericRecord) -> i32 { return node.type_code; }
+pub fn generic_specialization_type_code(borrow node: MirGenericRecord) -> i32 { return node.specialization_type_code; }
+pub fn generic_hir_node_id(borrow node: MirGenericRecord) -> i64 { return node.hir_node_id; }
+pub fn generic_owner_hir_id(borrow node: MirGenericRecord) -> i64 { return node.owner_hir_id; }
+pub fn generic_ordinal(borrow node: MirGenericRecord) -> i64 { return node.ordinal; }
+
+pub fn generic_const(
+    start: i64, length: i64, result: i64, type_code: i32, hir_node_id: i64
+) -> MirGenericRecord {
+    return MirGenericRecord {
+        kind: 1, start: start, length: length, result: result, operand: -1,
+        symbol_start: -1, symbol_length: 0, type_code: type_code,
+        specialization_type_code: 0, hir_node_id: hir_node_id,
+        owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn generic_operand_marker(result: i64, owner_hir_id: i64, ordinal: i64) -> MirGenericRecord {
+    return MirGenericRecord {
+        kind: 3, start: 0, length: 0, result: result, operand: -1,
+        symbol_start: -1, symbol_length: 0, type_code: 0,
+        specialization_type_code: 0, hir_node_id: -1,
+        owner_hir_id: owner_hir_id, ordinal: ordinal
+    };
+}
+
+pub fn generic_call(
+    start: i64, length: i64, result: i64,
+    symbol_start: i64, symbol_length: i64,
+    type_code: i32, specialization_type_code: i32, hir_node_id: i64
+) -> MirGenericRecord {
+    return MirGenericRecord {
+        kind: 2, start: start, length: length, result: result, operand: -1,
+        symbol_start: symbol_start, symbol_length: symbol_length,
+        type_code: type_code, specialization_type_code: specialization_type_code,
+        hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
+    };
+}
+
+pub fn validate_generic_mir_records(borrow nodes: Vec<MirGenericRecord>) -> i32 {
+    if (vec_len<MirGenericRecord>(nodes) == 0) { return 1; }
+    var index: i64 = 0;
+    while (index < vec_len<MirGenericRecord>(nodes)) {
+        let node: MirGenericRecord = vec_get<MirGenericRecord>(nodes, index);
+        if (node.kind < 1) { return 2; }
+        if (node.kind > 3) { return 2; }
+        if (node.start < 0) { return 3; }
+        if (node.length < 0) { return 3; }
+        if (node.kind == 3) {
+            if (node.result < 0) { return 4; }
+            if (node.owner_hir_id < 0) { return 4; }
+            if (node.ordinal < 0) { return 4; }
+            if (node.type_code != 0) { return 4; }
+            if (node.specialization_type_code != 0) { return 4; }
+        } else {
+            if (node.result < 0) { return 5; }
+            if (node.type_code <= 0) { return 5; }
+            if (node.hir_node_id < 0) { return 5; }
+        }
+        if (node.kind == 1) {
+            if (node.specialization_type_code != 0) { return 6; }
+        }
+        if (node.kind == 2) {
+            if (node.symbol_start < 0) { return 7; }
+            if (node.symbol_length <= 0) { return 7; }
+            if (node.specialization_type_code <= 0) { return 8; }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
