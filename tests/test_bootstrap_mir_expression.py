@@ -36,13 +36,13 @@ def test_expression_bridge_wraps_checked_value_in_returning_function():
     )
     function = lower_expression_hir_to_mir(hir).functions[0]
     assert function.name == "expr"
-    assert [local.name for local in function.locals] == ["_t0", "_t1", "_t2"]
+    assert [local.name for local in function.locals] == ["_t2", "_t0", "_t1"]
     assert [instruction.kind for instruction in function.blocks[0].instructions] == [
         "const",
         "const",
         "binary",
     ]
-    assert function.blocks[0].terminator.operands == (2,)
+    assert function.blocks[0].terminator.operands == (0,)
 
 
 def test_native_arithmetic_records_match_reference_mir_exactly():
@@ -66,9 +66,9 @@ def test_native_arithmetic_records_match_reference_mir_exactly():
     )
     native = lower_native_expression_mir_records(
         [
-            (1, 0, 1, 0, -1, -1, 0, 1, 0, -1, 0),
-            (1, 2, 1, 1, -1, -1, 0, 1, 0, -1, 1),
-            (2, 0, 3, 2, 0, 1, 1, 1, 2, -1, 2),
+            (1, 0, 1, 1, -1, -1, 0, 1, 0, -1, 0),
+            (1, 2, 1, 2, -1, -1, 0, 1, 0, -1, 1),
+            (2, 0, 3, 0, 1, 2, 1, 1, 2, -1, 2),
         ],
         source,
         module_name="expr",
