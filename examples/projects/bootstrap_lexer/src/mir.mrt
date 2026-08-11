@@ -1,0 +1,188 @@
+module bootstrap_mir
+
+import bootstrap_hir;
+
+// Flat bootstrap-mir-expression-v1 record used only at the measured replacement
+// boundary. Kinds: 1 const instruction, 2 binary instruction, 3 group alias,
+// 4 resolved source binding. `hir_node_id` is the canonical semantic HIR ID,
+// excluding structural group aliases, and therefore fixes deterministic _tN
+// temporary spelling without asking the Python adapter to re-lower HIR.
+pub struct MirExpressionRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    result: i64;
+    left: i64;
+    right: i64;
+    symbol: i32;
+    type_code: i32;
+    numeric_policy: i32;
+    binding_id: i64;
+    hir_node_id: i64;
+}
+
+pub fn mir_kind(borrow node: MirExpressionRecord) -> i32 { return node.kind; }
+pub fn mir_start(borrow node: MirExpressionRecord) -> i64 { return node.start; }
+pub fn mir_length(borrow node: MirExpressionRecord) -> i64 { return node.length; }
+pub fn mir_result(borrow node: MirExpressionRecord) -> i64 { return node.result; }
+pub fn mir_left(borrow node: MirExpressionRecord) -> i64 { return node.left; }
+pub fn mir_right(borrow node: MirExpressionRecord) -> i64 { return node.right; }
+pub fn mir_symbol(borrow node: MirExpressionRecord) -> i32 { return node.symbol; }
+pub fn mir_type_code(borrow node: MirExpressionRecord) -> i32 { return node.type_code; }
+pub fn mir_numeric_policy(borrow node: MirExpressionRecord) -> i32 { return node.numeric_policy; }
+pub fn mir_binding_id(borrow node: MirExpressionRecord) -> i64 { return node.binding_id; }
+pub fn mir_hir_node_id(borrow node: MirExpressionRecord) -> i64 { return node.hir_node_id; }
+
+pub fn lower_expression_mir_record(
+    borrow hir: HirExpressionRecord,
+    left_local: i64,
+    right_local: i64,
+    result_local: i64,
+    canonical_hir_id: i64
+) -> MirExpressionRecord
+{
+    let kind: i32 = hir_kind(hir);
+    if (kind == 1) {
+        return MirExpressionRecord {
+            kind: 1,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: result_local,
+            left: -1,
+            right: -1,
+            symbol: 0,
+            type_code: hir_type_code(hir),
+            numeric_policy: 0,
+            binding_id: -1,
+            hir_node_id: canonical_hir_id
+        };
+    }
+    if (kind == 2) {
+        return MirExpressionRecord {
+            kind: 2,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: result_local,
+            left: left_local,
+            right: right_local,
+            symbol: hir_symbol(hir),
+            type_code: hir_type_code(hir),
+            numeric_policy: hir_numeric_policy(hir),
+            binding_id: -1,
+            hir_node_id: canonical_hir_id
+        };
+    }
+    if (kind == 3) {
+        return MirExpressionRecord {
+            kind: 3,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: left_local,
+            left: left_local,
+            right: -1,
+            symbol: 0,
+            type_code: hir_type_code(hir),
+            numeric_policy: 0,
+            binding_id: -1,
+            hir_node_id: canonical_hir_id
+        };
+    }
+    if (kind == 4) {
+        return MirExpressionRecord {
+            kind: 4,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: hir_binding_id(hir),
+            left: -1,
+            right: -1,
+            symbol: 0,
+            type_code: hir_type_code(hir),
+            numeric_policy: 0,
+            binding_id: hir_binding_id(hir),
+            hir_node_id: canonical_hir_id
+        };
+    }
+    if (kind == 5) {
+        return MirExpressionRecord {
+            kind: 2,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: result_local,
+            left: left_local,
+            right: right_local,
+            symbol: hir_symbol(hir),
+            type_code: hir_type_code(hir),
+            numeric_policy: hir_numeric_policy(hir),
+            binding_id: -1,
+            hir_node_id: canonical_hir_id
+        };
+    }
+    return MirExpressionRecord {
+        kind: 0,
+        start: hir_start(hir),
+        length: hir_length(hir),
+        result: -1,
+        left: -1,
+        right: -1,
+        symbol: 0,
+        type_code: 0,
+        numeric_policy: 0,
+        binding_id: -1,
+        hir_node_id: canonical_hir_id
+    };
+}
+
+pub fn validate_expression_mir_records(borrow nodes: Vec<MirExpressionRecord>) -> i32 {
+    if (vec_len<MirExpressionRecord>(nodes) == 0) { return 1; }
+    var index: i64 = 0;
+    while (index < vec_len<MirExpressionRecord>(nodes)) {
+        let node: MirExpressionRecord = vec_get<MirExpressionRecord>(nodes, index);
+        if (node.kind < 1) { return 2; }
+        if (node.kind > 4) { return 2; }
+        if (node.start < 0) { return 3; }
+        if (node.length < 0) { return 3; }
+        if (node.hir_node_id < 0) { return 4; }
+        if (node.kind == 1) {
+            if (node.result < 0) { return 5; }
+            if (node.left != -1) { return 5; }
+            if (node.right != -1) { return 5; }
+            if (node.symbol != 0) { return 5; }
+            if (node.type_code <= 0) { return 5; }
+            if (node.numeric_policy != 0) { return 5; }
+            if (node.binding_id != -1) { return 5; }
+        }
+        if (node.kind == 2) {
+            if (node.result < 0) { return 6; }
+            if (node.left < 0) { return 6; }
+            if (node.right < 0) { return 6; }
+            if (node.symbol < 1) { return 6; }
+            if (node.symbol > 10) { return 6; }
+            if (node.type_code <= 0) { return 6; }
+            if (node.symbol <= 4) {
+                if (node.numeric_policy != 2) { return 6; }
+            } else {
+                if (node.numeric_policy != 1) { return 6; }
+            }
+            if (node.binding_id != -1) { return 6; }
+        }
+        if (node.kind == 3) {
+            if (node.result < 0) { return 7; }
+            if (node.left != node.result) { return 7; }
+            if (node.right != -1) { return 7; }
+            if (node.symbol != 0) { return 7; }
+            if (node.numeric_policy != 0) { return 7; }
+            if (node.binding_id != -1) { return 7; }
+        }
+        if (node.kind == 4) {
+            if (node.binding_id < 0) { return 8; }
+            if (node.result != node.binding_id) { return 8; }
+            if (node.left != -1) { return 8; }
+            if (node.right != -1) { return 8; }
+            if (node.symbol != 0) { return 8; }
+            if (node.type_code <= 0) { return 8; }
+            if (node.numeric_policy != 0) { return 8; }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
