@@ -27,7 +27,7 @@ def test_reference_string_literal_preserves_spelling_without_numeric_policy():
     assert node.kind == "literal"
     assert node.type == STRING
     assert node.value == '"value"'
-    assert node.numeric_policy is None
+    assert node.numeric_policy == "none"
 
 
 def test_reference_string_literal_requires_explicit_semantic_type():
