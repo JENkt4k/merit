@@ -10,8 +10,13 @@ import subprocess
 from merit.bootstrap.ast_contract import lower_expression_ast
 from merit.bootstrap.hir_contract import HirType
 from merit.bootstrap.hir_expression import lower_resolved_expression_hir
-from merit.bootstrap.mir_parity import expression_mir_parity_observations
-from merit.bootstrap.parity import build_parity_report, markdown_summary
+from merit.bootstrap.mir_contract import MirType, canonical_mir_json
+from merit.bootstrap.mir_expression import lower_expression_hir_to_mir
+from merit.bootstrap.mir_parity import (
+    expression_mir_parity_observations,
+    lower_native_expression_mir_records,
+)
+from merit.bootstrap.parity import build_parity_report, markdown_summary, observe
 from merit.bootstrap.repository_corpus import load_repository_corpus
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
@@ -22,6 +27,7 @@ PROJECT = ROOT / "examples/projects/bootstrap_lexer"
 MANIFEST = ROOT / "tests/project/bootstrap_corpus_v1.json"
 REFERENCE_PATH = Path(__file__).with_name("test_bootstrap_lexer.py")
 I64 = HirType("i64")
+STRING = HirType("string")
 
 
 def _load_reference_module():
@@ -49,10 +55,11 @@ def _bindings(case_id: str) -> tuple[tuple[str, HirType], ...]:
 
 def _reference_hir(case):
     ast = lower_expression_ast(REFERENCE.reference_expression(case.text))
+    expected_type = STRING if case.case_id == "string-atom" else I64
     return lower_resolved_expression_hir(
         ast,
         case.text,
-        expected_type=I64,
+        expected_type=expected_type,
         bindings=_bindings(case.case_id),
         module_name=case.case_id,
     )
@@ -76,6 +83,7 @@ import bootstrap_tokens;
 import bootstrap_syntax;
 import bootstrap_lexer_core;
 import bootstrap_hir;
+import bootstrap_hir_strings;
 import bootstrap_mir;
 
 capability allocate;
@@ -83,6 +91,7 @@ capability allocate;
 fn resolved_hir_type_code(borrow ast_nodes: Vec<AstNodeRecord>, index: i64) -> i32 {{
     let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
     if (ast_group_parent(ast) >= 0) {{ return 1; }}
+    if (ast_kind(ast) == 32) {{ return 6; }}
     if (ast_kind(ast) == 40) {{ return 2; }}
     if (ast_kind(ast) == 41) {{ return 2; }}
     if (ast_kind(ast) == 42) {{ return 2; }}
@@ -90,6 +99,40 @@ fn resolved_hir_type_code(borrow ast_nodes: Vec<AstNodeRecord>, index: i64) -> i
     if (ast_kind(ast) == 44) {{ return 2; }}
     if (ast_kind(ast) == 45) {{ return 2; }}
     return 1;
+}}
+
+fn lower_mir_input_hir_record(
+    ast_kind_code: i32,
+    ast_start_value: i64,
+    ast_length_value: i64,
+    ast_left_value: i64,
+    ast_right_value: i64,
+    group_start_value: i64,
+    group_length_value: i64,
+    group_parent_value: i64,
+    binding_id_value: i64,
+    resolved_type_code: i32
+) -> HirExpressionRecord
+{{
+    if (ast_kind_code == 32) {{
+        return lower_string_hir_record(
+            ast_start_value,
+            ast_length_value,
+            resolved_type_code
+        );
+    }}
+    return lower_resolved_hir_record(
+        ast_kind_code,
+        ast_start_value,
+        ast_length_value,
+        ast_left_value,
+        ast_right_value,
+        group_start_value,
+        group_length_value,
+        group_parent_value,
+        binding_id_value,
+        resolved_type_code
+    );
 }}
 
 fn emit_mir_case(borrow source: Buffer, allocator: Allocator) -> i32
@@ -125,7 +168,7 @@ requires_caps [allocate]
                 }}
             }}
         }}
-        let hir: HirExpressionRecord = lower_resolved_hir_record(
+        let hir: HirExpressionRecord = lower_mir_input_hir_record(
             ast_kind(ast),
             ast_start(ast),
             ast_length(ast),
@@ -141,9 +184,20 @@ requires_caps [allocate]
         ast_index = checked_add(ast_index, 1);
     }}
 
-    let hir_validation: i32 = validate_primitive_hir_records(hir_nodes);
-    let binding_count: i64 = vec_len<i64>(binding_starts);
     let hir_count: i64 = vec_len<HirExpressionRecord>(hir_nodes);
+    var hir_validation: i32 = 0;
+    if (hir_count == 1) {{
+        let only_hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, 0);
+        if (hir_kind(only_hir) == 12) {{
+            hir_validation = validate_string_hir_record(only_hir);
+        }} else {{
+            hir_validation = validate_primitive_hir_records(hir_nodes);
+        }}
+    }} else {{
+        hir_validation = validate_primitive_hir_records(hir_nodes);
+    }}
+
+    let binding_count: i64 = vec_len<i64>(binding_starts);
     var local_ids: Vec<i64> = vec_new<i64>(allocator, hir_count);
     var canonical_ids: Vec<i64> = vec_new<i64>(allocator, hir_count);
     var initialize_index: i64 = 0;
@@ -331,14 +385,40 @@ def _observations(cases, actual):
     observations = []
     for case, (validation, records) in zip(cases, actual, strict=True):
         assert validation == 0, case.case_id
-        observations.extend(
-            expression_mir_parity_observations(
-                case.case_id,
-                _reference_hir(case),
+        reference_hir = _reference_hir(case)
+        if case.case_id == "string-atom":
+            reference = lower_expression_hir_to_mir(reference_hir)
+            bootstrap = lower_native_expression_mir_records(
                 records,
                 case.text,
+                module_name=case.case_id,
+                type_names={6: MirType("string")},
             )
-        )
+            observations.extend(
+                (
+                    observe(
+                        case.case_id,
+                        "mir",
+                        "reference",
+                        canonical_mir_json(reference),
+                    ),
+                    observe(
+                        case.case_id,
+                        "mir",
+                        "bootstrap",
+                        canonical_mir_json(bootstrap),
+                    ),
+                )
+            )
+        else:
+            observations.extend(
+                expression_mir_parity_observations(
+                    case.case_id,
+                    reference_hir,
+                    records,
+                    case.text,
+                )
+            )
     return observations
 
 
@@ -350,6 +430,7 @@ def test_repository_primitive_expression_mir_has_real_interpreter_and_native_par
         "explicit-group",
         "left-associative-subtract",
         "comparison-last",
+        "string-atom",
         "division-before-addition",
     ]
     project, project_root = _project_with_probe(tmp_path, cases)
@@ -359,7 +440,7 @@ def test_repository_primitive_expression_mir_has_real_interpreter_and_native_par
         corpus, _observations(cases, interpreted), stages=["mir"]
     )
     assert interpreted_report.complete, markdown_summary(interpreted_report)
-    assert interpreted_report.stage_counts() == {"mir": (5, 5)}
+    assert interpreted_report.stage_counts() == {"mir": (6, 6)}
 
     _, _, executable = build(project, project_root / "mir_parity")
     native_output = subprocess.run(
@@ -372,4 +453,4 @@ def test_repository_primitive_expression_mir_has_real_interpreter_and_native_par
         corpus, _observations(cases, native), stages=["mir"]
     )
     assert native_report.complete, markdown_summary(native_report)
-    assert native_report.stage_counts() == {"mir": (5, 5)}
+    assert native_report.stage_counts() == {"mir": (6, 6)}
