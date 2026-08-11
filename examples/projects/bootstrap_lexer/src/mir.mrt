@@ -57,6 +57,24 @@ pub fn lower_expression_mir_record(
             hir_node_id: canonical_hir_id
         };
     }
+    // Typed non-numeric string literals are operational constants too. Their
+    // semantic type is already resolved in HIR and they intentionally carry no
+    // numeric policy, so MIR preserves the same source spelling and type code.
+    if (kind == 12) {
+        return MirExpressionRecord {
+            kind: 1,
+            start: hir_start(hir),
+            length: hir_length(hir),
+            result: result_local,
+            left: -1,
+            right: -1,
+            symbol: 0,
+            type_code: hir_type_code(hir),
+            numeric_policy: 0,
+            binding_id: -1,
+            hir_node_id: canonical_hir_id
+        };
+    }
     if (kind == 2) {
         return MirExpressionRecord {
             kind: 2,
