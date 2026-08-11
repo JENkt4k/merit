@@ -1,0 +1,185 @@
+module bootstrap_mir_functions
+
+// bootstrap-function-mir-v1 is the first whole-function replacement record
+// family. It deliberately covers one basic block only; CFG records are a later
+// additive contract. Kinds: 1 function, 2 source local, 3 temporary local,
+// 4 const, 5 binary, 6 copy-to-binding, 7 return.
+pub struct MirFunctionRecord {
+    kind: i32;
+    start: i64;
+    length: i64;
+    id: i64;
+    result: i64;
+    left: i64;
+    right: i64;
+    symbol_start: i64;
+    symbol_length: i64;
+    symbol_code: i32;
+    type_code: i32;
+    numeric_policy: i32;
+    binding_id: i64;
+    mutable: i32;
+    hir_node_id: i64;
+    ordinal: i64;
+}
+
+pub fn function_mir_kind(borrow node: MirFunctionRecord) -> i32 { return node.kind; }
+pub fn function_mir_start(borrow node: MirFunctionRecord) -> i64 { return node.start; }
+pub fn function_mir_length(borrow node: MirFunctionRecord) -> i64 { return node.length; }
+pub fn function_mir_id(borrow node: MirFunctionRecord) -> i64 { return node.id; }
+pub fn function_mir_result(borrow node: MirFunctionRecord) -> i64 { return node.result; }
+pub fn function_mir_left(borrow node: MirFunctionRecord) -> i64 { return node.left; }
+pub fn function_mir_right(borrow node: MirFunctionRecord) -> i64 { return node.right; }
+pub fn function_mir_symbol_start(borrow node: MirFunctionRecord) -> i64 { return node.symbol_start; }
+pub fn function_mir_symbol_length(borrow node: MirFunctionRecord) -> i64 { return node.symbol_length; }
+pub fn function_mir_symbol_code(borrow node: MirFunctionRecord) -> i32 { return node.symbol_code; }
+pub fn function_mir_type_code(borrow node: MirFunctionRecord) -> i32 { return node.type_code; }
+pub fn function_mir_numeric_policy(borrow node: MirFunctionRecord) -> i32 { return node.numeric_policy; }
+pub fn function_mir_binding_id(borrow node: MirFunctionRecord) -> i64 { return node.binding_id; }
+pub fn function_mir_mutable(borrow node: MirFunctionRecord) -> i32 { return node.mutable; }
+pub fn function_mir_hir_node_id(borrow node: MirFunctionRecord) -> i64 { return node.hir_node_id; }
+pub fn function_mir_ordinal(borrow node: MirFunctionRecord) -> i64 { return node.ordinal; }
+
+pub fn function_mir_header(start: i64, length: i64, symbol_start: i64, symbol_length: i64, result_type_code: i32) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 1, start: start, length: length, id: 0, result: -1, left: -1, right: -1,
+        symbol_start: symbol_start, symbol_length: symbol_length, symbol_code: 0,
+        type_code: result_type_code, numeric_policy: 0, binding_id: -1, mutable: 0,
+        hir_node_id: -1, ordinal: 0
+    };
+}
+
+pub fn function_mir_source_local(start: i64, length: i64, local_id: i64, type_code: i32, binding_id: i64, mutable: i32) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 2, start: start, length: length, id: local_id, result: -1, left: -1, right: -1,
+        symbol_start: start, symbol_length: length, symbol_code: 0, type_code: type_code,
+        numeric_policy: 0, binding_id: binding_id, mutable: mutable, hir_node_id: -1,
+        ordinal: local_id
+    };
+}
+
+pub fn function_mir_temporary(local_id: i64, type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 3, start: 0, length: 0, id: local_id, result: -1, left: -1, right: -1,
+        symbol_start: -1, symbol_length: 0, symbol_code: 0, type_code: type_code,
+        numeric_policy: 0, binding_id: -1, mutable: 0, hir_node_id: hir_node_id,
+        ordinal: local_id
+    };
+}
+
+pub fn function_mir_const(start: i64, length: i64, instruction_id: i64, result_local: i64, type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 4, start: start, length: length, id: instruction_id, result: result_local,
+        left: -1, right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0,
+        type_code: type_code, numeric_policy: 0, binding_id: -1, mutable: 0,
+        hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_binary(start: i64, length: i64, instruction_id: i64, result_local: i64, left_local: i64, right_local: i64, symbol_code: i32, type_code: i32, numeric_policy: i32, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 5, start: start, length: length, id: instruction_id, result: result_local,
+        left: left_local, right: right_local, symbol_start: -1, symbol_length: 0,
+        symbol_code: symbol_code, type_code: type_code, numeric_policy: numeric_policy,
+        binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_copy(start: i64, length: i64, instruction_id: i64, destination_local: i64, source_local: i64, binding_id: i64, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 6, start: start, length: length, id: instruction_id, result: destination_local,
+        left: source_local, right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0,
+        type_code: 0, numeric_policy: 0, binding_id: binding_id, mutable: 0,
+        hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_return(start: i64, length: i64, operand_local: i64, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 7, start: start, length: length, id: 0, result: -1, left: operand_local,
+        right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0, type_code: 0,
+        numeric_policy: 0, binding_id: -1, mutable: 0, hir_node_id: hir_node_id,
+        ordinal: 0
+    };
+}
+
+// Stable structural validation. Semantic local availability is checked by the
+// canonical adapter because a flat stream interleaves local declarations with
+// instruction records while canonical MIR stores locals separately.
+pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+    if (vec_len<MirFunctionRecord>(nodes) < 2) { return 1; }
+    let header: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, 0);
+    if (header.kind != 1) { return 2; }
+    if (header.start < 0) { return 3; }
+    if (header.length <= 0) { return 3; }
+    if (header.symbol_start < 0) { return 4; }
+    if (header.symbol_length <= 0) { return 4; }
+    if (header.type_code <= 0) { return 5; }
+
+    var next_local: i64 = 0;
+    var next_instruction: i64 = 0;
+    var saw_return: i32 = 0;
+    var index: i64 = 1;
+    while (index < vec_len<MirFunctionRecord>(nodes)) {
+        let node: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, index);
+        if (saw_return != 0) { return 6; }
+        if (node.kind == 2) {
+            if (node.id != next_local) { return 7; }
+            if (node.start < 0) { return 8; }
+            if (node.length <= 0) { return 8; }
+            if (node.type_code <= 0) { return 9; }
+            if (node.binding_id < 0) { return 10; }
+            if (node.mutable < 0) { return 11; }
+            if (node.mutable > 1) { return 11; }
+            next_local = checked_add(next_local, 1);
+        } else {
+            if (node.kind == 3) {
+                if (node.id != next_local) { return 12; }
+                if (node.type_code <= 0) { return 13; }
+                if (node.hir_node_id < 0) { return 14; }
+                next_local = checked_add(next_local, 1);
+            } else {
+                if (node.kind == 4) {
+                    if (node.id != next_instruction) { return 15; }
+                    if (node.result < 0) { return 16; }
+                    if (node.start < 0) { return 17; }
+                    if (node.length <= 0) { return 17; }
+                    if (node.type_code <= 0) { return 18; }
+                    if (node.hir_node_id < 0) { return 19; }
+                    next_instruction = checked_add(next_instruction, 1);
+                } else {
+                    if (node.kind == 5) {
+                        if (node.id != next_instruction) { return 20; }
+                        if (node.result < 0) { return 21; }
+                        if (node.left < 0) { return 21; }
+                        if (node.right < 0) { return 21; }
+                        if (node.symbol_code < 1) { return 22; }
+                        if (node.symbol_code > 10) { return 22; }
+                        if (node.type_code <= 0) { return 23; }
+                        if (node.numeric_policy < 1) { return 24; }
+                        if (node.hir_node_id < 0) { return 25; }
+                        next_instruction = checked_add(next_instruction, 1);
+                    } else {
+                        if (node.kind == 6) {
+                            if (node.id != next_instruction) { return 26; }
+                            if (node.result < 0) { return 27; }
+                            if (node.left < 0) { return 27; }
+                            if (node.binding_id < 0) { return 28; }
+                            if (node.hir_node_id < 0) { return 29; }
+                            next_instruction = checked_add(next_instruction, 1);
+                        } else {
+                            if (node.kind == 7) {
+                                if (node.left < -1) { return 30; }
+                                if (node.hir_node_id < 0) { return 31; }
+                                saw_return = 1;
+                            } else { return 32; }
+                        }
+                    }
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    if (saw_return == 0) { return 33; }
+    return 0;
+}
