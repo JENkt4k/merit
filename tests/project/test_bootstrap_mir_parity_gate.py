@@ -154,59 +154,96 @@ requires_caps [allocate]
     }}
 
     let binding_count: i64 = vec_len<i64>(binding_starts);
-    var mir_nodes: Vec<MirExpressionRecord> = vec_new<MirExpressionRecord>(
-        allocator,
-        vec_len<HirExpressionRecord>(hir_nodes)
-    );
-    var local_ids: Vec<i64> = vec_new<i64>(allocator, vec_len<HirExpressionRecord>(hir_nodes));
-    var canonical_ids: Vec<i64> = vec_new<i64>(allocator, vec_len<HirExpressionRecord>(hir_nodes));
+    let hir_count: i64 = vec_len<HirExpressionRecord>(hir_nodes);
+    var local_ids: Vec<i64> = vec_new<i64>(allocator, hir_count);
+    var canonical_ids: Vec<i64> = vec_new<i64>(allocator, hir_count);
+    var initialize_index: i64 = 0;
+    while (initialize_index < hir_count) {{
+        vec_push<i64>(local_ids, -1);
+        vec_push<i64>(canonical_ids, -1);
+        initialize_index = checked_add(initialize_index, 1);
+    }}
+
+    // HIR records are postorder, while MIR temporary locals are allocated when
+    // entering a value node. Walk root-first with an explicit stack so the native
+    // replacement owns deterministic local numbering rather than the adapter.
+    var stack: Vec<i64> = vec_new<i64>(allocator, hir_count);
+    vec_push<i64>(stack, checked_sub(hir_count, 1));
     var next_temporary: i64 = binding_count;
+    while (vec_len<i64>(stack) > 0) {{
+        let current_index: i64 = vec_pop<i64>(stack);
+        let current: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, current_index);
+        if (hir_kind(current) == 3) {{
+            vec_push<i64>(stack, hir_left(current));
+        }} else {{
+            if (hir_kind(current) == 4) {{
+                vec_set<i64>(local_ids, current_index, hir_binding_id(current));
+            }} else {{
+                if (vec_get<i64>(local_ids, current_index) < 0) {{
+                    vec_set<i64>(local_ids, current_index, next_temporary);
+                    next_temporary = checked_add(next_temporary, 1);
+                }}
+                if (hir_kind(current) == 2) {{
+                    vec_push<i64>(stack, hir_right(current));
+                    vec_push<i64>(stack, hir_left(current));
+                }}
+                if (hir_kind(current) == 5) {{
+                    vec_push<i64>(stack, hir_right(current));
+                    vec_push<i64>(stack, hir_left(current));
+                }}
+            }}
+        }}
+    }}
+
+    // Canonical HIR IDs remain postorder and structural grouping aliases do not
+    // consume IDs. Resolve aliases only after the semantic child has an ID/local.
     var next_hir_id: i64 = 0;
+    var canonical_index: i64 = 0;
+    while (canonical_index < hir_count) {{
+        let current: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, canonical_index);
+        if (hir_kind(current) == 3) {{
+            vec_set<i64>(
+                local_ids,
+                canonical_index,
+                vec_get<i64>(local_ids, hir_left(current))
+            );
+            vec_set<i64>(
+                canonical_ids,
+                canonical_index,
+                vec_get<i64>(canonical_ids, hir_left(current))
+            );
+        }} else {{
+            vec_set<i64>(canonical_ids, canonical_index, next_hir_id);
+            next_hir_id = checked_add(next_hir_id, 1);
+        }}
+        canonical_index = checked_add(canonical_index, 1);
+    }}
+
+    var mir_nodes: Vec<MirExpressionRecord> = vec_new<MirExpressionRecord>(allocator, hir_count);
     var hir_index: i64 = 0;
-    while (hir_index < vec_len<HirExpressionRecord>(hir_nodes)) {{
+    while (hir_index < hir_count) {{
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
         var left_local: i64 = -1;
         var right_local: i64 = -1;
-        var result_local: i64 = -1;
-        var record_hir_id: i64 = next_hir_id;
-
+        if (hir_kind(hir) == 2) {{
+            left_local = vec_get<i64>(local_ids, hir_left(hir));
+            right_local = vec_get<i64>(local_ids, hir_right(hir));
+        }}
+        if (hir_kind(hir) == 5) {{
+            left_local = vec_get<i64>(local_ids, hir_left(hir));
+            right_local = vec_get<i64>(local_ids, hir_right(hir));
+        }}
         if (hir_kind(hir) == 3) {{
             left_local = vec_get<i64>(local_ids, hir_left(hir));
-            record_hir_id = vec_get<i64>(canonical_ids, hir_left(hir));
-        }} else {{
-            if (hir_kind(hir) == 2) {{
-                left_local = vec_get<i64>(local_ids, hir_left(hir));
-                right_local = vec_get<i64>(local_ids, hir_right(hir));
-            }}
-            if (hir_kind(hir) == 5) {{
-                left_local = vec_get<i64>(local_ids, hir_left(hir));
-                right_local = vec_get<i64>(local_ids, hir_right(hir));
-            }}
-            if (hir_kind(hir) == 1) {{
-                result_local = next_temporary;
-                next_temporary = checked_add(next_temporary, 1);
-            }}
-            if (hir_kind(hir) == 2) {{
-                result_local = next_temporary;
-                next_temporary = checked_add(next_temporary, 1);
-            }}
-            if (hir_kind(hir) == 5) {{
-                result_local = next_temporary;
-                next_temporary = checked_add(next_temporary, 1);
-            }}
-            next_hir_id = checked_add(next_hir_id, 1);
         }}
-
         let mir: MirExpressionRecord = lower_expression_mir_record(
             hir,
             left_local,
             right_local,
-            result_local,
-            record_hir_id
+            vec_get<i64>(local_ids, hir_index),
+            vec_get<i64>(canonical_ids, hir_index)
         );
         vec_push<MirExpressionRecord>(mir_nodes, mir);
-        vec_push<i64>(local_ids, mir_result(mir));
-        vec_push<i64>(canonical_ids, record_hir_id);
         hir_index = checked_add(hir_index, 1);
     }}
 
@@ -229,9 +266,10 @@ requires_caps [allocate]
         index = checked_add(index, 1);
     }}
 
+    drop(mir_nodes);
+    drop(stack);
     drop(canonical_ids);
     drop(local_ids);
-    drop(mir_nodes);
     drop(binding_lengths);
     drop(binding_starts);
     drop(hir_nodes);
