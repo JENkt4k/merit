@@ -42,6 +42,7 @@ run_project "trait_bounds" "examples/projects/trait_bounds"
 run_project "generic_collections" "examples/projects/generic_collections"
 run_project "borrowed_views" "examples/projects/borrowed_views"
 run_project "bootstrap_lexer" "examples/projects/bootstrap_lexer"
+run_project "cobol_finance_modernization" "examples/projects/cobol_finance_modernization"
 
 start_group "acceptance: filesystem_capabilities"
 (
@@ -57,14 +58,14 @@ start_group "acceptance: ledger_app"
 )
 end_group
 
-printf '\nMerit local gate passed: %s; 9/9 acceptance projects verified.\n' "$pytest_summary"
+printf '\nMerit local gate passed: %s; 10/10 acceptance projects verified.\n' "$pytest_summary"
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     cat >>"$GITHUB_STEP_SUMMARY" <<EOF
 ## Merit local gate
 
 - **Pytest:** $pytest_summary
-- **Acceptance projects:** 9 / 9 verified
+- **Acceptance projects:** 10 / 10 verified
 - **Interpreter/native agreement:** passed for every acceptance project
 - **Bootstrap corpus contract:** manifest and canonical AST tests included in pytest
 EOF
