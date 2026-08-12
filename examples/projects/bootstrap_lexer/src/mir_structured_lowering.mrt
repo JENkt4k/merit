@@ -278,7 +278,7 @@ requires_caps [allocate]
             vec_push<MirCfgRecord>(cfg, cfg_switch_default(frame.a, frame.b, arm_target, frame.e));
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d,
-                e: -checked_add(frame.e, 1), f: frame.f
+                e: checked_sub(0, checked_add(frame.e, 1)), f: frame.f
             });
             current = arm_target;
             local_ordinal = 0;
@@ -291,7 +291,7 @@ requires_caps [allocate]
             let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
             if (frame.kind != 30) { drop(frames); return 29; }
             if (frame.e >= 0) { drop(frames); return 30; }
-            let actual_arms: i64 = -frame.e;
+            let actual_arms: i64 = checked_sub(0, frame.e);
             if (actual_arms != frame.f) { drop(frames); return 31; }
             lower_finish_open_path(cfg, terminated, current, frame.d);
             current = frame.d;
