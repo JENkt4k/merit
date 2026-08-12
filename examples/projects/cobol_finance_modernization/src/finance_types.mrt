@@ -1,0 +1,39 @@
+module finance_types
+
+pub decimal USD(18, 2, half_even);
+pub bounded AccountNumber(u64, 1, 999999999999);
+pub bounded Sequence(u64, 0, 9999999999999999999);
+
+pub stable("merit-finance-account-v1") struct Account {
+    id: AccountNumber;
+    balance: USD;
+    last_sequence: Sequence;
+}
+
+pub stable("merit-finance-posting-v1") struct TransferPosting {
+    debit_account: AccountNumber;
+    credit_account: AccountNumber;
+    amount: USD;
+    sequence: Sequence;
+}
+
+pub stable("merit-finance-receipt-v1") struct TransferReceipt {
+    debit_balance: USD;
+    credit_balance: USD;
+    sequence: Sequence;
+}
+
+pub enum TransferError {
+    InvalidAmount,
+    SameAccount,
+    WrongDebitAccount,
+    WrongCreditAccount,
+    DuplicateOrOutOfOrder,
+    InsufficientFunds,
+    CreditOverflow
+}
+
+pub enum TransferResult {
+    Committed(TransferReceipt),
+    Rejected(TransferError)
+}

@@ -1,0 +1,40 @@
+module legacy_bridge
+import finance_types;
+
+pub stable("cobol-account-canonical-v1") struct CobolAccountRecord {
+    account_number: AccountNumber;
+    balance: USD;
+    last_sequence: Sequence;
+}
+
+pub stable("cobol-transfer-canonical-v1") struct CobolTransferRecord {
+    debit_account: AccountNumber;
+    credit_account: AccountNumber;
+    amount: USD;
+    sequence: Sequence;
+}
+
+pub fn import_account(record: CobolAccountRecord) -> Account {
+    return Account {
+        id: record.account_number,
+        balance: record.balance,
+        last_sequence: record.last_sequence
+    };
+}
+
+pub fn export_account(borrow account: Account) -> CobolAccountRecord {
+    return CobolAccountRecord {
+        account_number: account.id,
+        balance: account.balance,
+        last_sequence: account.last_sequence
+    };
+}
+
+pub fn import_transfer(record: CobolTransferRecord) -> TransferPosting {
+    return TransferPosting {
+        debit_account: record.debit_account,
+        credit_account: record.credit_account,
+        amount: record.amount,
+        sequence: record.sequence
+    };
+}

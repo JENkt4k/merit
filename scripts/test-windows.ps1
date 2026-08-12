@@ -41,7 +41,8 @@ $Projects = @(
     @{ Name = "trait_bounds"; Path = "examples/projects/trait_bounds" },
     @{ Name = "generic_collections"; Path = "examples/projects/generic_collections" },
     @{ Name = "borrowed_views"; Path = "examples/projects/borrowed_views" },
-    @{ Name = "bootstrap_lexer"; Path = "examples/projects/bootstrap_lexer" }
+    @{ Name = "bootstrap_lexer"; Path = "examples/projects/bootstrap_lexer" },
+    @{ Name = "cobol_finance_modernization"; Path = "examples/projects/cobol_finance_modernization" }
 )
 
 foreach ($Project in $Projects) {
@@ -90,4 +91,4 @@ finally {
 }
 
 Write-Host ""
-Write-Host "Merit Windows local gate passed: pytest and 9/9 acceptance projects verified."
+Write-Host "Merit Windows local gate passed: pytest and 10/10 acceptance projects verified."

@@ -1,0 +1,65 @@
+module cobol_finance_main
+import finance_types;
+import finance_ledger;
+import legacy_bridge;
+
+fn main() -> i32 {
+    let debit_record: CobolAccountRecord = CobolAccountRecord {
+        account_number: 1001001,
+        balance: 1250.00,
+        last_sequence: 40
+    };
+    let credit_record: CobolAccountRecord = CobolAccountRecord {
+        account_number: 2002002,
+        balance: 75.25,
+        last_sequence: 40
+    };
+    var debit: Account = import_account(debit_record);
+    var credit: Account = import_account(credit_record);
+
+    let legacy_posting: CobolTransferRecord = CobolTransferRecord {
+        debit_account: 1001001,
+        credit_account: 2002002,
+        amount: 125.50,
+        sequence: 41
+    };
+    let posting: TransferPosting = import_transfer(legacy_posting);
+    let first: TransferResult = apply_transfer(debit, credit, posting);
+
+    match (first) {
+        Committed(receipt) => {
+            print(receipt.debit_balance);
+            print(receipt.credit_balance);
+            print(receipt.sequence);
+        }
+        Rejected(error) => { print(0); }
+    }
+
+    let duplicate: TransferPosting = TransferPosting {
+        debit_account: 1001001,
+        credit_account: 2002002,
+        amount: 10.00,
+        sequence: 41
+    };
+    let second: TransferResult = apply_transfer(debit, credit, duplicate);
+    match (second) {
+        Committed(receipt) => { print(0); }
+        Rejected(error) => {
+            match (error) {
+                DuplicateOrOutOfOrder => { print(1); }
+                InvalidAmount => { print(2); }
+                SameAccount => { print(3); }
+                WrongDebitAccount => { print(4); }
+                WrongCreditAccount => { print(5); }
+                InsufficientFunds => { print(6); }
+                CreditOverflow => { print(7); }
+            }
+        }
+    }
+
+    let debit_out: CobolAccountRecord = export_account(debit);
+    let credit_out: CobolAccountRecord = export_account(credit);
+    print(debit_out.balance);
+    print(credit_out.balance);
+    return 0;
+}

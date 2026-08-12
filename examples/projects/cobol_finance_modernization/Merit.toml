@@ -1,0 +1,7 @@
+[package]
+name = "cobol_finance_modernization"
+entry = "src/main.mrt"
+sources = ["src/**/*.mrt"]
+
+[build]
+c_flags = ["-O2"]
