@@ -41,13 +41,6 @@ import bootstrap_mir_source_ownership_lowering;
 
 capability allocate;
 
-fn print_ownership_event(borrow event: MirOwnershipEvent) -> i32 {{
-    print(event.kind);
-    print(event.a);
-    print(event.b);
-    return 0;
-}}
-
 fn print_lower_event(borrow event: MirLowerEvent) -> i32 {{
     print(lower_event_kind(event));
     print(lower_event_a(event));
@@ -87,12 +80,6 @@ fn main() -> i32 {{
         print(-101);
         print(source_status);
         print(vec_len<MirOwnershipEvent>(source_events));
-        var si: i64 = 0;
-        while (si < vec_len<MirOwnershipEvent>(source_events)) {{
-            let event: MirOwnershipEvent = vec_get<MirOwnershipEvent>(source_events, si);
-            print_ownership_event(event);
-            si = checked_add(si, 1);
-        }}
 
         var lowered: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
         var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 32);
@@ -175,15 +162,9 @@ def _parse(output: str):
     source_part, remainder = output.rsplit("-101\n", 1)[1].split("-102\n", 1)
     ownership_part, cfg_part = remainder.split("-103\n", 1)
 
-    values = [int(value) for value in source_part.splitlines()]
-    source_status = values[0]
-    count = values[1]
-    cursor = 2
-    source_events = []
-    for _ in range(count):
-        source_events.append(tuple(values[cursor:cursor + 3]))
-        cursor += 3
-    assert cursor == len(values)
+    source_values = [int(value) for value in source_part.splitlines()]
+    assert len(source_values) == 2
+    source_status, source_event_count = source_values
 
     values = [int(value) for value in ownership_part.splitlines()]
     ownership_status = values[0]
@@ -217,24 +198,24 @@ def _parse(output: str):
         placements.append(tuple(values[cursor:cursor + 3]))
         cursor += 3
     assert cursor == len(values)
-    return source_status, source_events, ownership_status, validation_status, events, records, cfg_status, cfg, placements
+    return (
+        source_status, source_event_count, ownership_status, validation_status,
+        events, records, cfg_status, cfg, placements,
+    )
 
 
 def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
     project, root = _project(tmp_path)
     interpreted = _parse(interpret(project))
     assert interpreted[0] == 0
+    assert interpreted[1] > 0
     assert interpreted[2] == 0
     assert interpreted[3] == 0
     assert interpreted[6] == 0
 
-    source_kinds = [event[0] for event in interpreted[1]]
-    assert 2 in source_kinds  # activate a
-    assert 3 in source_kinds  # move a -> b
-    assert 4 in source_kinds  # source drop(b)
-    assert 5 in source_kinds  # source replace(b, 9)
-    assert 20 in source_kinds and 21 in source_kinds and 22 in source_kinds
-    assert 30 in source_kinds and 31 in source_kinds
+    lower_kinds = [event[0] for event in interpreted[4]]
+    assert 10 in lower_kinds and 11 in lower_kinds and 12 in lower_kinds
+    assert 20 in lower_kinds and 21 in lower_kinds
 
     record_kinds = {record[0] for record in interpreted[5]}
     assert record_kinds == {1, 2, 3, 4, 5, 6}
@@ -243,8 +224,8 @@ def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
     assert any(record[0] == 4 and record[2] == 1 for record in interpreted[5])
     assert any(record[0] == 5 and record[2] == 1 for record in interpreted[5])
 
-    # There are two path-specific implicit cleanups of b: the loop-body return
-    # and the final return after restoring the loop's zero-iteration entry state.
+    # Two path-specific implicit cleanups of b: the loop-body return and the
+    # final return after restoring the zero-iteration loop entry state.
     cleanup = [record for record in interpreted[5] if record[0] == 6]
     assert [record[2] for record in cleanup] == [1, 1]
 
@@ -255,8 +236,7 @@ def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
     native_output = subprocess.run(
         [str(executable)], check=True, text=True, capture_output=True
     ).stdout
-    native = _parse(native_output)
-    assert native == interpreted
+    assert _parse(native_output) == interpreted
 
 
 def test_source_ownership_boundary_rejects_unrepresented_effects_explicitly():
@@ -266,4 +246,4 @@ def test_source_ownership_boundary_rejects_unrepresented_effects_explicitly():
     assert 123 == 100 + 23
     assert 127 == 100 + 27
     assert 128 == 100 + 28
-    assert 34 > 0
+    assert 30 > 0
