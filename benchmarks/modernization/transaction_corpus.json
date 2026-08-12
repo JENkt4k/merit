@@ -12,13 +12,13 @@
   "transactions": [
     {"id": "commit-basic", "debit": 1001001, "credit": 2002002, "amount_minor": 12550, "sequence": 41, "expect": "committed"},
     {"id": "reject-duplicate", "debit": 1001001, "credit": 2002002, "amount_minor": 100, "sequence": 41, "expect": "duplicate_or_out_of_order"},
-    {"id": "reject-insufficient", "debit": 3003003, "credit": 2002002, "amount_minor": 5001, "sequence": 8, "expect": "insufficient_funds"},
-    {"id": "reject-same-account", "debit": 3003003, "credit": 3003003, "amount_minor": 100, "sequence": 8, "expect": "same_account"},
-    {"id": "reject-zero", "debit": 3003003, "credit": 2002002, "amount_minor": 0, "sequence": 8, "expect": "invalid_amount"},
-    {"id": "reject-negative", "debit": 3003003, "credit": 2002002, "amount_minor": -1, "sequence": 8, "expect": "invalid_amount"},
-    {"id": "reject-credit-overflow", "debit": 3003003, "credit": 4004004, "amount_minor": 100, "sequence": 8, "expect": "credit_overflow"},
-    {"id": "commit-after-rejections", "debit": 3003003, "credit": 2002002, "amount_minor": 1250, "sequence": 8, "expect": "committed"},
-    {"id": "commit-reverse", "debit": 2002002, "credit": 1001001, "amount_minor": 250, "sequence": 42, "expect": "committed"},
-    {"id": "reject-old-sequence", "debit": 2002002, "credit": 3003003, "amount_minor": 100, "sequence": 41, "expect": "duplicate_or_out_of_order"}
+    {"id": "reject-insufficient", "debit": 3003003, "credit": 2002002, "amount_minor": 5001, "sequence": 42, "expect": "insufficient_funds"},
+    {"id": "reject-same-account", "debit": 3003003, "credit": 3003003, "amount_minor": 100, "sequence": 42, "expect": "same_account"},
+    {"id": "reject-zero", "debit": 3003003, "credit": 2002002, "amount_minor": 0, "sequence": 42, "expect": "invalid_amount"},
+    {"id": "reject-negative", "debit": 3003003, "credit": 2002002, "amount_minor": -1, "sequence": 42, "expect": "invalid_amount"},
+    {"id": "reject-credit-overflow", "debit": 3003003, "credit": 4004004, "amount_minor": 100, "sequence": 42, "expect": "credit_overflow"},
+    {"id": "commit-after-rejections", "debit": 3003003, "credit": 2002002, "amount_minor": 1250, "sequence": 42, "expect": "committed"},
+    {"id": "commit-reverse", "debit": 2002002, "credit": 1001001, "amount_minor": 250, "sequence": 43, "expect": "committed"},
+    {"id": "reject-old-sequence", "debit": 2002002, "credit": 3003003, "amount_minor": 100, "sequence": 42, "expect": "duplicate_or_out_of_order"}
   ]
 }
