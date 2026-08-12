@@ -1,0 +1,62 @@
+module finance_ledger
+import finance_types;
+
+fn debit_checked(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+requires account.balance >= amount;
+ensures result == old(account.balance) - amount;
+{
+    account.balance = checked_sub(account.balance, amount);
+    return account.balance;
+}
+
+fn credit_checked(borrow_mut account: Account, amount: USD) -> USD
+requires amount > 0.00;
+requires account.balance <= 9999999999999999.99 - amount;
+ensures result == old(account.balance) + amount;
+{
+    account.balance = checked_add(account.balance, amount);
+    return account.balance;
+}
+
+pub fn apply_transfer(
+    borrow_mut debit: Account,
+    borrow_mut credit: Account,
+    posting: TransferPosting
+) -> TransferResult {
+    if (posting.amount <= 0.00) {
+        return Rejected(InvalidAmount());
+    }
+    if (posting.debit_account == posting.credit_account) {
+        return Rejected(SameAccount());
+    }
+    if (debit.id != posting.debit_account) {
+        return Rejected(WrongDebitAccount());
+    }
+    if (credit.id != posting.credit_account) {
+        return Rejected(WrongCreditAccount());
+    }
+    if (posting.sequence <= debit.last_sequence) {
+        return Rejected(DuplicateOrOutOfOrder());
+    }
+    if (posting.sequence <= credit.last_sequence) {
+        return Rejected(DuplicateOrOutOfOrder());
+    }
+    if (debit.balance < posting.amount) {
+        return Rejected(InsufficientFunds());
+    }
+    if (credit.balance > 9999999999999999.99 - posting.amount) {
+        return Rejected(CreditOverflow());
+    }
+
+    let debit_balance: USD = debit_checked(debit, posting.amount);
+    let credit_balance: USD = credit_checked(credit, posting.amount);
+    debit.last_sequence = posting.sequence;
+    credit.last_sequence = posting.sequence;
+
+    return Committed(TransferReceipt {
+        debit_balance: debit_balance,
+        credit_balance: credit_balance,
+        sequence: posting.sequence
+    });
+}
