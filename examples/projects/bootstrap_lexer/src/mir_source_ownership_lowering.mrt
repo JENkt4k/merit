@@ -444,11 +444,14 @@ requires_caps [allocate]
             allocator, counters, direct_binding, events
         );
         if (replacement_local < 0) { return 29; }
-        // Current replace event carries a replacement local but no consuming
-        // source binding. Reject direct owned-binding replacement until the IR
-        // contract can preserve that identity rather than fabricating parity.
-        if (vec_get<i64>(direct_binding, 0) >= 0) { return 30; }
-        vec_push<MirOwnershipEvent>(events, ownership_event_replace(target_binding, replacement_local));
+        let replacement_binding: i64 = vec_get<i64>(direct_binding, 0);
+        if (replacement_binding >= 0) {
+            let replacement_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, replacement_binding);
+            if (ownership_binding_owned(replacement_semantic) == 0) { return 30; }
+            vec_push<MirOwnershipEvent>(events, ownership_event_replace_binding(target_binding, replacement_binding));
+        } else {
+            vec_push<MirOwnershipEvent>(events, ownership_event_replace(target_binding, replacement_local));
+        }
         return 0;
     }
     return checked_add(100, kind);
