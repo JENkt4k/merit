@@ -75,10 +75,10 @@ fn main() -> i32 {
 def _project(tmp_path):
     root = tmp_path / "structured_mir"
     shutil.copytree(PROJECT, root, ignore=shutil.ignore_patterns("build"))
-    (root / "src" / "structured_probe.mrt").write_text(_probe_source(), encoding="utf-8")
-    manifest = (root / "Merit.toml").read_text(encoding="utf-8")
-    manifest = manifest.replace('entry = "src/lexer.mrt"', 'entry = "src/structured_probe.mrt"')
-    (root / "Merit.toml").write_text(manifest, encoding="utf-8")
+    # Replace the example entry module rather than adding a second module with main.
+    # The project loader intentionally rejects multiple main definitions even when
+    # the manifest entry points at only one of them.
+    (root / "src" / "lexer.mrt").write_text(_probe_source(), encoding="utf-8")
     return load_project(root / "Merit.toml"), root
 
 
