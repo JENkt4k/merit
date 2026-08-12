@@ -15,6 +15,7 @@ dev = ["pytest>=8"]
 [project.scripts]
 merit = "merit.compiler:main"
 merit-project = "merit.project.cli:main"
+merit-copybook = "merit.copybook:main"
 
 [tool.setuptools.packages.find]
 include = ["merit*"]
