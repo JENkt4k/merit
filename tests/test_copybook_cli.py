@@ -34,13 +34,23 @@ def test_copybook_cli_inspect_generate_and_verify():
     assert "verified 1 golden vector(s); record_length=21" in verified.stdout
 
 
-def test_generated_copybook_declarations_pass_merit_check(tmp_path):
+def test_generated_copybook_declarations_pass_project_check(tmp_path):
     schema = parse_copybook(COPYBOOK.read_text(encoding="utf-8"))
     source = generate_merit(schema, module="legacy_transfer")
-    generated = tmp_path / "legacy_transfer.mrt"
-    generated.write_text(source, encoding="utf-8")
+    project = tmp_path / "generated-copybook"
+    src = project / "src"
+    src.mkdir(parents=True)
+    (src / "legacy_transfer.mrt").write_text(source, encoding="utf-8")
+    (src / "main.mrt").write_text(
+        "module copybook_probe\nimport legacy_transfer;\n\nfn main() -> i32 { return 0; }\n",
+        encoding="utf-8",
+    )
+    (project / "Merit.toml").write_text(
+        '[package]\nname = "generated_copybook_probe"\nentry = "src/main.mrt"\nsources = ["src/**/*.mrt"]\n',
+        encoding="utf-8",
+    )
     result = subprocess.run(
-        [sys.executable, "-m", "merit.compiler", "check", str(generated)],
+        [sys.executable, "-m", "merit.project.cli", "check", str(project)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
