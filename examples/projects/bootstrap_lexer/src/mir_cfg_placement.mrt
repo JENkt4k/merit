@@ -1,0 +1,22 @@
+module bootstrap_mir_cfg_placement
+
+// bootstrap-function-mir-v1 placement records bind an already-decided global MIR
+// instruction identity to one native-allocated CFG block.  The block-local ordinal
+// is explicit so adapters never infer ordering from source text or container order.
+pub struct MirPlacementRecord {
+    block_id: i64;
+    instruction_id: i64;
+    ordinal: i64;
+}
+
+pub fn placement_block_id(borrow record: MirPlacementRecord) -> i64 { return record.block_id; }
+pub fn placement_instruction_id(borrow record: MirPlacementRecord) -> i64 { return record.instruction_id; }
+pub fn placement_ordinal(borrow record: MirPlacementRecord) -> i64 { return record.ordinal; }
+
+pub fn mir_place(block_id: i64, instruction_id: i64, ordinal: i64) -> MirPlacementRecord {
+    return MirPlacementRecord {
+        block_id: block_id,
+        instruction_id: instruction_id,
+        ordinal: ordinal
+    };
+}
