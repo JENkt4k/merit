@@ -1,0 +1,24 @@
+{
+  "schema": "merit-modernization-transaction-v1",
+  "currency": "USD",
+  "minor_unit_scale": 2,
+  "max_balance_minor": 999999999999999999,
+  "accounts": [
+    {"id": 1001001, "balance_minor": 125000, "last_sequence": 40},
+    {"id": 2002002, "balance_minor": 7525, "last_sequence": 40},
+    {"id": 3003003, "balance_minor": 5000, "last_sequence": 7},
+    {"id": 4004004, "balance_minor": 999999999999999950, "last_sequence": 7}
+  ],
+  "transactions": [
+    {"id": "commit-basic", "debit": 1001001, "credit": 2002002, "amount_minor": 12550, "sequence": 41, "expect": "committed"},
+    {"id": "reject-duplicate", "debit": 1001001, "credit": 2002002, "amount_minor": 100, "sequence": 41, "expect": "duplicate_or_out_of_order"},
+    {"id": "reject-insufficient", "debit": 3003003, "credit": 2002002, "amount_minor": 5001, "sequence": 8, "expect": "insufficient_funds"},
+    {"id": "reject-same-account", "debit": 3003003, "credit": 3003003, "amount_minor": 100, "sequence": 8, "expect": "same_account"},
+    {"id": "reject-zero", "debit": 3003003, "credit": 2002002, "amount_minor": 0, "sequence": 8, "expect": "invalid_amount"},
+    {"id": "reject-negative", "debit": 3003003, "credit": 2002002, "amount_minor": -1, "sequence": 8, "expect": "invalid_amount"},
+    {"id": "reject-credit-overflow", "debit": 3003003, "credit": 4004004, "amount_minor": 100, "sequence": 8, "expect": "credit_overflow"},
+    {"id": "commit-after-rejections", "debit": 3003003, "credit": 2002002, "amount_minor": 1250, "sequence": 8, "expect": "committed"},
+    {"id": "commit-reverse", "debit": 2002002, "credit": 1001001, "amount_minor": 250, "sequence": 42, "expect": "committed"},
+    {"id": "reject-old-sequence", "debit": 2002002, "credit": 3003003, "amount_minor": 100, "sequence": 41, "expect": "duplicate_or_out_of_order"}
+  ]
+}
