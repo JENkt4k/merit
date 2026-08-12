@@ -1,0 +1,452 @@
+module bootstrap_mir_statement_lowering
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_statements;
+import bootstrap_expression_spans;
+import bootstrap_hir;
+import bootstrap_mir_structured_lowering;
+
+capability allocate;
+
+// Native source/statement -> structured-MIR bridge.
+//
+// This module deliberately consumes the already measured native statement
+// envelopes/typed operands plus the measured expression AST/HIR path. It owns
+// the remaining decisions required by the structured MIR walker for the first
+// source-backed control-flow slice:
+//
+//   * source binding/local identity for let/var
+//   * expression temporary allocation (root first)
+//   * global instruction identity (postorder emission)
+//   * instruction placement events
+//   * if/else/end-if and while/end-while nesting
+//   * condition and return operand locals
+//
+// Supported statement kinds in bootstrap-statement-v1:
+//   20 let, 21 var, 22 return, 25 if, 26 while.
+// Other statement effects remain explicit future boundaries rather than being
+// silently fabricated by Python.
+
+struct StatementLowerFrame {
+    kind: i32;
+    open_end: i64;
+    body_depth: i64;
+    state: i32;
+}
+
+fn lower_token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
+}
+
+fn lower_token_punctuation(borrow source: Buffer, borrow token: Token, byte: i64) -> i32 {
+    if (token_kind(token) != 4) { return 0; }
+    if (token_length(token) != 1) { return 0; }
+    if (buffer_get(source, token_start(token)) != byte) { return 0; }
+    return 1;
+}
+
+fn lower_token_else(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != 1) { return 0; }
+    if (token_length(token) != 4) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != 101) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != 108) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != 115) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != 101) { return 0; }
+    return 1;
+}
+
+fn lower_expression_operand(
+    borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>
+) -> i64
+{
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == 3) { return index; }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+fn lower_binding_operand(
+    borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>
+) -> i64
+{
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == 1) { return index; }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+// counters[0] = next temporary local, counters[1] = next instruction.
+// Source binding IDs are also their MIR local IDs for this source-backed slice.
+fn lower_expression_to_events(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow binding_starts: Vec<i64>,
+    borrow binding_lengths: Vec<i64>,
+    expression_start: i64,
+    expression_length: i64,
+    allocator: Allocator,
+    borrow_mut counters: Vec<i64>,
+    borrow_mut events: Vec<MirLowerEvent>
+) -> i64
+requires_caps [allocate]
+{
+    let expressions: Vec<ExpressionNode> = parse_expression_span(
+        source, tokens, expression_start, expression_length, allocator
+    );
+    let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
+    let count: i64 = vec_len<AstNodeRecord>(ast_nodes);
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, count);
+
+    var ast_index: i64 = 0;
+    while (ast_index < count) {
+        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
+        var binding_id: i64 = -1;
+        if (ast_kind(ast) == 30) {
+            binding_id = hir_find_binding_id(
+                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+            );
+        }
+        let hir: HirExpressionRecord = lower_resolved_hir_record(
+            ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
+            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, 1
+        );
+        vec_push<HirExpressionRecord>(hir_nodes, hir);
+        ast_index = checked_add(ast_index, 1);
+    }
+
+    var local_ids: Vec<i64> = vec_new<i64>(allocator, count);
+    var initialize: i64 = 0;
+    while (initialize < count) {
+        vec_push<i64>(local_ids, -1);
+        initialize = checked_add(initialize, 1);
+    }
+
+    // Canonical MIR allocates the result temporary before recursively visiting
+    // children, while instruction emission is postorder. Keep those decisions
+    // separate so the native path cannot accidentally renumber temporaries from
+    // emission order.
+    if (count > 0) {
+        var stack: Vec<i64> = vec_new<i64>(allocator, count);
+        vec_push<i64>(stack, checked_sub(count, 1));
+        while (vec_len<i64>(stack) > 0) {
+            let current_index: i64 = vec_pop<i64>(stack);
+            let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, current_index);
+            let kind: i32 = hir_kind(hir);
+            if (kind == 3) {
+                vec_push<i64>(stack, hir_left(hir));
+            } else {
+                if (kind == 4) {
+                    vec_set<i64>(local_ids, current_index, hir_binding_id(hir));
+                } else {
+                    if (vec_get<i64>(local_ids, current_index) < 0) {
+                        let next_local: i64 = vec_get<i64>(counters, 0);
+                        vec_set<i64>(local_ids, current_index, next_local);
+                        vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                    }
+                    if (kind == 2) {
+                        vec_push<i64>(stack, hir_right(hir));
+                        vec_push<i64>(stack, hir_left(hir));
+                    }
+                    if (kind == 5) {
+                        vec_push<i64>(stack, hir_right(hir));
+                        vec_push<i64>(stack, hir_left(hir));
+                    }
+                }
+            }
+        }
+        drop(stack);
+    }
+
+    var hir_index: i64 = 0;
+    while (hir_index < count) {
+        let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
+        let kind: i32 = hir_kind(hir);
+        if (kind == 1) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        if (kind == 2) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        if (kind == 5) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        hir_index = checked_add(hir_index, 1);
+    }
+
+    var result_local: i64 = -1;
+    if (count > 0) {
+        result_local = vec_get<i64>(local_ids, checked_sub(count, 1));
+    }
+    drop(local_ids);
+    drop(hir_nodes);
+    drop(ast_nodes);
+    drop(expressions);
+    return result_local;
+}
+
+fn lower_collect_bindings(
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow_mut binding_starts: Vec<i64>,
+    borrow_mut binding_lengths: Vec<i64>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    while (index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
+        let kind: i32 = statement_record_kind(statement);
+        if (kind == 20) {
+            let operand_index: i64 = lower_binding_operand(statement, operands);
+            if (operand_index < 0) { return 1; }
+            let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+            vec_push<i64>(binding_starts, statement_operand_start(operand));
+            vec_push<i64>(binding_lengths, statement_operand_length(operand));
+        }
+        if (kind == 21) {
+            let operand_index: i64 = lower_binding_operand(statement, operands);
+            if (operand_index < 0) { return 1; }
+            let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+            vec_push<i64>(binding_starts, statement_operand_start(operand));
+            vec_push<i64>(binding_lengths, statement_operand_length(operand));
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+fn lower_statement_worker(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    allocator: Allocator,
+    borrow binding_starts: Vec<i64>,
+    borrow binding_lengths: Vec<i64>,
+    borrow_mut frames: Vec<StatementLowerFrame>,
+    borrow_mut counters: Vec<i64>,
+    borrow_mut events: Vec<MirLowerEvent>
+) -> i32
+requires_caps [allocate]
+{
+    var statement_index: i64 = 0;
+    var token_index: i64 = 0;
+    var brace_depth: i64 = 0;
+
+    while (token_index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, token_index);
+
+        if (statement_index < vec_len<StatementRecord>(statements)) {
+            let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+            if (token_start(token) == statement_record_start(statement)) {
+                let kind: i32 = statement_record_kind(statement);
+                if (kind == 20) {
+                    let expression_index: i64 = lower_expression_operand(statement, operands);
+                    if (expression_index < 0) { return 10; }
+                    let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                    let result_local: i64 = lower_expression_to_events(
+                        source, tokens, binding_starts, binding_lengths,
+                        statement_operand_start(expression), statement_operand_length(expression),
+                        allocator, counters, events
+                    );
+                    if (result_local < 0) { return 11; }
+                    // Binding initialization is a real MIR copy instruction after
+                    // the initializer expression.
+                    let copy_instruction: i64 = vec_get<i64>(counters, 1);
+                    vec_push<MirLowerEvent>(events, mir_event_place(copy_instruction));
+                    vec_set<i64>(counters, 1, checked_add(copy_instruction, 1));
+                } else {
+                    if (kind == 21) {
+                        let expression_index: i64 = lower_expression_operand(statement, operands);
+                        if (expression_index < 0) { return 12; }
+                        let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                        let result_local: i64 = lower_expression_to_events(
+                            source, tokens, binding_starts, binding_lengths,
+                            statement_operand_start(expression), statement_operand_length(expression),
+                            allocator, counters, events
+                        );
+                        if (result_local < 0) { return 13; }
+                        let copy_instruction: i64 = vec_get<i64>(counters, 1);
+                        vec_push<MirLowerEvent>(events, mir_event_place(copy_instruction));
+                        vec_set<i64>(counters, 1, checked_add(copy_instruction, 1));
+                    } else {
+                        if (kind == 22) {
+                            let expression_index: i64 = lower_expression_operand(statement, operands);
+                            if (expression_index < 0) { return 14; }
+                            let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                            let result_local: i64 = lower_expression_to_events(
+                                source, tokens, binding_starts, binding_lengths,
+                                statement_operand_start(expression), statement_operand_length(expression),
+                                allocator, counters, events
+                            );
+                            if (result_local < 0) { return 15; }
+                            vec_push<MirLowerEvent>(events, mir_event_return(result_local));
+                        } else {
+                            if (kind == 25) {
+                                let expression_index: i64 = lower_expression_operand(statement, operands);
+                                if (expression_index < 0) { return 16; }
+                                let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                                let condition_local: i64 = lower_expression_to_events(
+                                    source, tokens, binding_starts, binding_lengths,
+                                    statement_operand_start(expression), statement_operand_length(expression),
+                                    allocator, counters, events
+                                );
+                                if (condition_local < 0) { return 17; }
+                                vec_push<MirLowerEvent>(events, mir_event_if(condition_local));
+                                vec_push<StatementLowerFrame>(frames, StatementLowerFrame {
+                                    kind: 10,
+                                    open_end: checked_add(statement_record_start(statement), statement_record_length(statement)),
+                                    body_depth: -1,
+                                    state: 0
+                                });
+                            } else {
+                                if (kind == 26) {
+                                    let expression_index: i64 = lower_expression_operand(statement, operands);
+                                    if (expression_index < 0) { return 18; }
+                                    let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                                    let condition_local: i64 = lower_expression_to_events(
+                                        source, tokens, binding_starts, binding_lengths,
+                                        statement_operand_start(expression), statement_operand_length(expression),
+                                        allocator, counters, events
+                                    );
+                                    if (condition_local < 0) { return 19; }
+                                    vec_push<MirLowerEvent>(events, mir_event_while(condition_local));
+                                    vec_push<StatementLowerFrame>(frames, StatementLowerFrame {
+                                        kind: 20,
+                                        open_end: checked_add(statement_record_start(statement), statement_record_length(statement)),
+                                        body_depth: -1,
+                                        state: 0
+                                    });
+                                } else {
+                                    return checked_add(100, kind);
+                                }
+                            }
+                        }
+                    }
+                }
+                statement_index = checked_add(statement_index, 1);
+            }
+        }
+
+        if (lower_token_punctuation(source, token, 123)) {
+            brace_depth = checked_add(brace_depth, 1);
+            if (vec_len<StatementLowerFrame>(frames) > 0) {
+                let frame_index: i64 = checked_sub(vec_len<StatementLowerFrame>(frames), 1);
+                let frame: StatementLowerFrame = vec_get<StatementLowerFrame>(frames, frame_index);
+                if (frame.state == 0) {
+                    if (lower_token_end(token) == frame.open_end) {
+                        vec_set<StatementLowerFrame>(frames, frame_index, StatementLowerFrame {
+                            kind: frame.kind, open_end: frame.open_end,
+                            body_depth: brace_depth, state: 1
+                        });
+                    }
+                } else {
+                    if (frame.state == 2) {
+                        vec_set<StatementLowerFrame>(frames, frame_index, StatementLowerFrame {
+                            kind: frame.kind, open_end: frame.open_end,
+                            body_depth: brace_depth, state: 1
+                        });
+                    }
+                }
+            }
+        }
+
+        if (lower_token_punctuation(source, token, 125)) {
+            if (vec_len<StatementLowerFrame>(frames) > 0) {
+                let frame_index: i64 = checked_sub(vec_len<StatementLowerFrame>(frames), 1);
+                let frame: StatementLowerFrame = vec_get<StatementLowerFrame>(frames, frame_index);
+                if (frame.state == 1) {
+                    if (frame.body_depth == brace_depth) {
+                        var has_else: i32 = 0;
+                        let next_token_index: i64 = checked_add(token_index, 1);
+                        if (frame.kind == 10) {
+                            if (next_token_index < vec_len<Token>(tokens)) {
+                                let next_token: Token = vec_get<Token>(tokens, next_token_index);
+                                has_else = lower_token_else(source, next_token);
+                            }
+                        }
+                        if (has_else != 0) {
+                            vec_push<MirLowerEvent>(events, mir_event_else());
+                            vec_set<StatementLowerFrame>(frames, frame_index, StatementLowerFrame {
+                                kind: frame.kind, open_end: frame.open_end,
+                                body_depth: -1, state: 2
+                            });
+                        } else {
+                            let closed: StatementLowerFrame = vec_pop<StatementLowerFrame>(frames);
+                            if (closed.kind == 10) {
+                                vec_push<MirLowerEvent>(events, mir_event_end_if());
+                            } else {
+                                if (closed.kind == 20) {
+                                    vec_push<MirLowerEvent>(events, mir_event_end_while());
+                                } else { return 30; }
+                            }
+                        }
+                    }
+                }
+            }
+            if (brace_depth > 0) { brace_depth = checked_sub(brace_depth, 1); }
+        }
+
+        token_index = checked_add(token_index, 1);
+    }
+
+    if (statement_index != vec_len<StatementRecord>(statements)) { return 31; }
+    if (vec_len<StatementLowerFrame>(frames) != 0) { return 32; }
+    return 0;
+}
+
+// Returns a stable structural status. On success, `events` is directly suitable
+// for lower_structured_mir; no Python nesting/placement inference is required.
+pub fn lower_typed_statements_to_mir_events(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    allocator: Allocator,
+    borrow_mut events: Vec<MirLowerEvent>
+) -> i32
+requires_caps [allocate]
+{
+    if (vec_len<StatementRecord>(statements) == 0) { return 1; }
+    var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    let binding_status: i32 = lower_collect_bindings(
+        statements, operands, binding_starts, binding_lengths
+    );
+
+    var frames: Vec<StatementLowerFrame> = vec_new<StatementLowerFrame>(allocator, 8);
+    var counters: Vec<i64> = vec_new<i64>(allocator, 2);
+    vec_push<i64>(counters, vec_len<i64>(binding_starts));
+    vec_push<i64>(counters, 0);
+
+    var status: i32 = binding_status;
+    if (status == 0) {
+        status = lower_statement_worker(
+            source, tokens, statements, operands, allocator,
+            binding_starts, binding_lengths, frames, counters, events
+        );
+    }
+
+    drop(counters);
+    drop(frames);
+    drop(binding_lengths);
+    drop(binding_starts);
+    return status;
+}
