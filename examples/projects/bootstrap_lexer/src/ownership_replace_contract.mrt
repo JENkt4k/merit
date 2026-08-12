@@ -1,9 +1,0 @@
-module bootstrap_ownership_replace_contract
-import bootstrap_mir_ownership_flow;
-
-// Compile-time bootstrap smoke for the additive owned-replacement event ABI.
-// The semantic behavior is exercised by the interpreter/native project gates.
-pub fn owned_replace_event_kind(target_binding: i64, source_binding: i64) -> i32 {
-    let event: MirOwnershipEvent = ownership_event_replace_from_binding(target_binding, source_binding);
-    return event.kind;
-}
