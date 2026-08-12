@@ -1,0 +1,12 @@
+[
+  {
+    "values": {
+      "ACCOUNT-ID": "123456",
+      "AMOUNT": "125.50",
+      "STATUS": "OK",
+      "SEQUENCE": "41",
+      "TAG": ["ACH", "USD"]
+    },
+    "hex": "f1f2f3f4f5f6000012550cd6d20029c1c3c8e4e2c4"
+  }
+]

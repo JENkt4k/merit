@@ -12,7 +12,7 @@ capability allocate;
 //   2 activate owned binding        a=binding id
 //   3 move binding                  a=source binding, b=destination binding
 //   4 explicit drop                 a=binding id
-//   5 replace from temporary/local  a=target binding, b=replacement local
+//   5 replace from temporary        a=target binding, b=replacement local
 //   6 replace from owned binding    a=target binding, b=source binding
 //  10 return                        a=operand local (-1 for unit)
 //  20 if                            a=condition local
@@ -37,10 +37,9 @@ pub struct MirOwnershipEvent {
 
 // Record kinds:
 //   1 activate, 2 move, 3 explicit drop, 4 replace-old drop,
-//   5 replace-new target transition, 6 implicit cleanup,
-//   7 replacement-source consumption. Kinds 5 and 7 may share one
-//   instruction id because they describe the two ownership-state effects of
-//   the same move instruction.
+//   5 replace-new move, 6 implicit cleanup.
+// For kind 5, other_binding_id is -1 for a temporary replacement and the
+// consumed source binding id for an owned-binding replacement.
 pub struct MirOwnershipRecord {
     kind: i32;
     instruction_id: i64;
@@ -73,7 +72,7 @@ pub fn ownership_event_activate(binding_id: i64) -> MirOwnershipEvent { return M
 pub fn ownership_event_move(source_binding: i64, destination_binding: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 3, a: source_binding, b: destination_binding }; }
 pub fn ownership_event_drop(binding_id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 4, a: binding_id, b: 0 }; }
 pub fn ownership_event_replace(binding_id: i64, replacement_local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 5, a: binding_id, b: replacement_local }; }
-pub fn ownership_event_replace_binding(target_binding: i64, source_binding: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 6, a: target_binding, b: source_binding }; }
+pub fn ownership_event_replace_from_binding(target_binding: i64, source_binding: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 6, a: target_binding, b: source_binding }; }
 pub fn ownership_event_return(operand_local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 10, a: operand_local, b: 0 }; }
 pub fn ownership_event_if(condition_local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 20, a: condition_local, b: 0 }; }
 pub fn ownership_event_else() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 21, a: 0, b: 0 }; }
@@ -230,6 +229,38 @@ fn ownership_merge_if(
     return 0;
 }
 
+fn ownership_replace_from_binding(
+    borrow event: MirOwnershipEvent,
+    borrow bindings: Vec<MirOwnershipBinding>,
+    borrow_mut states: Vec<i32>,
+    borrow_mut output: Vec<MirLowerEvent>,
+    borrow_mut records: Vec<MirOwnershipRecord>,
+    borrow_mut next_instruction: Vec<i64>
+) -> i32
+requires_caps [allocate]
+{
+    let target_index: i64 = ownership_find_binding(bindings, event.a);
+    let source_index: i64 = ownership_find_binding(bindings, event.b);
+    if (target_index < 0) { return 66; }
+    if (source_index < 0) { return 67; }
+    if (target_index == source_index) { return 68; }
+    let target: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, target_index);
+    let source: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, source_index);
+    if (target.owned == 0) { return 69; }
+    if (target.mutable == 0) { return 70; }
+    if (source.owned == 0) { return 71; }
+    if (vec_get<i32>(states, target_index) != 1) { return 72; }
+    if (vec_get<i32>(states, source_index) != 1) { return 73; }
+
+    let drop_id: i64 = ownership_emit_place(output, next_instruction);
+    ownership_append_record(records, 4, drop_id, event.a, -1, target.local_id, 0, 1, 3);
+    let move_id: i64 = ownership_emit_place(output, next_instruction);
+    ownership_append_record(records, 5, move_id, event.a, event.b, source.local_id, 0, 3, 1);
+    vec_set<i32>(states, source_index, 2);
+    vec_set<i32>(states, target_index, 1);
+    return 0;
+}
+
 fn ownership_worker(
     borrow input: Vec<MirOwnershipEvent>, borrow bindings: Vec<MirOwnershipBinding>,
     borrow_mut states: Vec<i32>, borrow_mut snapshots: Vec<i32>,
@@ -300,26 +331,11 @@ requires_caps [allocate]
                             vec_set<i32>(states, binding_index, 1);
                         } else {
                             if (event.kind == 6) {
-                                if (path_terminated != 0) { return 66; }
-                                let target_index: i64 = ownership_find_binding(bindings, event.a);
-                                let source_index: i64 = ownership_find_binding(bindings, event.b);
-                                if (target_index < 0) { return 67; }
-                                if (source_index < 0) { return 68; }
-                                if (target_index == source_index) { return 69; }
-                                let target: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, target_index);
-                                let source: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, source_index);
-                                if (target.owned == 0) { return 70; }
-                                if (source.owned == 0) { return 71; }
-                                if (target.mutable == 0) { return 72; }
-                                if (vec_get<i32>(states, target_index) != 1) { return 73; }
-                                if (vec_get<i32>(states, source_index) != 1) { return 74; }
-                                let drop_id: i64 = ownership_emit_place(output, next_instruction);
-                                ownership_append_record(records, 4, drop_id, event.a, -1, target.local_id, 0, 1, 3);
-                                let move_id: i64 = ownership_emit_place(output, next_instruction);
-                                ownership_append_record(records, 5, move_id, event.a, event.b, source.local_id, 0, 3, 1);
-                                ownership_append_record(records, 7, move_id, event.b, event.a, source.local_id, 0, 1, 2);
-                                vec_set<i32>(states, target_index, 1);
-                                vec_set<i32>(states, source_index, 2);
+                                if (path_terminated != 0) { return 74; }
+                                let replace_status: i32 = ownership_replace_from_binding(
+                                    event, bindings, states, output, records, next_instruction
+                                );
+                                if (replace_status != 0) { return replace_status; }
                             } else {
                                 if (event.kind == 10) {
                                     if (path_terminated != 0) { return 41; }
@@ -428,47 +444,30 @@ pub fn validate_ownership_records(
 ) -> i32
 {
     var previous_instruction: i64 = -1;
-    var previous_kind: i32 = 0;
-    var previous_binding: i64 = -1;
-    var previous_other: i64 = -1;
     var index: i64 = 0;
     while (index < vec_len<MirOwnershipRecord>(records)) {
         let record: MirOwnershipRecord = vec_get<MirOwnershipRecord>(records, index);
         if (record.kind < 1) { return 1; }
-        if (record.kind > 7) { return 1; }
+        if (record.kind > 6) { return 1; }
         if (ownership_find_binding(bindings, record.binding_id) < 0) { return 2; }
         if (record.kind == 1) {
             if (record.instruction_id != -1) { return 3; }
             if (record.state_before != 0) { return 4; }
             if (record.state_after != 1) { return 4; }
         } else {
-            var paired_source: i32 = 0;
-            if (record.kind == 7) {
-                if (record.instruction_id == previous_instruction) {
-                    if (previous_kind == 5) {
-                        if (previous_binding == record.other_binding_id) {
-                            if (previous_other == record.binding_id) { paired_source = 1; }
-                        }
-                    }
-                }
-                if (paired_source == 0) { return 8; }
-                if (record.state_before != 1) { return 9; }
-                if (record.state_after != 2) { return 9; }
-            } else {
-                if (record.instruction_id <= previous_instruction) { return 5; }
-            }
+            if (record.instruction_id <= previous_instruction) { return 5; }
+            previous_instruction = record.instruction_id;
             if (record.state_before < 1) { return 6; }
             if (record.state_after < 1) { return 6; }
-            previous_instruction = record.instruction_id;
         }
-        if (record.other_binding_id >= 0) {
-            if (ownership_find_binding(bindings, record.other_binding_id) < 0) { return 10; }
+        if (record.kind == 5) {
+            if (record.other_binding_id >= 0) {
+                if (record.other_binding_id == record.binding_id) { return 8; }
+                if (ownership_find_binding(bindings, record.other_binding_id) < 0) { return 9; }
+            }
         }
         if (record.implicit < 0) { return 7; }
         if (record.implicit > 1) { return 7; }
-        previous_kind = record.kind;
-        previous_binding = record.binding_id;
-        previous_other = record.other_binding_id;
         index = checked_add(index, 1);
     }
     return 0;

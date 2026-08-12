@@ -1,0 +1,6 @@
+       01 TRANSFER-RECORD.
+          05 ACCOUNT-ID PIC 9(6).
+          05 AMOUNT PIC S9(7)V99 COMP-3.
+          05 STATUS PIC X(2).
+          05 SEQUENCE PIC 9(4) COMP.
+          05 TAG PIC X(3) OCCURS 2 TIMES.

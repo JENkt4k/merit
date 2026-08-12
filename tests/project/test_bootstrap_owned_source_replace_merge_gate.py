@@ -23,7 +23,7 @@ SOURCE = (
 
 def _probe_source() -> str:
     escaped = SOURCE.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    return f'''module bootstrap_owned_source_replace_probe
+    return f'''module bootstrap_owned_source_replace_merge_probe
 import bootstrap_tokens;
 import bootstrap_syntax;
 import bootstrap_lexer_core;
@@ -61,7 +61,7 @@ requires_caps [allocate]
     vec_push<MirOwnershipBinding>(bindings, ownership_binding(0, 0, 1, 1));
     var input: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 3);
     vec_push<MirOwnershipEvent>(input, ownership_event_activate(0));
-    vec_push<MirOwnershipEvent>(input, ownership_event_replace_binding(0, 0));
+    vec_push<MirOwnershipEvent>(input, ownership_event_replace_from_binding(0, 0));
     vec_push<MirOwnershipEvent>(input, ownership_event_return(-1));
     var output: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 8);
     var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 8);
@@ -79,7 +79,7 @@ requires_caps [allocate]
     var input: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 4);
     vec_push<MirOwnershipEvent>(input, ownership_event_activate(0));
     vec_push<MirOwnershipEvent>(input, ownership_event_activate(1));
-    vec_push<MirOwnershipEvent>(input, ownership_event_replace_binding(0, 1));
+    vec_push<MirOwnershipEvent>(input, ownership_event_replace_from_binding(0, 1));
     vec_push<MirOwnershipEvent>(input, ownership_event_return(-1));
     var output: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 8);
     var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 8);
@@ -155,7 +155,7 @@ fn main() -> i32 {{
 
 
 def _project(tmp_path: Path):
-    root = tmp_path / "owned_source_replace"
+    root = tmp_path / "owned_source_replace_merge"
     shutil.copytree(PROJECT, root, ignore=shutil.ignore_patterns("build"))
     lexer_path = root / "src" / "lexer.mrt"
     lexer = lexer_path.read_text(encoding="utf-8")
@@ -164,10 +164,10 @@ def _project(tmp_path: Path):
     )
     assert replacements == 1
     lexer_path.write_text(lexer, encoding="utf-8")
-    (root / "src" / "owned_source_replace_probe.mrt").write_text(_probe_source(), encoding="utf-8")
+    (root / "src" / "owned_source_replace_merge_probe.mrt").write_text(_probe_source(), encoding="utf-8")
     manifest = root / "Merit.toml"
     text = manifest.read_text(encoding="utf-8")
-    text = text.replace('entry = "src/lexer.mrt"', 'entry = "src/owned_source_replace_probe.mrt"')
+    text = text.replace('entry = "src/lexer.mrt"', 'entry = "src/owned_source_replace_merge_probe.mrt"')
     manifest.write_text(text, encoding="utf-8")
     return load_project(manifest), root
 
@@ -214,12 +214,11 @@ EXPECTED_RECORDS = [
     (1, -1, 1, -1, 1, 0, 0, 1),
     (4, 4, 1, -1, 1, 0, 1, 3),
     (5, 5, 1, 0, 0, 0, 3, 1),
-    (7, 5, 0, 1, 0, 0, 1, 2),
     (6, 7, 1, -1, 1, 1, 1, 3),
 ]
 
 
-def test_direct_owned_source_replace_preserves_both_binding_transitions(tmp_path):
+def test_merged_owned_source_replace_contract_remains_source_backed_and_native(tmp_path):
     project, root = _project(tmp_path)
     interpreted = _parse(interpret(project))
     assert interpreted[0] == 0
@@ -229,26 +228,14 @@ def test_direct_owned_source_replace_preserves_both_binding_transitions(tmp_path
     assert interpreted[4] == EXPECTED_RECORDS
     assert interpreted[5] == 0
     assert [placement[1] for placement in interpreted[6]] == list(range(8))
-    assert interpreted[7] == (69, 71)
+    assert interpreted[7] == (68, 71)
 
-    # The replacement target transition and source consumption describe one
-    # move instruction, so they intentionally share instruction id 5.
-    target = interpreted[4][3]
-    source = interpreted[4][4]
-    assert target[1] == source[1] == 5
-    assert target[2:4] == (1, 0)
-    assert source[2:4] == (0, 1)
-    assert target[6:8] == (3, 1)
-    assert source[6:8] == (1, 2)
+    replacement = interpreted[4][3]
+    assert replacement[2:4] == (1, 0)
+    assert replacement[6:8] == (3, 1)
 
     _, _, executable = build(project, root / "native")
     native = _parse(
         subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     )
     assert native == interpreted
-
-
-def test_bilateral_replace_contract_rejects_alias_and_nonowned_source():
-    assert EXPECTED_RECORDS[3][0] == 5
-    assert EXPECTED_RECORDS[4][0] == 7
-    assert (69, 71) == (69, 71)

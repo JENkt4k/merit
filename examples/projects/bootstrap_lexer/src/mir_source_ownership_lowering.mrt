@@ -446,9 +446,12 @@ requires_caps [allocate]
         if (replacement_local < 0) { return 29; }
         let replacement_binding: i64 = vec_get<i64>(direct_binding, 0);
         if (replacement_binding >= 0) {
-            let replacement_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, replacement_binding);
-            if (ownership_binding_owned(replacement_semantic) == 0) { return 30; }
-            vec_push<MirOwnershipEvent>(events, ownership_event_replace_binding(target_binding, replacement_binding));
+            if (replacement_binding >= vec_len<MirOwnershipBinding>(metadata)) { return 30; }
+            let source_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, replacement_binding);
+            if (ownership_binding_owned(source_semantic) == 0) { return 31; }
+            vec_push<MirOwnershipEvent>(
+                events, ownership_event_replace_from_binding(target_binding, replacement_binding)
+            );
         } else {
             vec_push<MirOwnershipEvent>(events, ownership_event_replace(target_binding, replacement_local));
         }
