@@ -155,7 +155,9 @@ EXPECTED_EVENTS = [
 
 EXPECTED_PLACEMENTS = [
     (0, 0, 0), (0, 1, 1), (0, 2, 2), (0, 3, 3), (0, 4, 4), (0, 5, 5),
-    (4, 6, 0), (4, 7, 1),
+    # The while-condition expression is evaluated in the enclosing if-then block;
+    # mir_event_while then creates the dedicated loop condition/body/exit blocks.
+    (1, 6, 0), (1, 7, 1),
     (5, 8, 0), (5, 9, 1),
     (2, 10, 0), (2, 11, 1),
     (3, 12, 0), (3, 13, 1),
