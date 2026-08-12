@@ -6,6 +6,17 @@
 
 Merit is a native compiled language experiment centered on deterministic semantics, exact numerics, ownership, explicit allocation, contracts, stable layouts, capability-specific hazardous operations, and C interoperability.
 
+## Design philosophy and rationale
+
+Merit is being designed for **semantic longevity**: program meaning and language guarantees should remain stable while compiler algorithms, proof machinery, optimizers, code generators, and hardware targets remain free to evolve.
+
+- [`docs/philosophy/SEMANTIC_LONGEVITY.md`](docs/philosophy/SEMANTIC_LONGEVITY.md) — the long-term rule: **freeze meaning, evolve implementation**.
+- [`docs/philosophy/DESIGN_PRINCIPLES.md`](docs/philosophy/DESIGN_PRINCIPLES.md) — engineering criteria for deciding what belongs in Merit's permanent language surface.
+- [`docs/rationale/LANGUAGE_STRATEGY.md`](docs/rationale/LANGUAGE_STRATEGY.md) — lessons Merit draws from COBOL, C, C++, Java, C#, Rust, Ada/SPARK, Fortran, and functional/ML-family languages.
+- [`docs/migration/COBOL_MODERNIZATION.md`](docs/migration/COBOL_MODERNIZATION.md) — why COBOL modernization is difficult, what the current financial/copybook examples demonstrate, and how Merit separates enduring business semantics from legacy physical representation.
+
+These documents describe design goals and constraints. Claims about performance, migration cost, productivity, or defect reduction should be supported by benchmarks and real migration evidence rather than inferred from the philosophy alone.
+
 This export is prepared for continued development in Codex. Start with:
 
 - `AGENTS.md` — repository rules and invariants
