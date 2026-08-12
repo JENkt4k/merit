@@ -99,18 +99,17 @@ requires_caps [allocate]
     return 0;
 }
 
-// Returns 0 on success. Stable non-zero diagnostics are structural contract
-// failures, not parser diagnostics.
-pub fn lower_structured_mir(
+// Keep the owned frame vector in the outer function and let the worker borrow it.
+// This gives the vector one unconditional owner/drop site even when lowering
+// returns an early structural diagnostic.
+fn lower_structured_mir_worker(
     borrow events: Vec<MirLowerEvent>,
-    allocator: Allocator,
     borrow_mut cfg: Vec<MirCfgRecord>,
-    borrow_mut placements: Vec<MirPlacementRecord>
+    borrow_mut placements: Vec<MirPlacementRecord>,
+    borrow_mut frames: Vec<MirLowerFrame>
 ) -> i32
 requires_caps [allocate]
 {
-    if (vec_len<MirLowerEvent>(events) == 0) { return 1; }
-    var frames: Vec<MirLowerFrame> = vec_new<MirLowerFrame>(allocator, 8);
     var current: i64 = 0;
     var next_block: i64 = 1;
     var local_ordinal: i64 = 0;
@@ -126,8 +125,8 @@ requires_caps [allocate]
 
         if (kind == 1) {
             handled = 1;
-            if (terminated != 0) { drop(frames); return 2; }
-            if (event.a != next_instruction) { drop(frames); return 3; }
+            if (terminated != 0) { return 2; }
+            if (event.a != next_instruction) { return 3; }
             vec_push<MirPlacementRecord>(placements, mir_place(current, event.a, local_ordinal));
             next_instruction = checked_add(next_instruction, 1);
             local_ordinal = checked_add(local_ordinal, 1);
@@ -135,16 +134,16 @@ requires_caps [allocate]
 
         if (kind == 2) {
             handled = 1;
-            if (terminated != 0) { drop(frames); return 4; }
-            if (event.a < -1) { drop(frames); return 5; }
+            if (terminated != 0) { return 4; }
+            if (event.a < -1) { return 5; }
             lower_push_return(cfg, current, event.a);
             terminated = 1;
         }
 
         if (kind == 10) {
             handled = 1;
-            if (terminated != 0) { drop(frames); return 6; }
-            if (event.a < 0) { drop(frames); return 7; }
+            if (terminated != 0) { return 6; }
+            if (event.a < 0) { return 7; }
             let then_block: i64 = next_block;
             let else_block: i64 = checked_add(next_block, 1);
             let join_block: i64 = checked_add(next_block, 2);
@@ -163,11 +162,11 @@ requires_caps [allocate]
 
         if (kind == 11) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 8; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 8; }
             let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
             let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
-            if (frame.kind != 10) { drop(frames); return 9; }
-            if (frame.d != 0) { drop(frames); return 10; }
+            if (frame.kind != 10) { return 9; }
+            if (frame.d != 0) { return 10; }
             lower_finish_open_path(cfg, terminated, current, frame.c);
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0, f: 0
@@ -179,9 +178,9 @@ requires_caps [allocate]
 
         if (kind == 12) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 11; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 11; }
             let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
-            if (frame.kind != 10) { drop(frames); return 12; }
+            if (frame.kind != 10) { return 12; }
             lower_finish_open_path(cfg, terminated, current, frame.c);
             if (frame.d == 0) {
                 vec_push<MirCfgRecord>(cfg, cfg_jump(frame.b, frame.c));
@@ -193,8 +192,8 @@ requires_caps [allocate]
 
         if (kind == 20) {
             handled = 1;
-            if (terminated != 0) { drop(frames); return 13; }
-            if (event.a < 0) { drop(frames); return 14; }
+            if (terminated != 0) { return 13; }
+            if (event.a < 0) { return 14; }
             let condition_block: i64 = next_block;
             let body_block: i64 = checked_add(next_block, 1);
             let exit_block: i64 = checked_add(next_block, 2);
@@ -214,9 +213,9 @@ requires_caps [allocate]
 
         if (kind == 21) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 15; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 15; }
             let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
-            if (frame.kind != 20) { drop(frames); return 16; }
+            if (frame.kind != 20) { return 16; }
             lower_finish_open_path(cfg, terminated, current, frame.a);
             current = frame.c;
             local_ordinal = 0;
@@ -225,9 +224,9 @@ requires_caps [allocate]
 
         if (kind == 30) {
             handled = 1;
-            if (terminated != 0) { drop(frames); return 17; }
-            if (event.a < 0) { drop(frames); return 18; }
-            if (event.b <= 0) { drop(frames); return 19; }
+            if (terminated != 0) { return 17; }
+            if (event.a < 0) { return 18; }
+            if (event.b <= 0) { return 19; }
             let first_arm: i64 = next_block;
             let join_block: i64 = checked_add(first_arm, event.b);
             var reserve: i64 = 0;
@@ -247,14 +246,14 @@ requires_caps [allocate]
 
         if (kind == 31) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 20; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 20; }
             let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
             let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
-            if (frame.kind != 30) { drop(frames); return 21; }
-            if (frame.e < 0) { drop(frames); return 22; }
+            if (frame.kind != 30) { return 21; }
+            if (frame.e < 0) { return 22; }
             if (frame.e > 0) { lower_finish_open_path(cfg, terminated, current, frame.d); }
             let arm_target: i64 = checked_add(frame.c, frame.e);
-            if (arm_target >= frame.d) { drop(frames); return 23; }
+            if (arm_target >= frame.d) { return 23; }
             vec_push<MirCfgRecord>(cfg, cfg_switch_case(frame.a, frame.b, event.a, arm_target, frame.e));
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d,
@@ -267,14 +266,14 @@ requires_caps [allocate]
 
         if (kind == 32) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 24; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 24; }
             let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
             let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
-            if (frame.kind != 30) { drop(frames); return 25; }
-            if (frame.e < 0) { drop(frames); return 26; }
+            if (frame.kind != 30) { return 25; }
+            if (frame.e < 0) { return 26; }
             if (frame.e > 0) { lower_finish_open_path(cfg, terminated, current, frame.d); }
             let arm_target: i64 = checked_add(frame.c, frame.e);
-            if (arm_target >= frame.d) { drop(frames); return 27; }
+            if (arm_target >= frame.d) { return 27; }
             vec_push<MirCfgRecord>(cfg, cfg_switch_default(frame.a, frame.b, arm_target, frame.e));
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d,
@@ -287,24 +286,40 @@ requires_caps [allocate]
 
         if (kind == 33) {
             handled = 1;
-            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 28; }
+            if (vec_len<MirLowerFrame>(frames) == 0) { return 28; }
             let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
-            if (frame.kind != 30) { drop(frames); return 29; }
-            if (frame.e >= 0) { drop(frames); return 30; }
+            if (frame.kind != 30) { return 29; }
+            if (frame.e >= 0) { return 30; }
             let actual_arms: i64 = checked_sub(0, frame.e);
-            if (actual_arms != frame.f) { drop(frames); return 31; }
+            if (actual_arms != frame.f) { return 31; }
             lower_finish_open_path(cfg, terminated, current, frame.d);
             current = frame.d;
             local_ordinal = 0;
             terminated = 0;
         }
 
-        if (handled == 0) { drop(frames); return 32; }
+        if (handled == 0) { return 32; }
         index = checked_add(index, 1);
     }
 
-    if (vec_len<MirLowerFrame>(frames) != 0) { drop(frames); return 33; }
-    if (terminated == 0) { drop(frames); return 34; }
-    drop(frames);
+    if (vec_len<MirLowerFrame>(frames) != 0) { return 33; }
+    if (terminated == 0) { return 34; }
     return 0;
+}
+
+// Returns 0 on success. Stable non-zero diagnostics are structural contract
+// failures, not parser diagnostics.
+pub fn lower_structured_mir(
+    borrow events: Vec<MirLowerEvent>,
+    allocator: Allocator,
+    borrow_mut cfg: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    if (vec_len<MirLowerEvent>(events) == 0) { return 1; }
+    var frames: Vec<MirLowerFrame> = vec_new<MirLowerFrame>(allocator, 8);
+    let result: i32 = lower_structured_mir_worker(events, cfg, placements, frames);
+    drop(frames);
+    return result;
 }
