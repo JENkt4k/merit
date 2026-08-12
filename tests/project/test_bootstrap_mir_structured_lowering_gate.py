@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -75,11 +76,23 @@ fn main() -> i32 {
 def _project(tmp_path):
     root = tmp_path / "structured_mir"
     shutil.copytree(PROJECT, root, ignore=shutil.ignore_patterns("build"))
-    # Replace the example entry module rather than adding a second module with main.
-    # The project loader intentionally rejects multiple main definitions even when
-    # the manifest entry points at only one of them.
-    (root / "src" / "lexer.mrt").write_text(_probe_source(), encoding="utf-8")
-    return load_project(root / "Merit.toml"), root
+
+    # Keep bootstrap_lexer_core available to the copied project while transferring
+    # entrypoint ownership to the temporary structured-MIR probe.
+    lexer_path = root / "src" / "lexer.mrt"
+    lexer = lexer_path.read_text(encoding="utf-8")
+    lexer, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {", lexer, count=1
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer, encoding="utf-8")
+
+    (root / "src" / "structured_probe.mrt").write_text(_probe_source(), encoding="utf-8")
+    manifest_path = root / "Merit.toml"
+    manifest = manifest_path.read_text(encoding="utf-8")
+    manifest = manifest.replace('entry = "src/lexer.mrt"', 'entry = "src/structured_probe.mrt"')
+    manifest_path.write_text(manifest, encoding="utf-8")
+    return load_project(manifest_path), root
 
 
 def _parse(output: str):
