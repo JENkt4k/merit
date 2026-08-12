@@ -16,9 +16,10 @@ SOURCE = (
     "fn main()->i64 { "
     "let a:Resource=1; "
     "var b:Resource=a; "
+    "let c:Resource=2; "
     "let flag:i64=1; "
     "if flag<2 { drop(b); return 7; } "
-    "else { replace(b,9); } "
+    "else { replace(b,9); replace(b,c); } "
     "while flag<0 { return 8; } "
     "return 0; }\n"
 )
@@ -68,12 +69,13 @@ fn main() -> i32 {{
         let statements: Vec<StatementRecord> = parse_statement_records(source, tokens, allocator);
         let operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
 
-        var bindings: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 3);
+        var bindings: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 4);
         vec_push<MirOwnershipBinding>(bindings, ownership_binding(0, 0, 1, 0));
         vec_push<MirOwnershipBinding>(bindings, ownership_binding(1, 1, 1, 1));
-        vec_push<MirOwnershipBinding>(bindings, ownership_binding(2, 2, 0, 0));
+        vec_push<MirOwnershipBinding>(bindings, ownership_binding(2, 2, 1, 0));
+        vec_push<MirOwnershipBinding>(bindings, ownership_binding(3, 3, 0, 0));
 
-        var source_events: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 48);
+        var source_events: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 64);
         let source_status: i32 = lower_source_ownership_events(
             source, tokens, statements, operands, bindings, allocator, source_events
         );
@@ -81,8 +83,8 @@ fn main() -> i32 {{
         print(source_status);
         print(vec_len<MirOwnershipEvent>(source_events));
 
-        var lowered: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
-        var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 32);
+        var lowered: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 80);
+        var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 48);
         let ownership_status: i32 = lower_ownership_flow(
             source_events, bindings, allocator, lowered, records
         );
@@ -104,8 +106,8 @@ fn main() -> i32 {{
             ri = checked_add(ri, 1);
         }}
 
-        var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 48);
-        var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 48);
+        var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
+        var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
         let cfg_status: i32 = lower_structured_mir(lowered, allocator, cfg, placements);
         print(-103);
         print(cfg_status);
@@ -204,7 +206,7 @@ def _parse(output: str):
     )
 
 
-def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
+def test_real_source_drives_owned_move_drop_both_replace_forms_cleanup_and_cfg(tmp_path):
     project, root = _project(tmp_path)
     interpreted = _parse(interpret(project))
     assert interpreted[0] == 0
@@ -217,17 +219,23 @@ def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
     assert 10 in lower_kinds and 11 in lower_kinds and 12 in lower_kinds
     assert 20 in lower_kinds and 21 in lower_kinds
 
-    record_kinds = {record[0] for record in interpreted[5]}
+    records = interpreted[5]
+    record_kinds = {record[0] for record in records}
     assert record_kinds == {1, 2, 3, 4, 5, 6}
-    assert any(record[0] == 2 and record[2:4] == (0, 1) for record in interpreted[5])
-    assert any(record[0] == 3 and record[2] == 1 for record in interpreted[5])
-    assert any(record[0] == 4 and record[2] == 1 for record in interpreted[5])
-    assert any(record[0] == 5 and record[2] == 1 for record in interpreted[5])
+    assert any(record[0] == 2 and record[2:4] == (0, 1) for record in records)
+    assert any(record[0] == 3 and record[2] == 1 for record in records)
 
-    # Two path-specific implicit cleanups of b: the loop-body return and the
-    # final return after restoring the zero-iteration loop entry state.
-    cleanup = [record for record in interpreted[5] if record[0] == 6]
-    assert [record[2] for record in cleanup] == [1, 1]
+    replacement_moves = [record for record in records if record[0] == 5]
+    assert any(record[2] == 1 and record[3] == -1 for record in replacement_moves)
+    assert any(
+        record[2] == 1 and record[3] == 2 and record[4] == 2
+        for record in replacement_moves
+    )
+
+    # The then-return cleans c because b was explicitly dropped. The else path
+    # consumes c into b, so only b is cleaned by the loop-body and final returns.
+    cleanup = [record for record in records if record[0] == 6]
+    assert [record[2] for record in cleanup] == [2, 1, 1]
 
     instruction_ids = [placement[1] for placement in interpreted[8]]
     assert instruction_ids == list(range(len(instruction_ids)))
@@ -240,10 +248,8 @@ def test_real_source_drives_owned_move_drop_replace_cleanup_and_cfg(tmp_path):
 
 
 def test_source_ownership_boundary_rejects_unrepresented_effects_explicitly():
-    # print/match/with-capability remain future source-backed effects. Direct
-    # owned-binding replacement is also rejected until the ownership IR carries
-    # both target and consuming source binding identities.
+    # print/match/with-capability remain future source-backed effects. Owned
+    # replacement is now represented by a dedicated source-binding event.
     assert 123 == 100 + 23
     assert 127 == 100 + 27
     assert 128 == 100 + 28
-    assert 30 > 0
