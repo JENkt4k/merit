@@ -1,0 +1,256 @@
+module bootstrap_mir_structured_lowering
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+
+capability allocate;
+
+// Structured lowering events are an additive IR boundary between statement/HIR
+// structure and MIR.  They preserve control structure explicitly so MIR lowering
+// never has to rediscover nesting from source text.
+//
+// kinds:
+//   1 place instruction     a=instruction_id
+//   2 return                a=operand_local (-1 for unit)
+//  10 if                    a=condition_local
+//  11 else
+//  12 end_if
+//  20 while                 a=condition_local
+//  21 end_while
+//  30 match                 a=value_local, b=arm_count including default
+//  31 case                  a=integer case value
+//  32 default
+//  33 end_match
+pub struct MirLowerEvent {
+    kind: i32;
+    a: i64;
+    b: i64;
+}
+
+pub fn lower_event_kind(borrow event: MirLowerEvent) -> i32 { return event.kind; }
+pub fn lower_event_a(borrow event: MirLowerEvent) -> i64 { return event.a; }
+pub fn lower_event_b(borrow event: MirLowerEvent) -> i64 { return event.b; }
+
+pub fn mir_event_place(instruction_id: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 1, a: instruction_id, b: 0 };
+}
+pub fn mir_event_return(operand_local: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 2, a: operand_local, b: 0 };
+}
+pub fn mir_event_if(condition_local: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 10, a: condition_local, b: 0 };
+}
+pub fn mir_event_else() -> MirLowerEvent { return MirLowerEvent { kind: 11, a: 0, b: 0 }; }
+pub fn mir_event_end_if() -> MirLowerEvent { return MirLowerEvent { kind: 12, a: 0, b: 0 }; }
+pub fn mir_event_while(condition_local: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 20, a: condition_local, b: 0 };
+}
+pub fn mir_event_end_while() -> MirLowerEvent { return MirLowerEvent { kind: 21, a: 0, b: 0 }; }
+pub fn mir_event_match(value_local: i64, arm_count: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 30, a: value_local, b: arm_count };
+}
+pub fn mir_event_case(case_value: i64) -> MirLowerEvent {
+    return MirLowerEvent { kind: 31, a: case_value, b: 0 };
+}
+pub fn mir_event_default() -> MirLowerEvent { return MirLowerEvent { kind: 32, a: 0, b: 0 }; }
+pub fn mir_event_end_match() -> MirLowerEvent { return MirLowerEvent { kind: 33, a: 0, b: 0 }; }
+
+// Internal frame. kind mirrors the opener. a/b/c/d/e carry deterministic block
+// identities and arm state without consulting source text.
+struct MirLowerFrame {
+    kind: i32;
+    a: i64;
+    b: i64;
+    c: i64;
+    d: i64;
+    e: i64;
+}
+
+fn lower_push_block(borrow_mut cfg: Vec<MirCfgRecord>, block_id: i64) -> i32
+requires_caps [allocate]
+{
+    vec_push<MirCfgRecord>(cfg, cfg_block(block_id, block_id));
+    return 0;
+}
+
+// Returns 0 on success. Stable non-zero diagnostics are structural contract
+// failures, not parser diagnostics.
+pub fn lower_structured_mir(
+    borrow events: Vec<MirLowerEvent>,
+    allocator: Allocator,
+    borrow_mut cfg: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    if (vec_len<MirLowerEvent>(events) == 0) { return 1; }
+    var frames: Vec<MirLowerFrame> = vec_new<MirLowerFrame>(allocator, 8);
+    var current: i64 = 0;
+    var next_block: i64 = 1;
+    var local_ordinal: i64 = 0;
+    var terminated: i32 = 0;
+    var next_instruction: i64 = 0;
+    lower_push_block(cfg, 0);
+
+    var index: i64 = 0;
+    while (index < vec_len<MirLowerEvent>(events)) {
+        let event: MirLowerEvent = vec_get<MirLowerEvent>(events, index);
+        let kind: i32 = event.kind;
+
+        if (kind == 1) {
+            if (terminated != 0) { drop(frames); return 2; }
+            if (event.a != next_instruction) { drop(frames); return 3; }
+            vec_push<MirPlacementRecord>(placements, mir_place(current, event.a, local_ordinal));
+            next_instruction = checked_add(next_instruction, 1);
+            local_ordinal = checked_add(local_ordinal, 1);
+        } else {
+            if (kind == 2) {
+                if (terminated != 0) { drop(frames); return 4; }
+                if (event.a < -1) { drop(frames); return 5; }
+                if (event.a < 0) { vec_push<MirCfgRecord>(cfg, cfg_return_unit(current)); }
+                else { vec_push<MirCfgRecord>(cfg, cfg_return(current, event.a)); }
+                terminated = 1;
+            } else {
+                if (kind == 10) {
+                    if (terminated != 0) { drop(frames); return 6; }
+                    if (event.a < 0) { drop(frames); return 7; }
+                    let then_block: i64 = next_block;
+                    let else_block: i64 = checked_add(next_block, 1);
+                    let join_block: i64 = checked_add(next_block, 2);
+                    next_block = checked_add(next_block, 3);
+                    lower_push_block(cfg, then_block);
+                    lower_push_block(cfg, else_block);
+                    lower_push_block(cfg, join_block);
+                    vec_push<MirCfgRecord>(cfg, cfg_branch(current, event.a, then_block, else_block));
+                    vec_push<MirLowerFrame>(frames, MirLowerFrame { kind: 10, a: then_block, b: else_block, c: join_block, d: 0, e: 0 });
+                    current = then_block;
+                    local_ordinal = 0;
+                    terminated = 0;
+                } else {
+                    if (kind == 11) {
+                        if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 8; }
+                        let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
+                        let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
+                        if (frame.kind != 10) { drop(frames); return 9; }
+                        if (frame.d != 0) { drop(frames); return 10; }
+                        if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.c)); }
+                        vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame { kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0 });
+                        current = frame.b;
+                        local_ordinal = 0;
+                        terminated = 0;
+                    } else {
+                        if (kind == 12) {
+                            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 11; }
+                            let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
+                            if (frame.kind != 10) { drop(frames); return 12; }
+                            if (frame.d == 0) {
+                                if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.c)); }
+                                vec_push<MirCfgRecord>(cfg, cfg_jump(frame.b, frame.c));
+                            } else {
+                                if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.c)); }
+                            }
+                            current = frame.c;
+                            local_ordinal = 0;
+                            terminated = 0;
+                        } else {
+                            if (kind == 20) {
+                                if (terminated != 0) { drop(frames); return 13; }
+                                if (event.a < 0) { drop(frames); return 14; }
+                                let condition_block: i64 = next_block;
+                                let body_block: i64 = checked_add(next_block, 1);
+                                let exit_block: i64 = checked_add(next_block, 2);
+                                next_block = checked_add(next_block, 3);
+                                lower_push_block(cfg, condition_block);
+                                lower_push_block(cfg, body_block);
+                                lower_push_block(cfg, exit_block);
+                                vec_push<MirCfgRecord>(cfg, cfg_jump(current, condition_block));
+                                vec_push<MirCfgRecord>(cfg, cfg_branch(condition_block, event.a, body_block, exit_block));
+                                vec_push<MirLowerFrame>(frames, MirLowerFrame { kind: 20, a: condition_block, b: body_block, c: exit_block, d: 0, e: 0 });
+                                current = body_block;
+                                local_ordinal = 0;
+                                terminated = 0;
+                            } else {
+                                if (kind == 21) {
+                                    if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 15; }
+                                    let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
+                                    if (frame.kind != 20) { drop(frames); return 16; }
+                                    if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.a)); }
+                                    current = frame.c;
+                                    local_ordinal = 0;
+                                    terminated = 0;
+                                } else {
+                                    if (kind == 30) {
+                                        if (terminated != 0) { drop(frames); return 17; }
+                                        if (event.a < 0) { drop(frames); return 18; }
+                                        if (event.b <= 0) { drop(frames); return 19; }
+                                        let first_arm: i64 = next_block;
+                                        let join_block: i64 = checked_add(first_arm, event.b);
+                                        var reserve: i64 = 0;
+                                        while (reserve < event.b) {
+                                            lower_push_block(cfg, checked_add(first_arm, reserve));
+                                            reserve = checked_add(reserve, 1);
+                                        }
+                                        lower_push_block(cfg, join_block);
+                                        next_block = checked_add(join_block, 1);
+                                        vec_push<MirLowerFrame>(frames, MirLowerFrame { kind: 30, a: current, b: event.a, c: first_arm, d: join_block, e: 0 });
+                                        terminated = 1;
+                                    } else {
+                                        if (kind == 31) {
+                                            if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 20; }
+                                            let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
+                                            let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
+                                            if (frame.kind != 30) { drop(frames); return 21; }
+                                            if (frame.e > 0) { if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.d)); } }
+                                            let arm_target: i64 = checked_add(frame.c, frame.e);
+                                            if (arm_target >= frame.d) { drop(frames); return 22; }
+                                            vec_push<MirCfgRecord>(cfg, cfg_switch_case(frame.a, frame.b, event.a, arm_target, frame.e));
+                                            vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame { kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d, e: checked_add(frame.e, 1) });
+                                            current = arm_target;
+                                            local_ordinal = 0;
+                                            terminated = 0;
+                                        } else {
+                                            if (kind == 32) {
+                                                if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 23; }
+                                                let frame_index: i64 = checked_sub(vec_len<MirLowerFrame>(frames), 1);
+                                                let frame: MirLowerFrame = vec_get<MirLowerFrame>(frames, frame_index);
+                                                if (frame.kind != 30) { drop(frames); return 24; }
+                                                if (frame.e > 0) { if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.d)); } }
+                                                let arm_target: i64 = checked_add(frame.c, frame.e);
+                                                if (arm_target >= frame.d) { drop(frames); return 25; }
+                                                vec_push<MirCfgRecord>(cfg, cfg_switch_default(frame.a, frame.b, arm_target, frame.e));
+                                                vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame { kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d, e: -checked_add(frame.e, 1) });
+                                                current = arm_target;
+                                                local_ordinal = 0;
+                                                terminated = 0;
+                                            } else {
+                                                if (kind == 33) {
+                                                    if (vec_len<MirLowerFrame>(frames) == 0) { drop(frames); return 26; }
+                                                    let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
+                                                    if (frame.kind != 30) { drop(frames); return 27; }
+                                                    if (frame.e >= 0) { drop(frames); return 28; }
+                                                    let arm_count: i64 = -frame.e;
+                                                    if (checked_add(frame.c, arm_count) != frame.d) { drop(frames); return 29; }
+                                                    if (terminated == 0) { vec_push<MirCfgRecord>(cfg, cfg_jump(current, frame.d)); }
+                                                    current = frame.d;
+                                                    local_ordinal = 0;
+                                                    terminated = 0;
+                                                } else {
+                                                    drop(frames); return 30;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+
+    if (vec_len<MirLowerFrame>(frames) != 0) { drop(frames); return 31; }
+    if (terminated == 0) { drop(frames); return 32; }
+    drop(frames);
+    return 0;
+}
