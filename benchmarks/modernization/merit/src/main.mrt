@@ -84,14 +84,14 @@ fn main() -> i32 {
         print(-900);
         print(apply_transaction(accounts, 1001001, 2002002, 125.50, 41));
         print(apply_transaction(accounts, 1001001, 2002002, 1.00, 41));
-        print(apply_transaction(accounts, 3003003, 2002002, 50.01, 8));
-        print(apply_transaction(accounts, 3003003, 3003003, 1.00, 8));
-        print(apply_transaction(accounts, 3003003, 2002002, 0.00, 8));
-        print(apply_transaction(accounts, 3003003, 2002002, -0.01, 8));
-        print(apply_transaction(accounts, 3003003, 4004004, 1.00, 8));
-        print(apply_transaction(accounts, 3003003, 2002002, 12.50, 8));
-        print(apply_transaction(accounts, 2002002, 1001001, 2.50, 42));
-        print(apply_transaction(accounts, 2002002, 3003003, 1.00, 41));
+        print(apply_transaction(accounts, 3003003, 2002002, 50.01, 42));
+        print(apply_transaction(accounts, 3003003, 3003003, 1.00, 42));
+        print(apply_transaction(accounts, 3003003, 2002002, 0.00, 42));
+        print(apply_transaction(accounts, 3003003, 2002002, -0.01, 42));
+        print(apply_transaction(accounts, 3003003, 4004004, 1.00, 42));
+        print(apply_transaction(accounts, 3003003, 2002002, 12.50, 42));
+        print(apply_transaction(accounts, 2002002, 1001001, 2.50, 43));
+        print(apply_transaction(accounts, 2002002, 3003003, 1.00, 42));
         print(-901);
         var index: i64 = 0;
         while (index < vec_len<Account>(accounts)) {
