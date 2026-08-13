@@ -49,18 +49,17 @@ fn structure_punctuation(borrow source: Buffer, borrow token: Token, byte: i64) 
     return 1;
 }
 
-fn structure_token_end(borrow token: Token) -> i64 {
-    return checked_add(token_start(token), token_length(token));
+fn structure_arrow(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != 4) { return 0; }
+    if (token_length(token) != 2) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != 61) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != 62) { return 0; }
+    return 1;
 }
 
-fn structure_find_token_at(borrow tokens: Vec<Token>, start: i64) -> i64 {
-    var index: i64 = 0;
-    while (index < vec_len<Token>(tokens)) {
-        let token: Token = vec_get<Token>(tokens, index);
-        if (token_start(token) == start) { return index; }
-        index = checked_add(index, 1);
-    }
-    return -1;
+fn structure_token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
 }
 
 fn structure_matching_brace(
@@ -197,16 +196,13 @@ requires_caps [allocate]
                         after_head = checked_add(close_index, 1);
                     }
                 }
-                // The lexer represents => as '=' followed by '>'. Preserve the
-                // arm boundary structurally rather than assigning enum ordinals here.
-                if (checked_add(after_head, 2) >= match_close) { return 16; }
-                let equals: Token = vec_get<Token>(tokens, after_head);
-                let arrow: Token = vec_get<Token>(tokens, checked_add(after_head, 1));
-                let body_open: Token = vec_get<Token>(tokens, checked_add(after_head, 2));
-                if (structure_punctuation(source, equals, 61) == 0) { return 17; }
-                if (structure_punctuation(source, arrow, 62) == 0) { return 18; }
+                // => is one compound punctuation token in bootstrap-lexer-v1.
+                if (checked_add(after_head, 1) >= match_close) { return 16; }
+                let arrow: Token = vec_get<Token>(tokens, after_head);
+                let body_open: Token = vec_get<Token>(tokens, checked_add(after_head, 1));
+                if (structure_arrow(source, arrow) == 0) { return 17; }
                 if (structure_punctuation(source, body_open, 123) == 0) { return 19; }
-                let body_open_index: i64 = checked_add(after_head, 2);
+                let body_open_index: i64 = checked_add(after_head, 1);
                 let body_close_index: i64 = structure_matching_brace(source, tokens, body_open_index);
                 if (body_close_index < 0) { return 20; }
                 if (body_close_index > match_close) { return 21; }
