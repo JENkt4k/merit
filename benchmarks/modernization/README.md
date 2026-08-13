@@ -8,6 +8,7 @@ This benchmark is an evidence harness for the COBOL-modernization thesis. It is 
 2. Separate semantic migration from physical legacy encoding. Copybook/EBCDIC/COMP-3 compatibility is tested independently from financial behavior.
 3. Measure migration-relevant properties rather than a synthetic arithmetic loop.
 4. Keep results reproducible and machine-readable so COBOL, Java, C#, Rust, C++, and Merit implementations can be added without changing the corpus.
+5. Separate measured evidence from claims: startup/process behavior, steady-state kernel throughput, and compile-time defect prevention are different metrics and must not be conflated.
 
 ## Workload v1
 
@@ -32,7 +33,7 @@ The executable implementations are derived from the same frozen JSON corpus:
 | Python semantic reference | complete | integer minor units |
 | Merit | complete | language exact decimal `USD(18,2,half_even)` + bounded domains |
 | Java | complete | `BigDecimal` + explicit domain logic |
-| C# | complete in v2 | `System.Decimal` + checked arithmetic + explicit domain logic |
+| C# | complete | `System.Decimal` + checked arithmetic + explicit domain logic |
 | COBOL | planned | native business decimal / copybook-oriented |
 | Rust | planned | documented exact fixed-point strategy |
 | C/C++ | planned | checked scaled integer or documented decimal library |
@@ -45,16 +46,52 @@ Every executable implementation must match the independent Python reference and 
 
 `bf898293d9f9ca33cd0f129ebe314736b5f1e60b7a81bbf55e98205d409b281d`
 
-Merit additionally must agree between interpreter and native execution. Correctness eligibility is permanent: an implementation that does not match the reference cannot participate in later performance comparisons.
+Merit additionally must agree between interpreter and native execution. Correctness eligibility is permanent: an implementation that does not match the reference cannot participate in later performance evidence.
+
+## Statistical process evidence v3
+
+`benchmark_protocol_v1.json` and `run_statistical_v3.py` add a reproducible statistical layer over the already-correct implementations.
+
+```bash
+python benchmarks/modernization/run_statistical_v3.py
+python benchmarks/modernization/run_statistical_v3.py --json
+```
+
+The protocol builds each implementation once, performs two unmeasured warmup process launches, then records nine measured launches. **Every warmup and measured sample is parsed and required to reproduce the frozen semantic digest.** Reports include raw nanosecond samples, median, nearest-rank p95, median absolute deviation (MAD), minimum, maximum, and a transaction-rate value that explicitly includes whole-process startup/runtime initialization.
+
+This metric is intentionally named and scoped as **whole-process semantic workload latency**. `ranking_eligible` is hard-coded false in both protocol and report schema. JVM/CLR process startup and JIT behavior remain in the measurement; therefore these results must not be presented as steady-state transaction-kernel throughput.
+
+True kernel-throughput ranking remains future work until Merit, Java, and C# expose equivalent in-process timing boundaries and reset/repetition rules. This separation prevents a statistically tidy but semantically misleading benchmark.
+
+## Executable defect matrix v1
+
+`defect_probes_v1.json` and `run_defect_matrix.py` test where selected financial-domain mistakes are detected by the actual compiler/toolchain baselines:
+
+```bash
+python benchmarks/modernization/run_defect_matrix.py
+python benchmarks/modernization/run_defect_matrix.py --json
+```
+
+The initial probes are:
+
+| Probe | Domain invariant |
+|---|---|
+| `excess-money-scale` | USD values cannot silently acquire more than two fractional digits |
+| `invalid-account-domain` | account identifiers must remain inside the declared valid range |
+| `mixed-currency-domain` | distinct nominal currencies cannot be combined implicitly |
+
+For each probe the harness writes temporary Merit, Java, and C# programs and invokes `merit check`, `javac`, and `dotnet build`. The evidence classifies whether the baseline catches the defect at compile time or accepts it for later application/runtime handling.
+
+The scope is deliberately narrow and fair: this compares the **concrete benchmark representations** (`USD`/bounded Merit domains versus raw `BigDecimal`/`long` and `decimal`/`long`). Java and C# can recover stronger domain guarantees with wrappers, analyzers, source generators, validation frameworks, or additional application types. Those mechanisms should be measured as additional configuration/code rather than ignored.
 
 ## Measurement policy
 
-The v1/v2 reports record source size, meaningful source lines, build elapsed time, process-run elapsed time, emitted artifact bytes, runtime/compiler information where available, and host environment metadata in v2. These remain **diagnostic measurements, not a throughput ranking**. A ten-transaction process invocation is dominated by startup, runtime initialization, filesystem cache effects, and measurement noise.
+The v1/v2 reports record source size, meaningful source lines, build elapsed time, process-run elapsed time, emitted artifact bytes, runtime/compiler information where available, and host environment metadata. V3 adds reproducible distribution statistics without relabeling them as steady-state throughput.
 
-A throughput claim is not eligible until the benchmark defines and implements in-process reset/repetition, warmup, sample count, machine/toolchain identity, CPU-affinity policy where relevant, and statistical reporting such as median and tail percentiles. The next benchmark milestone is responsible for that protocol rather than retroactively treating startup measurements as throughput.
+Future performance claims must state exactly what is timed, whether startup/JIT/allocation is included, how state is reset, sample/warmup policy, machine/toolchain identity, CPU-affinity policy where relevant, and the statistical estimator used. Correctness must be rechecked for every measured implementation.
 
 ## Migration metrics roadmap
 
-Comparative evidence should expand beyond runtime throughput to include source and adapter LOC; number and location of separately configured numeric invariants; clean and incremental build time; binary/runtime footprint and peak memory; seeded correctness, overflow, ownership, and representation defects; amount of migration code trusted outside the language/compiler contract; copybook/COMP-3/EBCDIC boundary LOC; and differential behavior against real legacy transaction corpora.
+Comparative evidence should continue expanding beyond runtime behavior to include source and adapter LOC; number and location of separately configured numeric invariants; clean and incremental build time; binary/runtime footprint and peak memory; seeded correctness, overflow, ownership, concurrency, and representation defects; amount of migration code trusted outside the language/compiler contract; copybook/COMP-3/EBCDIC boundary LOC; and differential behavior against real legacy transaction corpora.
 
 Do not claim Merit is faster, cheaper, safer, or easier to migrate from this harness alone. Those are empirical questions. The suite exists to make them measurable and reproducible rather than rhetorical.
