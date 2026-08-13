@@ -1,0 +1,233 @@
+module bootstrap_statement_structure
+import bootstrap_tokens;
+import bootstrap_statements;
+
+capability allocate;
+
+// Structured statement IR owned by the native statement stage. These records
+// preserve semantic nesting that the flat StatementRecord envelope cannot
+// represent without forcing later MIR stages to rediscover it from source text.
+pub struct MatchArmRecord {
+    match_statement: i64;
+    ordinal: i64;
+    variant_start: i64;
+    variant_length: i64;
+    binding_start: i64;
+    binding_length: i64;
+    body_start: i64;
+    body_length: i64;
+}
+
+pub struct CapabilityScopeRecord {
+    statement_index: i64;
+    ordinal: i64;
+    capability_start: i64;
+    capability_length: i64;
+    body_start: i64;
+    body_length: i64;
+}
+
+pub fn match_arm_statement(borrow value: MatchArmRecord) -> i64 { return value.match_statement; }
+pub fn match_arm_ordinal(borrow value: MatchArmRecord) -> i64 { return value.ordinal; }
+pub fn match_arm_variant_start(borrow value: MatchArmRecord) -> i64 { return value.variant_start; }
+pub fn match_arm_variant_length(borrow value: MatchArmRecord) -> i64 { return value.variant_length; }
+pub fn match_arm_binding_start(borrow value: MatchArmRecord) -> i64 { return value.binding_start; }
+pub fn match_arm_binding_length(borrow value: MatchArmRecord) -> i64 { return value.binding_length; }
+pub fn match_arm_body_start(borrow value: MatchArmRecord) -> i64 { return value.body_start; }
+pub fn match_arm_body_length(borrow value: MatchArmRecord) -> i64 { return value.body_length; }
+pub fn capability_scope_statement(borrow value: CapabilityScopeRecord) -> i64 { return value.statement_index; }
+pub fn capability_scope_ordinal(borrow value: CapabilityScopeRecord) -> i64 { return value.ordinal; }
+pub fn capability_scope_name_start(borrow value: CapabilityScopeRecord) -> i64 { return value.capability_start; }
+pub fn capability_scope_name_length(borrow value: CapabilityScopeRecord) -> i64 { return value.capability_length; }
+pub fn capability_scope_body_start(borrow value: CapabilityScopeRecord) -> i64 { return value.body_start; }
+pub fn capability_scope_body_length(borrow value: CapabilityScopeRecord) -> i64 { return value.body_length; }
+
+fn structure_punctuation(borrow source: Buffer, borrow token: Token, byte: i64) -> i32 {
+    if (token_kind(token) != 4) { return 0; }
+    if (token_length(token) != 1) { return 0; }
+    if (buffer_get(source, token_start(token)) != byte) { return 0; }
+    return 1;
+}
+
+fn structure_token_end(borrow token: Token) -> i64 {
+    return checked_add(token_start(token), token_length(token));
+}
+
+fn structure_find_token_at(borrow tokens: Vec<Token>, start: i64) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (token_start(token) == start) { return index; }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn structure_matching_brace(
+    borrow source: Buffer, borrow tokens: Vec<Token>, open_index: i64
+) -> i64 {
+    var depth: i64 = 0;
+    var index: i64 = open_index;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (structure_punctuation(source, token, 123) != 0) {
+            depth = checked_add(depth, 1);
+        }
+        if (structure_punctuation(source, token, 125) != 0) {
+            depth = checked_sub(depth, 1);
+            if (depth == 0) { return index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn structure_capability_operand(
+    borrow statement: StatementRecord, borrow operands: Vec<StatementOperand>
+) -> i64 {
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == 4) { return index; }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+pub fn lower_capability_scope_records(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow_mut output: Vec<CapabilityScopeRecord>
+) -> i32
+requires_caps [allocate]
+{
+    var statement_index: i64 = 0;
+    var ordinal: i64 = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        if (statement_record_kind(statement) == 28) {
+            let operand_index: i64 = structure_capability_operand(statement, operands);
+            if (operand_index < 0) { return 1; }
+            let capability: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+            let open_end: i64 = checked_add(statement_record_start(statement), statement_record_length(statement));
+            var open_index: i64 = -1;
+            var token_index: i64 = 0;
+            while (token_index < vec_len<Token>(tokens)) {
+                let token: Token = vec_get<Token>(tokens, token_index);
+                if (structure_token_end(token) == open_end) {
+                    if (structure_punctuation(source, token, 123) != 0) { open_index = token_index; }
+                }
+                token_index = checked_add(token_index, 1);
+            }
+            if (open_index < 0) { return 2; }
+            let close_index: i64 = structure_matching_brace(source, tokens, open_index);
+            if (close_index < 0) { return 3; }
+            let open_token: Token = vec_get<Token>(tokens, open_index);
+            let close_token: Token = vec_get<Token>(tokens, close_index);
+            let body_start: i64 = structure_token_end(open_token);
+            vec_push<CapabilityScopeRecord>(output, CapabilityScopeRecord {
+                statement_index: statement_index,
+                ordinal: ordinal,
+                capability_start: statement_operand_start(capability),
+                capability_length: statement_operand_length(capability),
+                body_start: body_start,
+                body_length: token_start(close_token) - body_start
+            });
+            ordinal = checked_add(ordinal, 1);
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+    return 0;
+}
+
+fn structure_match_open_index(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow statement: StatementRecord
+) -> i64 {
+    let open_end: i64 = checked_add(statement_record_start(statement), statement_record_length(statement));
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (structure_token_end(token) == open_end) {
+            if (structure_punctuation(source, token, 123) != 0) { return index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+pub fn lower_match_arm_records(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow_mut output: Vec<MatchArmRecord>
+) -> i32
+requires_caps [allocate]
+{
+    var statement_index: i64 = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        if (statement_record_kind(statement) == 27) {
+            let match_open: i64 = structure_match_open_index(source, tokens, statement);
+            if (match_open < 0) { return 10; }
+            let match_close: i64 = structure_matching_brace(source, tokens, match_open);
+            if (match_close < 0) { return 11; }
+            var cursor: i64 = checked_add(match_open, 1);
+            var ordinal: i64 = 0;
+            while (cursor < match_close) {
+                let variant: Token = vec_get<Token>(tokens, cursor);
+                if (token_kind(variant) != 1) { return 12; }
+                var binding_start: i64 = -1;
+                var binding_length: i64 = 0;
+                var after_head: i64 = checked_add(cursor, 1);
+                if (after_head < match_close) {
+                    let maybe_open: Token = vec_get<Token>(tokens, after_head);
+                    if (structure_punctuation(source, maybe_open, 40) != 0) {
+                        let binding_index: i64 = checked_add(after_head, 1);
+                        let close_index: i64 = checked_add(after_head, 2);
+                        if (close_index >= match_close) { return 13; }
+                        let binding: Token = vec_get<Token>(tokens, binding_index);
+                        let close: Token = vec_get<Token>(tokens, close_index);
+                        if (token_kind(binding) != 1) { return 14; }
+                        if (structure_punctuation(source, close, 41) == 0) { return 15; }
+                        binding_start = token_start(binding);
+                        binding_length = token_length(binding);
+                        after_head = checked_add(close_index, 1);
+                    }
+                }
+                // The lexer represents => as '=' followed by '>'. Preserve the
+                // arm boundary structurally rather than assigning enum ordinals here.
+                if (checked_add(after_head, 2) >= match_close) { return 16; }
+                let equals: Token = vec_get<Token>(tokens, after_head);
+                let arrow: Token = vec_get<Token>(tokens, checked_add(after_head, 1));
+                let body_open: Token = vec_get<Token>(tokens, checked_add(after_head, 2));
+                if (structure_punctuation(source, equals, 61) == 0) { return 17; }
+                if (structure_punctuation(source, arrow, 62) == 0) { return 18; }
+                if (structure_punctuation(source, body_open, 123) == 0) { return 19; }
+                let body_open_index: i64 = checked_add(after_head, 2);
+                let body_close_index: i64 = structure_matching_brace(source, tokens, body_open_index);
+                if (body_close_index < 0) { return 20; }
+                if (body_close_index > match_close) { return 21; }
+                let body_close: Token = vec_get<Token>(tokens, body_close_index);
+                let body_start: i64 = structure_token_end(body_open);
+                vec_push<MatchArmRecord>(output, MatchArmRecord {
+                    match_statement: statement_index,
+                    ordinal: ordinal,
+                    variant_start: token_start(variant),
+                    variant_length: token_length(variant),
+                    binding_start: binding_start,
+                    binding_length: binding_length,
+                    body_start: body_start,
+                    body_length: token_start(body_close) - body_start
+                });
+                ordinal = checked_add(ordinal, 1);
+                cursor = checked_add(body_close_index, 1);
+            }
+            if (ordinal == 0) { return 22; }
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+    return 0;
+}
