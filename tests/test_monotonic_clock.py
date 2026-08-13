@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import subprocess
 
@@ -89,7 +90,8 @@ def test_native_monotonic_clock_is_nondecreasing(tmp_path):
     source.write_text(CLOCK_PROGRAM, encoding='utf-8')
     executable = tmp_path / 'clock_probe'
     compile_file(source, executable)
+    native_executable = executable.with_suffix('.exe') if os.name == 'nt' else executable
     completed = subprocess.run(
-        [str(executable)], check=True, text=True, capture_output=True
+        [str(native_executable)], check=True, text=True, capture_output=True
     )
     assert completed.stdout.strip() == '1'
