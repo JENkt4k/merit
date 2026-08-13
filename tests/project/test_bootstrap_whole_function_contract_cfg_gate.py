@@ -61,23 +61,34 @@ fn main() -> i32 {
   var locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,8);
   var caps:Vec<i64>=vec_new<i64>(allocator,2);
   print(plan_function_contract_namespace(metadata,contracts,0,3,locals,caps));
-  print(vec_len<MirFunctionContractLocal>(locals)); print(assembly_local_id(vec_get<MirFunctionContractLocal>(locals,0))); print(assembly_local_id(vec_get<MirFunctionContractLocal>(locals,5)));
+  let local0:MirFunctionContractLocal=vec_get<MirFunctionContractLocal>(locals,0);
+  let local5:MirFunctionContractLocal=vec_get<MirFunctionContractLocal>(locals,5);
+  print(vec_len<MirFunctionContractLocal>(locals)); print(assembly_local_id(local0)); print(assembly_local_id(local5));
   print(vec_len<i64>(caps)); print(vec_get<i64>(caps,0));
 
   var events:Vec<MirLowerEvent>=vec_new<MirLowerEvent>(allocator,32);
   var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,32);
   print(assemble_function_mir_events(contracts,body,0,3,allocator,events,sources));
   print(validate_function_assembly_sources(sources)); print(vec_len<MirFunctionInstructionSource>(sources));
-  print(assembly_source_kind(vec_get<MirFunctionInstructionSource>(sources,0))); print(assembly_source_kind(vec_get<MirFunctionInstructionSource>(sources,4)));
-  print(assembly_source_contract_kind(vec_get<MirFunctionInstructionSource>(sources,6))); print(assembly_source_id(vec_get<MirFunctionInstructionSource>(sources,6)));
-  print(assembly_source_contract_kind(vec_get<MirFunctionInstructionSource>(sources,11))); print(assembly_source_id(vec_get<MirFunctionInstructionSource>(sources,11)));
-  print(assembly_source_result(vec_get<MirFunctionInstructionSource>(sources,2))); print(assembly_source_left(vec_get<MirFunctionInstructionSource>(sources,3)));
+  let source0:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,0);
+  let source4:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,4);
+  let source6:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,6);
+  let source11:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,11);
+  let source2:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,2);
+  let source3:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,3);
+  print(assembly_source_kind(source0)); print(assembly_source_kind(source4));
+  print(assembly_source_contract_kind(source6)); print(assembly_source_id(source6));
+  print(assembly_source_contract_kind(source11)); print(assembly_source_id(source11));
+  print(assembly_source_result(source2)); print(assembly_source_left(source3));
 
   var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,16);
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,32);
   print(lower_structured_mir(events,allocator,cfg,placements));
+  let placement0:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,0);
+  let placement5:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,5);
+  let placement10:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,10);
   print(vec_len<MirCfgRecord>(cfg)); print(vec_len<MirPlacementRecord>(placements));
-  print(placement_block_id(vec_get<MirPlacementRecord>(placements,0))); print(placement_block_id(vec_get<MirPlacementRecord>(placements,5))); print(placement_block_id(vec_get<MirPlacementRecord>(placements,10)));
+  print(placement_block_id(placement0)); print(placement_block_id(placement5)); print(placement_block_id(placement10));
 
   drop(placements);drop(cfg);drop(sources);drop(events);drop(caps);drop(locals);drop(body);drop(contracts);drop(metadata);
  }
