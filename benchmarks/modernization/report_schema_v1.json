@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/merit/modernization-report-v1.schema.json",
+  "title": "Merit modernization comparative report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "corpus_schema",
+    "corpus_sha256",
+    "outcome_sha256",
+    "correctness_required_for_performance",
+    "measurement_scope",
+    "implementations"
+  ],
+  "properties": {
+    "schema": {"const": "merit-modernization-report-v1"},
+    "corpus_schema": {"const": "merit-modernization-transaction-v1"},
+    "corpus_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "outcome_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "correctness_required_for_performance": {"const": true},
+    "measurement_scope": {"type": "string"},
+    "implementations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "implementation",
+          "numeric_model",
+          "semantic_configuration",
+          "correctness",
+          "outcome_sha256",
+          "source_bytes",
+          "source_lines",
+          "meaningful_source_lines",
+          "build_elapsed_ns",
+          "run_process_elapsed_ns",
+          "artifact_bytes"
+        ],
+        "properties": {
+          "implementation": {"type": "string"},
+          "numeric_model": {"type": "string"},
+          "semantic_configuration": {
+            "type": "object",
+            "required": [
+              "numeric_type",
+              "precision_policy",
+              "scale_policy",
+              "rounding_policy",
+              "range_policy",
+              "overflow_policy",
+              "representation_boundary"
+            ],
+            "additionalProperties": {"type": "string"}
+          },
+          "correctness": {"const": "pass"},
+          "outcome_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "source_bytes": {"type": "integer", "minimum": 1},
+          "source_lines": {"type": "integer", "minimum": 1},
+          "meaningful_source_lines": {"type": "integer", "minimum": 1},
+          "build_elapsed_ns": {"type": "integer", "minimum": 0},
+          "run_process_elapsed_ns": {"type": "integer", "minimum": 0},
+          "artifact_bytes": {"type": "integer", "minimum": 1},
+          "interpreter_end_to_end_elapsed_ns": {"type": "integer", "minimum": 0},
+          "compiler": {"type": "string"},
+          "runtime": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
