@@ -37,6 +37,11 @@ def test_merit_interpreter_native_and_java_match_reference_semantics():
     assert {item["implementation"] for item in report["implementations"]} == {"merit", "java"}
     assert {item["correctness"] for item in report["implementations"]} == {"pass"}
     assert {item["outcome_sha256"] for item in report["implementations"]} == {EXPECTED_DIGEST}
+    profiles = {item["implementation"]: item["semantic_configuration"] for item in report["implementations"]}
+    assert profiles["merit"]["numeric_type"] == "language nominal decimal USD"
+    assert profiles["java"]["numeric_type"] == "java.math.BigDecimal library type"
+    assert "half_even" in profiles["merit"]["rounding_policy"]
+    assert "application" in profiles["java"]["range_policy"]
     for item in report["implementations"]:
         assert item["source_bytes"] > 0
         assert item["meaningful_source_lines"] > 0
@@ -51,6 +56,7 @@ def test_report_schema_requires_correctness_before_performance():
     assert schema["properties"]["correctness_required_for_performance"]["const"] is True
     implementation = schema["properties"]["implementations"]["items"]
     assert implementation["properties"]["correctness"]["const"] == "pass"
+    assert "semantic_configuration" in implementation["required"]
     assert "outcome_sha256" in implementation["required"]
     assert "build_elapsed_ns" in implementation["required"]
     assert "run_process_elapsed_ns" in implementation["required"]
