@@ -16,6 +16,7 @@ ROOT = HERE.parents[1]
 CORPUS = HERE / "transaction_corpus.json"
 REFERENCE = HERE / "run_reference.py"
 GENERATOR = HERE / "generate_implementations.py"
+PROFILES = HERE / "implementation_profiles_v1.json"
 MERIT_PROJECT = HERE / "merit" / "Merit.toml"
 MERIT_SOURCE = HERE / "merit" / "src" / "main.mrt"
 JAVA_SOURCE = HERE / "java" / "ModernizationBenchmark.java"
@@ -179,10 +180,18 @@ def verify_generated_sources() -> None:
             raise AssertionError(f"generated benchmark source is stale: {path.relative_to(ROOT)}")
 
 
+def _profiles() -> dict:
+    payload = json.loads(PROFILES.read_text(encoding="utf-8"))
+    if payload.get("schema") != "merit-modernization-implementation-profiles-v1":
+        raise ValueError("unsupported implementation profile schema")
+    return payload["implementations"]
+
+
 def run() -> dict:
     reference = _load_module("modernization_reference", REFERENCE)
     data = reference.load_corpus(CORPUS)
     expected = reference.execute(data)
+    profiles = _profiles()
     verify_generated_sources()
     with tempfile.TemporaryDirectory(prefix="merit-modernization-") as tmp:
         work = Path(tmp)
@@ -191,6 +200,8 @@ def run() -> dict:
     for name, observed in (("merit", merit_semantic), ("java", java_semantic)):
         if observed != expected:
             raise AssertionError(f"{name} semantic output differs from reference")
+    merit_metrics["semantic_configuration"] = profiles["merit"]
+    java_metrics["semantic_configuration"] = profiles["java"]
     return {
         "schema": "merit-modernization-report-v1",
         "corpus_schema": data["schema"],
@@ -218,6 +229,7 @@ def main() -> int:
                 f"lines={item['meaningful_source_lines']} artifact_bytes={item['artifact_bytes']} "
                 f"build_ns={item['build_elapsed_ns']} run_process_ns={item['run_process_elapsed_ns']}"
             )
+            print(f"  numeric policy: {item['semantic_configuration']['numeric_type']}")
         print("performance note: single-process timings are diagnostic only, not a ranking")
     return 0
 
