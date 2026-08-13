@@ -1,0 +1,80 @@
+module bootstrap_mir_function_assembly_plan
+import bootstrap_mir_function_clause_metadata;
+import bootstrap_mir_function_contracts;
+
+capability allocate;
+
+pub struct MirFunctionContractLocal {
+    local_id: i64;
+    source_local_id: i64;
+    type_code: i32;
+    contract_kind: i32;
+    clause_ordinal: i64;
+}
+
+pub fn assembly_local_id(borrow value: MirFunctionContractLocal) -> i64 { return value.local_id; }
+pub fn assembly_local_source_id(borrow value: MirFunctionContractLocal) -> i64 { return value.source_local_id; }
+pub fn assembly_local_type(borrow value: MirFunctionContractLocal) -> i32 { return value.type_code; }
+pub fn assembly_local_contract_kind(borrow value: MirFunctionContractLocal) -> i32 { return value.contract_kind; }
+pub fn assembly_local_clause(borrow value: MirFunctionContractLocal) -> i64 { return value.clause_ordinal; }
+
+pub fn assembly_remap_local(value: i64, binding_count: i64, body_local_count: i64) -> i64 {
+    if (value < 0) { return value; }
+    if (value < binding_count) { return value; }
+    return checked_add(body_local_count, checked_sub(value, binding_count));
+}
+
+fn assembly_has_capability(borrow capabilities: Vec<i64>, id: i64) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<i64>(capabilities)) {
+        if (vec_get<i64>(capabilities, index) == id) { return 1; }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+pub fn plan_function_contract_namespace(
+    borrow metadata: Vec<MirFunctionClauseMetadata>,
+    borrow contracts: Vec<MirFunctionContractRecord>,
+    binding_count: i64,
+    body_local_count: i64,
+    borrow_mut locals: Vec<MirFunctionContractLocal>,
+    borrow_mut capabilities: Vec<i64>
+) -> i32
+requires_caps [allocate]
+{
+    if (binding_count < 0) { return 1; }
+    if (body_local_count < binding_count) { return 2; }
+    if (validate_function_clause_metadata(metadata) != 0) { return 3; }
+    if (validate_function_contract_mir(contracts) != 0) { return 4; }
+
+    var index: i64 = 0;
+    while (index < vec_len<MirFunctionClauseMetadata>(metadata)) {
+        let value: MirFunctionClauseMetadata = vec_get<MirFunctionClauseMetadata>(metadata, index);
+        if (clause_metadata_kind(value) == 2) {
+            let id: i64 = clause_metadata_semantic_id(value);
+            if (id < 0) { return 10; }
+            if (assembly_has_capability(capabilities, id) != 0) { return 11; }
+            vec_push<i64>(capabilities, id);
+        }
+        index = checked_add(index, 1);
+    }
+
+    index = 0;
+    while (index < vec_len<MirFunctionContractRecord>(contracts)) {
+        let record: MirFunctionContractRecord = vec_get<MirFunctionContractRecord>(contracts, index);
+        if (function_contract_kind(record) == 1) {
+            let source_local: i64 = function_contract_id(record);
+            if (source_local < binding_count) { return 20; }
+            vec_push<MirFunctionContractLocal>(locals, MirFunctionContractLocal {
+                local_id: assembly_remap_local(source_local, binding_count, body_local_count),
+                source_local_id: source_local,
+                type_code: function_contract_type(record),
+                contract_kind: function_contract_contract_kind(record),
+                clause_ordinal: function_contract_clause(record)
+            });
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
