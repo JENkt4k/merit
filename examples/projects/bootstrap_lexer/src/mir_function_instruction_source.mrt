@@ -1,0 +1,42 @@
+module bootstrap_mir_function_instruction_source
+
+pub struct MirFunctionInstructionSource {
+    global_id: i64;
+    source_kind: i32;
+    source_id: i64;
+    contract_kind: i32;
+    clause_ordinal: i64;
+    result: i64;
+    left: i64;
+    right: i64;
+}
+
+pub fn assembly_source_global_id(borrow value: MirFunctionInstructionSource) -> i64 { return value.global_id; }
+pub fn assembly_source_kind(borrow value: MirFunctionInstructionSource) -> i32 { return value.source_kind; }
+pub fn assembly_source_id(borrow value: MirFunctionInstructionSource) -> i64 { return value.source_id; }
+pub fn assembly_source_contract_kind(borrow value: MirFunctionInstructionSource) -> i32 { return value.contract_kind; }
+pub fn assembly_source_clause(borrow value: MirFunctionInstructionSource) -> i64 { return value.clause_ordinal; }
+pub fn assembly_source_result(borrow value: MirFunctionInstructionSource) -> i64 { return value.result; }
+pub fn assembly_source_left(borrow value: MirFunctionInstructionSource) -> i64 { return value.left; }
+pub fn assembly_source_right(borrow value: MirFunctionInstructionSource) -> i64 { return value.right; }
+
+pub fn validate_function_assembly_sources(borrow sources: Vec<MirFunctionInstructionSource>) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<MirFunctionInstructionSource>(sources)) {
+        let value: MirFunctionInstructionSource = vec_get<MirFunctionInstructionSource>(sources, index);
+        if (value.global_id != index) { return 1; }
+        if (value.source_kind < 1) { return 2; }
+        if (value.source_kind > 2) { return 2; }
+        if (value.source_id < 0) { return 3; }
+        if (value.source_kind == 1) {
+            if (value.contract_kind < 1) { return 4; }
+            if (value.contract_kind > 2) { return 4; }
+            if (value.clause_ordinal < 0) { return 5; }
+        } else {
+            if (value.contract_kind != 0) { return 6; }
+            if (value.clause_ordinal != -1) { return 6; }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
