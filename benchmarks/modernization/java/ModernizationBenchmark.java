@@ -56,14 +56,14 @@ public final class ModernizationBenchmark {
         System.out.println(-900);
         System.out.println(apply(accounts, 1001001L, 2002002L, new BigDecimal("125.50"), 41L));
         System.out.println(apply(accounts, 1001001L, 2002002L, new BigDecimal("1.00"), 41L));
-        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("50.01"), 8L));
-        System.out.println(apply(accounts, 3003003L, 3003003L, new BigDecimal("1.00"), 8L));
-        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("0.00"), 8L));
-        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("-0.01"), 8L));
-        System.out.println(apply(accounts, 3003003L, 4004004L, new BigDecimal("1.00"), 8L));
-        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("12.50"), 8L));
-        System.out.println(apply(accounts, 2002002L, 1001001L, new BigDecimal("2.50"), 42L));
-        System.out.println(apply(accounts, 2002002L, 3003003L, new BigDecimal("1.00"), 41L));
+        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("50.01"), 42L));
+        System.out.println(apply(accounts, 3003003L, 3003003L, new BigDecimal("1.00"), 42L));
+        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("0.00"), 42L));
+        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("-0.01"), 42L));
+        System.out.println(apply(accounts, 3003003L, 4004004L, new BigDecimal("1.00"), 42L));
+        System.out.println(apply(accounts, 3003003L, 2002002L, new BigDecimal("12.50"), 42L));
+        System.out.println(apply(accounts, 2002002L, 1001001L, new BigDecimal("2.50"), 43L));
+        System.out.println(apply(accounts, 2002002L, 3003003L, new BigDecimal("1.00"), 42L));
         System.out.println(-901);
         for (Account account : accounts) {
             System.out.println(account.id);
