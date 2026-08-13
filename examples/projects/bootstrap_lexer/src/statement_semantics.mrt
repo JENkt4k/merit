@@ -1,0 +1,186 @@
+module bootstrap_statement_semantics
+import bootstrap_tokens;
+import bootstrap_statement_structure;
+
+capability allocate;
+
+// Catalog entries are produced by the typed declaration stage. Identity is
+// semantic (enum/capability id); source spans are only used to resolve the
+// spelling preserved by the structural statement IR.
+pub struct EnumVariantCatalogEntry {
+    enum_id: i64;
+    variant_id: i64;
+    ordinal: i64;
+    name_start: i64;
+    name_length: i64;
+    payload_owned: i32;
+}
+
+pub struct CapabilityCatalogEntry {
+    capability_id: i64;
+    name_start: i64;
+    name_length: i64;
+}
+
+pub struct ResolvedMatchArm {
+    match_statement: i64;
+    ordinal: i64;
+    enum_id: i64;
+    variant_id: i64;
+    variant_ordinal: i64;
+    binding_start: i64;
+    binding_length: i64;
+    body_start: i64;
+    body_length: i64;
+    payload_owned: i32;
+}
+
+pub struct ResolvedCapabilityScope {
+    statement_index: i64;
+    ordinal: i64;
+    capability_id: i64;
+    body_start: i64;
+    body_length: i64;
+}
+
+pub fn resolved_match_statement(borrow value: ResolvedMatchArm) -> i64 { return value.match_statement; }
+pub fn resolved_match_ordinal(borrow value: ResolvedMatchArm) -> i64 { return value.ordinal; }
+pub fn resolved_match_enum_id(borrow value: ResolvedMatchArm) -> i64 { return value.enum_id; }
+pub fn resolved_match_variant_id(borrow value: ResolvedMatchArm) -> i64 { return value.variant_id; }
+pub fn resolved_match_variant_ordinal(borrow value: ResolvedMatchArm) -> i64 { return value.variant_ordinal; }
+pub fn resolved_match_binding_start(borrow value: ResolvedMatchArm) -> i64 { return value.binding_start; }
+pub fn resolved_match_binding_length(borrow value: ResolvedMatchArm) -> i64 { return value.binding_length; }
+pub fn resolved_match_body_start(borrow value: ResolvedMatchArm) -> i64 { return value.body_start; }
+pub fn resolved_match_body_length(borrow value: ResolvedMatchArm) -> i64 { return value.body_length; }
+pub fn resolved_match_payload_owned(borrow value: ResolvedMatchArm) -> i32 { return value.payload_owned; }
+pub fn resolved_capability_statement(borrow value: ResolvedCapabilityScope) -> i64 { return value.statement_index; }
+pub fn resolved_capability_ordinal(borrow value: ResolvedCapabilityScope) -> i64 { return value.ordinal; }
+pub fn resolved_capability_id(borrow value: ResolvedCapabilityScope) -> i64 { return value.capability_id; }
+pub fn resolved_capability_body_start(borrow value: ResolvedCapabilityScope) -> i64 { return value.body_start; }
+pub fn resolved_capability_body_length(borrow value: ResolvedCapabilityScope) -> i64 { return value.body_length; }
+
+fn semantic_span_equal(
+    borrow source: Buffer, left_start: i64, left_length: i64,
+    right_start: i64, right_length: i64
+) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(source, checked_add(left_start, offset)) !=
+            buffer_get(source, checked_add(right_start, offset))) { return 0; }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn semantic_find_variant(
+    borrow source: Buffer,
+    borrow catalog: Vec<EnumVariantCatalogEntry>,
+    enum_id: i64,
+    start: i64,
+    length: i64
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<EnumVariantCatalogEntry>(catalog)) {
+        let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, index);
+        if (entry.enum_id == enum_id) {
+            if (semantic_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) {
+                return index;
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn semantic_find_capability(
+    borrow source: Buffer,
+    borrow catalog: Vec<CapabilityCatalogEntry>,
+    start: i64,
+    length: i64
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<CapabilityCatalogEntry>(catalog)) {
+        let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(catalog, index);
+        if (semantic_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) {
+            return index;
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+pub fn resolve_match_arms(
+    borrow source: Buffer,
+    borrow arms: Vec<MatchArmRecord>,
+    borrow catalog: Vec<EnumVariantCatalogEntry>,
+    enum_id: i64,
+    borrow_mut output: Vec<ResolvedMatchArm>
+) -> i32
+requires_caps [allocate]
+{
+    var expected_ordinal: i64 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<MatchArmRecord>(arms)) {
+        let arm: MatchArmRecord = vec_get<MatchArmRecord>(arms, index);
+        if (match_arm_ordinal(arm) != expected_ordinal) { return 1; }
+        let catalog_index: i64 = semantic_find_variant(
+            source, catalog, enum_id,
+            match_arm_variant_start(arm), match_arm_variant_length(arm)
+        );
+        if (catalog_index < 0) { return 2; }
+        let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
+        if (entry.ordinal != expected_ordinal) { return 3; }
+        if (entry.payload_owned != 0) {
+            if (match_arm_binding_start(arm) < 0) { return 4; }
+        }
+        vec_push<ResolvedMatchArm>(output, ResolvedMatchArm {
+            match_statement: match_arm_statement(arm),
+            ordinal: expected_ordinal,
+            enum_id: entry.enum_id,
+            variant_id: entry.variant_id,
+            variant_ordinal: entry.ordinal,
+            binding_start: match_arm_binding_start(arm),
+            binding_length: match_arm_binding_length(arm),
+            body_start: match_arm_body_start(arm),
+            body_length: match_arm_body_length(arm),
+            payload_owned: entry.payload_owned
+        });
+        expected_ordinal = checked_add(expected_ordinal, 1);
+        index = checked_add(index, 1);
+    }
+    if (expected_ordinal == 0) { return 5; }
+    return 0;
+}
+
+pub fn resolve_capability_scopes(
+    borrow source: Buffer,
+    borrow scopes: Vec<CapabilityScopeRecord>,
+    borrow catalog: Vec<CapabilityCatalogEntry>,
+    borrow_mut output: Vec<ResolvedCapabilityScope>
+) -> i32
+requires_caps [allocate]
+{
+    var expected_ordinal: i64 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<CapabilityScopeRecord>(scopes)) {
+        let scope: CapabilityScopeRecord = vec_get<CapabilityScopeRecord>(scopes, index);
+        if (capability_scope_ordinal(scope) != expected_ordinal) { return 10; }
+        let catalog_index: i64 = semantic_find_capability(
+            source, catalog,
+            capability_scope_name_start(scope), capability_scope_name_length(scope)
+        );
+        if (catalog_index < 0) { return 11; }
+        let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(catalog, catalog_index);
+        vec_push<ResolvedCapabilityScope>(output, ResolvedCapabilityScope {
+            statement_index: capability_scope_statement(scope),
+            ordinal: expected_ordinal,
+            capability_id: entry.capability_id,
+            body_start: capability_scope_body_start(scope),
+            body_length: capability_scope_body_length(scope)
+        });
+        expected_ordinal = checked_add(expected_ordinal, 1);
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
