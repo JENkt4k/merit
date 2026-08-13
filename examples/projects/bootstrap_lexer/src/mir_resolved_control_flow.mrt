@@ -1,0 +1,61 @@
+module bootstrap_mir_resolved_control_flow
+import bootstrap_statement_semantics;
+import bootstrap_mir_match_capability_flow;
+import bootstrap_mir_structured_lowering;
+
+capability allocate;
+
+// Bridge from typed source-backed statement semantics into the existing
+// structured-MIR event contract. Ownership exits are validated before any CFG
+// control events are emitted, so structurally valid MIR cannot be produced for
+// a match whose surviving arms disagree on ownership state.
+pub fn lower_resolved_match_control(
+    borrow arms: Vec<ResolvedMatchArm>,
+    binding_count: i64,
+    borrow exits: Vec<MatchOwnershipExit>,
+    value_local: i64,
+    borrow_mut merged_states: Vec<i32>,
+    borrow_mut output: Vec<MirLowerEvent>
+) -> i32
+requires_caps [allocate]
+{
+    if (value_local < 0) { return 30; }
+    let merge_status: i32 = validate_match_ownership_merge(
+        arms, binding_count, exits, merged_states
+    );
+    if (merge_status != 0) { return merge_status; }
+
+    let arm_count: i64 = vec_len<ResolvedMatchArm>(arms);
+    if (arm_count == 0) { return 31; }
+
+    // Typed enum matches are exhaustive at the semantic boundary. Structured
+    // MIR still gets an explicit defensive default edge, but that edge is
+    // unreachable rather than a fabricated live path.
+    vec_push<MirLowerEvent>(output, mir_event_match(value_local, checked_add(arm_count, 1)));
+
+    var index: i64 = 0;
+    while (index < arm_count) {
+        let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, index);
+        if (resolved_match_ordinal(arm) != index) { return 32; }
+        if (resolved_match_variant_ordinal(arm) < 0) { return 33; }
+        vec_push<MirLowerEvent>(output, mir_event_case(resolved_match_variant_ordinal(arm)));
+        index = checked_add(index, 1);
+    }
+
+    vec_push<MirLowerEvent>(output, mir_event_default());
+    vec_push<MirLowerEvent>(output, mir_event_unreachable());
+    vec_push<MirLowerEvent>(output, mir_event_end_match());
+    return 0;
+}
+
+// Capability effects are deliberately not encoded as CFG terminators. They are
+// semantic effect IR keyed by capability identity and lexical scope ordinal,
+// carried beside the structured control graph for later runtime-effect lowering.
+pub fn lower_resolved_capability_control(
+    borrow scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut output: Vec<MirCapabilityEffect>
+) -> i32
+requires_caps [allocate]
+{
+    return lower_capability_effects(scopes, output);
+}

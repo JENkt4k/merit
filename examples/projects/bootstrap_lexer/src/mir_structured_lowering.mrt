@@ -11,6 +11,7 @@ capability allocate;
 // kinds:
 //   1 place instruction     a=instruction_id
 //   2 return                a=operand_local (-1 for unit)
+//   3 unreachable
 //  10 if                    a=condition_local
 //  11 else
 //  12 end_if
@@ -35,6 +36,9 @@ pub fn mir_event_place(instruction_id: i64) -> MirLowerEvent {
 }
 pub fn mir_event_return(operand_local: i64) -> MirLowerEvent {
     return MirLowerEvent { kind: 2, a: operand_local, b: 0 };
+}
+pub fn mir_event_unreachable() -> MirLowerEvent {
+    return MirLowerEvent { kind: 3, a: 0, b: 0 };
 }
 pub fn mir_event_if(condition_local: i64) -> MirLowerEvent {
     return MirLowerEvent { kind: 10, a: condition_local, b: 0 };
@@ -137,6 +141,13 @@ requires_caps [allocate]
             if (terminated != 0) { return 4; }
             if (event.a < -1) { return 5; }
             lower_push_return(cfg, current, event.a);
+            terminated = 1;
+        }
+
+        if (kind == 3) {
+            handled = 1;
+            if (terminated != 0) { return 35; }
+            vec_push<MirCfgRecord>(cfg, cfg_unreachable(current));
             terminated = 1;
         }
 
