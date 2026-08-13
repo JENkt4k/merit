@@ -1,0 +1,113 @@
+module bootstrap_mir_function_contracts
+import bootstrap_tokens;
+import bootstrap_clauses;
+import bootstrap_expression_spans;
+import bootstrap_syntax;
+import bootstrap_hir;
+
+capability allocate;
+
+// bootstrap-function-contract-mir-v1. Kinds: 1 temporary local, 2 const,
+// 3 binary/comparison, 4 contract check. contract_kind: 1 requires, 2 ensures.
+pub struct MirFunctionContractRecord {
+    kind: i32; clause_ordinal: i64; contract_kind: i32; start: i64; length: i64;
+    id: i64; result: i64; left: i64; right: i64; symbol: i32; type_code: i32; numeric_policy: i32;
+}
+pub fn function_contract_kind(borrow v: MirFunctionContractRecord)->i32{return v.kind;}
+pub fn function_contract_clause(borrow v: MirFunctionContractRecord)->i64{return v.clause_ordinal;}
+pub fn function_contract_contract_kind(borrow v: MirFunctionContractRecord)->i32{return v.contract_kind;}
+pub fn function_contract_start(borrow v: MirFunctionContractRecord)->i64{return v.start;}
+pub fn function_contract_length(borrow v: MirFunctionContractRecord)->i64{return v.length;}
+pub fn function_contract_id(borrow v: MirFunctionContractRecord)->i64{return v.id;}
+pub fn function_contract_result(borrow v: MirFunctionContractRecord)->i64{return v.result;}
+pub fn function_contract_left(borrow v: MirFunctionContractRecord)->i64{return v.left;}
+pub fn function_contract_right(borrow v: MirFunctionContractRecord)->i64{return v.right;}
+pub fn function_contract_symbol(borrow v: MirFunctionContractRecord)->i32{return v.symbol;}
+pub fn function_contract_type(borrow v: MirFunctionContractRecord)->i32{return v.type_code;}
+pub fn function_contract_policy(borrow v: MirFunctionContractRecord)->i32{return v.numeric_policy;}
+
+fn function_contract_ast_type(kind:i32)->i32{if(kind>=40){if(kind<=45){return 2;}} return 1;}
+
+fn function_contract_emit(
+ borrow source:Buffer, borrow tokens:Vec<Token>, borrow operand:ClauseOperand,
+ borrow binding_starts:Vec<i64>, borrow binding_lengths:Vec<i64>,
+ clause_ordinal:i64, contract_kind:i32, allocator:Allocator,
+ borrow_mut output:Vec<MirFunctionContractRecord>, borrow_mut counters:Vec<i64>
+)->i32 requires_caps [allocate]
+{
+ let expressions:Vec<ExpressionNode>=parse_expression_span(source,tokens,clause_operand_start(operand),clause_operand_length(operand),allocator);
+ let ast_nodes:Vec<AstNodeRecord>=lower_expression_ast_records(expressions,allocator);
+ if(vec_len<AstNodeRecord>(ast_nodes)==0){return 20;}
+ var hir_nodes:Vec<HirExpressionRecord>=vec_new<HirExpressionRecord>(allocator,vec_len<AstNodeRecord>(ast_nodes));
+ var index:i64=0;
+ while(index<vec_len<AstNodeRecord>(ast_nodes)){
+  let ast:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,index); var binding_id:i64=-1;
+  if(ast_kind(ast)==30){binding_id=hir_find_binding_id(source,binding_starts,binding_lengths,ast_start(ast),ast_length(ast)); if(binding_id<0){return 21;}}
+  let hir:HirExpressionRecord=lower_resolved_hir_record(ast_kind(ast),ast_start(ast),ast_length(ast),ast_left(ast),ast_right(ast),ast_group_start(ast),ast_group_length(ast),ast_group_parent(ast),binding_id,function_contract_ast_type(ast_kind(ast)));
+  vec_push<HirExpressionRecord>(hir_nodes,hir); index=checked_add(index,1);
+ }
+ if(validate_primitive_hir_records(hir_nodes)!=0){return 22;}
+ let count:i64=vec_len<HirExpressionRecord>(hir_nodes); var local_ids:Vec<i64>=vec_new<i64>(allocator,count); index=0;
+ while(index<count){vec_push<i64>(local_ids,-1);index=checked_add(index,1);}
+ var stack:Vec<i64>=vec_new<i64>(allocator,count); vec_push<i64>(stack,checked_sub(count,1));
+ while(vec_len<i64>(stack)>0){
+  let current:i64=vec_pop<i64>(stack); let hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,current); let kind:i32=hir_kind(hir);
+  if(kind==3){vec_push<i64>(stack,hir_left(hir));}else{
+   if(kind==4){vec_set<i64>(local_ids,current,hir_binding_id(hir));}else{
+    if(vec_get<i64>(local_ids,current)<0){
+     let local_id:i64=vec_get<i64>(counters,0); vec_set<i64>(local_ids,current,local_id);
+     vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:1,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:local_id,result:-1,left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:0});
+     vec_set<i64>(counters,0,checked_add(local_id,1));
+    }
+    if(kind==2){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
+    if(kind==5){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
+   }
+  }
+ }
+ index=0;
+ while(index<count){
+  let hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,index); let kind:i32=hir_kind(hir);
+  if(kind==1){
+   let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:2,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
+  }
+  if(kind==2){
+   let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:3,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:vec_get<i64>(local_ids,hir_left(hir)),right:vec_get<i64>(local_ids,hir_right(hir)),symbol:hir_symbol(hir),type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
+  }
+  if(kind==5){
+   let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:3,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:vec_get<i64>(local_ids,hir_left(hir)),right:vec_get<i64>(local_ids,hir_right(hir)),symbol:hir_symbol(hir),type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
+  }
+  index=checked_add(index,1);
+ }
+ let root:i64=vec_get<i64>(local_ids,checked_sub(count,1)); let check_id:i64=vec_get<i64>(counters,1);
+ vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:4,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:clause_operand_start(operand),length:clause_operand_length(operand),id:check_id,result:-1,left:root,right:-1,symbol:0,type_code:2,numeric_policy:0}); vec_set<i64>(counters,1,checked_add(check_id,1));
+ drop(stack);drop(local_ids);drop(hir_nodes);drop(ast_nodes);drop(expressions);return 0;
+}
+
+pub fn lower_function_contract_mir(
+ borrow source:Buffer, borrow tokens:Vec<Token>, borrow clauses:Vec<ClauseRecord>, borrow operands:Vec<ClauseOperand>,
+ borrow binding_starts:Vec<i64>, borrow binding_lengths:Vec<i64>, allocator:Allocator, borrow_mut output:Vec<MirFunctionContractRecord>
+)->i32 requires_caps [allocate]
+{
+ if(vec_len<i64>(binding_starts)!=vec_len<i64>(binding_lengths)){return 1;}
+ var counters:Vec<i64>=vec_new<i64>(allocator,2);vec_push<i64>(counters,vec_len<i64>(binding_starts));vec_push<i64>(counters,0);
+ var ci:i64=0; while(ci<vec_len<ClauseRecord>(clauses)){
+  let clause:ClauseRecord=vec_get<ClauseRecord>(clauses,ci);let kind:i32=clause_record_kind(clause);
+  if(kind==13){if(clause_record_operand_count(clause)!=1){return 2;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=3){return 3;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,ci,1,allocator,output,counters);if(status!=0){return status;}}
+  if(kind==14){if(clause_record_operand_count(clause)!=1){return 4;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=3){return 5;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,ci,2,allocator,output,counters);if(status!=0){return status;}}
+  ci=checked_add(ci,1);
+ }
+ drop(counters);return 0;
+}
+
+pub fn validate_function_contract_mir(borrow records:Vec<MirFunctionContractRecord>)->i32{
+ var next_instruction:i64=0;var index:i64=0;
+ while(index<vec_len<MirFunctionContractRecord>(records)){
+  let r:MirFunctionContractRecord=vec_get<MirFunctionContractRecord>(records,index);
+  if(r.kind<1){return 10;}if(r.kind>4){return 10;}if(r.clause_ordinal<0){return 11;}if(r.contract_kind<1){return 12;}if(r.contract_kind>2){return 12;}if(r.start<0){return 13;}if(r.length<=0){return 13;}
+  if(r.kind==2){if(r.id!=next_instruction){return 14;}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==3){if(r.id!=next_instruction){return 14;}if(r.left<0){return 15;}if(r.right<0){return 15;}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==4){if(r.id!=next_instruction){return 14;}if(r.left<0){return 16;}next_instruction=checked_add(next_instruction,1);}
+  index=checked_add(index,1);
+ }
+ return 0;
+}
