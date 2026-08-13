@@ -14,8 +14,11 @@ pub struct MirOwnershipRecord {
 
 // if: entry, then snapshot, then terminated, seen else
 // while: entry snapshot
-// match: entry, surviving-arm snapshot, expected arms, started arms
-struct OwnershipFrame { kind: i32; entry_start: i64; then_start: i64; then_terminated: i32; seen_else: i32; }
+// match: entry, surviving-arm snapshot, match_count, match_started
+struct OwnershipFrame {
+    kind: i32; entry_start: i64; then_start: i64; then_terminated: i32; seen_else: i32;
+    match_count: i64; match_started: i64;
+}
 
 pub fn ownership_binding(binding_id: i64, local_id: i64, owned: i32, mutable: i32) -> MirOwnershipBinding {
     return MirOwnershipBinding { binding_id: binding_id, local_id: local_id, owned: owned, mutable: mutable };
@@ -262,7 +265,7 @@ requires_caps [allocate]
         if (kind == 20) {
             handled = 1; if (terminated != 0) { return 43; } if (event.a < 0) { return 44; }
             let entry: i64 = snapshot(states, snapshots);
-            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 20, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0 });
+            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 20, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0, match_count: 0, match_started: 0 });
             vec_push<MirLowerEvent>(output, mir_event_if(event.a)); terminated = 0;
         }
         if (kind == 21) {
@@ -270,7 +273,7 @@ requires_caps [allocate]
             let fi: i64 = checked_sub(vec_len<OwnershipFrame>(frames), 1); let f: OwnershipFrame = vec_get<OwnershipFrame>(frames, fi);
             if (f.kind != 20) { return 46; } if (f.seen_else != 0) { return 47; }
             let then_start: i64 = snapshot(states, snapshots); restore(states, snapshots, f.entry_start);
-            vec_set<OwnershipFrame>(frames, fi, OwnershipFrame { kind: 20, entry_start: f.entry_start, then_start: then_start, then_terminated: terminated, seen_else: 1 });
+            vec_set<OwnershipFrame>(frames, fi, OwnershipFrame { kind: 20, entry_start: f.entry_start, then_start: then_start, then_terminated: terminated, seen_else: 1, match_count: 0, match_started: 0 });
             vec_push<MirLowerEvent>(output, mir_event_else()); terminated = 0;
         }
         if (kind == 22) {
@@ -282,7 +285,7 @@ requires_caps [allocate]
         if (kind == 30) {
             handled = 1; if (terminated != 0) { return 50; } if (event.a < 0) { return 51; }
             let entry: i64 = snapshot(states, snapshots);
-            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 30, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0 });
+            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 30, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0, match_count: 0, match_started: 0 });
             vec_push<MirLowerEvent>(output, mir_event_while(event.a)); terminated = 0;
         }
         if (kind == 31) {
@@ -295,24 +298,24 @@ requires_caps [allocate]
         if (kind == 40) {
             handled = 1; if (terminated != 0) { return 75; } if (event.a < 0) { return 76; } if (event.b <= 0) { return 77; }
             let entry: i64 = snapshot(states, snapshots);
-            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 40, entry_start: entry, then_start: -1, then_terminated: event.b, seen_else: 0 });
+            vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 40, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0, match_count: event.b, match_started: 0 });
             vec_push<MirLowerEvent>(output, mir_event_match(event.a, checked_add(event.b, 1))); terminated = 1;
         }
         if (kind == 41) {
             handled = 1; if (vec_len<OwnershipFrame>(frames) == 0) { return 78; }
             let fi: i64 = checked_sub(vec_len<OwnershipFrame>(frames), 1); let f: OwnershipFrame = vec_get<OwnershipFrame>(frames, fi);
-            if (f.kind != 40) { return 79; } if (event.b != f.seen_else) { return 81; } if (event.b >= f.then_terminated) { return 82; }
+            if (f.kind != 40) { return 79; } if (event.b != f.match_started) { return 81; } if (event.b >= f.match_count) { return 82; }
             var survivor: i64 = f.then_start;
-            if (f.seen_else > 0) {
+            if (f.match_started > 0) {
                 survivor = finish_match_arm(states, snapshots, survivor, terminated); if (survivor == -80) { return 80; }
                 restore(states, snapshots, f.entry_start);
             }
-            vec_set<OwnershipFrame>(frames, fi, OwnershipFrame { kind: 40, entry_start: f.entry_start, then_start: survivor, then_terminated: f.then_terminated, seen_else: checked_add(f.seen_else, 1) });
+            vec_set<OwnershipFrame>(frames, fi, OwnershipFrame { kind: 40, entry_start: f.entry_start, then_start: survivor, then_terminated: 0, seen_else: 0, match_count: f.match_count, match_started: checked_add(f.match_started, 1) });
             vec_push<MirLowerEvent>(output, mir_event_case(event.a)); terminated = 0;
         }
         if (kind == 42) {
             handled = 1; if (vec_len<OwnershipFrame>(frames) == 0) { return 83; }
-            let f: OwnershipFrame = vec_pop<OwnershipFrame>(frames); if (f.kind != 40) { return 84; } if (f.seen_else != f.then_terminated) { return 85; }
+            let f: OwnershipFrame = vec_pop<OwnershipFrame>(frames); if (f.kind != 40) { return 84; } if (f.match_started != f.match_count) { return 85; }
             let survivor: i64 = finish_match_arm(states, snapshots, f.then_start, terminated); if (survivor == -80) { return 80; }
             vec_push<MirLowerEvent>(output, mir_event_default()); vec_push<MirLowerEvent>(output, mir_event_unreachable()); vec_push<MirLowerEvent>(output, mir_event_end_match());
             if (survivor < 0) { restore(states, snapshots, f.entry_start); terminated = 1; }
