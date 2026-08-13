@@ -2,6 +2,7 @@ module bootstrap_mir_function_contracts
 import bootstrap_tokens;
 import bootstrap_clauses;
 import bootstrap_expression_spans;
+import bootstrap_syntax;
 import bootstrap_hir;
 
 capability allocate;
@@ -89,7 +90,6 @@ requires_caps [allocate]
     index = 0;
     while (index < count) { vec_push<i64>(local_ids, -1); index = checked_add(index, 1); }
 
-    // Canonical HIR->MIR allocates a value's temporary before its child values.
     var stack: Vec<i64> = vec_new<i64>(allocator, count);
     vec_push<i64>(stack, checked_sub(count, 1));
     while (vec_len<i64>(stack) > 0) {
