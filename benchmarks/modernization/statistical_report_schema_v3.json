@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Merit modernization statistical report v3",
+  "type": "object",
+  "required": ["schema", "protocol_schema", "measurement", "ranking_eligible", "correctness_check_each_sample", "environment", "implementations", "limitations"],
+  "properties": {
+    "schema": {"const": "merit-modernization-statistical-report-v3"},
+    "protocol_schema": {"const": "merit-modernization-statistical-protocol-v1"},
+    "measurement": {"type": "string"},
+    "ranking_eligible": {"const": false},
+    "correctness_check_each_sample": {"const": true},
+    "environment": {"type": "object"},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "implementations": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["implementation", "semantic_digest", "warmup_processes", "measured_processes", "transactions_per_process", "statistics"],
+        "properties": {
+          "implementation": {"enum": ["merit", "java", "csharp"]},
+          "semantic_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "warmup_processes": {"type": "integer", "minimum": 1},
+          "measured_processes": {"type": "integer", "minimum": 5},
+          "transactions_per_process": {"type": "integer", "minimum": 1},
+          "statistics": {
+            "type": "object",
+            "required": ["samples_ns", "median_ns", "p95_ns", "mad_ns", "minimum_ns", "maximum_ns", "process_transactions_per_second_at_median"]
+          }
+        }
+      }
+    }
+  }
+}

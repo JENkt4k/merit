@@ -1,0 +1,25 @@
+{
+  "schema": "merit-modernization-defect-probes-v1",
+  "scope": "compile-time domain invariants in the benchmark baseline representations",
+  "probes": [
+    {
+      "id": "excess-money-scale",
+      "invariant": "USD values have exactly two fractional digits",
+      "merit_construct": "nominal decimal USD(18,2,half_even)",
+      "general_purpose_baseline": "BigDecimal/System.Decimal values are not nominal USD domains by themselves"
+    },
+    {
+      "id": "invalid-account-domain",
+      "invariant": "account identifiers are in 1..999999999999",
+      "merit_construct": "bounded AccountNumber(u64,1,999999999999)",
+      "general_purpose_baseline": "primitive long values require a wrapper, validation, or application convention"
+    },
+    {
+      "id": "mixed-currency-domain",
+      "invariant": "USD and EUR nominal values cannot be combined implicitly",
+      "merit_construct": "distinct nominal decimal domains",
+      "general_purpose_baseline": "BigDecimal/decimal alone do not encode a currency identity"
+    }
+  ],
+  "interpretation": "These probes compare the concrete benchmark baselines, not the maximum safety achievable with custom Java or C# domain types, analyzers, source generators, or frameworks."
+}

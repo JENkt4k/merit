@@ -1,0 +1,17 @@
+{
+  "schema": "merit-modernization-statistical-protocol-v1",
+  "warmup_processes": 2,
+  "measured_processes": 9,
+  "transactions_per_process": 10,
+  "statistics": ["median", "p95", "mad", "minimum", "maximum"],
+  "correctness_check_each_sample": true,
+  "measurement": "whole-process semantic workload latency after build",
+  "ranking_eligible": false,
+  "notes": [
+    "Build time is excluded from measured process latency.",
+    "Every warmup and measured process must reproduce the frozen semantic digest.",
+    "The JVM and CLR are new processes for every sample, so JIT/startup remains part of this metric.",
+    "This protocol is useful for reproducibility and process/startup behavior, not a claim about steady-state transaction-kernel throughput.",
+    "Kernel-throughput ranking remains disabled until equivalent in-process timing boundaries exist for Merit, Java, and C#."
+  ]
+}
