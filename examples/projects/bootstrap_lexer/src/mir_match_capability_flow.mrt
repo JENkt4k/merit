@@ -1,0 +1,152 @@
+module bootstrap_mir_match_capability_flow
+import bootstrap_statement_semantics;
+
+capability allocate;
+
+// Flat per-arm ownership-exit matrix. Each non-terminated arm must contribute
+// one state for every tracked binding. Terminated arms are excluded from the
+// surviving merge, matching the existing if-path ownership rule.
+pub struct MatchOwnershipExit {
+    arm_ordinal: i64;
+    binding_id: i64;
+    state: i32;
+    terminated: i32;
+}
+
+// Explicit capability effect IR. Capability identity is semantic and survives
+// beyond source spelling. Enter/exit are paired by lexical scope ordinal.
+pub struct MirCapabilityEffect {
+    kind: i32;
+    capability_id: i64;
+    statement_index: i64;
+    scope_ordinal: i64;
+}
+
+pub fn match_exit(arm_ordinal: i64, binding_id: i64, state: i32, terminated: i32) -> MatchOwnershipExit {
+    return MatchOwnershipExit {
+        arm_ordinal: arm_ordinal,
+        binding_id: binding_id,
+        state: state,
+        terminated: terminated
+    };
+}
+
+pub fn capability_effect_kind(borrow value: MirCapabilityEffect) -> i32 { return value.kind; }
+pub fn capability_effect_id(borrow value: MirCapabilityEffect) -> i64 { return value.capability_id; }
+pub fn capability_effect_statement(borrow value: MirCapabilityEffect) -> i64 { return value.statement_index; }
+pub fn capability_effect_ordinal(borrow value: MirCapabilityEffect) -> i64 { return value.scope_ordinal; }
+
+fn match_exit_find(
+    borrow exits: Vec<MatchOwnershipExit>, arm_ordinal: i64, binding_id: i64
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<MatchOwnershipExit>(exits)) {
+        let value: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, index);
+        if (value.arm_ordinal == arm_ordinal) {
+            if (value.binding_id == binding_id) { return index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn match_arm_terminated(
+    borrow exits: Vec<MatchOwnershipExit>, arm_ordinal: i64, binding_count: i64
+) -> i32 {
+    if (binding_count == 0) { return 0; }
+    let first_index: i64 = match_exit_find(exits, arm_ordinal, 0);
+    if (first_index < 0) { return -1; }
+    let first: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, first_index);
+    let terminated: i32 = first.terminated;
+    var binding: i64 = 1;
+    while (binding < binding_count) {
+        let index: i64 = match_exit_find(exits, arm_ordinal, binding);
+        if (index < 0) { return -1; }
+        let value: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, index);
+        if (value.terminated != terminated) { return -2; }
+        binding = checked_add(binding, 1);
+    }
+    return terminated;
+}
+
+pub fn validate_match_ownership_merge(
+    borrow arms: Vec<ResolvedMatchArm>,
+    binding_count: i64,
+    borrow exits: Vec<MatchOwnershipExit>,
+    borrow_mut merged_states: Vec<i32>
+) -> i32
+requires_caps [allocate]
+{
+    if (vec_len<ResolvedMatchArm>(arms) == 0) { return 1; }
+    if (binding_count < 0) { return 2; }
+    if (vec_len<MatchOwnershipExit>(exits) != vec_len<ResolvedMatchArm>(arms) * binding_count) { return 3; }
+
+    var survivor_arm: i64 = -1;
+    var arm_index: i64 = 0;
+    while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+        let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
+        if (resolved_match_ordinal(arm) != arm_index) { return 4; }
+        let terminated: i32 = match_arm_terminated(exits, arm_index, binding_count);
+        if (terminated < 0) { return 5; }
+        if (terminated == 0) {
+            if (survivor_arm < 0) { survivor_arm = arm_index; }
+        }
+        arm_index = checked_add(arm_index, 1);
+    }
+
+    // All arms terminate: there is no surviving ownership state to merge.
+    if (survivor_arm < 0) { return 0; }
+
+    var binding: i64 = 0;
+    while (binding < binding_count) {
+        let base_index: i64 = match_exit_find(exits, survivor_arm, binding);
+        if (base_index < 0) { return 6; }
+        let base: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, base_index);
+        if (base.state < 0) { return 7; }
+        if (base.state > 3) { return 7; }
+
+        arm_index = 0;
+        while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+            let terminated: i32 = match_arm_terminated(exits, arm_index, binding_count);
+            if (terminated == 0) {
+                let candidate_index: i64 = match_exit_find(exits, arm_index, binding);
+                if (candidate_index < 0) { return 8; }
+                let candidate: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, candidate_index);
+                if (candidate.state != base.state) { return 9; }
+            }
+            arm_index = checked_add(arm_index, 1);
+        }
+        vec_push<i32>(merged_states, base.state);
+        binding = checked_add(binding, 1);
+    }
+    return 0;
+}
+
+pub fn lower_capability_effects(
+    borrow scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut output: Vec<MirCapabilityEffect>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    while (index < vec_len<ResolvedCapabilityScope>(scopes)) {
+        let scope: ResolvedCapabilityScope = vec_get<ResolvedCapabilityScope>(scopes, index);
+        if (resolved_capability_ordinal(scope) != index) { return 20; }
+        let capability_id: i64 = resolved_capability_id(scope);
+        if (capability_id < 0) { return 21; }
+        vec_push<MirCapabilityEffect>(output, MirCapabilityEffect {
+            kind: 1,
+            capability_id: capability_id,
+            statement_index: resolved_capability_statement(scope),
+            scope_ordinal: index
+        });
+        vec_push<MirCapabilityEffect>(output, MirCapabilityEffect {
+            kind: 2,
+            capability_id: capability_id,
+            statement_index: resolved_capability_statement(scope),
+            scope_ordinal: index
+        });
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
