@@ -1,0 +1,7 @@
+[package]
+name = "modernization_benchmark"
+entry = "src/main.mrt"
+sources = ["src/**/*.mrt"]
+
+[build]
+c_flags = ["-O2"]
