@@ -53,7 +53,8 @@ pub fn ownership_record_state_after(borrow value: MirOwnershipRecord) -> i32 { r
 fn find_binding(borrow bindings: Vec<MirOwnershipBinding>, id: i64) -> i64 {
     var i: i64 = 0;
     while (i < vec_len<MirOwnershipBinding>(bindings)) {
-        if (vec_get<MirOwnershipBinding>(bindings, i).binding_id == id) { return i; }
+        let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, i);
+        if (binding.binding_id == id) { return i; }
         i = checked_add(i, 1);
     }
     return -1;
