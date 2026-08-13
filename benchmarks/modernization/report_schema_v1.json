@@ -27,6 +27,7 @@
         "required": [
           "implementation",
           "numeric_model",
+          "semantic_configuration",
           "correctness",
           "outcome_sha256",
           "source_bytes",
@@ -39,6 +40,19 @@
         "properties": {
           "implementation": {"type": "string"},
           "numeric_model": {"type": "string"},
+          "semantic_configuration": {
+            "type": "object",
+            "required": [
+              "numeric_type",
+              "precision_policy",
+              "scale_policy",
+              "rounding_policy",
+              "range_policy",
+              "overflow_policy",
+              "representation_boundary"
+            ],
+            "additionalProperties": {"type": "string"}
+          },
           "correctness": {"const": "pass"},
           "outcome_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "source_bytes": {"type": "integer", "minimum": 1},
