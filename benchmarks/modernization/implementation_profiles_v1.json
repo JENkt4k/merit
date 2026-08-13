@@ -1,0 +1,23 @@
+{
+  "schema": "merit-modernization-implementation-profiles-v1",
+  "implementations": {
+    "merit": {
+      "numeric_type": "language nominal decimal USD",
+      "precision_policy": "declared by decimal USD(18,2,half_even)",
+      "scale_policy": "declared by decimal type; excess-scale literals rejected",
+      "rounding_policy": "half_even attached to nominal decimal type",
+      "range_policy": "AccountNumber and Sequence are language bounded types; balance maximum is an explicit business rule",
+      "overflow_policy": "checked_add/checked_sub plus decimal domain bounds",
+      "representation_boundary": "canonical financial values; COBOL physical encoding handled separately by merit-copybook"
+    },
+    "java": {
+      "numeric_type": "java.math.BigDecimal library type",
+      "precision_policy": "application literals and business checks; BigDecimal itself is arbitrary precision",
+      "scale_policy": "application-created scale-bearing literals; BigDecimal permits values with differing scales",
+      "rounding_policy": "no rounding occurs in this add/subtract workload; operations requiring rounding must select policy explicitly",
+      "range_policy": "primitive long identifiers/sequences plus application business checks",
+      "overflow_policy": "BigDecimal arithmetic is arbitrary precision; business maximum enforced by application comparison",
+      "representation_boundary": "canonical financial values; legacy physical encoding requires a separate adapter"
+    }
+  }
+}
