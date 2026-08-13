@@ -1,0 +1,203 @@
+module bootstrap_mir_source_ownership_expression
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_statements;
+import bootstrap_expression_spans;
+import bootstrap_hir;
+import bootstrap_mir_ownership_flow;
+
+capability allocate;
+
+pub fn source_ownership_operand(
+    borrow statement: StatementRecord, borrow operands: Vec<StatementOperand>,
+    operand_kind: i32, ordinal: i64
+) -> i64 {
+    var offset: i64 = 0;
+    var seen: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == operand_kind) {
+            if (seen == ordinal) { return index; }
+            seen = checked_add(seen, 1);
+        }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+fn source_find_binding(
+    borrow source: Buffer, borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
+    start: i64, length: i64
+) -> i64 {
+    return hir_find_binding_id(source, starts, lengths, start, length);
+}
+
+pub fn source_collect_bindings(
+    borrow statements: Vec<StatementRecord>, borrow operands: Vec<StatementOperand>,
+    borrow_mut starts: Vec<i64>, borrow_mut lengths: Vec<i64>,
+    borrow metadata: Vec<MirOwnershipBinding>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    while (index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
+        let kind: i32 = statement_record_kind(statement);
+        if (kind == 20) {
+            let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
+            if (operand_index < 0) { return 1; }
+            let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+            vec_push<i64>(starts, statement_operand_start(operand));
+            vec_push<i64>(lengths, statement_operand_length(operand));
+        }
+        if (kind == 21) {
+            let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
+            if (operand_index < 0) { return 1; }
+            let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+            vec_push<i64>(starts, statement_operand_start(operand));
+            vec_push<i64>(lengths, statement_operand_length(operand));
+        }
+        index = checked_add(index, 1);
+    }
+    if (vec_len<i64>(starts) != vec_len<MirOwnershipBinding>(metadata)) { return 2; }
+    index = 0;
+    while (index < vec_len<MirOwnershipBinding>(metadata)) {
+        let semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, index);
+        if (ownership_binding_id(semantic) != index) { return 3; }
+        if (ownership_binding_local_id(semantic) != index) { return 4; }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+pub fn source_binding_index(
+    borrow source: Buffer, borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>, borrow starts: Vec<i64>, borrow lengths: Vec<i64>
+) -> i64 {
+    let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
+    if (operand_index < 0) { return -1; }
+    let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+    return source_find_binding(
+        source, starts, lengths,
+        statement_operand_start(operand), statement_operand_length(operand)
+    );
+}
+
+pub fn source_expression(
+    borrow source: Buffer, borrow tokens: Vec<Token>,
+    borrow binding_starts: Vec<i64>, borrow binding_lengths: Vec<i64>,
+    expression_start: i64, expression_length: i64, allocator: Allocator,
+    borrow_mut counters: Vec<i64>, borrow_mut direct_binding: Vec<i64>,
+    borrow_mut events: Vec<MirOwnershipEvent>
+) -> i64
+requires_caps [allocate]
+{
+    let expressions: Vec<ExpressionNode> = parse_expression_span(
+        source, tokens, expression_start, expression_length, allocator
+    );
+    let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
+    let count: i64 = vec_len<AstNodeRecord>(ast_nodes);
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, count);
+    var index: i64 = 0;
+    while (index < count) {
+        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, index);
+        var binding_id: i64 = -1;
+        if (ast_kind(ast) == 30) {
+            binding_id = source_find_binding(
+                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+            );
+        }
+        vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
+            ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
+            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, 1
+        ));
+        index = checked_add(index, 1);
+    }
+
+    var local_ids: Vec<i64> = vec_new<i64>(allocator, count);
+    index = 0;
+    while (index < count) { vec_push<i64>(local_ids, -1); index = checked_add(index, 1); }
+    var stack: Vec<i64> = vec_new<i64>(allocator, checked_add(count, 1));
+    var status: i64 = 0;
+    if (count > 0) { vec_push<i64>(stack, checked_sub(count, 1)); }
+    while (vec_len<i64>(stack) > 0) {
+        let current: i64 = vec_pop<i64>(stack);
+        if (status == 0) {
+            let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, current);
+            let kind: i32 = hir_kind(hir);
+            if (kind == 3) {
+                let child: i64 = hir_left(hir);
+                if (child < 0) { status = -2; } else { vec_push<i64>(stack, child); }
+            } else {
+                if (kind == 4) {
+                    if (hir_binding_id(hir) < 0) { status = -3; }
+                    else { vec_set<i64>(local_ids, current, hir_binding_id(hir)); }
+                } else {
+                    if (kind == 1) {
+                        let next_local: i64 = vec_get<i64>(counters, 0);
+                        vec_set<i64>(local_ids, current, next_local);
+                        vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                    } else {
+                        if (kind == 2) {
+                            let next_local: i64 = vec_get<i64>(counters, 0);
+                            vec_set<i64>(local_ids, current, next_local);
+                            vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                            vec_push<i64>(stack, hir_right(hir));
+                            vec_push<i64>(stack, hir_left(hir));
+                        } else {
+                            if (kind == 5) {
+                                let next_local: i64 = vec_get<i64>(counters, 0);
+                                vec_set<i64>(local_ids, current, next_local);
+                                vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                                vec_push<i64>(stack, hir_right(hir));
+                                vec_push<i64>(stack, hir_left(hir));
+                            } else { status = -4; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    drop(stack);
+
+    if (status == 0) {
+        index = 0;
+        while (index < count) {
+            let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, index);
+            if (hir_kind(hir) == 3) {
+                vec_set<i64>(local_ids, index, vec_get<i64>(local_ids, hir_left(hir)));
+            }
+            index = checked_add(index, 1);
+        }
+        index = 0;
+        while (index < count) {
+            let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, index);
+            let kind: i32 = hir_kind(hir);
+            if (kind == 1) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            if (kind == 2) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            if (kind == 5) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            index = checked_add(index, 1);
+        }
+    }
+
+    var result: i64 = status;
+    var root_binding: i64 = -1;
+    if (status == 0) {
+        if (count == 0) { result = -5; }
+        else {
+            let root_index: i64 = checked_sub(count, 1);
+            result = vec_get<i64>(local_ids, root_index);
+            var root: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, root_index);
+            var root_kind: i32 = hir_kind(root);
+            while (root_kind == 3) {
+                root = vec_get<HirExpressionRecord>(hir_nodes, hir_left(root));
+                root_kind = hir_kind(root);
+            }
+            if (root_kind == 4) { root_binding = hir_binding_id(root); }
+        }
+    }
+    vec_set<i64>(direct_binding, 0, root_binding);
+    drop(local_ids); drop(hir_nodes); drop(ast_nodes); drop(expressions);
+    return result;
+}
