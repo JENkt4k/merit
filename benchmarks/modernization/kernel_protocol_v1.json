@@ -1,0 +1,20 @@
+{
+  "schema": "merit-modernization-kernel-protocol-v1",
+  "measurement": "steady_state_in_process_transaction_kernel",
+  "ranking_eligible": true,
+  "correctness_gate_required": true,
+  "warmup_batches": 5,
+  "measured_batches": 11,
+  "iterations_per_batch": 10000,
+  "transactions_per_iteration": 12,
+  "state_reset": "fresh frozen-corpus account state before every iteration",
+  "clock_scope": "only repeated transaction application; initialization, output, process startup, build and semantic serialization excluded",
+  "statistics": ["median", "p95", "mad", "minimum", "maximum"],
+  "anti_optimization": "accumulate result codes and final balances into an observable checksum",
+  "notes": [
+    "Ranking eligibility applies only to this narrowly defined kernel metric.",
+    "Every implementation must execute the same frozen transaction corpus and reset state identically.",
+    "Warmup batches are untimed for ranking and permit JVM/CLR JIT stabilization.",
+    "A semantic correctness execution remains mandatory before timing results are accepted."
+  ]
+}
