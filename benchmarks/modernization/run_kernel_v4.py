@@ -39,7 +39,7 @@ fn main()->i32 {{ with capability allocate {{ let alloc:Allocator=system_allocat
 {tx}
                     let after:i64=monotonic_ns(); elapsed=checked_add(elapsed,checked_sub(after,before)); }}
 {sums}
-                var j:i64=0; while(j<vec_len<Account>(a)){{ let x:Account=vec_get<Account>(a,j); checksum=checked_add(checksum,x.minor%1000003); j=checked_add(j,1); }} drop(a); it=checked_add(it,1); }}
+                var j:i64=0; while(j<vec_len<Account>(a)){{ let x:Account=vec_get<Account>(a,j); checksum=checked_add(checksum,x.minor/1000003); j=checked_add(j,1); }} drop(a); it=checked_add(it,1); }}
             print("KERNEL"); print(elapsed); print(checksum); batch=checked_add(batch,1); }} }} return 0; }}
 '''
 
@@ -54,7 +54,7 @@ public final class ModernizationKernel{{ static final BigDecimal Z=new BigDecima
  static final class A{{final long id;BigDecimal b;long minor,seq;A(long i,BigDecimal b,long m,long s){{id=i;this.b=b;minor=m;seq=s;}}}}
  static A[] fresh(){{return new A[]{{{ac}}};}} static int find(A[]a,long id){{for(int i=0;i<a.length;i++)if(a[i].id==id)return i;return -1;}}
  static int apply(A[]a,long d,long c,BigDecimal m,long minor,long s){{if(m.compareTo(Z)<=0)return 1;if(d==c)return 2;int di=find(a,d);if(di<0)return 3;int ci=find(a,c);if(ci<0)return 4;A x=a[di],y=a[ci];if(s<=x.seq||s<=y.seq)return 5;if(x.b.compareTo(m)<0)return 6;if(y.b.compareTo(MAX.subtract(m))>0)return 7;x.b=x.b.subtract(m);x.minor-=minor;y.b=y.b.add(m);y.minor+=minor;x.seq=s;y.seq=s;return 0;}}
- public static void main(String[]z){{for(int batch=0;batch<{batches};batch++){{long elapsed=0,checksum=0;for(int it=0;it<{n};it++){{A[]a=fresh();long before=System.nanoTime();{tx} long after=System.nanoTime();elapsed+=after-before;{sums} for(A x:a)checksum+=x.minor%1000003L;}}System.out.println("KERNEL");System.out.println(elapsed);System.out.println(checksum);}}}}
+ public static void main(String[]z){{for(int batch=0;batch<{batches};batch++){{long elapsed=0,checksum=0;for(int it=0;it<{n};it++){{A[]a=fresh();long before=System.nanoTime();{tx} long after=System.nanoTime();elapsed+=after-before;{sums} for(A x:a)checksum+=x.minor/1000003L;}}System.out.println("KERNEL");System.out.println(elapsed);System.out.println(checksum);}}}}
 }}
 '''
 
@@ -64,7 +64,7 @@ def csharp(data,p):
     tx='\n'.join(f'var r{i}=Apply(a,{t["debit"]}L,{t["credit"]}L,{money(t["amount_minor"])}m,{t["amount_minor"]}L,{t["sequence"]}L);' for i,t in enumerate(data['transactions']))
     sums=''.join(f' checksum+=r{i};' for i,_ in enumerate(data['transactions']))
     return f'''using System;using System.Diagnostics;
-internal static class ModernizationKernel{{const decimal Max={money(data['max_balance_minor'])}m;sealed class A{{internal readonly long Id;internal decimal B;internal long Minor,Seq;internal A(long i,decimal b,long m,long s){{Id=i;B=b;Minor=m;Seq=s;}}}}static A[] Fresh()=>new A[]{{{ac}}};static int Find(A[]a,long id){{for(var i=0;i<a.Length;i++)if(a[i].Id==id)return i;return -1;}}static int Apply(A[]a,long d,long c,decimal m,long minor,long s){{if(m<=0m)return 1;if(d==c)return 2;var di=Find(a,d);if(di<0)return 3;var ci=Find(a,c);if(ci<0)return 4;var x=a[di];var y=a[ci];if(s<=x.Seq||s<=y.Seq)return 5;if(x.B<m)return 6;if(y.B>Max-m)return 7;checked{{x.B-=m;x.Minor-=minor;y.B+=m;y.Minor+=minor;}}x.Seq=s;y.Seq=s;return 0;}}public static int Main(){{for(var batch=0;batch<{batches};batch++){{long elapsed=0,checksum=0;for(var it=0;it<{n};it++){{var a=Fresh();var before=Stopwatch.GetTimestamp();{tx}var after=Stopwatch.GetTimestamp();elapsed+=(long)((after-before)*(1_000_000_000.0/Stopwatch.Frequency));{sums}foreach(var x in a)checksum+=x.Minor%1000003L;}}Console.WriteLine("KERNEL");Console.WriteLine(elapsed);Console.WriteLine(checksum);}}return 0;}}}}
+internal static class ModernizationKernel{{const decimal Max={money(data['max_balance_minor'])}m;sealed class A{{internal readonly long Id;internal decimal B;internal long Minor,Seq;internal A(long i,decimal b,long m,long s){{Id=i;B=b;Minor=m;Seq=s;}}}}static A[] Fresh()=>new A[]{{{ac}}};static int Find(A[]a,long id){{for(var i=0;i<a.Length;i++)if(a[i].Id==id)return i;return -1;}}static int Apply(A[]a,long d,long c,decimal m,long minor,long s){{if(m<=0m)return 1;if(d==c)return 2;var di=Find(a,d);if(di<0)return 3;var ci=Find(a,c);if(ci<0)return 4;var x=a[di];var y=a[ci];if(s<=x.Seq||s<=y.Seq)return 5;if(x.B<m)return 6;if(y.B>Max-m)return 7;checked{{x.B-=m;x.Minor-=minor;y.B+=m;y.Minor+=minor;}}x.Seq=s;y.Seq=s;return 0;}}public static int Main(){{for(var batch=0;batch<{batches};batch++){{long elapsed=0,checksum=0;for(var it=0;it<{n};it++){{var a=Fresh();var before=Stopwatch.GetTimestamp();{tx}var after=Stopwatch.GetTimestamp();elapsed+=(long)((after-before)*(1_000_000_000.0/Stopwatch.Frequency));{sums}foreach(var x in a)checksum+=x.Minor/1000003L;}}Console.WriteLine("KERNEL");Console.WriteLine(elapsed);Console.WriteLine(checksum);}}return 0;}}}}
 '''
 
 def generate_kernel_sources():
