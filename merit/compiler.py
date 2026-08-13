@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile
+import argparse, contextlib, dataclasses, hashlib, io, json, os, re, subprocess, sys, tempfile, time
 from collections.abc import Mapping
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
@@ -805,6 +805,7 @@ BUILTIN_SIGS={
     'i64vec_allocator':BuiltinSig((('borrow','I64Vec'),), 'Allocator'),
     'file_read':BuiltinSig((('value','Allocator'),('value','String')), 'FileReadResult', 'file_read', 'filesystem_read', ('allocate',)),
     'file_write':BuiltinSig((('value','String'),('borrow','Buffer')), 'FileWriteResult', 'file_write', 'filesystem_write', ('allocate',)),
+    'monotonic_ns':BuiltinSig((), 'i64', 'clock', 'monotonic_clock'),
 }
 
 CAPABILITY_POLICIES={
@@ -812,6 +813,7 @@ CAPABILITY_POLICIES={
     'file_read':CapabilityPolicy('file_read','filesystem_read','io-read','lexical'),
     'file_write':CapabilityPolicy('file_write','filesystem_write','io-write','lexical'),
     'foreign_call':CapabilityPolicy('foreign_call','foreign_call','ffi-boundary','lexical'),
+    'clock':CapabilityPolicy('clock','monotonic_clock','time-read','lexical'),
 }
 
 def capability_policy(cap: str) -> dict[str,str]:
@@ -1776,6 +1778,7 @@ class Interpreter:
                 old_env=env.get('__old__')
                 if old_env is None: raise RuntimeError('old() is only valid in postconditions')
                 return self.eval(args[0],old_env)
+            if n=='monotonic_ns': return TypedValue('i64',time.monotonic_ns())
             if n=='system_allocator': return TypedValue('Allocator','system')
             if n=='portable_allocator': return TypedValue('Allocator','portable')
             if n=='allocator_compatible': return TypedValue('i32',int(self.eval(args[0],env).value==self.eval(args[1],env).value))
@@ -2017,9 +2020,24 @@ class CGenerator:
             o.append(f'{return_type} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
-        o=['#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
+        o=['#if !defined(_WIN32)','#ifndef _POSIX_C_SOURCE','#define _POSIX_C_SOURCE 200809L','#endif','#endif','#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(_WIN32)','#include <windows.h>','#else','#include <time.h>','#endif','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
         o.append(self.header(include_private=True).replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
+              r'''static int64_t merit_monotonic_ns(void){
+#if defined(_WIN32)
+LARGE_INTEGER frequency,counter;
+if(!QueryPerformanceFrequency(&frequency)||frequency.QuadPart<=0||!QueryPerformanceCounter(&counter))merit_fail("monotonic clock failed",74);
+int64_t seconds=(int64_t)(counter.QuadPart/frequency.QuadPart);
+int64_t remainder=(int64_t)(counter.QuadPart%frequency.QuadPart);
+if(seconds>INT64_MAX/1000000000LL)merit_fail("monotonic clock overflow",74);
+return seconds*1000000000LL+(int64_t)(((long double)remainder*1000000000.0L)/(long double)frequency.QuadPart);
+#else
+struct timespec value;
+if(clock_gettime(CLOCK_MONOTONIC,&value)!=0)merit_fail("monotonic clock failed",74);
+if(value.tv_sec<0||(uint64_t)value.tv_sec>(uint64_t)(INT64_MAX/1000000000LL))merit_fail("monotonic clock overflow",74);
+return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
+#endif
+}''',
               r'''static merit_Allocator merit_system_allocator(void){return (merit_Allocator){0};}''',
               r'''static merit_Allocator merit_portable_allocator(void){return (merit_Allocator){1};}''',
               r'''static int32_t merit_allocator_compatible(merit_Allocator a,merit_Allocator b){return a.kind==b.kind;}''',
@@ -2420,6 +2438,7 @@ class CGenerator:
                 rendered='' if variant.payload_type is None else self.expr(a[0],env,variant.payload_type)
                 return f'merit_make_{enum.name}_{variant.name}({rendered})'
             if n=='old':return self.old_map[repr(a[0])]
+            if n=='monotonic_ns': return 'merit_monotonic_ns()'
             if n=='system_allocator': return 'merit_system_allocator()'
             if n=='portable_allocator': return 'merit_portable_allocator()'
             if n=='allocator_compatible': return f'merit_allocator_compatible({self.expr(a[0],env)}, {self.expr(a[1],env)})'
