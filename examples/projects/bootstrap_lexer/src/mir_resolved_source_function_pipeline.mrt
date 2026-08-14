@@ -1,0 +1,162 @@
+module bootstrap_mir_resolved_source_function_pipeline
+import bootstrap_tokens;
+import bootstrap_statements;
+import bootstrap_statement_structure;
+import bootstrap_statement_semantics;
+import bootstrap_mir_functions;
+import bootstrap_mir_structured_lowering;
+import bootstrap_mir_function_clause_metadata;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_source_function_pipeline;
+import bootstrap_mir_match_capability_flow;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_source_ownership_lowering;
+
+capability allocate;
+
+// The source-function body-record stage currently owns these statement kinds.
+// Resolved ownership/control owns the wider effect surface (drop, match,
+// capability scopes, replace). Keep that boundary explicit until the shared
+// expression traversal replaces both implementations.
+fn resolved_pipeline_body_kind(kind: i32) -> i32 {
+    if (kind == 20) { return 1; }
+    if (kind == 21) { return 1; }
+    if (kind == 22) { return 1; }
+    if (kind == 25) { return 1; }
+    if (kind == 26) { return 1; }
+    return 0;
+}
+
+fn resolved_pipeline_filter_body_statements(
+    borrow statements: Vec<StatementRecord>,
+    borrow_mut output: Vec<StatementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    while (index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
+        if (resolved_pipeline_body_kind(statement_record_kind(statement)) != 0) {
+            vec_push<StatementRecord>(output, statement);
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+// Cross-stream guard for the duplicated traversal that still exists today.
+// Instruction placement differs because ownership inserts lifecycle operations,
+// so compare the semantic return surface only. Match/capability structure is
+// authoritative from the resolved ownership stream.
+pub fn validate_resolved_function_return_surface(
+    borrow body_records: Vec<MirFunctionRecord>,
+    borrow canonical_events: Vec<MirLowerEvent>
+) -> i32 {
+    var body_returns: i64 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<MirFunctionRecord>(body_records)) {
+        let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, index);
+        if (function_mir_kind(record) == 7) { body_returns = checked_add(body_returns, 1); }
+        index = checked_add(index, 1);
+    }
+    var canonical_returns: i64 = 0;
+    index = 0;
+    while (index < vec_len<MirLowerEvent>(canonical_events)) {
+        let event: MirLowerEvent = vec_get<MirLowerEvent>(canonical_events, index);
+        if (lower_event_kind(event) == 2) { canonical_returns = checked_add(canonical_returns, 1); }
+        index = checked_add(index, 1);
+    }
+    if (body_returns != canonical_returns) { return 1; }
+    return 0;
+}
+
+// One production entrypoint for the currently separate real-source semantic
+// stages. The caller supplies typed declaration catalogs and ownership metadata;
+// all statement structure, resolved match/capability identities, clauses,
+// contracts, ownership effects, and canonical structured events are derived
+// from the same source/tokens/statements in this function.
+pub fn lower_resolved_source_function_semantics(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow ownership_metadata: Vec<MirOwnershipBinding>,
+    allocator: Allocator,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut canonical_events: Vec<MirLowerEvent>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>
+) -> i32
+requires_caps [allocate]
+{
+    var body_statements: Vec<StatementRecord> = vec_new<StatementRecord>(
+        allocator, vec_len<StatementRecord>(statements)
+    );
+    let filter_status: i32 = resolved_pipeline_filter_body_statements(statements, body_statements);
+    if (filter_status != 0) { return checked_add(100, filter_status); }
+
+    // #64 body + function-clause path. Its structured events are deliberately
+    // scratch here: canonical structure for resolved effects comes from the
+    // path-sensitive ownership reducer below.
+    var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
+    let function_status: i32 = lower_source_function_semantics(
+        source, tokens, body_statements, statement_operands, capability_catalog,
+        allocator, body_records, body_events, clause_metadata, contract_records
+    );
+    if (function_status != 0) { return checked_add(200, function_status); }
+
+    var raw_arms: Vec<MatchArmRecord> = vec_new<MatchArmRecord>(allocator, 8);
+    var raw_scopes: Vec<CapabilityScopeRecord> = vec_new<CapabilityScopeRecord>(allocator, 8);
+    let arm_status: i32 = lower_match_arm_records(source, tokens, statements, raw_arms);
+    if (arm_status != 0) { return checked_add(300, arm_status); }
+    let scope_status: i32 = lower_capability_scope_records(
+        source, tokens, statements, statement_operands, raw_scopes
+    );
+    if (scope_status != 0) { return checked_add(400, scope_status); }
+
+    if (vec_len<MatchArmRecord>(raw_arms) > 0) {
+        let resolve_arms_status: i32 = resolve_match_arms(
+            source, raw_arms, enum_catalog, match_enum_id, resolved_arms
+        );
+        if (resolve_arms_status != 0) { return checked_add(500, resolve_arms_status); }
+    }
+    let resolve_scopes_status: i32 = resolve_capability_scopes(
+        source, raw_scopes, capability_catalog, resolved_scopes
+    );
+    if (resolve_scopes_status != 0) { return checked_add(600, resolve_scopes_status); }
+
+    let ownership_source_status: i32 = lower_resolved_source_ownership_events(
+        source, tokens, statements, statement_operands, ownership_metadata,
+        resolved_arms, resolved_scopes, allocator, ownership_events, capability_effects
+    );
+    if (ownership_source_status != 0) { return checked_add(700, ownership_source_status); }
+
+    let ownership_status: i32 = lower_ownership_flow(
+        ownership_events, ownership_metadata, allocator,
+        canonical_events, ownership_records
+    );
+    if (ownership_status != 0) { return checked_add(800, ownership_status); }
+    let ownership_validation: i32 = validate_ownership_records(
+        ownership_records, ownership_metadata
+    );
+    if (ownership_validation != 0) { return checked_add(900, ownership_validation); }
+
+    let return_surface: i32 = validate_resolved_function_return_surface(
+        body_records, canonical_events
+    );
+    if (return_surface != 0) { return checked_add(1000, return_surface); }
+
+    drop(raw_scopes);
+    drop(raw_arms);
+    drop(body_events);
+    drop(body_statements);
+    return 0;
+}
