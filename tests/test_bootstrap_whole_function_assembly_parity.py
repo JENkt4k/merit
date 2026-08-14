@@ -11,7 +11,7 @@ from merit.bootstrap.mir_function_assembly_parity import lower_native_whole_func
 from merit.bootstrap.mir_to_c import emit_c_module
 
 
-SOURCE = "module demo\nfn compute()->i64 requires_caps [clock] requires true ensures true { if true { return 7; } return 9; }\n"
+SOURCE = "module demo\nfn compute()->i64 requires_caps [clock] requires true ensures true { if 1 { return 7; } return 9; }\n"
 
 
 def _span(text: str) -> tuple[int, int]:
@@ -22,6 +22,7 @@ def _span(text: str) -> tuple[int, int]:
 def _records():
     fn_start, fn_len = _span("compute")
     true_start, true_len = _span("true")
+    one_start, one_len = _span("1")
     seven_start, seven_len = _span("7")
     nine_start, nine_len = _span("9")
 
@@ -31,7 +32,7 @@ def _records():
         (3, 0, 0, 0, -1, -1, -1, -1, 0, 0, 2, 0, -1, 0, 0, 0),
         (3, 0, 0, 1, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 1, 1),
         (3, 0, 0, 2, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
-        (4, true_start, true_len, 0, 0, -1, -1, -1, 0, 0, 2, 0, -1, 0, 0, 0),
+        (4, one_start, one_len, 0, 0, -1, -1, -1, 0, 0, 2, 0, -1, 0, 0, 0),
         (4, seven_start, seven_len, 1, 1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 1, 1),
         (4, nine_start, nine_len, 2, 2, -1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
     )
@@ -45,8 +46,6 @@ def _records():
         (3, 0, 2, 1, 0),
         (4, 1, 2, 2, 1),
     )
-    # global id, source kind (1 contract / 2 body), source id, contract kind,
-    # clause ordinal, remapped result, remapped left, remapped right.
     sources = (
         (0, 1, 0, 1, 0, 3, -1, -1),
         (1, 1, 1, 1, 0, -1, 3, -1),
@@ -76,9 +75,9 @@ def _records():
     return body, contracts, contract_locals, sources, cfg, placements
 
 
-def test_native_assembly_materializes_canonical_contract_cfg():
+def _module():
     body, contracts, contract_locals, sources, cfg, placements = _records()
-    module = lower_native_whole_function_assembly(
+    return lower_native_whole_function_assembly(
         source=SOURCE,
         module_name="demo",
         body_records=body,
@@ -90,6 +89,10 @@ def test_native_assembly_materializes_canonical_contract_cfg():
         capability_ids=(9,),
         capability_names={9: "clock"},
     )
+
+
+def test_native_assembly_materializes_canonical_contract_cfg():
+    module = _module()
     function = module.functions[0]
     assert function.name == "compute"
     assert function.capabilities == ("clock",)
@@ -103,28 +106,15 @@ def test_native_assembly_materializes_canonical_contract_cfg():
     assert function.blocks[2].terminator.kind == "jump"
     assert function.blocks[3].terminator.kind == "return"
     data = canonical_mir_json(module)
-    assert '"capabilities":["clock"]' in data
-    assert data.count('"contract_kind":"postcondition"') == 2
+    assert '\"capabilities\":[\"clock\"]' in data
+    assert data.count('\"contract_kind\":\"postcondition\"') == 2
 
 
 def test_canonical_assembled_mir_emits_and_executes_c(tmp_path: Path):
     cc = shutil.which("cc")
     if cc is None:
         pytest.skip("system C compiler is unavailable")
-    body, contracts, contract_locals, sources, cfg, placements = _records()
-    module = lower_native_whole_function_assembly(
-        source=SOURCE,
-        module_name="demo",
-        body_records=body,
-        contract_records=contracts,
-        contract_locals=contract_locals,
-        instruction_sources=sources,
-        cfg_records=cfg,
-        placements=placements,
-        capability_ids=(9,),
-        capability_names={9: "clock"},
-    )
-    c_source = emit_c_module(module) + "\n#include <stdio.h>\nint main(void){ printf(\"%lld\\n\", (long long)compute()); return 0; }\n"
+    c_source = emit_c_module(_module()) + "\n#include <stdio.h>\nint main(void){ printf(\"%lld\\n\", (long long)compute()); return 0; }\n"
     c_path = tmp_path / "whole_function.c"
     executable = tmp_path / "whole_function"
     c_path.write_text(c_source, encoding="utf-8")
