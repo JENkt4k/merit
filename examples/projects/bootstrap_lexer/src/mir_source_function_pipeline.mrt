@@ -1,0 +1,78 @@
+module bootstrap_mir_source_function_pipeline
+import bootstrap_tokens;
+import bootstrap_statements;
+import bootstrap_clauses;
+import bootstrap_statement_semantics;
+import bootstrap_mir_functions;
+import bootstrap_mir_structured_lowering;
+import bootstrap_mir_source_function_records;
+import bootstrap_mir_function_clause_metadata;
+import bootstrap_mir_function_contracts;
+
+capability allocate;
+
+// Unified real-source function semantic entrypoint.
+//
+// The source body record stage remains the owner of body local/instruction
+// identity and structured placement events.  This stage adds function clauses
+// to that same source-backed pass, deriving contract binding spans directly
+// from the emitted source-local records rather than asking callers/tests to
+// reconstruct the body namespace.
+pub fn lower_source_function_semantics(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    allocator: Allocator,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut body_events: Vec<MirLowerEvent>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let body_status: i32 = lower_source_function_body_records(
+        source, tokens, statements, statement_operands, allocator,
+        body_records, body_events
+    );
+    if (body_status != 0) { return checked_add(100, body_status); }
+
+    var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    var index: i64 = 0;
+    while (index < vec_len<MirFunctionRecord>(body_records)) {
+        let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, index);
+        if (function_mir_kind(record) == 2) {
+            let expected_binding: i64 = vec_len<i64>(binding_starts);
+            if (function_mir_binding_id(record) != expected_binding) { return 201; }
+            vec_push<i64>(binding_starts, function_mir_start(record));
+            vec_push<i64>(binding_lengths, function_mir_length(record));
+        }
+        index = checked_add(index, 1);
+    }
+
+    let clauses: Vec<ClauseRecord> = parse_clause_records(source, tokens, allocator);
+    let clause_operands: Vec<ClauseOperand> = parse_clause_operands(source, tokens, allocator);
+
+    let metadata_status: i32 = lower_function_clause_metadata(
+        source, clauses, clause_operands, capability_catalog, clause_metadata
+    );
+    if (metadata_status != 0) { return checked_add(300, metadata_status); }
+    let metadata_validation: i32 = validate_function_clause_metadata(clause_metadata);
+    if (metadata_validation != 0) { return checked_add(400, metadata_validation); }
+
+    let contract_status: i32 = lower_function_contract_mir(
+        source, tokens, clauses, clause_operands,
+        binding_starts, binding_lengths, allocator, contract_records
+    );
+    if (contract_status != 0) { return checked_add(500, contract_status); }
+    let contract_validation: i32 = validate_function_contract_mir(contract_records);
+    if (contract_validation != 0) { return checked_add(600, contract_validation); }
+
+    drop(clause_operands);
+    drop(clauses);
+    drop(binding_lengths);
+    drop(binding_starts);
+    return 0;
+}
