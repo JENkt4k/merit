@@ -1,0 +1,323 @@
+module bootstrap_mir_source_function_records
+import bootstrap_tokens;
+import bootstrap_syntax;
+import bootstrap_statements;
+import bootstrap_expression_spans;
+import bootstrap_hir;
+import bootstrap_mir_functions;
+import bootstrap_mir_statement_lowering;
+
+capability allocate;
+
+fn sfr_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
+    return buffer_get(source, checked_add(token_start(token), offset));
+}
+
+fn sfr_is_fn(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != 1) { return 0; }
+    if (token_length(token) != 2) { return 0; }
+    if (sfr_byte(source, token, 0) != 102) { return 0; }
+    if (sfr_byte(source, token, 1) != 110) { return 0; }
+    return 1;
+}
+
+fn sfr_function_name_index(borrow source: Buffer, borrow tokens: Vec<Token>) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (sfr_is_fn(source, token) != 0) {
+            let name_index: i64 = checked_add(index, 1);
+            if (name_index < vec_len<Token>(tokens)) { return name_index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn sfr_operand(
+    borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>,
+    wanted_kind: i32
+) -> i64 {
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == wanted_kind) { return index; }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+fn sfr_emit_expression(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow binding_starts: Vec<i64>,
+    borrow binding_lengths: Vec<i64>,
+    expression_start: i64,
+    expression_length: i64,
+    allocator: Allocator,
+    borrow_mut output: Vec<MirFunctionRecord>,
+    borrow_mut counters: Vec<i64>
+) -> i64
+requires_caps [allocate]
+{
+    let expressions: Vec<ExpressionNode> = parse_expression_span(
+        source, tokens, expression_start, expression_length, allocator
+    );
+    let ast_nodes: Vec<AstNodeRecord> = lower_expression_ast_records(expressions, allocator);
+    let count: i64 = vec_len<AstNodeRecord>(ast_nodes);
+    if (count == 0) { return -1; }
+    var hir_nodes: Vec<HirExpressionRecord> = vec_new<HirExpressionRecord>(allocator, count);
+    var ast_index: i64 = 0;
+    while (ast_index < count) {
+        let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
+        var binding_id: i64 = -1;
+        if (ast_kind(ast) == 30) {
+            binding_id = hir_find_binding_id(
+                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+            );
+        }
+        vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
+            ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
+            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, 1
+        ));
+        ast_index = checked_add(ast_index, 1);
+    }
+
+    var canonical_ids: Vec<i64> = vec_new<i64>(allocator, count);
+    var local_ids: Vec<i64> = vec_new<i64>(allocator, count);
+    var initialize: i64 = 0;
+    while (initialize < count) {
+        vec_push<i64>(canonical_ids, -1);
+        vec_push<i64>(local_ids, -1);
+        initialize = checked_add(initialize, 1);
+    }
+
+    var next_hir: i64 = vec_get<i64>(counters, 2);
+    var canonical_index: i64 = 0;
+    while (canonical_index < count) {
+        let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, canonical_index);
+        if (hir_kind(hir) == 3) {
+            vec_set<i64>(canonical_ids, canonical_index, vec_get<i64>(canonical_ids, hir_left(hir)));
+        } else {
+            vec_set<i64>(canonical_ids, canonical_index, next_hir);
+            next_hir = checked_add(next_hir, 1);
+        }
+        canonical_index = checked_add(canonical_index, 1);
+    }
+    vec_set<i64>(counters, 2, next_hir);
+
+    var stack: Vec<i64> = vec_new<i64>(allocator, count);
+    vec_push<i64>(stack, checked_sub(count, 1));
+    while (vec_len<i64>(stack) > 0) {
+        let current_index: i64 = vec_pop<i64>(stack);
+        let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, current_index);
+        let kind: i32 = hir_kind(hir);
+        if (kind == 3) {
+            vec_push<i64>(stack, hir_left(hir));
+        } else {
+            if (kind == 4) {
+                vec_set<i64>(local_ids, current_index, hir_binding_id(hir));
+            } else {
+                if (vec_get<i64>(local_ids, current_index) < 0) {
+                    let next_local: i64 = vec_get<i64>(counters, 0);
+                    vec_set<i64>(local_ids, current_index, next_local);
+                    vec_push<MirFunctionRecord>(output, function_mir_temporary(
+                        next_local, hir_type_code(hir), vec_get<i64>(canonical_ids, current_index)
+                    ));
+                    vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                }
+                if (kind == 2) {
+                    vec_push<i64>(stack, hir_right(hir));
+                    vec_push<i64>(stack, hir_left(hir));
+                }
+                if (kind == 5) {
+                    vec_push<i64>(stack, hir_right(hir));
+                    vec_push<i64>(stack, hir_left(hir));
+                }
+            }
+        }
+    }
+
+    var hir_index: i64 = 0;
+    while (hir_index < count) {
+        let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
+        let kind: i32 = hir_kind(hir);
+        if (kind == 1) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirFunctionRecord>(output, function_mir_const(
+                hir_start(hir), hir_length(hir), instruction_id,
+                vec_get<i64>(local_ids, hir_index), hir_type_code(hir),
+                vec_get<i64>(canonical_ids, hir_index)
+            ));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        if (kind == 2) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirFunctionRecord>(output, function_mir_binary(
+                hir_start(hir), hir_length(hir), instruction_id,
+                vec_get<i64>(local_ids, hir_index),
+                vec_get<i64>(local_ids, hir_left(hir)), vec_get<i64>(local_ids, hir_right(hir)),
+                hir_symbol(hir), hir_type_code(hir), hir_numeric_policy(hir),
+                vec_get<i64>(canonical_ids, hir_index)
+            ));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        if (kind == 5) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirFunctionRecord>(output, function_mir_binary(
+                hir_start(hir), hir_length(hir), instruction_id,
+                vec_get<i64>(local_ids, hir_index),
+                vec_get<i64>(local_ids, hir_left(hir)), vec_get<i64>(local_ids, hir_right(hir)),
+                hir_symbol(hir), hir_type_code(hir), hir_numeric_policy(hir),
+                vec_get<i64>(canonical_ids, hir_index)
+            ));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        hir_index = checked_add(hir_index, 1);
+    }
+
+    let result_local: i64 = vec_get<i64>(local_ids, checked_sub(count, 1));
+    drop(stack); drop(local_ids); drop(canonical_ids); drop(hir_nodes); drop(ast_nodes); drop(expressions);
+    return result_local;
+}
+
+pub fn lower_source_function_body_records(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    allocator: Allocator,
+    borrow_mut records: Vec<MirFunctionRecord>,
+    borrow_mut events: Vec<MirLowerEvent>
+) -> i32
+requires_caps [allocate]
+{
+    let name_index: i64 = sfr_function_name_index(source, tokens);
+    if (name_index < 0) { return 1; }
+    let name_token: Token = vec_get<Token>(tokens, name_index);
+    vec_push<MirFunctionRecord>(records, function_mir_header(
+        token_start(name_token), token_length(name_token),
+        token_start(name_token), token_length(name_token), 1
+    ));
+
+    var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    var statement_index: i64 = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        let kind: i32 = statement_record_kind(statement);
+        if (kind == 20) {
+            let binding_index: i64 = sfr_operand(statement, operands, 1);
+            if (binding_index < 0) { return 2; }
+            let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
+            let binding_id: i64 = vec_len<i64>(binding_starts);
+            vec_push<i64>(binding_starts, statement_operand_start(binding));
+            vec_push<i64>(binding_lengths, statement_operand_length(binding));
+            vec_push<MirFunctionRecord>(records, function_mir_source_local(
+                statement_operand_start(binding), statement_operand_length(binding), binding_id, 1, binding_id, 0
+            ));
+        }
+        if (kind == 21) {
+            let binding_index: i64 = sfr_operand(statement, operands, 1);
+            if (binding_index < 0) { return 3; }
+            let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
+            let binding_id: i64 = vec_len<i64>(binding_starts);
+            vec_push<i64>(binding_starts, statement_operand_start(binding));
+            vec_push<i64>(binding_lengths, statement_operand_length(binding));
+            vec_push<MirFunctionRecord>(records, function_mir_source_local(
+                statement_operand_start(binding), statement_operand_length(binding), binding_id, 1, binding_id, 1
+            ));
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+
+    var counters: Vec<i64> = vec_new<i64>(allocator, 3);
+    vec_push<i64>(counters, vec_len<i64>(binding_starts));
+    vec_push<i64>(counters, 0);
+    vec_push<i64>(counters, 0);
+
+    statement_index = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        let kind: i32 = statement_record_kind(statement);
+        if (kind == 20) {
+            let expression_index: i64 = sfr_operand(statement, operands, 3);
+            let binding_index: i64 = sfr_operand(statement, operands, 1);
+            if (expression_index < 0) { return 10; }
+            if (binding_index < 0) { return 10; }
+            let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+            let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
+            if (source_local < 0) { return 11; }
+            let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
+            let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
+                statement_operand_start(binding), statement_operand_length(binding));
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirFunctionRecord>(records, function_mir_copy(
+                statement_record_start(statement), statement_record_length(statement), instruction_id,
+                destination, source_local, destination, vec_get<i64>(counters, 2)
+            ));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+            vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+        } else {
+            if (kind == 21) {
+                let expression_index: i64 = sfr_operand(statement, operands, 3);
+                let binding_index: i64 = sfr_operand(statement, operands, 1);
+                if (expression_index < 0) { return 12; }
+                if (binding_index < 0) { return 12; }
+                let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                    statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
+                if (source_local < 0) { return 13; }
+                let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
+                let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
+                    statement_operand_start(binding), statement_operand_length(binding));
+                let instruction_id: i64 = vec_get<i64>(counters, 1);
+                vec_push<MirFunctionRecord>(records, function_mir_copy(
+                    statement_record_start(statement), statement_record_length(statement), instruction_id,
+                    destination, source_local, destination, vec_get<i64>(counters, 2)
+                ));
+                vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+                vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+            } else {
+                if (kind == 22) {
+                    let expression_index: i64 = sfr_operand(statement, operands, 3);
+                    if (expression_index < 0) { return 14; }
+                    let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                    let result_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                        statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
+                    if (result_local < 0) { return 15; }
+                    vec_push<MirFunctionRecord>(records, function_mir_return(
+                        statement_record_start(statement), statement_record_length(statement), result_local, vec_get<i64>(counters, 2)
+                    ));
+                    vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+                } else {
+                    if (kind == 25) {
+                        let expression_index: i64 = sfr_operand(statement, operands, 3);
+                        if (expression_index < 0) { return 16; }
+                        let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                        if (sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                            statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters) < 0) { return 17; }
+                    } else {
+                        if (kind == 26) {
+                            let expression_index: i64 = sfr_operand(statement, operands, 3);
+                            if (expression_index < 0) { return 18; }
+                            let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                            if (sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                                statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters) < 0) { return 19; }
+                        }
+                    }
+                }
+            }
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+
+    let status: i32 = lower_typed_statements_to_mir_events(
+        source, tokens, statements, operands, allocator, events
+    );
+    drop(counters); drop(binding_lengths); drop(binding_starts);
+    return status;
+}
