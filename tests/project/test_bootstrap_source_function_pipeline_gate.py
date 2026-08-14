@@ -72,7 +72,7 @@ fn main()->i32 {{
         while(i<vec_len<MirLowerEvent>(events)){{
             let e:MirLowerEvent=vec_get<MirLowerEvent>(events,i);
             if(lower_event_kind(e)==10){{branches=checked_add(branches,1);}}
-            if(lower_event_kind(e)==14){{returns=checked_add(returns,1);}}
+            if(lower_event_kind(e)==2){{returns=checked_add(returns,1);}}
             i=checked_add(i,1);
         }}
         print(branches); print(returns);
