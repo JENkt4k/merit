@@ -1,5 +1,9 @@
 module bootstrap_mir_function_instruction_source
 
+// source_kind:
+//   1 contract MIR record
+//   2 source-body MirFunctionRecord instruction
+//   3 ownership/lifecycle MirOwnershipRecord instruction
 pub struct MirFunctionInstructionSource {
     global_id: i64;
     source_kind: i32;
@@ -26,7 +30,7 @@ pub fn validate_function_assembly_sources(borrow sources: Vec<MirFunctionInstruc
         let value: MirFunctionInstructionSource = vec_get<MirFunctionInstructionSource>(sources, index);
         if (value.global_id != index) { return 1; }
         if (value.source_kind < 1) { return 2; }
-        if (value.source_kind > 2) { return 2; }
+        if (value.source_kind > 3) { return 2; }
         if (value.source_id < 0) { return 3; }
         if (value.source_kind == 1) {
             if (value.contract_kind < 1) { return 4; }
