@@ -1,14 +1,13 @@
 module bootstrap_mir_function_ownership_assembly
 import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_structured_lowering;
 
 capability allocate;
 
-fn ownership_source_record_for_instruction(
-    borrow records: Vec<MirOwnershipRecord>, instruction_id: i64
-) -> i64 {
+fn ownership_source_record_for_instruction(borrow records: Vec<MirOwnershipRecord>, instruction_id: i64) -> i64 {
     var index: i64 = 0;
     while (index < vec_len<MirOwnershipRecord>(records)) {
         let record: MirOwnershipRecord = vec_get<MirOwnershipRecord>(records, index);
@@ -18,15 +17,11 @@ fn ownership_source_record_for_instruction(
     return -1;
 }
 
-fn ownership_source_binding_local(
-    borrow bindings: Vec<MirOwnershipBinding>, binding_id: i64
-) -> i64 {
+fn ownership_source_binding_local(borrow bindings: Vec<MirOwnershipBinding>, binding_id: i64) -> i64 {
     var index: i64 = 0;
     while (index < vec_len<MirOwnershipBinding>(bindings)) {
         let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, index);
-        if (ownership_binding_id(binding) == binding_id) {
-            return ownership_binding_local_id(binding);
-        }
+        if (ownership_binding_id(binding) == binding_id) { return ownership_binding_local_id(binding); }
         index = checked_add(index, 1);
     }
     return -1;
@@ -34,8 +29,8 @@ fn ownership_source_binding_local(
 
 fn emit_contract_provenance_records(
     borrow contracts: Vec<MirFunctionContractRecord>, wanted_kind: i32,
-    borrow_mut next_instruction: Vec<i64>,
-    borrow_mut events: Vec<MirLowerEvent>,
+    binding_count: i64, body_local_count: i64,
+    borrow_mut next_instruction: Vec<i64>, borrow_mut events: Vec<MirLowerEvent>,
     borrow_mut sources: Vec<MirFunctionInstructionSource>
 ) -> i32
 requires_caps [allocate]
@@ -50,14 +45,12 @@ requires_caps [allocate]
                 let global_id: i64 = vec_get<i64>(next_instruction, 0);
                 vec_push<MirLowerEvent>(events, mir_event_place(global_id));
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                    global_id: global_id,
-                    source_kind: 1,
-                    source_id: function_contract_id(record),
-                    contract_kind: wanted_kind,
+                    global_id: global_id, source_kind: 1,
+                    source_id: function_contract_id(record), contract_kind: wanted_kind,
                     clause_ordinal: function_contract_clause(record),
-                    result: function_contract_result(record),
-                    left: function_contract_left(record),
-                    right: function_contract_right(record)
+                    result: assembly_remap_local(function_contract_result(record), binding_count, body_local_count),
+                    left: assembly_remap_local(function_contract_left(record), binding_count, body_local_count),
+                    right: assembly_remap_local(function_contract_right(record), binding_count, body_local_count)
                 });
                 vec_set<i64>(next_instruction, 0, checked_add(global_id, 1));
             }
@@ -67,37 +60,27 @@ requires_caps [allocate]
     return 0;
 }
 
-// Unify source-body and ownership-generated placement IDs before contracts are
-// assigned their final function-wide IDs.  ownership_events already carry the
-// canonical CFG/control shape from lower_ownership_flow; ownership_records are
-// the proof that identifies lifecycle instructions inside that placement stream.
 pub fn assemble_function_mir_events_with_ownership(
-    borrow contracts: Vec<MirFunctionContractRecord>,
-    borrow ownership_events: Vec<MirLowerEvent>,
-    borrow ownership_records: Vec<MirOwnershipRecord>,
-    borrow bindings: Vec<MirOwnershipBinding>,
-    body_instruction_count: i64,
-    allocator: Allocator,
-    borrow_mut events: Vec<MirLowerEvent>,
+    borrow contracts: Vec<MirFunctionContractRecord>, borrow ownership_events: Vec<MirLowerEvent>,
+    borrow ownership_records: Vec<MirOwnershipRecord>, borrow bindings: Vec<MirOwnershipBinding>,
+    binding_count: i64, body_local_count: i64, body_instruction_count: i64,
+    allocator: Allocator, borrow_mut events: Vec<MirLowerEvent>,
     borrow_mut sources: Vec<MirFunctionInstructionSource>
 ) -> i32
 requires_caps [allocate]
 {
-    if (body_instruction_count < 0) { return 1; }
-    if (vec_len<MirLowerEvent>(ownership_events) == 0) { return 2; }
-    if (validate_function_contract_mir(contracts) != 0) { return 3; }
-    if (validate_ownership_records(ownership_records, bindings) != 0) { return 4; }
+    if (binding_count < 0) { return 1; }
+    if (body_local_count < binding_count) { return 2; }
+    if (body_instruction_count < 0) { return 3; }
+    if (vec_len<MirLowerEvent>(ownership_events) == 0) { return 4; }
+    if (validate_function_contract_mir(contracts) != 0) { return 5; }
+    if (validate_ownership_records(ownership_records, bindings) != 0) { return 6; }
 
-    var next_instruction: Vec<i64> = vec_new<i64>(allocator, 1);
-    vec_push<i64>(next_instruction, 0);
-    let pre_status: i32 = emit_contract_provenance_records(
-        contracts, 1, next_instruction, events, sources
-    );
+    var next_instruction: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(next_instruction, 0);
+    let pre_status: i32 = emit_contract_provenance_records(contracts,1,binding_count,body_local_count,next_instruction,events,sources);
     if (pre_status != 0) { return pre_status; }
 
-    var expected_source_body: i64 = 0;
-    var expected_input_place: i64 = 0;
-    var index: i64 = 0;
+    var expected_source_body: i64 = 0; var expected_input_place: i64 = 0; var index: i64 = 0;
     while (index < vec_len<MirLowerEvent>(ownership_events)) {
         let event: MirLowerEvent = vec_get<MirLowerEvent>(ownership_events, index);
         let kind: i32 = lower_event_kind(event);
@@ -105,72 +88,37 @@ requires_caps [allocate]
             let input_id: i64 = lower_event_a(event);
             if (input_id != expected_input_place) { return 40; }
             expected_input_place = checked_add(expected_input_place, 1);
-            let global_id: i64 = vec_get<i64>(next_instruction, 0);
-            vec_push<MirLowerEvent>(events, mir_event_place(global_id));
-
-            let ownership_index: i64 = ownership_source_record_for_instruction(
-                ownership_records, input_id
-            );
+            let global_id: i64 = vec_get<i64>(next_instruction, 0); vec_push<MirLowerEvent>(events, mir_event_place(global_id));
+            let ownership_index: i64 = ownership_source_record_for_instruction(ownership_records, input_id);
             if (ownership_index >= 0) {
                 let record: MirOwnershipRecord = vec_get<MirOwnershipRecord>(ownership_records, ownership_index);
                 let record_kind: i32 = ownership_record_kind(record);
-                var result_local: i64 = -1;
-                var left_local: i64 = ownership_record_operand_local(record);
-                if (record_kind == 2) {
-                    result_local = ownership_source_binding_local(
-                        bindings, ownership_record_other_binding_id(record)
-                    );
-                    if (result_local < 0) { return 41; }
-                }
-                if (record_kind == 5) {
-                    result_local = ownership_source_binding_local(
-                        bindings, ownership_record_binding_id(record)
-                    );
-                    if (result_local < 0) { return 42; }
-                }
-                if (record_kind < 2) { return 43; }
-                if (record_kind > 6) { return 43; }
-                if (left_local < 0) { return 44; }
+                var result_local: i64 = -1; let left_local: i64 = ownership_record_operand_local(record);
+                if (record_kind == 2) { result_local = ownership_source_binding_local(bindings, ownership_record_other_binding_id(record)); if (result_local < 0) { return 41; } }
+                if (record_kind == 5) { result_local = ownership_source_binding_local(bindings, ownership_record_binding_id(record)); if (result_local < 0) { return 42; } }
+                if (record_kind < 2) { return 43; } if (record_kind > 6) { return 43; } if (left_local < 0) { return 44; }
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                    global_id: global_id,
-                    source_kind: 3,
-                    source_id: ownership_index,
-                    contract_kind: 0,
-                    clause_ordinal: -1,
-                    result: result_local,
-                    left: left_local,
-                    right: -1
+                    global_id:global_id,source_kind:3,source_id:ownership_index,contract_kind:0,clause_ordinal:-1,
+                    result:result_local,left:left_local,right:-1
                 });
             } else {
                 if (expected_source_body >= body_instruction_count) { return 45; }
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                    global_id: global_id,
-                    source_kind: 2,
-                    source_id: expected_source_body,
-                    contract_kind: 0,
-                    clause_ordinal: -1,
-                    result: -1,
-                    left: -1,
-                    right: -1
+                    global_id:global_id,source_kind:2,source_id:expected_source_body,contract_kind:0,clause_ordinal:-1,
+                    result:-1,left:-1,right:-1
                 });
                 expected_source_body = checked_add(expected_source_body, 1);
             }
-            vec_set<i64>(next_instruction, 0, checked_add(global_id, 1));
+            vec_set<i64>(next_instruction,0,checked_add(global_id,1));
         } else {
             if (kind == 2) {
-                let post_status: i32 = emit_contract_provenance_records(
-                    contracts, 2, next_instruction, events, sources
-                );
+                let post_status: i32 = emit_contract_provenance_records(contracts,2,binding_count,body_local_count,next_instruction,events,sources);
                 if (post_status != 0) { return post_status; }
                 vec_push<MirLowerEvent>(events, mir_event_return(lower_event_a(event)));
-            } else {
-                vec_push<MirLowerEvent>(events, event);
-            }
+            } else { vec_push<MirLowerEvent>(events,event); }
         }
-        index = checked_add(index, 1);
+        index = checked_add(index,1);
     }
     if (expected_source_body != body_instruction_count) { return 46; }
-    let source_status: i32 = validate_function_assembly_sources(sources);
-    drop(next_instruction);
-    return source_status;
+    let source_status: i32 = validate_function_assembly_sources(sources); drop(next_instruction); return source_status;
 }
