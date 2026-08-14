@@ -1,0 +1,51 @@
+module bootstrap_mir_source_function_record_stats
+import bootstrap_mir_functions;
+
+capability allocate;
+
+// stats: binding_count, body_local_count, body_instruction_count, return_count.
+pub fn source_function_record_stats(
+    borrow records: Vec<MirFunctionRecord>,
+    borrow_mut stats: Vec<i64>
+) -> i32
+requires_caps [allocate]
+{
+    if (vec_len<MirFunctionRecord>(records) == 0) { return 1; }
+    let header: MirFunctionRecord = vec_get<MirFunctionRecord>(records, 0);
+    if (function_mir_kind(header) != 1) { return 2; }
+    var bindings: i64 = 0;
+    var locals: i64 = 0;
+    var instructions: i64 = 0;
+    var returns: i64 = 0;
+    var index: i64 = 1;
+    while (index < vec_len<MirFunctionRecord>(records)) {
+        let record: MirFunctionRecord = vec_get<MirFunctionRecord>(records, index);
+        let kind: i32 = function_mir_kind(record);
+        if (kind == 2) {
+            if (function_mir_id(record) != locals) { return 10; }
+            bindings = checked_add(bindings, 1);
+            locals = checked_add(locals, 1);
+        } else {
+            if (kind == 3) {
+                if (function_mir_id(record) != locals) { return 11; }
+                locals = checked_add(locals, 1);
+            } else {
+                if (kind >= 4) {
+                    if (kind <= 6) {
+                        if (function_mir_id(record) != instructions) { return 12; }
+                        instructions = checked_add(instructions, 1);
+                    } else {
+                        if (kind == 7) { returns = checked_add(returns, 1); }
+                        else { return 13; }
+                    }
+                } else { return 14; }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    vec_push<i64>(stats, bindings);
+    vec_push<i64>(stats, locals);
+    vec_push<i64>(stats, instructions);
+    vec_push<i64>(stats, returns);
+    return 0;
+}
