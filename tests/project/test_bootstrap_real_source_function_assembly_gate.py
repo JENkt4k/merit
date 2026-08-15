@@ -151,4 +151,3 @@ def test_real_source_function_reaches_unified_cfg_with_native_parity(tmp_path: P
     assert values[13] >= 3
     assert values[14] == 2
     assert values[15] == 1
-''
