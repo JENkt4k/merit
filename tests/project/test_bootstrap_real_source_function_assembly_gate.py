@@ -134,7 +134,7 @@ def _project(tmp_path: Path):
 
 def test_real_source_function_reaches_unified_cfg_with_native_parity(tmp_path: Path):
     root = _project(tmp_path)
-    project = load_project(root)
+    project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     executable = build(project)
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
