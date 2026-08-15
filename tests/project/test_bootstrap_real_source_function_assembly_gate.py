@@ -142,7 +142,7 @@ def test_real_source_function_reaches_unified_cfg_with_native_parity(tmp_path: P
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
-    executable = build(project)
+    _, _, executable = build(project, root / "build" / "real-source-function-assembly")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     values = [int(line) for line in native.splitlines()]
