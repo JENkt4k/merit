@@ -126,9 +126,15 @@ def _project(tmp_path: Path):
     lexer.write_text(text)
     (root / "src" / "real_source_function_assembly_probe.mrt").write_text(_probe())
     manifest = root / "Merit.toml"
-    manifest.write_text(manifest.read_text().replace(
-        'entry = "lexer"', 'entry = "real_source_function_assembly_probe"'
-    ))
+    manifest_text = manifest.read_text()
+    manifest_text, count = re.subn(
+        r'entry\s*=\s*"src/lexer\.mrt"',
+        'entry = "src/real_source_function_assembly_probe.mrt"',
+        manifest_text,
+        count=1,
+    )
+    assert count == 1
+    manifest.write_text(manifest_text)
     return root
 
 
