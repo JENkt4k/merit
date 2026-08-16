@@ -148,7 +148,7 @@ def test_source_declared_types_drive_ownership_into_canonical_c(tmp_path: Path):
         pytest.skip("system C compiler is unavailable")
     c_source = emit_c_module(module) + '\n#include <stdio.h>\nint main(void){ printf("%lld\\n", (long long)compute()); return 0; }\n'
     c_path = tmp_path / "derived_source_ownership.c"
-    canonical_executable = tmp_path / "derived_source_ownership"
+    canonical_executable = tmp_path / "derived_source_ownership_canonical"
     c_path.write_text(c_source, encoding="utf-8")
     compiled = subprocess.run(
         [cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(canonical_executable)],
