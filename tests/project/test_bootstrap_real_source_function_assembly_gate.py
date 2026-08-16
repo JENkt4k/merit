@@ -3,6 +3,13 @@ import re
 import shutil
 import subprocess
 
+import pytest
+
+from merit.bootstrap.mir_to_c import emit_c_module
+from merit.bootstrap.resolved_source_function_snapshot import (
+    decode_resolved_source_function_snapshot,
+    materialize_resolved_source_function_snapshot,
+)
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
 
@@ -40,6 +47,7 @@ import bootstrap_mir_structured_lowering;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 import bootstrap_mir_resolved_source_function_assembly;
+import bootstrap_mir_resolved_source_function_snapshot;
 
 capability allocate;
 
@@ -106,6 +114,7 @@ fn main()->i32 {{
     i=checked_add(i,1);
   }}
   print(switches); print(returns); print(unreachable);
+  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required);
 
   drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);
   drop(ownership_records); drop(effects); drop(ownership_events); drop(scopes); drop(arms);
@@ -158,3 +167,41 @@ def test_real_source_function_reaches_unified_cfg_with_native_parity(tmp_path: P
     assert values[14] >= 3
     assert values[15] == 2
     assert values[16] == 1
+
+    snapshot = decode_resolved_source_function_snapshot(values[17:])
+    module = materialize_resolved_source_function_snapshot(
+        source=SOURCE,
+        module_name="demo",
+        snapshot=snapshot,
+        capability_names={9: "clock"},
+    )
+    function = module.functions[0]
+    assert function.name == "compute"
+    assert function.capabilities == ("clock",)
+    assert any(block.terminator.kind == "switch" for block in function.blocks)
+    assert sum(block.terminator.kind == "return" for block in function.blocks) == 2
+    assert any(block.terminator.kind == "unreachable" for block in function.blocks)
+    assert any(instruction.kind == "drop" for block in function.blocks for instruction in block.instructions)
+    assert sum(
+        instruction.contract_kind == "postcondition"
+        for block in function.blocks
+        for instruction in block.instructions
+    ) == 2
+
+    cc = shutil.which("cc")
+    if cc is None:
+        pytest.skip("system C compiler is unavailable")
+    c_source = emit_c_module(module) + '\n#include <stdio.h>\nint main(void){ printf("%lld\\n", (long long)compute()); return 0; }\n'
+    c_path = tmp_path / "real_source_canonical.c"
+    canonical_executable = tmp_path / "real_source_canonical"
+    c_path.write_text(c_source, encoding="utf-8")
+    subprocess.run(
+        [cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(canonical_executable)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    canonical = subprocess.run(
+        [str(canonical_executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert canonical.strip() == "2"

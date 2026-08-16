@@ -1,0 +1,104 @@
+module bootstrap_mir_resolved_source_function_snapshot
+import bootstrap_mir_functions;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_assembly_plan;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+
+// bootstrap-resolved-source-function-snapshot-v1.
+// This is a parity/materialization transport only: it serializes already-resolved
+// records without reinterpreting source semantics. Layout is magic, version,
+// then nine count-prefixed fixed-width sections matching the canonical adapter.
+pub fn print_resolved_source_function_snapshot(
+    borrow body: Vec<MirFunctionRecord>,
+    borrow contracts: Vec<MirFunctionContractRecord>,
+    borrow contract_locals: Vec<MirFunctionContractLocal>,
+    borrow sources: Vec<MirFunctionInstructionSource>,
+    borrow ownership_bindings: Vec<MirOwnershipBinding>,
+    borrow ownership_records: Vec<MirOwnershipRecord>,
+    borrow cfg: Vec<MirCfgRecord>,
+    borrow placements: Vec<MirPlacementRecord>,
+    borrow capabilities: Vec<i64>
+) -> i32
+{
+    print(1297240902); // MRSF
+    print(1);
+
+    print(vec_len<MirFunctionRecord>(body));
+    var i: i64 = 0;
+    while (i < vec_len<MirFunctionRecord>(body)) {
+        let r: MirFunctionRecord = vec_get<MirFunctionRecord>(body, i);
+        print(function_mir_kind(r)); print(function_mir_start(r)); print(function_mir_length(r));
+        print(function_mir_id(r)); print(function_mir_result(r)); print(function_mir_left(r));
+        print(function_mir_right(r)); print(function_mir_symbol_start(r)); print(function_mir_symbol_length(r));
+        print(function_mir_symbol_code(r)); print(function_mir_type_code(r)); print(function_mir_numeric_policy(r));
+        print(function_mir_binding_id(r)); print(function_mir_mutable(r)); print(function_mir_hir_node_id(r));
+        print(function_mir_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirFunctionContractRecord>(contracts)); i = 0;
+    while (i < vec_len<MirFunctionContractRecord>(contracts)) {
+        let r: MirFunctionContractRecord = vec_get<MirFunctionContractRecord>(contracts, i);
+        print(function_contract_kind(r)); print(function_contract_clause(r)); print(function_contract_contract_kind(r));
+        print(function_contract_start(r)); print(function_contract_length(r)); print(function_contract_id(r));
+        print(function_contract_result(r)); print(function_contract_left(r)); print(function_contract_right(r));
+        print(function_contract_symbol(r)); print(function_contract_type(r)); print(function_contract_policy(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirFunctionContractLocal>(contract_locals)); i = 0;
+    while (i < vec_len<MirFunctionContractLocal>(contract_locals)) {
+        let r: MirFunctionContractLocal = vec_get<MirFunctionContractLocal>(contract_locals, i);
+        print(assembly_local_id(r)); print(assembly_local_source_id(r)); print(assembly_local_type(r));
+        print(assembly_local_contract_kind(r)); print(assembly_local_clause(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirFunctionInstructionSource>(sources)); i = 0;
+    while (i < vec_len<MirFunctionInstructionSource>(sources)) {
+        let r: MirFunctionInstructionSource = vec_get<MirFunctionInstructionSource>(sources, i);
+        print(assembly_source_global_id(r)); print(assembly_source_kind(r)); print(assembly_source_id(r));
+        print(assembly_source_contract_kind(r)); print(assembly_source_clause(r)); print(assembly_source_result(r));
+        print(assembly_source_left(r)); print(assembly_source_right(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirOwnershipBinding>(ownership_bindings)); i = 0;
+    while (i < vec_len<MirOwnershipBinding>(ownership_bindings)) {
+        let r: MirOwnershipBinding = vec_get<MirOwnershipBinding>(ownership_bindings, i);
+        print(ownership_binding_id(r)); print(ownership_binding_local_id(r));
+        print(ownership_binding_owned(r)); print(ownership_binding_mutable(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirOwnershipRecord>(ownership_records)); i = 0;
+    while (i < vec_len<MirOwnershipRecord>(ownership_records)) {
+        let r: MirOwnershipRecord = vec_get<MirOwnershipRecord>(ownership_records, i);
+        print(ownership_record_kind(r)); print(ownership_record_instruction_id(r)); print(ownership_record_binding_id(r));
+        print(ownership_record_other_binding_id(r)); print(ownership_record_operand_local(r)); print(ownership_record_implicit(r));
+        print(ownership_record_state_before(r)); print(ownership_record_state_after(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirCfgRecord>(cfg)); i = 0;
+    while (i < vec_len<MirCfgRecord>(cfg)) {
+        let r: MirCfgRecord = vec_get<MirCfgRecord>(cfg, i);
+        print(cfg_kind(r)); print(cfg_block_id(r)); print(cfg_operand(r)); print(cfg_target_a(r));
+        print(cfg_target_b(r)); print(cfg_case_value(r)); print(cfg_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirPlacementRecord>(placements)); i = 0;
+    while (i < vec_len<MirPlacementRecord>(placements)) {
+        let r: MirPlacementRecord = vec_get<MirPlacementRecord>(placements, i);
+        print(placement_block_id(r)); print(placement_instruction_id(r)); print(placement_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<i64>(capabilities)); i = 0;
+    while (i < vec_len<i64>(capabilities)) { print(vec_get<i64>(capabilities, i)); i = checked_add(i, 1); }
+    return 0;
+}
