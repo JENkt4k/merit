@@ -1,12 +1,12 @@
 """First-class build boundary for the Merit-native replacement compiler.
 
 The native bootstrap pipeline owns semantic resolution and emits a versioned
-resolved-source-function snapshot.  This module is the production-side handoff:
+resolved-source-function snapshot. This module is the production-side handoff:
 it validates/materializes that snapshot as canonical bootstrap MIR, emits C only
 from that MIR, and can compile the result with a host C11 compiler.
 
 No source parsing, HIR lowering, ownership inference, CFG inference, contract
-inference, or capability inference is permitted here.  Python remains an
+inference, or capability inference is permitted here. Python remains an
 independent adapter/oracle until the native compiler can materialize canonical
 MIR directly.
 """
@@ -14,6 +14,7 @@ MIR directly.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,9 +50,8 @@ def build_replacement_artifact(
 ) -> ReplacementBuildArtifact:
     """Build canonical MIR and deterministic C from a native snapshot.
 
-    This is intentionally the narrow replacement-compiler production boundary:
-    callers provide the source only for source-span/provenance reconstruction;
-    every semantic decision must already be represented by ``snapshot_values``.
+    The source is used only for source-span/provenance reconstruction; every
+    semantic decision must already be represented by ``snapshot_values``.
     """
 
     snapshot = decode_resolved_source_function_snapshot(snapshot_values)
@@ -75,7 +75,7 @@ def compile_replacement_artifact(
 ) -> tuple[Path, Path]:
     """Compile deterministic C emitted from canonical replacement MIR.
 
-    Returns ``(c_path, executable_path)``.  The optional ``main_c`` is a foreign
+    Returns ``(c_path, executable_path)``. The optional ``main_c`` is a foreign
     C harness only; it cannot alter the canonical Merit function bodies.
     """
 
@@ -90,7 +90,7 @@ def compile_replacement_artifact(
 
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    executable = output.with_suffix(".exe") if __import__("os").name == "nt" else output
+    executable = output.with_suffix(".exe") if os.name == "nt" else output
     c_path = output.with_suffix(".c")
     c_source = artifact.c_source
     if main_c:
@@ -98,7 +98,10 @@ def compile_replacement_artifact(
     c_path.write_text(c_source, encoding="utf-8", newline="\n")
 
     command = [compiler, "-std=c11", "-Wall", "-Wextra", *c_flags, str(c_path), "-o", str(executable)]
-    completed = subprocess.run(command, text=True, capture_output=True)
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True)
+    except OSError as exc:
+        raise ReplacementBuildError(f"replacement C compiler could not start: {exc}") from exc
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "unknown compiler failure"
         raise ReplacementBuildError(f"replacement C compilation failed: {detail}")
