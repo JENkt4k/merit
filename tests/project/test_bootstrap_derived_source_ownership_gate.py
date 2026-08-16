@@ -150,12 +150,12 @@ def test_source_declared_types_drive_ownership_into_canonical_c(tmp_path: Path):
     c_path = tmp_path / "derived_source_ownership.c"
     canonical_executable = tmp_path / "derived_source_ownership"
     c_path.write_text(c_source, encoding="utf-8")
-    subprocess.run(
+    compiled = subprocess.run(
         [cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(canonical_executable)],
-        check=True,
         text=True,
         capture_output=True,
     )
+    assert compiled.returncode == 0, compiled.stderr
     canonical = subprocess.run(
         [str(canonical_executable)], check=True, text=True, capture_output=True
     ).stdout
