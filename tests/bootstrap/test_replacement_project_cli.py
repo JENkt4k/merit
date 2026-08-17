@@ -2,20 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import shutil
 
 import pytest
 
-from merit.bootstrap.mir_contract import (
-    MirBlock,
-    MirFunction,
-    MirInstruction,
-    MirLocal,
-    MirModule,
-    MirTerminator,
-    MirType,
-)
-from merit.bootstrap.replacement_build import ReplacementBuildError
 from merit.bootstrap.replacement_project import ReplacementFunctionInput
 from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_MAGIC, SNAPSHOT_VERSION
 from merit.project.cli import main
@@ -53,8 +42,8 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     artifact_dir = root / ".merit"
     artifact_dir.mkdir()
     # Structurally valid empty-section snapshot; semantic materialization is a
-    # later boundary. This test proves project loading transports the native
-    # snapshot rather than deriving semantic records from Program.
+    # later boundary. This proves project loading transports native records
+    # rather than deriving semantic records from Program.
     values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 9
     (artifact_dir / "main.snapshot").write_text("\n".join(map(str, values)) + "\n", encoding="utf-8")
     (artifact_dir / REPLACEMENT_MANIFEST).write_text(
