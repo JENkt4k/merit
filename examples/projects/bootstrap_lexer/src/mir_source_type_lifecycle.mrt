@@ -1,0 +1,187 @@
+module bootstrap_mir_source_type_lifecycle
+import bootstrap_tokens;
+import bootstrap_statements;
+import bootstrap_mir_source_ownership_metadata;
+
+capability allocate;
+
+fn stl_span_equal(
+    borrow source: Buffer,
+    left_start: i64,
+    left_length: i64,
+    right_start: i64,
+    right_length: i64
+) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(source, checked_add(left_start, offset)) !=
+            buffer_get(source, checked_add(right_start, offset))) { return 0; }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn stl_byte(borrow source: Buffer, start: i64, offset: i64, expected: i64) -> i32 {
+    if (buffer_get(source, checked_add(start, offset)) == expected) { return 1; }
+    return 0;
+}
+
+fn stl_is_struct(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (length != 6) { return 0; }
+    if (stl_byte(source,start,0,115)==0) { return 0; }
+    if (stl_byte(source,start,1,116)==0) { return 0; }
+    if (stl_byte(source,start,2,114)==0) { return 0; }
+    if (stl_byte(source,start,3,117)==0) { return 0; }
+    if (stl_byte(source,start,4,99)==0) { return 0; }
+    if (stl_byte(source,start,5,116)==0) { return 0; }
+    return 1;
+}
+
+fn stl_is_enum(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (length != 4) { return 0; }
+    if (stl_byte(source,start,0,101)==0) { return 0; }
+    if (stl_byte(source,start,1,110)==0) { return 0; }
+    if (stl_byte(source,start,2,117)==0) { return 0; }
+    if (stl_byte(source,start,3,109)==0) { return 0; }
+    return 1;
+}
+
+fn stl_is_decimal(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (length != 7) { return 0; }
+    if (stl_byte(source,start,0,100)==0) { return 0; }
+    if (stl_byte(source,start,1,101)==0) { return 0; }
+    if (stl_byte(source,start,2,99)==0) { return 0; }
+    if (stl_byte(source,start,3,105)==0) { return 0; }
+    if (stl_byte(source,start,4,109)==0) { return 0; }
+    if (stl_byte(source,start,5,97)==0) { return 0; }
+    if (stl_byte(source,start,6,108)==0) { return 0; }
+    return 1;
+}
+
+fn stl_is_bounded(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (length != 7) { return 0; }
+    if (stl_byte(source,start,0,98)==0) { return 0; }
+    if (stl_byte(source,start,1,111)==0) { return 0; }
+    if (stl_byte(source,start,2,117)==0) { return 0; }
+    if (stl_byte(source,start,3,110)==0) { return 0; }
+    if (stl_byte(source,start,4,100)==0) { return 0; }
+    if (stl_byte(source,start,5,101)==0) { return 0; }
+    if (stl_byte(source,start,6,100)==0) { return 0; }
+    return 1;
+}
+
+fn stl_builtin_ownership(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    // 0 copy, 1 owned, -1 not a supported builtin spelling.
+    if (length == 2) {
+        let first: i64 = buffer_get(source,start);
+        let second: i64 = buffer_get(source,checked_add(start,1));
+        if (second == 56) { if (first == 105) { return 0; } if (first == 117) { return 0; } }
+    }
+    if (length == 3) {
+        let first: i64 = buffer_get(source,start);
+        let second: i64 = buffer_get(source,checked_add(start,1));
+        let third: i64 = buffer_get(source,checked_add(start,2));
+        if (first == 105) { if (second == 49) { if (third == 54) { return 0; } } if (second == 51) { if (third == 50) { return 0; } } if (second == 54) { if (third == 52) { return 0; } } }
+        if (first == 117) { if (second == 49) { if (third == 54) { return 0; } } if (second == 51) { if (third == 50) { return 0; } } if (second == 54) { if (third == 52) { return 0; } } }
+    }
+    if (length == 4) {
+        if (stl_byte(source,start,0,98)!=0) { if (stl_byte(source,start,1,111)!=0) { if (stl_byte(source,start,2,111)!=0) { if (stl_byte(source,start,3,108)!=0) { return 0; } } } }
+    }
+    if (length == 6) {
+        // Buffer and I64Vec are owned; String is Copy in alpha lifecycle metadata.
+        if (stl_byte(source,start,0,66)!=0) { if (stl_byte(source,start,1,117)!=0) { if (stl_byte(source,start,2,102)!=0) { if (stl_byte(source,start,3,102)!=0) { if (stl_byte(source,start,4,101)!=0) { if (stl_byte(source,start,5,114)!=0) { return 1; } } } } } }
+        if (stl_byte(source,start,0,73)!=0) { if (stl_byte(source,start,1,54)!=0) { if (stl_byte(source,start,2,52)!=0) { if (stl_byte(source,start,3,86)!=0) { if (stl_byte(source,start,4,101)!=0) { if (stl_byte(source,start,5,99)!=0) { return 1; } } } } } }
+        if (stl_byte(source,start,0,83)!=0) { if (stl_byte(source,start,1,116)!=0) { if (stl_byte(source,start,2,114)!=0) { if (stl_byte(source,start,3,105)!=0) { if (stl_byte(source,start,4,110)!=0) { if (stl_byte(source,start,5,103)!=0) { return 0; } } } } } }
+    }
+    return -1;
+}
+
+// Declaration classification for the current replacement surface.
+// Structs are owned/non-copy. Decimal and bounded declarations are Copy.
+// Enums fail closed until payload lifecycle is recursively represented.
+fn stl_declared_ownership(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    start: i64,
+    length: i64
+) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens,index);
+        if (token_kind(token) == 1) {
+            let keyword_start: i64 = token_start(token);
+            let keyword_length: i64 = token_length(token);
+            var declaration_kind: i32 = 0;
+            if (stl_is_struct(source,keyword_start,keyword_length) != 0) { declaration_kind = 1; }
+            if (stl_is_enum(source,keyword_start,keyword_length) != 0) { declaration_kind = 2; }
+            if (stl_is_decimal(source,keyword_start,keyword_length) != 0) { declaration_kind = 3; }
+            if (stl_is_bounded(source,keyword_start,keyword_length) != 0) { declaration_kind = 4; }
+            if (declaration_kind != 0) {
+                let name_index: i64 = checked_add(index,1);
+                if (name_index < vec_len<Token>(tokens)) {
+                    let name: Token = vec_get<Token>(tokens,name_index);
+                    if (token_kind(name) == 1) {
+                        if (stl_span_equal(source,start,length,token_start(name),token_length(name)) != 0) {
+                            if (declaration_kind == 1) { return 1; }
+                            if (declaration_kind == 2) { return -2; }
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+        index = checked_add(index,1);
+    }
+    return -1;
+}
+
+fn stl_operand(
+    borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>,
+    wanted_kind: i32
+) -> i64 {
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement),offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands,index);
+        if (statement_operand_kind(operand) == wanted_kind) { return index; }
+        offset = checked_add(offset,1);
+    }
+    return -1;
+}
+
+// Derive the type-level ownership facts required by function-local ownership.
+// Errors: 1 missing declared type, 2 unsupported enum lifecycle, 3 unresolved type.
+pub fn derive_source_type_ownership_catalog(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow_mut output: Vec<SourceTypeOwnershipEntry>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    while (index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements,index);
+        let kind: i32 = statement_record_kind(statement);
+        var is_binding: i32 = 0;
+        if (kind == 20) { is_binding = 1; }
+        if (kind == 21) { is_binding = 1; }
+        if (is_binding != 0) {
+            let type_index: i64 = stl_operand(statement,operands,2);
+            if (type_index < 0) { return 1; }
+            let declared: StatementOperand = vec_get<StatementOperand>(operands,type_index);
+            let start: i64 = statement_operand_start(declared);
+            let length: i64 = statement_operand_length(declared);
+            var owned: i32 = stl_builtin_ownership(source,start,length);
+            if (owned < 0) { owned = stl_declared_ownership(source,tokens,start,length); }
+            if (owned == -2) { return 2; }
+            if (owned < 0) { return 3; }
+            vec_push<SourceTypeOwnershipEntry>(output,source_type_ownership_entry(start,length,owned));
+        }
+        index = checked_add(index,1);
+    }
+    return 0;
+}
