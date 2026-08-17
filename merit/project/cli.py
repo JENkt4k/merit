@@ -13,6 +13,7 @@ from merit.diagnostics import diagnostic_from_exception, render_exception
 from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
 from .replacement import build_replacement_project
+from .replacement_prepare import prepare_replacement_artifacts
 
 
 def _manifest(value: str) -> Path:
@@ -22,7 +23,10 @@ def _manifest(value: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="merit-project")
-    parser.add_argument("command", choices=("check", "build", "build-shared", "run", "verify", "graph", "layout", "audit"))
+    parser.add_argument(
+        "command",
+        choices=("check", "build", "build-shared", "run", "verify", "graph", "layout", "audit", "prepare-replacement"),
+    )
     parser.add_argument("path", nargs="?", default="Merit.toml")
     parser.add_argument("-o", "--output")
     parser.add_argument(
@@ -31,10 +35,24 @@ def main(argv: list[str] | None = None) -> int:
         default="reference",
         help="production compiler path; replacement mode consumes only native-resolved artifacts and never falls back",
     )
+    parser.add_argument(
+        "--replacement-producer",
+        nargs="+",
+        metavar="COMMAND",
+        help="native frontend command for prepare-replacement; source is supplied on stdin",
+    )
     parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
     try:
         project = load_project(_manifest(args.path))
+        if args.command == "prepare-replacement":
+            if not args.replacement_producer:
+                raise ReplacementBuildError(
+                    "prepare-replacement requires --replacement-producer COMMAND"
+                )
+            prepared = prepare_replacement_artifacts(project, args.replacement_producer)
+            print(prepared.manifest_path)
+            return 0
         if args.command == "graph":
             for unit in project.units:
                 imports = ", ".join(unit.imports) or "(none)"
