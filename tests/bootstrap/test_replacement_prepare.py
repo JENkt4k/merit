@@ -21,7 +21,7 @@ def _project(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (root / "src" / "main.mrt").write_text(
-        "module main\nfn compute()->i64 { return 7; }\n",
+        "module main\nfn main()->i32 { return 7; }\n",
         encoding="utf-8",
     )
     return root
@@ -35,7 +35,7 @@ def _producer(tmp_path: Path, *, exit_code: int = 0) -> Path:
         "source = sys.stdin.read()\n"
         "assert os.environ['MERIT_REPLACEMENT_PROTOCOL'] == 'resolved-source-function-snapshot-v1'\n"
         "assert os.environ['MERIT_REPLACEMENT_MODULE'] == 'main'\n"
-        "assert 'fn compute' in source\n"
+        "assert 'fn main' in source\n"
         + (f"sys.exit({exit_code})\n" if exit_code else "")
         + f"print({repr(chr(10).join(str(value) for value in values))})\n",
         encoding="utf-8",
@@ -69,7 +69,7 @@ def test_prepared_artifacts_are_rejected_after_source_changes(tmp_path: Path) ->
 
     source_path = root / "src" / "main.mrt"
     source_path.write_text(
-        "module main\nfn compute()->i64 { return 8; }\n",
+        "module main\nfn main()->i32 { return 8; }\n",
         encoding="utf-8",
     )
     changed = load_project(root / "Merit.toml")
