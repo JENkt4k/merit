@@ -21,6 +21,7 @@ from merit.project.loader import LoadedProject
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
+REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v1"
 
 
 class ReplacementProjectError(ReplacementBuildError):
@@ -71,6 +72,26 @@ def _source_digest(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def _validate_bundle_indices(functions: list[object]) -> None:
+    next_index: dict[str, int] = {}
+    for manifest_index, raw in enumerate(functions):
+        if not isinstance(raw, dict):
+            raise ReplacementProjectError(f"replacement function {manifest_index} must be an object")
+        module_name = raw.get("module")
+        function_index = raw.get("function_index")
+        if not isinstance(module_name, str) or not module_name:
+            raise ReplacementProjectError(
+                f"replacement function {manifest_index} has invalid module identity"
+            )
+        expected = next_index.get(module_name, 0)
+        if not isinstance(function_index, int) or isinstance(function_index, bool) or function_index != expected:
+            raise ReplacementProjectError(
+                f"replacement function indices for module {module_name!r} must be dense and ordered; "
+                f"expected {expected}, found {function_index!r}"
+            )
+        next_index[module_name] = expected + 1
+
+
 def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunctionInput, ...]:
     """Load native-produced replacement snapshots without semantic fallback."""
 
@@ -89,6 +110,8 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
     functions = payload.get("functions")
     if not isinstance(functions, list) or not functions:
         raise ReplacementProjectError("replacement build manifest contains no resolved functions")
+    if payload.get("producer_protocol") == REPLACEMENT_BUNDLE_PROTOCOL:
+        _validate_bundle_indices(functions)
 
     unit_by_module = {unit.module: unit for unit in project.units}
     resolved: list[ReplacementFunctionInput] = []
