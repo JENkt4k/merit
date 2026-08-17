@@ -9,6 +9,7 @@ or silently fall back to the reference compiler.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 from typing import Mapping
@@ -66,6 +67,10 @@ def _capability_names(raw: object) -> Mapping[int, str]:
     return result
 
 
+def _source_digest(source: str) -> str:
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
 def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunctionInput, ...]:
     """Load native-produced replacement snapshots without semantic fallback."""
 
@@ -106,6 +111,18 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
         except (OSError, ValueError) as exc:
             raise ReplacementProjectError(f"invalid replacement snapshot: {snapshot_path}") from exc
         unit = unit_by_module[module_name]
+        expected_digest = item.get("source_sha256")
+        if expected_digest is not None:
+            if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+                raise ReplacementProjectError(
+                    f"replacement function {index} has invalid source_sha256"
+                )
+            actual_digest = _source_digest(unit.parser_source)
+            if actual_digest != expected_digest:
+                raise ReplacementProjectError(
+                    f"replacement artifacts for module {module_name!r} are stale after source changes; "
+                    "run prepare-replacement again"
+                )
         resolved.append(
             ReplacementFunctionInput.from_values(
                 source=unit.parser_source,
