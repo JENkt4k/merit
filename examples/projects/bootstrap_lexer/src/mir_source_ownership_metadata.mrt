@@ -1,0 +1,154 @@
+module bootstrap_mir_source_ownership_metadata
+import bootstrap_statements;
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+
+capability allocate;
+
+// Typed declaration/source metadata supplies type ownership once per type.
+// Function-local binding IDs, local IDs and mutability are derived from the
+// real statement stream instead of being reconstructed by a caller/test.
+pub struct SourceTypeOwnershipEntry {
+    name_start: i64;
+    name_length: i64;
+    owned: i32;
+}
+
+pub fn source_type_ownership_entry(name_start: i64, name_length: i64, owned: i32) -> SourceTypeOwnershipEntry {
+    return SourceTypeOwnershipEntry { name_start: name_start, name_length: name_length, owned: owned };
+}
+
+pub fn source_type_ownership_start(borrow value: SourceTypeOwnershipEntry) -> i64 { return value.name_start; }
+pub fn source_type_ownership_length(borrow value: SourceTypeOwnershipEntry) -> i64 { return value.name_length; }
+pub fn source_type_ownership_owned(borrow value: SourceTypeOwnershipEntry) -> i32 { return value.owned; }
+
+fn som_span_equal(
+    borrow source: Buffer,
+    left_start: i64,
+    left_length: i64,
+    right_start: i64,
+    right_length: i64
+) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(source, checked_add(left_start, offset)) !=
+            buffer_get(source, checked_add(right_start, offset))) { return 0; }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn som_operand(
+    borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>,
+    wanted_kind: i32
+) -> i64 {
+    var offset: i64 = 0;
+    while (offset < statement_record_operand_count(statement)) {
+        let index: i64 = checked_add(statement_record_first_operand(statement), offset);
+        let operand: StatementOperand = vec_get<StatementOperand>(operands, index);
+        if (statement_operand_kind(operand) == wanted_kind) { return index; }
+        offset = checked_add(offset, 1);
+    }
+    return -1;
+}
+
+fn som_find_type(
+    borrow source: Buffer,
+    borrow catalog: Vec<SourceTypeOwnershipEntry>,
+    start: i64,
+    length: i64
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<SourceTypeOwnershipEntry>(catalog)) {
+        let entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(catalog, index);
+        if (som_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) {
+            return index;
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn som_binding_kind(kind: i32) -> i32 {
+    if (kind == 20) { return 1; }
+    if (kind == 21) { return 1; }
+    return 0;
+}
+
+// Returns zero and emits dense binding/local identities matching the source
+// body-record contract. Errors: 1 invalid type catalog, 2 missing binding,
+// 3 missing declared type, 4 unresolved declared type.
+pub fn derive_source_ownership_bindings(
+    borrow source: Buffer,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow type_catalog: Vec<SourceTypeOwnershipEntry>,
+    borrow_mut output: Vec<MirOwnershipBinding>
+) -> i32
+requires_caps [allocate]
+{
+    var type_index: i64 = 0;
+    while (type_index < vec_len<SourceTypeOwnershipEntry>(type_catalog)) {
+        let type_entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(type_catalog, type_index);
+        if (type_entry.name_start < 0) { return 1; }
+        if (type_entry.name_length <= 0) { return 1; }
+        if (type_entry.owned < 0) { return 1; }
+        if (type_entry.owned > 1) { return 1; }
+        type_index = checked_add(type_index, 1);
+    }
+
+    var next_binding: i64 = 0;
+    var statement_index: i64 = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        let kind: i32 = statement_record_kind(statement);
+        if (som_binding_kind(kind) != 0) {
+            let binding_index: i64 = som_operand(statement, operands, 1);
+            if (binding_index < 0) { return 2; }
+            let declared_type_index: i64 = som_operand(statement, operands, 2);
+            if (declared_type_index < 0) { return 3; }
+            let declared_type: StatementOperand = vec_get<StatementOperand>(operands, declared_type_index);
+            let catalog_index: i64 = som_find_type(
+                source, type_catalog,
+                statement_operand_start(declared_type), statement_operand_length(declared_type)
+            );
+            if (catalog_index < 0) { return 4; }
+            let type_entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(type_catalog, catalog_index);
+            var mutable: i32 = 0;
+            if (kind == 21) { mutable = 1; }
+            vec_push<MirOwnershipBinding>(output, ownership_binding(
+                next_binding, next_binding, type_entry.owned, mutable
+            ));
+            next_binding = checked_add(next_binding, 1);
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+    return 0;
+}
+
+// Cross-check the derived namespace against the independently emitted body
+// records. Ownership itself belongs to typed source metadata; identity and
+// mutability must agree exactly with the body-record stream.
+pub fn validate_derived_source_ownership_bindings(
+    borrow body_records: Vec<MirFunctionRecord>,
+    borrow bindings: Vec<MirOwnershipBinding>
+) -> i32 {
+    var binding_index: i64 = 0;
+    var record_index: i64 = 0;
+    while (record_index < vec_len<MirFunctionRecord>(body_records)) {
+        let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, record_index);
+        if (function_mir_kind(record) == 2) {
+            if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return 1; }
+            let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
+            if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return 2; }
+            if (ownership_binding_local_id(binding) != function_mir_id(record)) { return 3; }
+            if (ownership_binding_mutable(binding) != function_mir_mutable(record)) { return 4; }
+            binding_index = checked_add(binding_index, 1);
+        }
+        record_index = checked_add(record_index, 1);
+    }
+    if (binding_index != vec_len<MirOwnershipBinding>(bindings)) { return 5; }
+    return 0;
+}

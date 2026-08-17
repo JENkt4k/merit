@@ -9,6 +9,7 @@ import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_function_ownership_assembly;
 import bootstrap_mir_source_function_record_stats;
+import bootstrap_mir_source_ownership_metadata;
 import bootstrap_mir_resolved_source_function_pipeline;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_ownership_flow;
@@ -94,5 +95,59 @@ requires_caps [allocate]
 
     drop(stats);
     drop(canonical_events);
+    return 0;
+}
+
+// Production-shaped source entrypoint: typed declaration metadata says whether
+// a declared type is owned, while function-local binding/local identities and
+// mutability are derived from the actual source statement stream. The legacy
+// entrypoint above remains available for differential tests and staged callers.
+pub fn lower_resolved_source_function_assembly_from_source_types(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow type_ownership_catalog: Vec<SourceTypeOwnershipEntry>,
+    allocator: Allocator,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>,
+    borrow_mut contract_locals: Vec<MirFunctionContractLocal>,
+    borrow_mut required_capabilities: Vec<i64>,
+    borrow_mut instruction_sources: Vec<MirFunctionInstructionSource>,
+    borrow_mut assembled_events: Vec<MirLowerEvent>,
+    borrow_mut cfg_records: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let metadata_status: i32 = derive_source_ownership_bindings(
+        source, statements, statement_operands, type_ownership_catalog, ownership_metadata
+    );
+    if (metadata_status != 0) { return checked_add(100, metadata_status); }
+
+    let assembly_status: i32 = lower_resolved_source_function_assembly(
+        source, tokens, statements, statement_operands,
+        enum_catalog, match_enum_id, capability_catalog, ownership_metadata,
+        allocator, body_records, clause_metadata, contract_records,
+        resolved_arms, resolved_scopes, ownership_events, capability_effects,
+        ownership_records, contract_locals, required_capabilities,
+        instruction_sources, assembled_events, cfg_records, placements
+    );
+    if (assembly_status != 0) { return checked_add(1000, assembly_status); }
+
+    let binding_validation: i32 = validate_derived_source_ownership_bindings(
+        body_records, ownership_metadata
+    );
+    if (binding_validation != 0) { return checked_add(8000, binding_validation); }
     return 0;
 }
