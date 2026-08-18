@@ -4,7 +4,7 @@
 
 The first alpha closed a deterministic, resource-safe component-language subset. Its ordered gates are complete: portable left-to-right expression lowering, unique semantic binding IDs, the ephemeral returned-borrow boundary, release-document consolidation, the multi-module exact-decimal ledger acceptance application, arbitrary-precision numeric reference coverage, and the final local/specification audit.
 
-The alpha deliberately excludes stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, and package-registry work.
+The alpha does not require stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, or package-registry work.
 
 ## Proven foundation
 
@@ -12,7 +12,9 @@ The alpha deliberately excludes stored references, lifetime parameters, async, c
 - Epoch II established projects/modules, visibility, enums, typed propagation, strings, owned buffers, explicit allocation, filesystem reads, and CFG-shaped MIR.
 - Epoch III established explicit generics and coherent traits, generic collections, typed filesystem errors, allocator identity, destructors, stable shared libraries, structured diagnostics, qualified imports, object caching, ordered expression lowering, binding IDs, and validated ephemeral borrowed returns.
 
-## Active `v0.1.0-alpha.2` replacement compiler
+## After the first alpha
+
+### Active `v0.1.0-alpha.2` replacement compiler
 
 The objective is unchanged: eliminate Python semantic authority from normal production compilation while retaining the Python compiler as an independent oracle until the replacement qualifies as trusted. Do not broaden the language to achieve bootstrap.
 
@@ -48,5 +50,7 @@ Early bootstrap work established deterministic native lexer/parser records and c
 ### Trust criteria
 
 Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, acceptance behavior, and reproducible stages. Counts for isolated parser or expression fixtures are evidence for those boundaries, not a whole-language replacement percentage.
+
+Persistent hosted CI is a verification aid for the local/reproducibility gates; it does not replace bootstrap trust criteria. Broader hosted CI automation can expand after normal production compilation no longer depends on Python and the replacement interfaces have survived multiple release cycles.
 
 Async, concurrency, networking, LLVM, richer trait machinery, scientific arrays/tensors, registry/package infrastructure, formatter/LSP work, and broad platform automation remain post-alpha roadmap topics. They must not displace semantic correctness or replacement of the normal compiler path.
