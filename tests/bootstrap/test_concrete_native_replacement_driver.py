@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
+
+from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
+from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
+from merit.project.loader import load_project
+from merit.project.replacement import ReplacementProjectError, build_replacement_project
+from merit.project.replacement_prepare import prepare_replacement_artifacts
+
+
+SOURCE = "module main\nfn main()->i32 { return 7; }\n"
+MULTI_FUNCTION_SOURCE = (
+    "module main\n"
+    "fn helper()->i32 { return 6; }\n"
+    "fn main()->i32 { return 7; }\n"
+)
+
+
+def _project(tmp_path: Path, source: str = SOURCE) -> Path:
+    root = tmp_path / "native_driver_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname = "native_driver_project"\nentry = "src/main.mrt"\nsources = ["src/**/*.mrt"]\n\n'
+        '[build]\nc_flags = ["-O2"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "main.mrt").write_text(source, encoding="utf-8")
+    return root
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_reaches_replacement_executable_without_python_semantic_lowering(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+
+    completed = subprocess.run(
+        [str(driver.executable)],
+        input=SOURCE,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    values = tuple(int(line) for line in completed.stdout.splitlines())
+    bundle = decode_resolved_source_function_bundle(values)
+    assert len(bundle.functions) == 1
+    assert len(bundle.encoded_snapshots) == 1
+
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+
+    artifact = build_replacement_project(project, root / "build" / "replacement-native-driver")
+    executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert executed.returncode == 7
+    assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_before_multi_function_lowering(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path, MULTI_FUNCTION_SOURCE)
+    project = load_project(root / "Merit.toml")
+
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
