@@ -55,7 +55,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         let source: Buffer = buffer_from_string(allocator, source_text);
         let tokens: Vec<Token> = lex(source, allocator);
         if (driver_function_count(source, tokens) != 1) {
-            drop(tokens); drop(source);
             return 901;
         }
         let statements: Vec<StatementRecord> = parse_statement_records(source, tokens, allocator);
@@ -87,30 +86,17 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
             required, sources, assembled, cfg, placements
         );
         if (assembly_status != 0) {
-            drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
-            drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
-            drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
-            drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
             return checked_add(1000, assembly_status);
         }
 
         let header_status: i32 = print_resolved_source_function_bundle_header(1);
         if (header_status != 0) {
-            drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
-            drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
-            drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
-            drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
             return checked_add(2000, header_status);
         }
         let item_status: i32 = print_resolved_source_function_bundle_item(
             body, contracts, contract_locals, sources, ownership,
             ownership_records, cfg, placements, required
         );
-
-        drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
-        drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
-        drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
-        drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
         if (item_status != 0) { return checked_add(3000, item_status); }
         return 0;
     }
