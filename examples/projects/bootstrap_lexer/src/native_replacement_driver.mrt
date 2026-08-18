@@ -1,0 +1,92 @@
+module bootstrap_native_replacement_driver;
+import bootstrap_tokens;
+import bootstrap_lexer_core;
+import bootstrap_statements;
+import bootstrap_statement_semantics;
+import bootstrap_mir_functions;
+import bootstrap_mir_function_clause_metadata;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_assembly_plan;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_match_capability_flow;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_structured_lowering;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_source_type_lifecycle;
+import bootstrap_mir_resolved_source_function_assembly;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+// First concrete production-shaped native frontend driver entrypoint.
+// The foreign host supplies raw source bytes as a stable String view. Merit owns
+// all target-source lexing, statement discovery, lifecycle derivation, resolved
+// function assembly, snapshot materialization, and MRBF framing. Python never
+// parses or semantically lowers the target source on this path.
+//
+// v1 deliberately supports the single-function, no-enum/no-capability subset.
+// Those unsupported declaration surfaces fail closed in later native stages;
+// multi-function source-unit discovery is the next driver milestone.
+pub fn emit_replacement_bundle(source_text: String) -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        let source: Buffer = buffer_from_string(allocator, source_text);
+        let tokens: Vec<Token> = lex(source, allocator);
+        let statements: Vec<StatementRecord> = parse_statement_records(source, tokens, allocator);
+        let operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
+
+        var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 0);
+        var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 0);
+        var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
+        var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
+        var metadata: Vec<MirFunctionClauseMetadata> = vec_new<MirFunctionClauseMetadata>(allocator, 8);
+        var contracts: Vec<MirFunctionContractRecord> = vec_new<MirFunctionContractRecord>(allocator, 32);
+        var arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(allocator, 4);
+        var scopes: Vec<ResolvedCapabilityScope> = vec_new<ResolvedCapabilityScope>(allocator, 4);
+        var ownership_events: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 96);
+        var effects: Vec<MirCapabilityEffect> = vec_new<MirCapabilityEffect>(allocator, 8);
+        var ownership_records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 64);
+        var contract_locals: Vec<MirFunctionContractLocal> = vec_new<MirFunctionContractLocal>(allocator, 16);
+        var required: Vec<i64> = vec_new<i64>(allocator, 8);
+        var sources: Vec<MirFunctionInstructionSource> = vec_new<MirFunctionInstructionSource>(allocator, 128);
+        var assembled: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 160);
+        var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
+        var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
+
+        let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
+            source, tokens, statements, operands,
+            variants, -1, capabilities, allocator,
+            ownership, body, metadata, contracts, arms, scopes,
+            ownership_events, effects, ownership_records, contract_locals,
+            required, sources, assembled, cfg, placements
+        );
+        if (assembly_status != 0) {
+            drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
+            drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
+            drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
+            drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
+            return checked_add(1000, assembly_status);
+        }
+
+        let header_status: i32 = print_resolved_source_function_bundle_header(1);
+        if (header_status != 0) {
+            drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
+            drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
+            drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
+            drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
+            return checked_add(2000, header_status);
+        }
+        let item_status: i32 = print_resolved_source_function_bundle_item(
+            body, contracts, contract_locals, sources, ownership,
+            ownership_records, cfg, placements, required
+        );
+
+        drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required);
+        drop(contract_locals); drop(ownership_records); drop(effects); drop(ownership_events);
+        drop(scopes); drop(arms); drop(contracts); drop(metadata); drop(body); drop(ownership);
+        drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
+        if (item_status != 0) { return checked_add(3000, item_status); }
+        return 0;
+    }
+}
