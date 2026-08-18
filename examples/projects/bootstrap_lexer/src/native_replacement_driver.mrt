@@ -83,7 +83,9 @@ fn driver_collect_function_tokens(
     borrow tokens: Vec<Token>,
     wanted_function: i64,
     borrow_mut output: Vec<Token>
-) -> i32 {
+) -> i32
+requires_caps [allocate]
+{
     var index: i64 = 0;
     var function_index: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
