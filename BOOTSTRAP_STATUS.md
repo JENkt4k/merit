@@ -1,114 +1,64 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-08-11
+Checkpoint date: 2026-08-18
 
-Scope: replacement-compiler development after the stable alpha reference compiler. Python remains the independent oracle; the Merit-native compiler is not yet trusted or self-hosted.
+Scope: `v0.1.0-alpha.2` replacement-compiler development after the stable alpha reference compiler. Python remains the independent oracle; the Merit-native replacement compiler is not yet trusted or self-hosted.
 
-## Verified baseline entering this branch
+## Current verified architecture
 
-| Metric | Result |
+The replacement compiler is no longer accurately described as an expression-MIR experiment. The measured lexer/parser/AST/HIR/MIR fixtures remain useful differential evidence, but the active work has moved to complete source-backed function slices.
+
+The native replacement path now represents resolved functions with versioned records for function body instructions, contracts and contract locals, instruction source/provenance, ownership bindings/effects, CFG and placement, and capability identities/effects. A source unit can publish multiple such functions in one versioned `resolved-source-function-bundle-v1` bundle.
+
+Prepared replacement projects consume those native-resolved snapshots, validate them against the current source digest, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables. Replacement project mode fails closed instead of falling back to Python semantics.
+
+PR #75 completed multi-function bundle framing. PR #76 established a first-class `NativeReplacementDriver` executable boundary for `prepare-replacement`, replacing the former arbitrary command-vector producer interface. Python remains responsible only for process orchestration, bundle validation, source identity, and atomic artifact publication at this seam.
+
+## Evidence and gates
+
+| Area | Current status |
 |---|---|
-| Total tests passing | 758 passed, 1 skipped on the latest fully green hosted baseline |
-| Hosted pytest | 758 passed, 1 skipped on Ubuntu / Python 3.11 / system C compiler |
-| Windows native smoke | Passing on Python 3.11 / MSYS2 UCRT64 GCC |
-| Compile-pass tests | Covered throughout positive semantic/project tests; whole-suite count is not yet separately instrumented |
-| Compile-fail tests | Explicit negative semantic, ownership, capability, visibility, and malformed-contract cases exist; whole-suite count is not yet separately instrumented |
-| Acceptance projects | 9 / 9 |
-| Lexer differential cases | Complete for the versioned bootstrap token/span corpus |
-| Parser differential cases | Complete for the current syntax/diagnostic corpus and all 12 expression cases |
-| AST differential cases | 12 / 12 expression cases with malformed-record validation |
-| HIR differential cases | 12 / 12 expression cases |
-| Expression parser differential corpus | 12 / 12 |
-| Canonical expression AST parity | 12 / 12 |
-| Canonical expression HIR parity | 12 / 12 |
-| Canonical expression MIR parity | 6 / 12 verified before this branch; 11 / 12 target on this branch |
-| Interpreter/native parity | Exact for every measured replacement record stream plus 9 / 9 acceptance projects |
-| Bootstrap/reference parity | 100% for explicitly covered replacement stages/cases; not a whole-language replacement percentage |
-| Reference compiler source | Python alpha compiler remains the independent semantic oracle; source size is not remeasured in this checkpoint |
-| Merit-native compiler source | Replacement lexer/parser/AST/HIR expression boundary is complete; MIR replacement is expanding; source size is not remeasured in this checkpoint |
-| Generated C size | Not remeasured in this checkpoint; generated size remains evidence rather than an optimization target |
-| Known semantic blockers | Generic specialization identity is not yet represented in bootstrap MIR; whole-function/control-flow/ownership/capability replacement and MIR-only C emission remain open |
-| Reference compiler | Feature-rich alpha implementation; remains the independent semantic oracle |
-| Replacement compiler | Lexer/parser/AST/HIR expression boundary complete; MIR replacement expanding |
-| Self-hosted/trusted replacement | Not yet |
+| Stable alpha reference compiler | Complete for documented `v0.1.0-alpha.1` subset |
+| Merit-native lexer/parser bootstrap corpus | Proven for measured versioned corpora |
+| Expression AST/HIR/MIR bootstrap contracts | Proven for measured differential cases; not a whole-language percentage |
+| Source-backed function semantics | Native records exist for supported body/contract/ownership/CFG/capability surfaces |
+| Multi-function source units | Versioned native bundle boundary complete |
+| Replacement canonical MIR | Consumes native-resolved snapshots for supported functions |
+| Deterministic replacement C/native build | Proven for supported replacement inputs |
+| Project replacement mode | Exists and refuses reference-compiler fallback |
+| Prepared-artifact freshness | Source SHA-256 checked; stale artifacts rejected |
+| Production frontend interface | `NativeReplacementDriver` executable boundary complete |
+| Concrete Merit-native driver attached | Next milestone |
+| Complete accepted-alpha replacement corpus | Not yet |
+| Normal Python-free production compilation | Not yet |
+| Trusted/self-hosted replacement | Not yet |
 
-The old August 8 checkpoint that reported HIR as unimplemented is superseded by this document.
+The authoritative GitHub Local Gate runs the full clean Ubuntu/Python 3.11/system-C gate plus a focused Windows/MSYS2 UCRT64 GCC native smoke. PR #76 passed Local Gate run 177 before merge.
 
-## Current branch objective
+## Immediate milestone
 
-`bootstrap/mir-composite-expressions-v1` expands measured expression MIR from 6/12 to a target of 11/12 by adding an explicit composite-expression replacement boundary for:
+Build or attach the concrete Merit-native source-unit frontend executable behind `NativeReplacementDriver` and prove this complete path without Python semantic lowering:
 
-- empty calls
-- ordered multi-argument calls
-- nested calls
-- field loads
-- aggregate construction
-- constructor/call/field composition
+```text
+source unit
+ -> native frontend driver
+ -> resolved multi-function bundle
+ -> prepared project artifacts
+ -> canonical replacement MIR
+ -> deterministic C
+ -> native executable
+```
 
-The branch also adds the missing canonical HIR `field -> load_field` lowering rule. The native composite stream owns resolved symbol spans, ordered operand locals, receiver locals, deterministic root-first temporary allocation, postorder instruction emission, result types, source spans, and canonical HIR provenance.
+The driver must be a real compiler boundary, not a fixture protocol adapter. Unsupported source must fail deterministically rather than silently falling back to the reference compiler.
 
-The only expression case intentionally left outside MIR parity is `identity<i64>(1)`. HIR preserves the explicit generic argument, while the current MIR call contract does not. That information must become first-class MIR metadata before the case can be promoted honestly.
+## Strategy after the driver is attached
 
-## Replacement roadmap
+Expand vertically through the documented alpha language: statements and control flow, ownership/resource operations, contracts and capabilities, exact numerics, aggregates and payload enums, generics/traits, and module/project interactions. For each promoted surface, keep positive and negative/fail-closed tests plus reference/interpreter/native differential evidence as applicable.
 
-| Phase | Objective | Status |
-|---|---|---|
-| A | Lexing, syntax discovery, statement/clause operand boundaries | Proven for versioned bootstrap corpus |
-| B | Expression parser and canonical AST | 12 / 12 measured corpus cases |
-| C | Typed expression HIR | 12 / 12 measured corpus cases |
-| D1 | Primitive expression MIR | 6 / 12 verified baseline |
-| D2 | Composite expression MIR | 11 / 12 target on this branch; hosted verification required before merge |
-| D3 | Generic specialization identity in MIR | Next expression milestone |
-| E | Statement/function/control-flow HIR -> MIR replacement | Not yet replacement-complete |
-| F | Ownership, contracts, capabilities, resources through replacement MIR | Existing reference semantics proven; native replacement still to be expanded |
-| G | Deterministic C backend consumes replacement MIR only | Not yet |
-| H | All nine acceptance applications through replacement compiler | Not yet |
-| I | Remove Python compiler from trusted production path / self-host bootstrap | Final replacement frontier |
-
-## Proven reference-language foundation
-
-The existing alpha compiler already has strong verified semantics that the bootstrap compiler is replacing rather than inventing:
-
-- exact primitive, bounded, and decimal numerics
-- ownership, moves, borrows, deterministic destruction, and explicit allocation
-- capabilities and contracts
-- generic structs/enums/functions, traits, coherence, and generic collections within documented limits
-- immutable string views and owned buffers
-- filesystem capability gating
-- structured diagnostics and source provenance
-- C interoperability and stable-layout checks
-- CFG-shaped MIR and deterministic C11 native execution
-- interpreter/native differential verification
-- nine acceptance applications, including the ledger application
-
-These features define the semantic oracle for replacement work. Covered bootstrap-corpus parity must not be described as whole-language replacement until those semantic surfaces also flow through the Merit-native compiler.
-
-## Strategy after expression MIR closes
-
-After the expression corpus reaches 12/12 MIR parity, development should move vertically rather than accumulating isolated parser fixtures:
-
-1. feed typed statement operands through canonical AST/HIR/MIR;
-2. feed function clauses and contracts through the same path;
-3. expand control flow (`if`, `while`, `match`) with exact block/terminator parity;
-4. expand ownership/resource operations (`move`, `borrow`, `drop`, allocation/destruction);
-5. expand capabilities and contracts;
-6. expand generic and aggregate semantics across whole functions/modules;
-7. make deterministic C emission consume replacement MIR;
-8. move each acceptance application to the replacement pipeline until all 9/9 pass without Python semantic lowering.
-
-This ordering maximizes vertical replacement evidence: each milestone should remove a real dependency on the Python compiler instead of merely increasing syntax coverage.
+Move acceptance applications onto the replacement path incrementally. Only after the accepted/rejected alpha corpus and acceptance behavior agree should normal production compilation default to the replacement compiler. Stage equivalence and self-hosting follow trust; they do not substitute for it.
 
 ## Deliberate non-blocking future work
 
-The following remain useful post-replacement engineering goals but do not need to block self-hosting of the documented alpha language:
+Stored references/lifetime parameters, subobject-disjoint borrowing, richer trait features, typed generic IR, LLVM, package infrastructure, formatter/LSP, concurrency, networking, and scientific array/tensor work remain outside the bootstrap critical path.
 
-- stored references and explicit lifetime parameters
-- subobject-disjoint borrowing
-- ownership/capability-changing destructor bodies
-- per-module C objects and dependency-granular cache invalidation
-- broader trait features such as associated types and specialization
-- typed generic IR replacing source-rewrite monomorphization
-- optimizer expansion and LLVM lowering
-- package registry, formatter, language server, concurrency, and production tooling
-
-Generated C size and replacement-source line counts remain evidence rather than optimization targets. Trust is based on deterministic contracts, differential parity, compile-pass/fail coverage, and acceptance behavior.
+Generated C size and replacement-source line counts are evidence rather than optimization targets. Trust is based on semantic contracts, differential parity, compile-pass/fail coverage, deterministic artifacts, and acceptance behavior.
