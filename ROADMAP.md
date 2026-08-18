@@ -2,17 +2,9 @@
 
 ## `v0.1.0-alpha.1` release gate
 
-The first alpha closes a deterministic, resource-safe component-language subset. Work proceeds in this order:
+The first alpha closed a deterministic, resource-safe component-language subset. Its ordered gates are complete: portable left-to-right expression lowering, unique semantic binding IDs, the ephemeral returned-borrow boundary, release-document consolidation, the multi-module exact-decimal ledger acceptance application, arbitrary-precision numeric reference coverage, and the final local/specification audit.
 
-1. Universal left-to-right ordered expression lowering — complete.
-2. Unique semantic binding IDs for ownership and cleanup — complete.
-3. Ephemeral-only returned-borrow boundary — complete.
-4. Release-document consolidation — complete.
-5. Multi-module exact-decimal ledger acceptance application with typed errors, explicit allocation, filesystem capabilities, stable exports, and foreign ABI verification — complete.
-6. Arbitrary-precision reference coverage for decimal and bounded arithmetic — complete.
-7. Final complete local test, project, generated-C, ABI, and specification audit — complete.
-
-The alpha does not require stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, a package registry, or hosted CI.
+The alpha deliberately excludes stored references, lifetime parameters, async, concurrency, networking, LLVM, trait objects, specialization, tensors, and package-registry work.
 
 ## Proven foundation
 
@@ -20,32 +12,41 @@ The alpha does not require stored references, lifetime parameters, async, concur
 - Epoch II established projects/modules, visibility, enums, typed propagation, strings, owned buffers, explicit allocation, filesystem reads, and CFG-shaped MIR.
 - Epoch III established explicit generics and coherent traits, generic collections, typed filesystem errors, allocator identity, destructors, stable shared libraries, structured diagnostics, qualified imports, object caching, ordered expression lowering, binding IDs, and validated ephemeral borrowed returns.
 
-## After the first alpha
+## Active `v0.1.0-alpha.2` replacement compiler
 
-Prioritize a non-Python replacement compiler, typed AST/HIR/MIR stability across additional feature sets, deterministic local release tooling, and multiple post-bootstrap releases. Per-module C objects and dependency-granular caching may proceed when they preserve the existing semantic pipeline.
+The objective is unchanged: eliminate Python semantic authority from normal production compilation while retaining the Python compiler as an independent oracle until the replacement qualifies as trusted. Do not broaden the language to achieve bootstrap.
 
-### Active `v0.1.0-alpha.2` bootstrap targets
+Early bootstrap work established deterministic native lexer/parser records and canonical expression AST/HIR/MIR contracts. Development has since moved vertically through real source-backed functions rather than waiting for every isolated stage fixture to reach whole-language coverage first.
 
-1. Complete typed statement syntax records — complete; deterministic statement envelopes and typed binding/type/expression/capability operand ranges are differentially verified through interpreter and native execution.
-2. Complete expression precedence and typed expression records — in progress; direct constructors and single-type generic calls join atoms, postfix, arithmetic, and comparisons; qualified/multi-type constructors and full recovery remain.
-3. Complete typed effects, capability, precondition, and postcondition operands — complete; `bootstrap-clause-v1` records preserve ordered effect/capability names and contract-expression source spans without performing semantic validation.
-4. Complete deterministic parser recovery — pending; initial structural recovery and diagnostics are implemented.
-5. Establish an explicit trivia-preserving CST-to-AST boundary — pending.
-6. Define typed AST records for the accepted alpha language — in progress; expression-stage `bootstrap-ast-v1` lowering is differentially verified, while statement/clause expression operands remain source-oriented integration boundaries.
-7. Lower AST into typed HIR — pending.
-8. Differentially compare reference and bootstrap HIR over the accepted corpus — pending.
-9. Implement semantic checking over HIR — pending.
-10. Implement ownership, contracts, capabilities, and exact numeric rules over HIR — pending.
-11. Lower checked HIR into deterministic MIR — pending.
-12. Emit C only from MIR — pending.
-13. Establish stage-0/stage-1 compiler equivalence — pending.
-14. Compile the complete accepted alpha corpus without Python in the normal path — pending.
-15. Begin self-hosting only after the bootstrap compiler qualifies as trusted — pending.
+### Completed replacement boundaries
 
-The Merit-native lexer and its independent token/span corpus are complete prerequisites. The current syntax index plus versioned statement/clause operand records are parser-development artifacts, not yet the trivia-preserving CST or whole-language AST.
+1. Merit-native lexer and source-oriented statement/clause/expression discovery for the measured bootstrap corpus.
+2. Canonical expression AST/HIR/MIR contracts with differential Python-oracle and interpreter/native evidence for their measured cases.
+3. Source-backed function records carrying body instructions and source provenance.
+4. Function contracts and contract-local metadata in the native path.
+5. Whole-function assembly records and deterministic instruction-source identity.
+6. Ownership bindings/effects and path-sensitive control-flow integration for supported source functions.
+7. CFG records and deterministic placement integrated with resolved source functions.
+8. Capability identities/effects carried through the resolved source-function boundary.
+9. Versioned resolved-source-function snapshots and multi-function `resolved-source-function-bundle-v1` framing.
+10. Canonical replacement MIR reconstruction and deterministic C/native execution from native-resolved artifacts.
+11. Production project replacement mode that consumes prepared native artifacts and refuses Python fallback.
+12. Source-digest validation and atomic preparation/publication of replacement artifacts.
+13. A first-class `NativeReplacementDriver` executable boundary replacing the arbitrary producer-command seam.
 
-The next front-end integration work should connect kind-3 statement/clause expression spans to the existing `bootstrap-expression-v1` / `bootstrap-ast-v1` pipeline while keeping source-boundary discovery and expression-tree construction independently testable. Qualified/multi-type constructors and deterministic malformed-expression recovery can then close the remaining expression parser gap before the CST boundary is finalized.
+### Immediate critical path
 
-Reconsider persistent hosted CI only after normal production compilation no longer depends on Python, the typed interfaces have survived several feature sets and releases, and local release/acceptance gates are mature and reproducible.
+1. Attach a concrete Merit-native source-unit frontend executable behind `NativeReplacementDriver`.
+2. Prove source unit -> multi-function native bundle -> prepared artifacts -> canonical replacement MIR -> deterministic C -> executable end to end.
+3. Expand that vertical path across remaining accepted-alpha statements, control flow, ownership/resources, contracts, capabilities, exact numerics, aggregates, generics/traits, and module interactions.
+4. Maintain accepted/rejected differential corpus parity and fail closed whenever the replacement compiler cannot represent a construct faithfully.
+5. Move the acceptance applications through the replacement path until the documented alpha surface compiles without Python semantic lowering.
+6. Make replacement compilation the normal production path only after its semantic coverage and parity gates justify the transition.
+7. Establish stage-0/stage-1 equivalence and reproducibility.
+8. Begin self-hosting only after the replacement compiler qualifies as trusted.
 
-Async, concurrency, networking, LLVM, richer trait machinery, scientific arrays/tensors, registry/package infrastructure, formatter/LSP work, and broad platform automation remain post-alpha roadmap topics. They must not displace semantic correctness or bootstrap replacement.
+### Trust criteria
+
+Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, acceptance behavior, and reproducible stages. Counts for isolated parser or expression fixtures are evidence for those boundaries, not a whole-language replacement percentage.
+
+Async, concurrency, networking, LLVM, richer trait machinery, scientific arrays/tensors, registry/package infrastructure, formatter/LSP work, and broad platform automation remain post-alpha roadmap topics. They must not displace semantic correctness or replacement of the normal compiler path.
