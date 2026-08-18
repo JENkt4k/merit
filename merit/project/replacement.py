@@ -177,7 +177,7 @@ def build_replacement_project(project: LoadedProject, output: Path) -> Replaceme
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     entry_name = _project_entry_name(project)
-    main_c = f"int main(void) {{ return (int){entry_name}(); }}"
+    main_c = "" if entry_name == "main" else f"int main(void) {{ return (int){entry_name}(); }}"
     c_path, executable = compile_replacement_artifact(
         artifact,
         output,
