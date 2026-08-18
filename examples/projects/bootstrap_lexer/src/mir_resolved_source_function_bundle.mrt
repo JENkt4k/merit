@@ -1,0 +1,69 @@
+module bootstrap_mir_resolved_source_function_bundle
+import bootstrap_mir_functions;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_assembly_plan;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_snapshot;
+
+// resolved-source-function-bundle-v1
+// magic "MRBF", version, function count, then for each function:
+// snapshot value count followed by one complete
+// bootstrap-resolved-source-function-snapshot-v1 payload.
+
+pub fn resolved_source_function_snapshot_value_count(
+    borrow body: Vec<MirFunctionRecord>,
+    borrow contracts: Vec<MirFunctionContractRecord>,
+    borrow contract_locals: Vec<MirFunctionContractLocal>,
+    borrow sources: Vec<MirFunctionInstructionSource>,
+    borrow ownership_bindings: Vec<MirOwnershipBinding>,
+    borrow ownership_records: Vec<MirOwnershipRecord>,
+    borrow cfg: Vec<MirCfgRecord>,
+    borrow placements: Vec<MirPlacementRecord>,
+    borrow capabilities: Vec<i64>
+) -> i64 {
+    var count: i64 = 11; // magic + version + nine section counts
+    count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(body), 16));
+    count = checked_add(count, checked_mul(vec_len<MirFunctionContractRecord>(contracts), 12));
+    count = checked_add(count, checked_mul(vec_len<MirFunctionContractLocal>(contract_locals), 5));
+    count = checked_add(count, checked_mul(vec_len<MirFunctionInstructionSource>(sources), 8));
+    count = checked_add(count, checked_mul(vec_len<MirOwnershipBinding>(ownership_bindings), 4));
+    count = checked_add(count, checked_mul(vec_len<MirOwnershipRecord>(ownership_records), 8));
+    count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(cfg), 7));
+    count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(placements), 3));
+    count = checked_add(count, vec_len<i64>(capabilities));
+    return count;
+}
+
+pub fn print_resolved_source_function_bundle_header(function_count: i64) -> i32 {
+    if (function_count <= 0) { return 1; }
+    print(1297236550); // MRBF
+    print(1);
+    print(function_count);
+    return 0;
+}
+
+pub fn print_resolved_source_function_bundle_item(
+    borrow body: Vec<MirFunctionRecord>,
+    borrow contracts: Vec<MirFunctionContractRecord>,
+    borrow contract_locals: Vec<MirFunctionContractLocal>,
+    borrow sources: Vec<MirFunctionInstructionSource>,
+    borrow ownership_bindings: Vec<MirOwnershipBinding>,
+    borrow ownership_records: Vec<MirOwnershipRecord>,
+    borrow cfg: Vec<MirCfgRecord>,
+    borrow placements: Vec<MirPlacementRecord>,
+    borrow capabilities: Vec<i64>
+) -> i32 {
+    let value_count: i64 = resolved_source_function_snapshot_value_count(
+        body, contracts, contract_locals, sources, ownership_bindings,
+        ownership_records, cfg, placements, capabilities
+    );
+    if (value_count < 11) { return 1; }
+    print(value_count);
+    return print_resolved_source_function_snapshot(
+        body, contracts, contract_locals, sources, ownership_bindings,
+        ownership_records, cfg, placements, capabilities
+    );
+}

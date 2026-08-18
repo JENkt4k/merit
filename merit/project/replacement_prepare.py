@@ -1,10 +1,10 @@
 """Native frontend -> replacement project artifact publication.
 
 This is orchestration only. A producer executable receives one source unit on
-stdin and must emit exactly one resolved-source-function snapshot as newline
-separated integers on stdout. Python validates the snapshot transport, records
-source identity, and publishes the project manifest atomically. It never parses
-or semantically lowers the target source.
+stdin and emits a versioned multi-function resolved-source bundle as newline
+separated integers on stdout. Python validates transport/framing, records source
+identity, and publishes project artifacts atomically. It never parses or
+semantically lowers the target source.
 """
 
 from __future__ import annotations
@@ -16,11 +16,16 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
-from typing import Iterable, Sequence
+from typing import Sequence
 
-from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
+from merit.bootstrap.resolved_source_function_bundle import (
+    ResolvedSourceFunctionBundleError,
+    decode_resolved_source_function_bundle,
+)
 from merit.project.loader import LoadedProject, SourceUnit
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
+
+PRODUCER_PROTOCOL = "resolved-source-function-bundle-v1"
 
 
 @dataclass(frozen=True)
@@ -33,20 +38,22 @@ def _source_digest(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def _producer_environment(unit: SourceUnit, function_index: int) -> dict[str, str]:
+def _producer_environment(unit: SourceUnit) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
         {
-            "MERIT_REPLACEMENT_PROTOCOL": "resolved-source-function-snapshot-v1",
+            "MERIT_REPLACEMENT_PROTOCOL": PRODUCER_PROTOCOL,
             "MERIT_REPLACEMENT_MODULE": unit.module,
             "MERIT_REPLACEMENT_SOURCE_PATH": str(unit.path.resolve()),
-            "MERIT_REPLACEMENT_FUNCTION_INDEX": str(function_index),
         }
     )
+    # Remove the v1 per-function selector so producers cannot accidentally keep
+    # behaving as one-function-per-source workers under the bundle protocol.
+    environment.pop("MERIT_REPLACEMENT_FUNCTION_INDEX", None)
     return environment
 
 
-def _run_producer(command: Sequence[str], unit: SourceUnit, function_index: int) -> tuple[int, ...]:
+def _run_producer(command: Sequence[str], unit: SourceUnit) -> tuple[tuple[int, ...], ...]:
     if not command:
         raise ReplacementProjectError("replacement producer command is empty")
     try:
@@ -55,7 +62,7 @@ def _run_producer(command: Sequence[str], unit: SourceUnit, function_index: int)
             input=unit.parser_source,
             text=True,
             capture_output=True,
-            env=_producer_environment(unit, function_index),
+            env=_producer_environment(unit),
         )
     except OSError as exc:
         raise ReplacementProjectError(f"replacement producer could not start: {exc}") from exc
@@ -69,16 +76,19 @@ def _run_producer(command: Sequence[str], unit: SourceUnit, function_index: int)
         values = tuple(int(line.strip()) for line in completed.stdout.splitlines() if line.strip())
     except ValueError as exc:
         raise ReplacementProjectError(
-            f"replacement producer emitted non-integer snapshot data for module {unit.module!r}"
+            f"replacement producer emitted non-integer bundle data for module {unit.module!r}"
         ) from exc
     if not values:
         raise ReplacementProjectError(
-            f"replacement producer emitted no snapshot for module {unit.module!r}"
+            f"replacement producer emitted no bundle for module {unit.module!r}"
         )
-    # Full decode here catches corrupt/truncated/trailing native transport before
-    # anything is published to the project's production artifact directory.
-    decode_resolved_source_function_snapshot(values)
-    return values
+    try:
+        bundle = decode_resolved_source_function_bundle(values)
+    except ResolvedSourceFunctionBundleError as exc:
+        raise ReplacementProjectError(
+            f"replacement producer emitted invalid bundle for module {unit.module!r}: {exc}"
+        ) from exc
+    return bundle.encoded_snapshots
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -99,13 +109,7 @@ def prepare_replacement_artifacts(
     project: LoadedProject,
     producer_command: Sequence[str],
 ) -> PreparedReplacementArtifacts:
-    """Run the native producer and publish fail-closed replacement artifacts.
-
-    The current production protocol intentionally supports one resolved function
-    per source unit. That matches the first source-function replacement boundary
-    and fails closed rather than guessing when native multi-function framing is
-    not yet available.
-    """
+    """Run the native producer and publish all resolved functions atomically."""
 
     artifact_dir = project.manifest.root / ".merit"
     staged: list[tuple[Path, str]] = []
@@ -113,22 +117,25 @@ def prepare_replacement_artifacts(
     snapshot_paths: list[Path] = []
 
     for unit in project.units:
-        values = _run_producer(producer_command, unit, 0)
-        filename = f"replacement-{unit.module}.snapshot"
-        path = artifact_dir / filename
-        staged.append((path, "\n".join(str(value) for value in values) + "\n"))
-        snapshot_paths.append(path)
-        manifest_functions.append(
-            {
-                "module": unit.module,
-                "snapshot": filename,
-                "source_sha256": _source_digest(unit.parser_source),
-            }
-        )
+        snapshots = _run_producer(producer_command, unit)
+        digest = _source_digest(unit.parser_source)
+        for function_index, values in enumerate(snapshots):
+            filename = f"replacement-{unit.module}-{function_index}.snapshot"
+            path = artifact_dir / filename
+            staged.append((path, "\n".join(str(value) for value in values) + "\n"))
+            snapshot_paths.append(path)
+            manifest_functions.append(
+                {
+                    "module": unit.module,
+                    "function_index": function_index,
+                    "snapshot": filename,
+                    "source_sha256": digest,
+                }
+            )
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,
-        "producer_protocol": "resolved-source-function-snapshot-v1",
+        "producer_protocol": PRODUCER_PROTOCOL,
         "functions": manifest_functions,
     }
     manifest_path = artifact_dir / REPLACEMENT_MANIFEST
