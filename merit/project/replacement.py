@@ -130,7 +130,11 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
         except ValueError as exc:
             raise ReplacementProjectError("replacement snapshot path escapes .merit directory") from exc
         try:
-            snapshot_values = tuple(int(line.strip()) for line in snapshot_path.read_text(encoding="utf-8").splitlines() if line.strip())
+            snapshot_values = tuple(
+                int(line.strip())
+                for line in snapshot_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
         except (OSError, ValueError) as exc:
             raise ReplacementProjectError(f"invalid replacement snapshot: {snapshot_path}") from exc
         unit = unit_by_module[module_name]
@@ -158,13 +162,22 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
     return tuple(resolved)
 
 
+def _project_entry_name(project: LoadedProject) -> str:
+    """Return the conventional executable entry function from the loaded program."""
+
+    entry = next((function for function in project.program.functions if function.name == "main"), None)
+    if entry is None:
+        raise ReplacementProjectError("replacement executable requires a main function")
+    return entry.name
+
+
 def build_replacement_project(project: LoadedProject, output: Path) -> ReplacementProjectArtifact:
     """Build only from native-resolved snapshots; never invoke reference semantics."""
 
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
-    entry_name = project.program.functions[project.program.entry].name
-    main_c = f"int main(void) {{ return (int){entry_name}(); }}"
+    entry_name = _project_entry_name(project)
+    main_c = "" if entry_name == "main" else f"int main(void) {{ return (int){entry_name}(); }}"
     c_path, executable = compile_replacement_artifact(
         artifact,
         output,
