@@ -19,6 +19,8 @@ The authoritative GitHub Local Gate currently covers a full clean Ubuntu/Python 
 - The exact-decimal ledger application exercises multi-module typed errors, filesystem capabilities, explicit allocation, stable exports, and foreign ABI verification.
 - Independent arbitrary-precision references cover decimal rounding policies and bounded arithmetic boundaries.
 
+All seven ordered `v0.1.0-alpha.1` gates remain complete. No known semantic correctness blocker remains undocumented; deliberate exclusions remain recorded in `LIMITATIONS.md`.
+
 ## Active replacement-compiler state
 
 The replacement effort has progressed beyond the early isolated lexer/parser/AST/HIR checkpoints. The repository now contains native source-backed function resolution that carries function bodies, contracts, instruction provenance, ownership bindings/effects, CFG records/placement, and capability identities into versioned resolved-source snapshots. Multiple resolved functions from one source unit are framed in a versioned `resolved-source-function-bundle-v1` bundle.
