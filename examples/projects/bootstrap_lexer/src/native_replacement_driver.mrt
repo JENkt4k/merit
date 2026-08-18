@@ -1,4 +1,4 @@
-module bootstrap_native_replacement_driver;
+module bootstrap_native_replacement_driver
 import bootstrap_tokens;
 import bootstrap_lexer_core;
 import bootstrap_statements;
