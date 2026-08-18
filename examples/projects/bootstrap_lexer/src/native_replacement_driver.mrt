@@ -19,7 +19,7 @@ import bootstrap_mir_resolved_source_function_bundle;
 
 capability allocate;
 
-fn driver_token_is_fn(borrow source: Buffer, token: Token) -> i32 {
+fn driver_token_is_fn(borrow source: Buffer, borrow token: Token) -> i32 {
     if (token_kind(token) != 1) { return 0; }
     if (token_length(token) != 2) { return 0; }
     let start: i64 = token_start(token);
@@ -28,7 +28,7 @@ fn driver_token_is_fn(borrow source: Buffer, token: Token) -> i32 {
     return 1;
 }
 
-fn driver_token_is_byte(borrow source: Buffer, token: Token, wanted: i64) -> i32 {
+fn driver_token_is_byte(borrow source: Buffer, borrow token: Token, wanted: i64) -> i32 {
     if (token_kind(token) != 4) { return 0; }
     if (token_length(token) != 1) { return 0; }
     if (buffer_get(source, token_start(token)) != wanted) { return 0; }
