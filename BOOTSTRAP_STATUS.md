@@ -14,7 +14,25 @@ Prepared replacement projects consume those native-resolved snapshots, validate 
 
 PR #75 completed multi-function bundle framing. PR #76 established a first-class `NativeReplacementDriver` executable boundary for `prepare-replacement`, replacing the former arbitrary command-vector producer interface. Python remains responsible only for process orchestration, bundle validation, source identity, and atomic artifact publication at this seam.
 
-## Evidence and gates
+## Required quality dimensions
+
+| Metric | Current status |
+|---|---|
+| Total tests passing | 882 passed, 1 skipped on the first post-document-sync Local Gate attempt before these documentation-contract repairs; rerun required |
+| Compile-pass tests | Positive semantic/project/native coverage remains part of the full suite; whole-suite count is not separately instrumented |
+| Compile-fail tests | Negative semantic, ownership, capability, visibility, malformed-input, stale-artifact, and replacement-boundary cases remain covered; whole-suite count is not separately instrumented |
+| Acceptance projects | Stable alpha acceptance projects remain part of `scripts/test.sh`; replacement migration is still incremental |
+| Lexer differential cases | Proven for the versioned measured bootstrap corpus |
+| Parser differential cases | Proven for the measured versioned bootstrap corpus |
+| AST differential cases | Proven for measured expression/bootstrap boundaries; not a whole-language percentage |
+| HIR differential cases | Proven for measured expression/bootstrap boundaries; not a whole-language percentage |
+| Bootstrap/reference parity | Exact for explicitly covered replacement boundaries; not yet whole-language replacement parity |
+| Reference compiler source | Python alpha compiler remains the independent semantic/diagnostic oracle |
+| Merit-native compiler source | Native lexer/parser/bootstrap and source-backed function-resolution pipeline are active; concrete production driver attachment is next |
+| Generated C size | Evidence only; not remeasured for this checkpoint and not an optimization target |
+| Known semantic blockers | Concrete native source-unit driver not yet attached; complete accepted-alpha replacement coverage, normal Python-free compilation, trust, and stage equivalence remain open |
+
+## Replacement architecture evidence
 
 | Area | Current status |
 |---|---|
