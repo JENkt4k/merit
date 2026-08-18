@@ -13,7 +13,7 @@ from merit.diagnostics import diagnostic_from_exception, render_exception
 from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
 from .replacement import build_replacement_project
-from .replacement_prepare import prepare_replacement_artifacts
+from .replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 
 
 def _manifest(value: str) -> Path:
@@ -36,21 +36,21 @@ def main(argv: list[str] | None = None) -> int:
         help="production compiler path; replacement mode consumes only native-resolved artifacts and never falls back",
     )
     parser.add_argument(
-        "--replacement-producer",
-        nargs="+",
-        metavar="COMMAND",
-        help="native frontend command for prepare-replacement; source is supplied on stdin",
+        "--replacement-driver",
+        metavar="EXECUTABLE",
+        help="native replacement frontend executable for prepare-replacement; source is supplied on stdin",
     )
     parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
     try:
         project = load_project(_manifest(args.path))
         if args.command == "prepare-replacement":
-            if not args.replacement_producer:
+            if not args.replacement_driver:
                 raise ReplacementBuildError(
-                    "prepare-replacement requires --replacement-producer COMMAND"
+                    "prepare-replacement requires --replacement-driver EXECUTABLE"
                 )
-            prepared = prepare_replacement_artifacts(project, args.replacement_producer)
+            driver = NativeReplacementDriver(Path(args.replacement_driver))
+            prepared = prepare_replacement_artifacts(project, driver)
             print(prepared.manifest_path)
             return 0
         if args.command == "graph":
