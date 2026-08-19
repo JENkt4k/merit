@@ -127,7 +127,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 while (function_scan < vec_len<Token>(tokens)) {
                     if (end_found == 0) {
                         let body_token: Token = vec_get<Token>(tokens, function_scan);
-                        vec_push<Token>(function_tokens, body_token);
                         if (token_kind(body_token) == 4) {
                             if (token_length(body_token) == 1) {
                                 let byte: i64 = buffer_get(source, token_start(body_token));
@@ -146,6 +145,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 }
                             }
                         }
+                        vec_push<Token>(function_tokens, body_token);
                         function_scan = checked_add(function_scan, 1);
                     } else {
                         function_scan = vec_len<Token>(tokens);
