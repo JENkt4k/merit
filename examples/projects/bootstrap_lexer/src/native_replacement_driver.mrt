@@ -169,7 +169,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 let statements: Vec<StatementRecord> = parse_statement_records(source, function_tokens, allocator);
                 let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
 
-                var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 0);
+                var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
                 var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
                 var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
                 var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
@@ -189,6 +189,208 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
 
                 var function_status: i32 = slice_status;
                 if (function_status == 0) {
+                    // Count match statements in this function. The current
+                    // resolved semantic boundary accepts one enum identity for
+                    // all arms, so this vertical slice supports one match against
+                    // one source-unit enum and fails closed for ambiguous cases.
+                    var match_count: i64 = 0;
+                    var statement_scan: i64 = 0;
+                    while (statement_scan < vec_len<StatementRecord>(statements)) {
+                        let statement_value: StatementRecord = vec_get<StatementRecord>(statements, statement_scan);
+                        if (statement_record_kind(statement_value) == 27) {
+                            match_count = checked_add(match_count, 1);
+                        }
+                        statement_scan = checked_add(statement_scan, 1);
+                    }
+
+                    // Derive top-level payload-free enum declarations directly
+                    // from the complete source unit. Enum identity is declaration
+                    // ordinal; variant identity is deterministic source-unit
+                    // variant ordinal. Payload-bearing variants remain fail-closed
+                    // until recursive enum lifecycle metadata is represented.
+                    var enum_scan: i64 = 0;
+                    var enum_depth: i64 = 0;
+                    var enum_ordinal: i64 = 0;
+                    var variant_identity: i64 = 0;
+                    var enum_status: i32 = 0;
+                    while (enum_scan < vec_len<Token>(tokens)) {
+                        let enum_token: Token = vec_get<Token>(tokens, enum_scan);
+                        let enum_start: i64 = token_start(enum_token);
+                        let enum_length: i64 = token_length(enum_token);
+                        let enum_kind: i32 = token_kind(enum_token);
+                        var is_enum_declaration: i32 = 0;
+
+                        if (enum_status == 0) {
+                            if (enum_depth == 0) {
+                                if (enum_kind == 1) {
+                                    if (enum_length == 4) {
+                                        is_enum_declaration = 1;
+                                        if (buffer_get(source, enum_start) != 101) { is_enum_declaration = 0; }
+                                        if (buffer_get(source, checked_add(enum_start, 1)) != 110) { is_enum_declaration = 0; }
+                                        if (buffer_get(source, checked_add(enum_start, 2)) != 117) { is_enum_declaration = 0; }
+                                        if (buffer_get(source, checked_add(enum_start, 3)) != 109) { is_enum_declaration = 0; }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (is_enum_declaration != 0) {
+                            let enum_name_index: i64 = checked_add(enum_scan, 1);
+                            let enum_open_index: i64 = checked_add(enum_scan, 2);
+                            if (enum_open_index >= vec_len<Token>(tokens)) {
+                                enum_status = 1;
+                            } else {
+                                let enum_name: Token = vec_get<Token>(tokens, enum_name_index);
+                                let enum_open: Token = vec_get<Token>(tokens, enum_open_index);
+                                var enum_header_valid: i32 = 1;
+                                if (token_kind(enum_name) != 1) { enum_header_valid = 0; }
+                                if (token_kind(enum_open) != 4) { enum_header_valid = 0; }
+                                if (token_length(enum_open) != 1) { enum_header_valid = 0; }
+                                if (enum_header_valid != 0) {
+                                    if (buffer_get(source, token_start(enum_open)) != 123) {
+                                        enum_header_valid = 0;
+                                    }
+                                }
+                                if (enum_header_valid == 0) {
+                                    enum_status = 1;
+                                } else {
+                                    var variant_scan: i64 = checked_add(enum_open_index, 1);
+                                    var variant_ordinal: i64 = 0;
+                                    var enum_end_found: i32 = 0;
+                                    while (variant_scan < vec_len<Token>(tokens)) {
+                                        if (enum_end_found == 0) {
+                                            let variant_token: Token = vec_get<Token>(tokens, variant_scan);
+                                            var is_enum_close: i32 = 0;
+                                            if (token_kind(variant_token) == 4) {
+                                                if (token_length(variant_token) == 1) {
+                                                    if (buffer_get(source, token_start(variant_token)) == 125) {
+                                                        is_enum_close = 1;
+                                                    }
+                                                }
+                                            }
+                                            if (is_enum_close != 0) {
+                                                enum_end_found = 1;
+                                                enum_scan = variant_scan;
+                                            } else {
+                                                if (token_kind(variant_token) != 1) {
+                                                    enum_status = 1;
+                                                    enum_end_found = 1;
+                                                } else {
+                                                    let separator_index: i64 = checked_add(variant_scan, 1);
+                                                    if (separator_index >= vec_len<Token>(tokens)) {
+                                                        enum_status = 1;
+                                                        enum_end_found = 1;
+                                                    } else {
+                                                        let separator_token: Token = vec_get<Token>(tokens, separator_index);
+                                                        var separator_kind: i32 = 0;
+                                                        if (token_kind(separator_token) == 4) {
+                                                            if (token_length(separator_token) == 1) {
+                                                                let separator_byte: i64 = buffer_get(source, token_start(separator_token));
+                                                                if (separator_byte == 44) { separator_kind = 1; }
+                                                                if (separator_byte == 125) { separator_kind = 2; }
+                                                                if (separator_byte == 40) { separator_kind = 3; }
+                                                            }
+                                                        }
+                                                        if (separator_kind == 3) {
+                                                            enum_status = 3;
+                                                            enum_end_found = 1;
+                                                        } else {
+                                                            if (separator_kind == 0) {
+                                                                enum_status = 1;
+                                                                enum_end_found = 1;
+                                                            } else {
+                                                                var duplicate_variant: i32 = 0;
+                                                                var existing_variant: i64 = 0;
+                                                                while (existing_variant < vec_len<EnumVariantCatalogEntry>(variants)) {
+                                                                    let existing_entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(variants, existing_variant);
+                                                                    if (existing_entry.enum_id == enum_ordinal) {
+                                                                        if (existing_entry.name_length == token_length(variant_token)) {
+                                                                            var variant_offset: i64 = 0;
+                                                                            var same_variant: i32 = 1;
+                                                                            while (variant_offset < token_length(variant_token)) {
+                                                                                if (buffer_get(source, checked_add(existing_entry.name_start, variant_offset)) != buffer_get(source, checked_add(token_start(variant_token), variant_offset))) {
+                                                                                    same_variant = 0;
+                                                                                }
+                                                                                variant_offset = checked_add(variant_offset, 1);
+                                                                            }
+                                                                            if (same_variant != 0) { duplicate_variant = 1; }
+                                                                        }
+                                                                    }
+                                                                    existing_variant = checked_add(existing_variant, 1);
+                                                                }
+                                                                if (duplicate_variant != 0) {
+                                                                    enum_status = 2;
+                                                                    enum_end_found = 1;
+                                                                } else {
+                                                                    vec_push<EnumVariantCatalogEntry>(variants, EnumVariantCatalogEntry {
+                                                                        enum_id: enum_ordinal,
+                                                                        variant_id: variant_identity,
+                                                                        ordinal: variant_ordinal,
+                                                                        name_start: token_start(variant_token),
+                                                                        name_length: token_length(variant_token),
+                                                                        payload_owned: 0
+                                                                    });
+                                                                    variant_identity = checked_add(variant_identity, 1);
+                                                                    variant_ordinal = checked_add(variant_ordinal, 1);
+                                                                    if (separator_kind == 1) {
+                                                                        variant_scan = checked_add(separator_index, 1);
+                                                                    } else {
+                                                                        enum_end_found = 1;
+                                                                        enum_scan = separator_index;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            variant_scan = vec_len<Token>(tokens);
+                                        }
+                                    }
+                                    if (enum_status == 0) {
+                                        if (enum_end_found == 0) { enum_status = 1; }
+                                        if (variant_ordinal == 0) { enum_status = 1; }
+                                    }
+                                    if (enum_status == 0) {
+                                        enum_ordinal = checked_add(enum_ordinal, 1);
+                                    }
+                                }
+                            }
+                        } else {
+                            if (enum_kind == 4) {
+                                if (enum_length == 1) {
+                                    let enum_byte: i64 = buffer_get(source, enum_start);
+                                    if (enum_byte == 123) {
+                                        enum_depth = checked_add(enum_depth, 1);
+                                    } else {
+                                        if (enum_byte == 125) {
+                                            if (enum_depth > 0) {
+                                                enum_depth = checked_sub(enum_depth, 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        enum_scan = checked_add(enum_scan, 1);
+                    }
+
+                    var resolved_match_enum_id: i64 = -1;
+                    if (enum_status == 0) {
+                        if (match_count > 0) {
+                            if (match_count > 1) {
+                                enum_status = 5;
+                            } else {
+                                if (enum_ordinal != 1) {
+                                    enum_status = 4;
+                                } else {
+                                    resolved_match_enum_id = 0;
+                                }
+                            }
+                        }
+                    }
+
                     // Derive top-level `capability name;` declarations from the
                     // complete source unit. IDs are stable declaration ordinals.
                     // Uses inside function bodies are excluded by brace depth.
@@ -292,27 +494,31 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         capability_scan = checked_add(capability_scan, 1);
                     }
 
-                    if (capability_status != 0) {
-                        function_status = checked_add(950, capability_status);
+                    if (enum_status != 0) {
+                        function_status = checked_add(920, enum_status);
                     } else {
-                        let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
-                            source, function_tokens, statements, operands,
-                            variants, -1, capabilities, allocator,
-                            ownership, body, metadata, contracts, arms, scopes,
-                            ownership_events, effects, ownership_records, contract_locals,
-                            required, sources, assembled, cfg, placements
-                        );
-                        if (assembly_status != 0) {
-                            function_status = checked_add(1000, assembly_status);
+                        if (capability_status != 0) {
+                            function_status = checked_add(950, capability_status);
                         } else {
-                            let item_status: i32 = print_resolved_source_function_bundle_item(
-                                body, contracts, contract_locals, sources, ownership,
-                                ownership_records, cfg, placements, required
+                            let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
+                                source, function_tokens, statements, operands,
+                                variants, resolved_match_enum_id, capabilities, allocator,
+                                ownership, body, metadata, contracts, arms, scopes,
+                                ownership_events, effects, ownership_records, contract_locals,
+                                required, sources, assembled, cfg, placements
                             );
-                            if (item_status != 0) {
-                                function_status = checked_add(3000, item_status);
+                            if (assembly_status != 0) {
+                                function_status = checked_add(1000, assembly_status);
                             } else {
-                                emitted_functions = checked_add(emitted_functions, 1);
+                                let item_status: i32 = print_resolved_source_function_bundle_item(
+                                    body, contracts, contract_locals, sources, ownership,
+                                    ownership_records, cfg, placements, required
+                                );
+                                if (item_status != 0) {
+                                    function_status = checked_add(3000, item_status);
+                                } else {
+                                    emitted_functions = checked_add(emitted_functions, 1);
+                                }
                             }
                         }
                     }
