@@ -22,11 +22,11 @@ MULTI_FUNCTION_SOURCE = (
 CAPABILITY_SOURCE = (
     "module main\n"
     "capability clock;\n"
-    "fn main()->i32 { with capability clock { return 7; } return 8; }\n"
+    "fn main()->i32 { with capability clock { return 7; } }\n"
 )
 UNKNOWN_CAPABILITY_SOURCE = (
     "module main\n"
-    "fn main()->i32 { with capability clock { return 7; } return 8; }\n"
+    "fn main()->i32 { with capability clock { return 7; } }\n"
 )
 
 
