@@ -9,7 +9,7 @@ import pytest
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.project.loader import load_project
-from merit.project.replacement import build_replacement_project
+from merit.project.replacement import ReplacementProjectError, build_replacement_project
 from merit.project.replacement_prepare import prepare_replacement_artifacts
 
 
@@ -18,6 +18,15 @@ MULTI_FUNCTION_SOURCE = (
     "module main\n"
     "fn helper()->i32 { return 6; }\n"
     "fn main()->i32 { return 7; }\n"
+)
+CAPABILITY_SOURCE = (
+    "module main\n"
+    "capability clock;\n"
+    "fn main()->i32 { with capability clock { return 7; } return 8; }\n"
+)
+UNKNOWN_CAPABILITY_SOURCE = (
+    "module main\n"
+    "fn main()->i32 { with capability clock { return 7; } return 8; }\n"
 )
 
 
@@ -85,3 +94,40 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_derives_capability_catalog_from_source(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+
+    completed = subprocess.run(
+        [str(driver.executable)],
+        input=CAPABILITY_SOURCE,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    values = tuple(int(line) for line in completed.stdout.splitlines())
+    bundle = decode_resolved_source_function_bundle(values)
+    assert len(bundle.functions) == 1
+
+    root = _project(tmp_path, CAPABILITY_SOURCE)
+    project = load_project(root / "Merit.toml")
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+
+    artifact = build_replacement_project(project, root / "build" / "replacement-native-capability")
+    executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert executed.returncode == 7
+    assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_undeclared_capability(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path, UNKNOWN_CAPABILITY_SOURCE)
+    project = load_project(root / "Merit.toml")
+
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
