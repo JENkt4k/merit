@@ -35,17 +35,24 @@ Early bootstrap work established deterministic native lexer/parser records and c
 11. Production project replacement mode that consumes prepared native artifacts and refuses Python fallback.
 12. Source-digest validation and atomic preparation/publication of replacement artifacts.
 13. A first-class `NativeReplacementDriver` executable boundary replacing the arbitrary producer-command seam.
+14. A concrete Merit-native replacement driver attached behind that boundary for the supported source subset.
+15. Native top-level multi-function discovery and balanced function slicing, with one resolved MRBF item emitted per function while preserving original source offsets.
 
 ### Immediate critical path
 
-1. Attach a concrete Merit-native source-unit frontend executable behind `NativeReplacementDriver`.
-2. Prove source unit -> multi-function native bundle -> prepared artifacts -> canonical replacement MIR -> deterministic C -> executable end to end.
-3. Expand that vertical path across remaining accepted-alpha statements, control flow, ownership/resources, contracts, capabilities, exact numerics, aggregates, generics/traits, and module interactions.
-4. Maintain accepted/rejected differential corpus parity and fail closed whenever the replacement compiler cannot represent a construct faithfully.
-5. Move the acceptance applications through the replacement path until the documented alpha surface compiles without Python semantic lowering.
-6. Make replacement compilation the normal production path only after its semantic coverage and parity gates justify the transition.
-7. Establish stage-0/stage-1 equivalence and reproducibility.
-8. Begin self-hosting only after the replacement compiler qualifies as trusted.
+1. Derive enum-variant catalogs natively from the source unit consumed by the concrete replacement driver.
+2. Derive capability catalogs natively from the same source unit and feed stable capability identities into the existing match/capability pipeline.
+3. Prove enum- and capability-bearing source units through concrete driver -> multi-function MRBF -> prepared artifacts -> canonical replacement MIR -> deterministic C -> executable, while rejecting unsupported lifecycle/effect combinations fail-closed.
+4. Expand that vertical path across remaining accepted-alpha statements, control flow, ownership/resources, contracts, exact numerics, aggregates, generics/traits, and module interactions.
+5. Maintain accepted/rejected differential corpus parity and fail closed whenever the replacement compiler cannot represent a construct faithfully.
+6. Move the acceptance applications through the replacement path until the documented alpha surface compiles without Python semantic lowering.
+7. Make replacement compilation the normal production path only after its semantic coverage and parity gates justify the transition.
+8. Establish stage-0/stage-1 equivalence and reproducibility.
+9. Begin self-hosting only after the replacement compiler qualifies as trusted.
+
+### Documentation path
+
+The user-facing programming manual lives under `docs/manual/` and should advance one stable semantic checkpoint behind implementation. Manual examples should be executable repository examples or otherwise gated so documentation drift becomes a test failure rather than silent prose decay.
 
 ### Trust criteria
 
