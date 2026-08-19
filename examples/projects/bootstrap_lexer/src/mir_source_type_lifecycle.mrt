@@ -99,7 +99,8 @@ fn stl_builtin_ownership(borrow source: Buffer, start: i64, length: i64) -> i32 
 
 // Declaration classification for the current replacement surface.
 // Structs are owned/non-copy. Decimal and bounded declarations are Copy.
-// Enums fail closed until payload lifecycle is recursively represented.
+// Payload-free enums are Copy; payload-bearing enums fail closed until their
+// payload lifecycle is recursively represented.
 fn stl_declared_ownership(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -124,7 +125,35 @@ fn stl_declared_ownership(
                     if (token_kind(name) == 1) {
                         if (stl_span_equal(source,start,length,token_start(name),token_length(name)) != 0) {
                             if (declaration_kind == 1) { return 1; }
-                            if (declaration_kind == 2) { return -2; }
+                            if (declaration_kind == 2) {
+                                let open_index: i64 = checked_add(name_index,1);
+                                if (open_index >= vec_len<Token>(tokens)) { return -2; }
+                                let open: Token = vec_get<Token>(tokens,open_index);
+                                if (token_kind(open) != 4) { return -2; }
+                                if (token_length(open) != 1) { return -2; }
+                                if (buffer_get(source,token_start(open)) != 123) { return -2; }
+                                var cursor: i64 = checked_add(open_index,1);
+                                var closed: i32 = 0;
+                                var has_payload: i32 = 0;
+                                while (cursor < vec_len<Token>(tokens)) {
+                                    if (closed == 0) {
+                                        let member: Token = vec_get<Token>(tokens,cursor);
+                                        if (token_kind(member) == 4) {
+                                            if (token_length(member) == 1) {
+                                                let byte: i64 = buffer_get(source,token_start(member));
+                                                if (byte == 40) { has_payload = 1; }
+                                                if (byte == 125) { closed = 1; }
+                                            }
+                                        }
+                                        cursor = checked_add(cursor,1);
+                                    } else {
+                                        cursor = vec_len<Token>(tokens);
+                                    }
+                                }
+                                if (closed == 0) { return -2; }
+                                if (has_payload != 0) { return -2; }
+                                return 0;
+                            }
                             return 0;
                         }
                     }
