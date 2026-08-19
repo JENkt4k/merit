@@ -1,5 +1,6 @@
 module bootstrap_mir_resolved_source_function_assembly
 import bootstrap_tokens;
+import bootstrap_lexer_core;
 import bootstrap_statements;
 import bootstrap_statement_semantics;
 import bootstrap_mir_functions;
@@ -155,8 +156,9 @@ requires_caps [allocate]
 
 // Source-only lifecycle boundary for the supported replacement subset. Type
 // ownership is derived from native source declarations/builtin lifecycle rules;
-// callers no longer supply semantic ownership facts. Enums with payload
-// lifecycle are deliberately fail-closed until recursive enum metadata lands.
+// callers no longer supply semantic ownership facts. Declaration lookup must use
+// a complete source-unit token stream even when semantic lowering receives a
+// bounded function token view from the concrete replacement driver.
 pub fn lower_resolved_source_function_assembly_from_source(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -187,9 +189,11 @@ requires_caps [allocate]
     var type_ownership: Vec<SourceTypeOwnershipEntry> = vec_new<SourceTypeOwnershipEntry>(
         allocator, vec_len<StatementRecord>(statements)
     );
+    let declaration_tokens: Vec<Token> = lex(source, allocator);
     let type_status: i32 = derive_source_type_ownership_catalog(
-        source, tokens, statements, statement_operands, type_ownership
+        source, declaration_tokens, statements, statement_operands, type_ownership
     );
+    drop(declaration_tokens);
     if (type_status != 0) { return checked_add(50, type_status); }
 
     let assembly_status: i32 = lower_resolved_source_function_assembly_from_source_types(
