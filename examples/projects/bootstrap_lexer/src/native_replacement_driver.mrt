@@ -182,6 +182,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                     ownership_events, effects, ownership_records, contract_locals,
                     required, sources, assembled, cfg, placements
                 );
+                drop(function_tokens);
                 if (assembly_status != 0) {
                     return checked_add(1000, assembly_status);
                 }
