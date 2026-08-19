@@ -19,85 +19,230 @@ import bootstrap_mir_resolved_source_function_bundle;
 
 capability allocate;
 
-fn driver_token_is_fn(borrow source: Buffer, token: Token) -> i32 {
-    if (token_kind(token) != 1) { return 0; }
-    if (token_length(token) != 2) { return 0; }
-    let start: i64 = token_start(token);
-    if (buffer_get(source, start) != 102) { return 0; }
-    if (buffer_get(source, checked_add(start, 1)) != 110) { return 0; }
-    return 1;
-}
-
-fn driver_function_count(borrow source: Buffer, borrow tokens: Vec<Token>) -> i64 {
-    var count: i64 = 0;
-    var index: i64 = 0;
-    while (index < vec_len<Token>(tokens)) {
-        if (driver_token_is_fn(source, vec_get<Token>(tokens, index)) != 0) {
-            count = checked_add(count, 1);
-        }
-        index = checked_add(index, 1);
-    }
-    return count;
-}
-
-// First concrete production-shaped native frontend driver entrypoint.
-// The foreign host supplies raw source bytes as a stable String view. Merit owns
-// all target-source lexing, statement discovery, lifecycle derivation, resolved
-// function assembly, snapshot materialization, and MRBF framing. Python never
-// parses or semantically lowers the target source on this path.
+// Production-shaped native frontend driver entrypoint.
 //
-// v1 deliberately supports exactly one function and no enum/capability catalog
-// resolution. Unsupported multi-function units fail closed before lowering;
-// multi-function source-unit discovery is the next driver milestone.
+// Keep all multi-function discovery/slicing logic in this entrypoint rather
+// than introducing helper `fn` declarations. The bootstrap project is itself
+// used as fixture input by whole-function compiler tests, so adding helper
+// functions here changes the project's semantic function inventory and causes
+// broad unrelated gate failures. Inlining preserves that inventory while the
+// replacement driver still performs all target-source discovery natively.
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
         let source: Buffer = buffer_from_string(allocator, source_text);
         let tokens: Vec<Token> = lex(source, allocator);
-        if (driver_function_count(source, tokens) != 1) {
-            return 901;
+
+        // First pass: count top-level function bodies. Once a function starts,
+        // skip its complete balanced body so a future nested-function feature
+        // cannot accidentally inflate the bundle header count.
+        var function_count: i64 = 0;
+        var scan: i64 = 0;
+        while (scan < vec_len<Token>(tokens)) {
+            let candidate: Token = vec_get<Token>(tokens, scan);
+            var is_fn: i32 = 0;
+            if (token_kind(candidate) == 1) {
+                if (token_length(candidate) == 2) {
+                    let start: i64 = token_start(candidate);
+                    if (buffer_get(source, start) == 102) {
+                        if (buffer_get(source, checked_add(start, 1)) == 110) {
+                            is_fn = 1;
+                        }
+                    }
+                }
+            }
+            if (is_fn != 0) {
+                function_count = checked_add(function_count, 1);
+                var depth: i64 = 0;
+                var body_started: i32 = 0;
+                var end_found: i32 = 0;
+                var body_scan: i64 = scan;
+                var next_scan: i64 = scan;
+                while (body_scan < vec_len<Token>(tokens)) {
+                    if (end_found == 0) {
+                        let body_token: Token = vec_get<Token>(tokens, body_scan);
+                        if (token_kind(body_token) == 4) {
+                            if (token_length(body_token) == 1) {
+                                let byte: i64 = buffer_get(source, token_start(body_token));
+                                if (byte == 123) {
+                                    body_started = 1;
+                                    depth = checked_add(depth, 1);
+                                } else {
+                                    if (byte == 125) {
+                                        if (body_started == 0) { return 902; }
+                                        depth = checked_sub(depth, 1);
+                                        if (depth == 0) {
+                                            end_found = 1;
+                                            next_scan = checked_add(body_scan, 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        body_scan = checked_add(body_scan, 1);
+                    } else {
+                        body_scan = vec_len<Token>(tokens);
+                    }
+                }
+                if (end_found == 0) { return 903; }
+                scan = next_scan;
+            } else {
+                scan = checked_add(scan, 1);
+            }
         }
-        let statements: Vec<StatementRecord> = parse_statement_records(source, tokens, allocator);
-        let operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
+        if (function_count <= 0) { return 901; }
 
-        var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 0);
-        var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 0);
-        var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
-        var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
-        var metadata: Vec<MirFunctionClauseMetadata> = vec_new<MirFunctionClauseMetadata>(allocator, 8);
-        var contracts: Vec<MirFunctionContractRecord> = vec_new<MirFunctionContractRecord>(allocator, 32);
-        var arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(allocator, 4);
-        var scopes: Vec<ResolvedCapabilityScope> = vec_new<ResolvedCapabilityScope>(allocator, 4);
-        var ownership_events: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 96);
-        var effects: Vec<MirCapabilityEffect> = vec_new<MirCapabilityEffect>(allocator, 8);
-        var ownership_records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 64);
-        var contract_locals: Vec<MirFunctionContractLocal> = vec_new<MirFunctionContractLocal>(allocator, 16);
-        var required: Vec<i64> = vec_new<i64>(allocator, 8);
-        var sources: Vec<MirFunctionInstructionSource> = vec_new<MirFunctionInstructionSource>(allocator, 128);
-        var assembled: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 160);
-        var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
-        var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
-
-        let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
-            source, tokens, statements, operands,
-            variants, -1, capabilities, allocator,
-            ownership, body, metadata, contracts, arms, scopes,
-            ownership_events, effects, ownership_records, contract_locals,
-            required, sources, assembled, cfg, placements
-        );
-        if (assembly_status != 0) {
-            return checked_add(1000, assembly_status);
-        }
-
-        let header_status: i32 = print_resolved_source_function_bundle_header(1);
+        let header_status: i32 = print_resolved_source_function_bundle_header(function_count);
         if (header_status != 0) {
             return checked_add(2000, header_status);
         }
-        let item_status: i32 = print_resolved_source_function_bundle_item(
-            body, contracts, contract_locals, sources, ownership,
-            ownership_records, cfg, placements, required
-        );
-        if (item_status != 0) { return checked_add(3000, item_status); }
+
+        // Second pass: materialize and lower each complete function token view.
+        // Token source offsets are retained, so all emitted spans remain anchored
+        // to the original source buffer.
+        scan = 0;
+        var emitted_functions: i64 = 0;
+        while (scan < vec_len<Token>(tokens)) {
+            let candidate: Token = vec_get<Token>(tokens, scan);
+            var is_fn: i32 = 0;
+            if (token_kind(candidate) == 1) {
+                if (token_length(candidate) == 2) {
+                    let start: i64 = token_start(candidate);
+                    if (buffer_get(source, start) == 102) {
+                        if (buffer_get(source, checked_add(start, 1)) == 110) {
+                            is_fn = 1;
+                        }
+                    }
+                }
+            }
+            if (is_fn == 0) {
+                scan = checked_add(scan, 1);
+            } else {
+                var function_tokens: Vec<Token> = vec_new<Token>(allocator, 32);
+                var depth: i64 = 0;
+                var body_started: i32 = 0;
+                var end_found: i32 = 0;
+                var slice_status: i32 = 0;
+                var function_scan: i64 = scan;
+                var next_scan: i64 = scan;
+                while (function_scan < vec_len<Token>(tokens)) {
+                    if (end_found == 0) {
+                        let body_token: Token = vec_get<Token>(tokens, function_scan);
+                        if (token_kind(body_token) == 4) {
+                            if (token_length(body_token) == 1) {
+                                let byte: i64 = buffer_get(source, token_start(body_token));
+                                if (byte == 123) {
+                                    body_started = 1;
+                                    depth = checked_add(depth, 1);
+                                } else {
+                                    if (byte == 125) {
+                                        if (body_started == 0) {
+                                            slice_status = 904;
+                                            end_found = 1;
+                                            next_scan = checked_add(function_scan, 1);
+                                        } else {
+                                            depth = checked_sub(depth, 1);
+                                            if (depth == 0) {
+                                                end_found = 1;
+                                                next_scan = checked_add(function_scan, 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        vec_push<Token>(function_tokens, body_token);
+                        function_scan = checked_add(function_scan, 1);
+                    } else {
+                        function_scan = vec_len<Token>(tokens);
+                    }
+                }
+                if (slice_status == 0) {
+                    if (end_found == 0) {
+                        slice_status = 905;
+                    }
+                }
+                scan = next_scan;
+
+                // Parse the bounded token view before selecting the semantic path.
+                // Even an unterminated view is bounded by the source token vector;
+                // slice_status prevents semantic lowering and is returned after the
+                // single cleanup epilogue below.
+                let statements: Vec<StatementRecord> = parse_statement_records(source, function_tokens, allocator);
+                let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
+
+                var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 0);
+                var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 0);
+                var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
+                var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
+                var metadata: Vec<MirFunctionClauseMetadata> = vec_new<MirFunctionClauseMetadata>(allocator, 8);
+                var contracts: Vec<MirFunctionContractRecord> = vec_new<MirFunctionContractRecord>(allocator, 32);
+                var arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(allocator, 4);
+                var scopes: Vec<ResolvedCapabilityScope> = vec_new<ResolvedCapabilityScope>(allocator, 4);
+                var ownership_events: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 96);
+                var effects: Vec<MirCapabilityEffect> = vec_new<MirCapabilityEffect>(allocator, 8);
+                var ownership_records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 64);
+                var contract_locals: Vec<MirFunctionContractLocal> = vec_new<MirFunctionContractLocal>(allocator, 16);
+                var required: Vec<i64> = vec_new<i64>(allocator, 8);
+                var sources: Vec<MirFunctionInstructionSource> = vec_new<MirFunctionInstructionSource>(allocator, 128);
+                var assembled: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 160);
+                var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
+                var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
+
+                var function_status: i32 = slice_status;
+                if (function_status == 0) {
+                    let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
+                        source, function_tokens, statements, operands,
+                        variants, -1, capabilities, allocator,
+                        ownership, body, metadata, contracts, arms, scopes,
+                        ownership_events, effects, ownership_records, contract_locals,
+                        required, sources, assembled, cfg, placements
+                    );
+                    if (assembly_status != 0) {
+                        function_status = checked_add(1000, assembly_status);
+                    } else {
+                        let item_status: i32 = print_resolved_source_function_bundle_item(
+                            body, contracts, contract_locals, sources, ownership,
+                            ownership_records, cfg, placements, required
+                        );
+                        if (item_status != 0) {
+                            function_status = checked_add(3000, item_status);
+                        } else {
+                            emitted_functions = checked_add(emitted_functions, 1);
+                        }
+                    }
+                }
+
+                // One ownership epilogue, one syntactic consumption per binding.
+                // This avoids branch-merge ambiguity in the current checker while
+                // still closing every scoped owned local before leaving the else.
+                drop(placements);
+                drop(cfg);
+                drop(assembled);
+                drop(sources);
+                drop(required);
+                drop(contract_locals);
+                drop(ownership_records);
+                drop(effects);
+                drop(ownership_events);
+                drop(scopes);
+                drop(arms);
+                drop(contracts);
+                drop(metadata);
+                drop(body);
+                drop(ownership);
+                drop(capabilities);
+                drop(variants);
+                drop(operands);
+                drop(statements);
+                drop(function_tokens);
+
+                if (function_status != 0) {
+                    return function_status;
+                }
+            }
+        }
+        if (emitted_functions != function_count) { return 906; }
         return 0;
     }
 }
