@@ -157,16 +157,17 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         function_scan = vec_len<Token>(tokens);
                     }
                 }
-                if (slice_status != 0) {
-                    drop(function_tokens);
-                    return slice_status;
-                }
-                if (end_found == 0) {
-                    drop(function_tokens);
-                    return 905;
+                if (slice_status == 0) {
+                    if (end_found == 0) {
+                        slice_status = 905;
+                    }
                 }
                 scan = next_scan;
 
+                // Parse the bounded token view before selecting the semantic path.
+                // Even an unterminated view is bounded by the source token vector;
+                // slice_status prevents semantic lowering and is returned after the
+                // single cleanup epilogue below.
                 let statements: Vec<StatementRecord> = parse_statement_records(source, function_tokens, allocator);
                 let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
 
@@ -188,34 +189,33 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
                 var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
 
-                var function_status: i32 = 0;
-                let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
-                    source, function_tokens, statements, operands,
-                    variants, -1, capabilities, allocator,
-                    ownership, body, metadata, contracts, arms, scopes,
-                    ownership_events, effects, ownership_records, contract_locals,
-                    required, sources, assembled, cfg, placements
-                );
-                if (assembly_status != 0) {
-                    function_status = checked_add(1000, assembly_status);
-                } else {
-                    let item_status: i32 = print_resolved_source_function_bundle_item(
-                        body, contracts, contract_locals, sources, ownership,
-                        ownership_records, cfg, placements, required
+                var function_status: i32 = slice_status;
+                if (function_status == 0) {
+                    let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
+                        source, function_tokens, statements, operands,
+                        variants, -1, capabilities, allocator,
+                        ownership, body, metadata, contracts, arms, scopes,
+                        ownership_events, effects, ownership_records, contract_locals,
+                        required, sources, assembled, cfg, placements
                     );
-                    if (item_status != 0) {
-                        function_status = checked_add(3000, item_status);
+                    if (assembly_status != 0) {
+                        function_status = checked_add(1000, assembly_status);
                     } else {
-                        emitted_functions = checked_add(emitted_functions, 1);
+                        let item_status: i32 = print_resolved_source_function_bundle_item(
+                            body, contracts, contract_locals, sources, ownership,
+                            ownership_records, cfg, placements, required
+                        );
+                        if (item_status != 0) {
+                            function_status = checked_add(3000, item_status);
+                        } else {
+                            emitted_functions = checked_add(emitted_functions, 1);
+                        }
                     }
                 }
 
-                // Every collection allocated in this branch is scoped owned.
-                // The current ownership model intentionally does not synthesize
-                // implicit drop glue for branch/loop locals, so close every
-                // obligation explicitly on both success and error paths before
-                // leaving the branch. Reverse declaration order keeps cleanup
-                // deterministic and mirrors normal stack-style destruction.
+                // One ownership epilogue, one syntactic consumption per binding.
+                // This avoids branch-merge ambiguity in the current checker while
+                // still closing every scoped owned local before leaving the else.
                 drop(placements);
                 drop(cfg);
                 drop(assembled);
