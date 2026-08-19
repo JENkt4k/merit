@@ -56,30 +56,36 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var depth: i64 = 0;
                 var body_started: i32 = 0;
                 var end_found: i32 = 0;
-                while (scan < vec_len<Token>(tokens)) {
-                    let body_token: Token = vec_get<Token>(tokens, scan);
-                    if (token_kind(body_token) == 4) {
-                        if (token_length(body_token) == 1) {
-                            let byte: i64 = buffer_get(source, token_start(body_token));
-                            if (byte == 123) {
-                                body_started = 1;
-                                depth = checked_add(depth, 1);
-                            } else {
-                                if (byte == 125) {
-                                    if (body_started == 0) { return 902; }
-                                    depth = checked_sub(depth, 1);
-                                    if (depth == 0) {
-                                        end_found = 1;
-                                        scan = checked_add(scan, 1);
-                                        break;
+                var body_scan: i64 = scan;
+                var next_scan: i64 = scan;
+                while (body_scan < vec_len<Token>(tokens)) {
+                    if (end_found == 0) {
+                        let body_token: Token = vec_get<Token>(tokens, body_scan);
+                        if (token_kind(body_token) == 4) {
+                            if (token_length(body_token) == 1) {
+                                let byte: i64 = buffer_get(source, token_start(body_token));
+                                if (byte == 123) {
+                                    body_started = 1;
+                                    depth = checked_add(depth, 1);
+                                } else {
+                                    if (byte == 125) {
+                                        if (body_started == 0) { return 902; }
+                                        depth = checked_sub(depth, 1);
+                                        if (depth == 0) {
+                                            end_found = 1;
+                                            next_scan = checked_add(body_scan, 1);
+                                        }
                                     }
                                 }
                             }
                         }
+                        body_scan = checked_add(body_scan, 1);
+                    } else {
+                        body_scan = vec_len<Token>(tokens);
                     }
-                    scan = checked_add(scan, 1);
                 }
                 if (end_found == 0) { return 903; }
+                scan = next_scan;
             } else {
                 scan = checked_add(scan, 1);
             }
@@ -116,31 +122,37 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var depth: i64 = 0;
                 var body_started: i32 = 0;
                 var end_found: i32 = 0;
-                while (scan < vec_len<Token>(tokens)) {
-                    let body_token: Token = vec_get<Token>(tokens, scan);
-                    vec_push<Token>(function_tokens, body_token);
-                    if (token_kind(body_token) == 4) {
-                        if (token_length(body_token) == 1) {
-                            let byte: i64 = buffer_get(source, token_start(body_token));
-                            if (byte == 123) {
-                                body_started = 1;
-                                depth = checked_add(depth, 1);
-                            } else {
-                                if (byte == 125) {
-                                    if (body_started == 0) { return 904; }
-                                    depth = checked_sub(depth, 1);
-                                    if (depth == 0) {
-                                        end_found = 1;
-                                        scan = checked_add(scan, 1);
-                                        break;
+                var function_scan: i64 = scan;
+                var next_scan: i64 = scan;
+                while (function_scan < vec_len<Token>(tokens)) {
+                    if (end_found == 0) {
+                        let body_token: Token = vec_get<Token>(tokens, function_scan);
+                        vec_push<Token>(function_tokens, body_token);
+                        if (token_kind(body_token) == 4) {
+                            if (token_length(body_token) == 1) {
+                                let byte: i64 = buffer_get(source, token_start(body_token));
+                                if (byte == 123) {
+                                    body_started = 1;
+                                    depth = checked_add(depth, 1);
+                                } else {
+                                    if (byte == 125) {
+                                        if (body_started == 0) { return 904; }
+                                        depth = checked_sub(depth, 1);
+                                        if (depth == 0) {
+                                            end_found = 1;
+                                            next_scan = checked_add(function_scan, 1);
+                                        }
                                     }
                                 }
                             }
                         }
+                        function_scan = checked_add(function_scan, 1);
+                    } else {
+                        function_scan = vec_len<Token>(tokens);
                     }
-                    scan = checked_add(scan, 1);
                 }
                 if (end_found == 0) { return 905; }
+                scan = next_scan;
 
                 let statements: Vec<StatementRecord> = parse_statement_records(source, function_tokens, allocator);
                 let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
