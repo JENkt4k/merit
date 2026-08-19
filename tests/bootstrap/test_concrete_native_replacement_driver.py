@@ -31,18 +31,18 @@ UNKNOWN_CAPABILITY_SOURCE = (
 ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left, Right }\n"
-    "fn main()->i32 { let flag:i64=0; match flag { Left => { return 7; } Right => { return 8; } } }\n"
+    "fn main()->i32 { let flag:Choice=Left; match (flag) { Left => { return 7; } Right => { return 8; } } }\n"
 )
 AMBIGUOUS_ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left, Right }\n"
     "enum OtherChoice { First, Second }\n"
-    "fn main()->i32 { let flag:i64=0; match flag { Left => { return 7; } Right => { return 8; } } }\n"
+    "fn main()->i32 { let flag:Choice=Left; match (flag) { Left => { return 7; } Right => { return 8; } } }\n"
 )
 PAYLOAD_ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left(i64), Right(i64) }\n"
-    "fn main()->i32 { let flag:i64=0; match flag { Left(x) => { return 7; } Right(y) => { return 8; } } }\n"
+    "fn main()->i32 { let flag:Choice=Left(1); match (flag) { Left(x) => { return 7; } Right(y) => { return 8; } } }\n"
 )
 
 
