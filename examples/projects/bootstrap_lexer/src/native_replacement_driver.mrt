@@ -3,7 +3,6 @@ import bootstrap_tokens;
 import bootstrap_lexer_core;
 import bootstrap_statements;
 import bootstrap_statement_semantics;
-import bootstrap_source_declaration_catalogs;
 import bootstrap_mir_functions;
 import bootstrap_mir_function_clause_metadata;
 import bootstrap_mir_function_contracts;
@@ -22,12 +21,10 @@ capability allocate;
 
 // Production-shaped native frontend driver entrypoint.
 //
-// Keep all multi-function discovery/slicing logic in this entrypoint rather
-// than introducing helper `fn` declarations. The bootstrap project is itself
-// used as fixture input by whole-function compiler tests, so adding helper
-// functions here changes the project's semantic function inventory and causes
-// broad unrelated gate failures. Inlining preserves that inventory while the
-// replacement driver still performs all target-source discovery natively.
+// Keep source-unit discovery and declaration-catalog derivation in this
+// entrypoint rather than adding bootstrap helper functions. The bootstrap
+// project is itself fixture input for whole-function compiler tests, so new
+// top-level helper functions change its semantic function inventory.
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
@@ -192,9 +189,109 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
 
                 var function_status: i32 = slice_status;
                 if (function_status == 0) {
-                    let capability_status: i32 = derive_source_capability_catalog(
-                        source, tokens, capabilities
-                    );
+                    // Derive top-level `capability name;` declarations from the
+                    // complete source unit. IDs are stable declaration ordinals.
+                    // Uses inside function bodies are excluded by brace depth.
+                    var capability_scan: i64 = 0;
+                    var capability_depth: i64 = 0;
+                    var capability_ordinal: i64 = 0;
+                    var capability_status: i32 = 0;
+                    while (capability_scan < vec_len<Token>(tokens)) {
+                        let capability_token: Token = vec_get<Token>(tokens, capability_scan);
+                        let capability_start: i64 = token_start(capability_token);
+                        let capability_length: i64 = token_length(capability_token);
+                        let capability_kind: i32 = token_kind(capability_token);
+
+                        if (capability_kind == 4) {
+                            if (capability_length == 1) {
+                                let capability_byte: i64 = buffer_get(source, capability_start);
+                                if (capability_byte == 123) {
+                                    capability_depth = checked_add(capability_depth, 1);
+                                } else {
+                                    if (capability_byte == 125) {
+                                        if (capability_depth > 0) {
+                                            capability_depth = checked_sub(capability_depth, 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        var is_capability_declaration: i32 = 0;
+                        if (capability_status == 0) {
+                            if (capability_depth == 0) {
+                                if (capability_kind == 1) {
+                                    if (capability_length == 10) {
+                                        is_capability_declaration = 1;
+                                        if (buffer_get(source, capability_start) != 99) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 1)) != 97) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 2)) != 112) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 3)) != 97) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 4)) != 98) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 5)) != 105) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 6)) != 108) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 7)) != 105) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 8)) != 116) { is_capability_declaration = 0; }
+                                        if (buffer_get(source, checked_add(capability_start, 9)) != 121) { is_capability_declaration = 0; }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (is_capability_declaration != 0) {
+                            let name_index: i64 = checked_add(capability_scan, 1);
+                            let semicolon_index: i64 = checked_add(capability_scan, 2);
+                            if (semicolon_index >= vec_len<Token>(tokens)) {
+                                capability_status = 1;
+                            } else {
+                                let name_token: Token = vec_get<Token>(tokens, name_index);
+                                let semicolon_token: Token = vec_get<Token>(tokens, semicolon_index);
+                                var declaration_valid: i32 = 1;
+                                if (token_kind(name_token) != 1) { declaration_valid = 0; }
+                                if (token_kind(semicolon_token) != 4) { declaration_valid = 0; }
+                                if (token_length(semicolon_token) != 1) { declaration_valid = 0; }
+                                if (declaration_valid != 0) {
+                                    if (buffer_get(source, token_start(semicolon_token)) != 59) {
+                                        declaration_valid = 0;
+                                    }
+                                }
+                                if (declaration_valid == 0) {
+                                    capability_status = 1;
+                                } else {
+                                    var existing: i64 = 0;
+                                    var duplicate: i32 = 0;
+                                    while (existing < vec_len<CapabilityCatalogEntry>(capabilities)) {
+                                        let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(capabilities, existing);
+                                        if (entry.name_length == token_length(name_token)) {
+                                            var offset: i64 = 0;
+                                            var same: i32 = 1;
+                                            while (offset < token_length(name_token)) {
+                                                if (buffer_get(source, checked_add(entry.name_start, offset)) != buffer_get(source, checked_add(token_start(name_token), offset))) {
+                                                    same = 0;
+                                                }
+                                                offset = checked_add(offset, 1);
+                                            }
+                                            if (same != 0) { duplicate = 1; }
+                                        }
+                                        existing = checked_add(existing, 1);
+                                    }
+                                    if (duplicate != 0) {
+                                        capability_status = 2;
+                                    } else {
+                                        vec_push<CapabilityCatalogEntry>(capabilities, CapabilityCatalogEntry {
+                                            capability_id: capability_ordinal,
+                                            name_start: token_start(name_token),
+                                            name_length: token_length(name_token)
+                                        });
+                                        capability_ordinal = checked_add(capability_ordinal, 1);
+                                        capability_scan = semicolon_index;
+                                    }
+                                }
+                            }
+                        }
+                        capability_scan = checked_add(capability_scan, 1);
+                    }
+
                     if (capability_status != 0) {
                         function_status = checked_add(950, capability_status);
                     } else {
