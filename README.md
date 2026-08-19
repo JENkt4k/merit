@@ -6,6 +6,10 @@
 
 Merit is a native compiled language experiment centered on deterministic semantics, exact numerics, ownership, explicit allocation, contracts, stable layouts, capability-specific hazardous operations, and C interoperability.
 
+## Programming manual
+
+Start with the [`docs/manual`](docs/manual/README.md) programming manual for user-facing language guidance, including ownership/borrowing, traits/generics, capabilities, and contracts.
+
 ## Design philosophy and rationale
 
 Merit is being designed for **semantic longevity**: program meaning and language guarantees should remain stable while compiler algorithms, proof machinery, optimizers, code generators, and hardware targets remain free to evolve.
@@ -42,7 +46,9 @@ The Python-hosted alpha compiler remains the independent semantic oracle, but it
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v1`. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-`merit-project prepare-replacement --replacement-driver EXECUTABLE` now defines the production frontend seam. The next critical milestone is to attach the concrete Merit-native source-unit frontend executable behind that boundary and prove the entire source-unit-to-native-executable path end to end. See `STATUS.md`, `ROADMAP.md`, and `BOOTSTRAP_STATUS.md`.
+PR #78 attached the first concrete Merit-native replacement driver for the narrow supported source subset. PR #79 removed its one-function source-unit restriction: the native driver now discovers complete top-level functions, preserves original source offsets in function-specific token views, lowers each function independently, and emits one bundle item per resolved function.
+
+The next production frontier is native source derivation of enum-variant and capability catalogs so the concrete driver can move beyond the current no-enum/no-capability subset without hand-authored semantic catalogs. See `STATUS.md`, `ROADMAP.md`, and `BOOTSTRAP_STATUS.md`.
 
 ## Established language surface
 
