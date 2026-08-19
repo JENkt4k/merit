@@ -1,0 +1,100 @@
+module bootstrap_source_declaration_catalogs;
+import bootstrap_tokens;
+import bootstrap_statement_semantics;
+
+capability allocate;
+
+// Derive the source-unit capability catalog directly from top-level
+// `capability name;` declarations. Capability identity is the deterministic
+// declaration ordinal within the source unit. The prepared replacement artifact
+// is source-digest bound, so that identity cannot be reused across source edits.
+//
+// Errors:
+//   1 malformed capability declaration
+//   2 duplicate capability name
+pub fn derive_source_capability_catalog(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow_mut output: Vec<CapabilityCatalogEntry>
+) -> i32
+requires_caps [allocate]
+{
+    var index: i64 = 0;
+    var brace_depth: i64 = 0;
+    var declaration_ordinal: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (token_kind(token) == 4) {
+            if (token_length(token) == 1) {
+                let byte: i64 = buffer_get(source, token_start(token));
+                if (byte == 123) {
+                    brace_depth = checked_add(brace_depth, 1);
+                } else {
+                    if (byte == 125) {
+                        if (brace_depth > 0) {
+                            brace_depth = checked_sub(brace_depth, 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (brace_depth == 0) {
+            if (token_kind(token) == 1) {
+                if (token_length(token) == 10) {
+                    let start: i64 = token_start(token);
+                    var is_capability: i32 = 1;
+                    if (buffer_get(source, start) != 99) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 1)) != 97) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 2)) != 112) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 3)) != 97) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 4)) != 98) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 5)) != 105) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 6)) != 108) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 7)) != 105) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 8)) != 116) { is_capability = 0; }
+                    if (buffer_get(source, checked_add(start, 9)) != 121) { is_capability = 0; }
+                    if (is_capability != 0) {
+                        let name_index: i64 = checked_add(index, 1);
+                        let semicolon_index: i64 = checked_add(index, 2);
+                        if (semicolon_index >= vec_len<Token>(tokens)) { return 1; }
+                        let name: Token = vec_get<Token>(tokens, name_index);
+                        let semicolon: Token = vec_get<Token>(tokens, semicolon_index);
+                        if (token_kind(name) != 1) { return 1; }
+                        if (token_kind(semicolon) != 4) { return 1; }
+                        if (token_length(semicolon) != 1) { return 1; }
+                        if (buffer_get(source, token_start(semicolon)) != 59) { return 1; }
+
+                        var existing: i64 = 0;
+                        while (existing < vec_len<CapabilityCatalogEntry>(output)) {
+                            let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(output, existing);
+                            if (entry.name_length == token_length(name)) {
+                                var offset: i64 = 0;
+                                var same: i32 = 1;
+                                while (offset < token_length(name)) {
+                                    if (buffer_get(source, checked_add(entry.name_start, offset)) !=
+                                        buffer_get(source, checked_add(token_start(name), offset))) {
+                                        same = 0;
+                                    }
+                                    offset = checked_add(offset, 1);
+                                }
+                                if (same != 0) { return 2; }
+                            }
+                            existing = checked_add(existing, 1);
+                        }
+
+                        vec_push<CapabilityCatalogEntry>(output, CapabilityCatalogEntry {
+                            capability_id: declaration_ordinal,
+                            name_start: token_start(name),
+                            name_length: token_length(name)
+                        });
+                        declaration_ordinal = checked_add(declaration_ordinal, 1);
+                        index = semicolon_index;
+                    }
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
