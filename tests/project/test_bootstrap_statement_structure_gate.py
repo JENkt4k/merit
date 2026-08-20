@@ -49,7 +49,9 @@ fn main() -> i32 {{
         var ai: i64 = 0;
         while (ai < vec_len<MatchArmRecord>(arms)) {{
             let arm: MatchArmRecord = vec_get<MatchArmRecord>(arms, ai);
-            print(match_arm_statement(arm)); print(match_arm_ordinal(arm));
+            print(match_arm_statement(arm));
+            print(match_arm_subject_start(arm)); print(match_arm_subject_length(arm));
+            print(match_arm_ordinal(arm));
             print(match_arm_variant_start(arm)); print(match_arm_variant_length(arm));
             print(match_arm_binding_start(arm)); print(match_arm_binding_length(arm));
             print(match_arm_body_start(arm)); print(match_arm_body_length(arm));
@@ -96,8 +98,8 @@ def _parse(output: str):
     cursor = 3
     arms = []
     for _ in range(arm_count):
-        arms.append(tuple(values[cursor:cursor + 8]))
-        cursor += 8
+        arms.append(tuple(values[cursor:cursor + 10]))
+        cursor += 10
     scope_count = values[cursor]
     cursor += 1
     scopes = []
@@ -118,18 +120,19 @@ def test_native_statement_structure_preserves_match_arms_and_capability_scopes(t
     arms, scopes = interpreted
 
     assert len(arms) == 2
-    assert [arm[1] for arm in arms] == [0, 1]
-    assert [_slice(arm[2], arm[3]) for arm in arms] == ["Ok", "Err"]
-    assert [_slice(arm[4], arm[5]) for arm in arms] == ["value", "code"]
-    assert "with capability clock" in _slice(arms[0][6], arms[0][7])
-    assert "return code" in _slice(arms[1][6], arms[1][7])
+    assert [_slice(arm[1], arm[2]) for arm in arms] == ["r", "r"]
+    assert [arm[3] for arm in arms] == [0, 1]
+    assert [_slice(arm[4], arm[5]) for arm in arms] == ["Ok", "Err"]
+    assert [_slice(arm[6], arm[7]) for arm in arms] == ["value", "code"]
+    assert "with capability clock" in _slice(arms[0][8], arms[0][9])
+    assert "return code" in _slice(arms[1][8], arms[1][9])
 
     assert len(scopes) == 1
     scope = scopes[0]
     assert scope[1] == 0
     assert _slice(scope[2], scope[3]) == "clock"
     assert "return value" in _slice(scope[4], scope[5])
-    assert arms[0][6] <= scope[4] < arms[0][6] + arms[0][7]
+    assert arms[0][8] <= scope[4] < arms[0][8] + arms[0][9]
 
     _, _, executable = build(project, root / "native")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
@@ -138,11 +141,13 @@ def test_native_statement_structure_preserves_match_arms_and_capability_scopes(t
 
 def test_statement_structure_contract_is_not_encoded_in_flat_statement_operands():
     # The flat v1 statement contract identifies match/capability envelopes and
-    # their subject/name operands, but arm identity and lexical scope bodies are
-    # intentionally carried by the new structured records instead of inferred
-    # later by MIR adapters.
+    # their subject/name operands, but arm identity, match subject span, and
+    # lexical scope bodies are carried by structured records instead of being
+    # rediscovered later by MIR adapters.
     statement_source = (PROJECT / "src" / "statements.mrt").read_text(encoding="utf-8")
     assert "Operand kinds: 1 binding name, 2 declared type, 3 expression, 4 capability name" in statement_source
     structure_source = (PROJECT / "src" / "statement_structure.mrt").read_text(encoding="utf-8")
     assert "struct MatchArmRecord" in structure_source
+    assert "subject_start" in structure_source
+    assert "subject_length" in structure_source
     assert "struct CapabilityScopeRecord" in structure_source
