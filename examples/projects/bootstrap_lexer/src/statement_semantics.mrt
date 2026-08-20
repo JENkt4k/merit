@@ -22,6 +22,14 @@ pub struct CapabilityCatalogEntry {
     name_length: i64;
 }
 
+// Transitional per-match identity map. This lets semantic resolution bind
+// independent match statements to different enums while existing callers that
+// still supply one function-wide enum id migrate incrementally.
+pub struct MatchEnumIdentity {
+    match_statement: i64;
+    enum_id: i64;
+}
+
 pub struct ResolvedMatchArm {
     match_statement: i64;
     ordinal: i64;
@@ -43,6 +51,8 @@ pub struct ResolvedCapabilityScope {
     body_length: i64;
 }
 
+pub fn match_enum_identity_statement(borrow value: MatchEnumIdentity) -> i64 { return value.match_statement; }
+pub fn match_enum_identity_enum_id(borrow value: MatchEnumIdentity) -> i64 { return value.enum_id; }
 pub fn resolved_match_statement(borrow value: ResolvedMatchArm) -> i64 { return value.match_statement; }
 pub fn resolved_match_ordinal(borrow value: ResolvedMatchArm) -> i64 { return value.ordinal; }
 pub fn resolved_match_enum_id(borrow value: ResolvedMatchArm) -> i64 { return value.enum_id; }
@@ -150,6 +160,73 @@ requires_caps [allocate]
         index = checked_add(index, 1);
     }
     if (expected_ordinal == 0) { return 5; }
+    return 0;
+}
+
+// Resolve a structured arm stream using one semantic enum identity per match
+// statement. MatchArmRecord ordinals restart at zero for every match, so the
+// resolver resets its ordinal contract whenever the owning statement changes.
+pub fn resolve_match_arms_by_identity(
+    borrow source: Buffer,
+    borrow arms: Vec<MatchArmRecord>,
+    borrow catalog: Vec<EnumVariantCatalogEntry>,
+    borrow identities: Vec<MatchEnumIdentity>,
+    borrow_mut output: Vec<ResolvedMatchArm>
+) -> i32
+requires_caps [allocate]
+{
+    var current_statement: i64 = -1;
+    var expected_ordinal: i64 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<MatchArmRecord>(arms)) {
+        let arm: MatchArmRecord = vec_get<MatchArmRecord>(arms, index);
+        let statement: i64 = match_arm_statement(arm);
+        if (statement != current_statement) {
+            current_statement = statement;
+            expected_ordinal = 0;
+        }
+        if (match_arm_ordinal(arm) != expected_ordinal) { return 20; }
+
+        var identity_index: i64 = -1;
+        var identity_count: i64 = 0;
+        var identity_scan: i64 = 0;
+        while (identity_scan < vec_len<MatchEnumIdentity>(identities)) {
+            let identity: MatchEnumIdentity = vec_get<MatchEnumIdentity>(identities, identity_scan);
+            if (match_enum_identity_statement(identity) == statement) {
+                identity_index = identity_scan;
+                identity_count = checked_add(identity_count, 1);
+            }
+            identity_scan = checked_add(identity_scan, 1);
+        }
+        if (identity_count != 1) { return 21; }
+        let identity: MatchEnumIdentity = vec_get<MatchEnumIdentity>(identities, identity_index);
+        let enum_id: i64 = match_enum_identity_enum_id(identity);
+        let catalog_index: i64 = semantic_find_variant(
+            source, catalog, enum_id,
+            match_arm_variant_start(arm), match_arm_variant_length(arm)
+        );
+        if (catalog_index < 0) { return 22; }
+        let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
+        if (entry.ordinal != expected_ordinal) { return 23; }
+        if (entry.payload_owned != 0) {
+            if (match_arm_binding_start(arm) < 0) { return 24; }
+        }
+        vec_push<ResolvedMatchArm>(output, ResolvedMatchArm {
+            match_statement: statement,
+            ordinal: expected_ordinal,
+            enum_id: entry.enum_id,
+            variant_id: entry.variant_id,
+            variant_ordinal: entry.ordinal,
+            binding_start: match_arm_binding_start(arm),
+            binding_length: match_arm_binding_length(arm),
+            body_start: match_arm_body_start(arm),
+            body_length: match_arm_body_length(arm),
+            payload_owned: entry.payload_owned
+        });
+        expected_ordinal = checked_add(expected_ordinal, 1);
+        index = checked_add(index, 1);
+    }
+    if (index == 0) { return 25; }
     return 0;
 }
 
