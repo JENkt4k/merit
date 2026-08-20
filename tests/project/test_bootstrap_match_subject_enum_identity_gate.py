@@ -68,8 +68,10 @@ fn main()->i32 {{
         ));
         print(vec_len<ResolvedMatchArm>(arms));
         if(vec_len<ResolvedMatchArm>(arms)==2){{
-            print(resolved_match_enum_id(vec_get<ResolvedMatchArm>(arms,0)));
-            print(resolved_match_enum_id(vec_get<ResolvedMatchArm>(arms,1)));
+            let first_arm:ResolvedMatchArm=vec_get<ResolvedMatchArm>(arms,0);
+            let second_arm:ResolvedMatchArm=vec_get<ResolvedMatchArm>(arms,1);
+            print(resolved_match_enum_id(first_arm));
+            print(resolved_match_enum_id(second_arm));
         }}
 
         drop(ownership_records); drop(canonical); drop(effects); drop(ownership_events);
