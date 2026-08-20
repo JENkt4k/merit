@@ -31,13 +31,13 @@ UNKNOWN_CAPABILITY_SOURCE = (
 ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left, Right }\n"
-    "fn main()->i32 { let flag:i64=0; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
+    "fn main()->i32 { let flag:Choice=1; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
 )
 MULTI_ENUM_TYPED_SOURCE = (
     "module main\n"
     "enum OtherChoice { First, Second }\n"
     "enum Choice { Left, Right }\n"
-    "fn main()->i32 { let flag:Choice=Left; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
+    "fn main()->i32 { let flag:Choice=1; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
 )
 UNTYPED_MULTI_ENUM_SOURCE = (
     "module main\n"
