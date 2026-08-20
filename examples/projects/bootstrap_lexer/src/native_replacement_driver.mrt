@@ -189,20 +189,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
 
                 var function_status: i32 = slice_status;
                 if (function_status == 0) {
-                    // Count match statements in this function. The current
-                    // resolved semantic boundary accepts one enum identity for
-                    // all arms, so this vertical slice supports one match against
-                    // one source-unit enum and fails closed for ambiguous cases.
-                    var match_count: i64 = 0;
-                    var statement_scan: i64 = 0;
-                    while (statement_scan < vec_len<StatementRecord>(statements)) {
-                        let statement_value: StatementRecord = vec_get<StatementRecord>(statements, statement_scan);
-                        if (statement_record_kind(statement_value) == 27) {
-                            match_count = checked_add(match_count, 1);
-                        }
-                        statement_scan = checked_add(statement_scan, 1);
-                    }
-
                     // Derive top-level payload-free enum declarations directly
                     // from the complete source unit. Enum identity is declaration
                     // ordinal; variant identity is deterministic source-unit
@@ -376,20 +362,11 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         enum_scan = checked_add(enum_scan, 1);
                     }
 
-                    var resolved_match_enum_id: i64 = -1;
-                    if (enum_status == 0) {
-                        if (match_count > 0) {
-                            if (match_count > 1) {
-                                enum_status = 5;
-                            } else {
-                                if (enum_ordinal != 1) {
-                                    enum_status = 4;
-                                } else {
-                                    resolved_match_enum_id = 0;
-                                }
-                            }
-                        }
-                    }
+                    // A negative identity delegates match-subject -> declared-type
+                    // resolution to the resolved semantic stage. The driver owns
+                    // declaration catalog derivation, but no longer guesses which
+                    // enum a match belongs to merely from source-unit cardinality.
+                    let resolved_match_enum_id: i64 = -1;
 
                     // Derive top-level `capability name;` declarations from the
                     // complete source unit. IDs are stable declaration ordinals.
