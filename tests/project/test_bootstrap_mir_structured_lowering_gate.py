@@ -123,13 +123,14 @@ def _expected_cfg():
         R(10, 4, ordinal=4), R(10, 5, ordinal=5), R(10, 6, ordinal=6),
         R(12, 2, operand=1, target_a=4, target_b=5),
         R(11, 4, target_a=6), R(11, 5, target_a=6), R(11, 6, target_a=1),
-        R(10, 7, ordinal=7), R(10, 8, ordinal=8), R(10, 9, ordinal=9), R(10, 10, ordinal=10),
+        R(10, 7, ordinal=7), R(10, 8, ordinal=8), R(10, 9, ordinal=9),
         R(13, 3, operand=2, target_a=7, case_value=10, ordinal=0),
         R(11, 7, target_a=10),
         R(13, 3, operand=2, target_a=8, case_value=20, ordinal=1),
         R(15, 8, operand=3),
         R(14, 3, operand=2, target_a=9, ordinal=2),
         R(11, 9, target_a=10),
+        R(10, 10, ordinal=10),
         R(15, 10, operand=4),
     ]
 

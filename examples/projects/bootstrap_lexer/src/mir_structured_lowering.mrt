@@ -62,7 +62,8 @@ pub fn mir_event_end_match() -> MirLowerEvent { return MirLowerEvent { kind: 33,
 // if:    a=then, b=else, c=join, d=seen_else
 // while: a=condition, b=body, c=exit
 // match: a=switch block, b=value local, c=first arm, d=join,
-//        e=next arm (negative after default), f=expected arm count.
+//        e=next arm (negative after default), f=expected arm count,
+//        g=all completed arms terminated.
 struct MirLowerFrame {
     kind: i32;
     a: i64;
@@ -71,6 +72,7 @@ struct MirLowerFrame {
     d: i64;
     e: i64;
     f: i64;
+    g: i32;
 }
 
 fn lower_push_block(borrow_mut cfg: Vec<MirCfgRecord>, block_id: i64) -> i32
@@ -164,7 +166,7 @@ requires_caps [allocate]
             lower_push_block(cfg, join_block);
             vec_push<MirCfgRecord>(cfg, cfg_branch(current, event.a, then_block, else_block));
             vec_push<MirLowerFrame>(frames, MirLowerFrame {
-                kind: 10, a: then_block, b: else_block, c: join_block, d: 0, e: 0, f: 0
+                kind: 10, a: then_block, b: else_block, c: join_block, d: 0, e: 0, f: 0, g: 0
             });
             current = then_block;
             local_ordinal = 0;
@@ -180,7 +182,7 @@ requires_caps [allocate]
             if (frame.d != 0) { return 10; }
             lower_finish_open_path(cfg, terminated, current, frame.c);
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
-                kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0, f: 0
+                kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0, f: 0, g: 0
             });
             current = frame.b;
             local_ordinal = 0;
@@ -215,7 +217,7 @@ requires_caps [allocate]
             vec_push<MirCfgRecord>(cfg, cfg_jump(current, condition_block));
             vec_push<MirCfgRecord>(cfg, cfg_branch(condition_block, event.a, body_block, exit_block));
             vec_push<MirLowerFrame>(frames, MirLowerFrame {
-                kind: 20, a: condition_block, b: body_block, c: exit_block, d: 0, e: 0, f: 0
+                kind: 20, a: condition_block, b: body_block, c: exit_block, d: 0, e: 0, f: 0, g: 0
             });
             current = body_block;
             local_ordinal = 0;
@@ -245,10 +247,9 @@ requires_caps [allocate]
                 lower_push_block(cfg, checked_add(first_arm, reserve));
                 reserve = checked_add(reserve, 1);
             }
-            lower_push_block(cfg, join_block);
             next_block = checked_add(join_block, 1);
             vec_push<MirLowerFrame>(frames, MirLowerFrame {
-                kind: 30, a: current, b: event.a, c: first_arm, d: join_block, e: 0, f: event.b
+                kind: 30, a: current, b: event.a, c: first_arm, d: join_block, e: 0, f: event.b, g: 1
             });
             // The switch block is awaiting explicit case/default records. No body
             // instruction may be placed until an arm event selects its block.
@@ -263,12 +264,16 @@ requires_caps [allocate]
             if (frame.kind != 30) { return 21; }
             if (frame.e < 0) { return 22; }
             if (frame.e > 0) { lower_finish_open_path(cfg, terminated, current, frame.d); }
+            var all_terminated: i32 = frame.g;
+            if (frame.e > 0) {
+                if (terminated == 0) { all_terminated = 0; }
+            }
             let arm_target: i64 = checked_add(frame.c, frame.e);
             if (arm_target >= frame.d) { return 23; }
             vec_push<MirCfgRecord>(cfg, cfg_switch_case(frame.a, frame.b, event.a, arm_target, frame.e));
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d,
-                e: checked_add(frame.e, 1), f: frame.f
+                e: checked_add(frame.e, 1), f: frame.f, g: all_terminated
             });
             current = arm_target;
             local_ordinal = 0;
@@ -283,12 +288,16 @@ requires_caps [allocate]
             if (frame.kind != 30) { return 25; }
             if (frame.e < 0) { return 26; }
             if (frame.e > 0) { lower_finish_open_path(cfg, terminated, current, frame.d); }
+            var all_terminated: i32 = frame.g;
+            if (frame.e > 0) {
+                if (terminated == 0) { all_terminated = 0; }
+            }
             let arm_target: i64 = checked_add(frame.c, frame.e);
             if (arm_target >= frame.d) { return 27; }
             vec_push<MirCfgRecord>(cfg, cfg_switch_default(frame.a, frame.b, arm_target, frame.e));
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
                 kind: 30, a: frame.a, b: frame.b, c: frame.c, d: frame.d,
-                e: checked_sub(0, checked_add(frame.e, 1)), f: frame.f
+                e: checked_sub(0, checked_add(frame.e, 1)), f: frame.f, g: all_terminated
             });
             current = arm_target;
             local_ordinal = 0;
@@ -304,9 +313,14 @@ requires_caps [allocate]
             let actual_arms: i64 = checked_sub(0, frame.e);
             if (actual_arms != frame.f) { return 31; }
             lower_finish_open_path(cfg, terminated, current, frame.d);
+            var match_terminated: i32 = frame.g;
+            if (terminated == 0) { match_terminated = 0; }
             current = frame.d;
             local_ordinal = 0;
-            terminated = 0;
+            terminated = match_terminated;
+            if (match_terminated == 0) {
+                lower_push_block(cfg, current);
+            }
         }
 
         if (handled == 0) { return 32; }
