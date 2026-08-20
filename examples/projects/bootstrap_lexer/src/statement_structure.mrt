@@ -9,6 +9,8 @@ capability allocate;
 // represent without forcing later MIR stages to rediscover it from source text.
 pub struct MatchArmRecord {
     match_statement: i64;
+    subject_start: i64;
+    subject_length: i64;
     ordinal: i64;
     variant_start: i64;
     variant_length: i64;
@@ -28,6 +30,8 @@ pub struct CapabilityScopeRecord {
 }
 
 pub fn match_arm_statement(borrow value: MatchArmRecord) -> i64 { return value.match_statement; }
+pub fn match_arm_subject_start(borrow value: MatchArmRecord) -> i64 { return value.subject_start; }
+pub fn match_arm_subject_length(borrow value: MatchArmRecord) -> i64 { return value.subject_length; }
 pub fn match_arm_ordinal(borrow value: MatchArmRecord) -> i64 { return value.ordinal; }
 pub fn match_arm_variant_start(borrow value: MatchArmRecord) -> i64 { return value.variant_start; }
 pub fn match_arm_variant_length(borrow value: MatchArmRecord) -> i64 { return value.variant_length; }
@@ -173,6 +177,38 @@ requires_caps [allocate]
             if (match_open < 0) { return 10; }
             let match_close: i64 = structure_matching_brace(source, tokens, match_open);
             if (match_close < 0) { return 11; }
+
+            // Preserve the complete match-subject span once at the structured
+            // statement boundary. Strip one enclosing parenthesis pair when it
+            // surrounds the entire subject, but retain compound expressions as
+            // source spans for later typed expression resolution.
+            var match_keyword_index: i64 = -1;
+            var subject_scan: i64 = 0;
+            while (subject_scan < match_open) {
+                let subject_token: Token = vec_get<Token>(tokens, subject_scan);
+                if (token_start(subject_token) == statement_record_start(statement)) {
+                    match_keyword_index = subject_scan;
+                }
+                subject_scan = checked_add(subject_scan, 1);
+            }
+            if (match_keyword_index < 0) { return 23; }
+            var subject_first: i64 = checked_add(match_keyword_index, 1);
+            var subject_last: i64 = checked_sub(match_open, 1);
+            if (subject_first > subject_last) { return 24; }
+            let subject_first_token: Token = vec_get<Token>(tokens, subject_first);
+            let subject_last_token: Token = vec_get<Token>(tokens, subject_last);
+            if (structure_punctuation(source, subject_first_token, 40) != 0) {
+                if (structure_punctuation(source, subject_last_token, 41) != 0) {
+                    subject_first = checked_add(subject_first, 1);
+                    subject_last = checked_sub(subject_last, 1);
+                }
+            }
+            if (subject_first > subject_last) { return 24; }
+            let subject_begin_token: Token = vec_get<Token>(tokens, subject_first);
+            let subject_end_token: Token = vec_get<Token>(tokens, subject_last);
+            let subject_start: i64 = token_start(subject_begin_token);
+            let subject_length: i64 = structure_token_end(subject_end_token) - subject_start;
+
             var cursor: i64 = checked_add(match_open, 1);
             var ordinal: i64 = 0;
             while (cursor < match_close) {
@@ -210,6 +246,8 @@ requires_caps [allocate]
                 let body_start: i64 = structure_token_end(body_open);
                 vec_push<MatchArmRecord>(output, MatchArmRecord {
                     match_statement: statement_index,
+                    subject_start: subject_start,
+                    subject_length: subject_length,
                     ordinal: ordinal,
                     variant_start: token_start(variant),
                     variant_length: token_length(variant),
