@@ -169,6 +169,7 @@ requires_caps [allocate]
         return 0;
     }
     if (kind == 26) {
+        vec_push<MirOwnershipEvent>(events, ownership_event_begin_while());
         let condition: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (condition < 0) { return 24; }
         vec_push<MirOwnershipEvent>(events, ownership_event_while(condition));
@@ -200,6 +201,41 @@ requires_caps [allocate]
             if (ownership_binding_owned(source_semantic) == 0) { return 31; }
             vec_push<MirOwnershipEvent>(events, ownership_event_replace_from_binding(target_binding, replacement_binding));
         } else { vec_push<MirOwnershipEvent>(events, ownership_event_replace(target_binding, replacement_local)); }
+        return 0;
+    }
+    if (kind == 30) {
+        let target_index: i64 = source_ownership_operand(statement, operands, 3, 0);
+        let value_index: i64 = source_ownership_operand(statement, operands, 3, 1);
+        if (target_index < 0) { return 33; }
+        if (value_index < 0) { return 34; }
+        let target_operand: StatementOperand = vec_get<StatementOperand>(operands, target_index);
+        let target_local: i64 = source_expression(
+            source, tokens, starts, lengths,
+            statement_operand_start(target_operand), statement_operand_length(target_operand),
+            allocator, counters, direct, events
+        );
+        if (target_local < 0) { return 35; }
+        let target_binding: i64 = vec_get<i64>(direct, 0);
+        if (target_binding < 0) { return 36; }
+        let target_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, target_binding);
+        if (ownership_binding_mutable(target_semantic) == 0) { return 37; }
+        if (ownership_binding_owned(target_semantic) != 0) { return 38; }
+        let value_operand: StatementOperand = vec_get<StatementOperand>(operands, value_index);
+        let value_local: i64 = source_expression(
+            source, tokens, starts, lengths,
+            statement_operand_start(value_operand), statement_operand_length(value_operand),
+            allocator, counters, direct, events
+        );
+        if (value_local < 0) { return 39; }
+        vec_push<MirOwnershipEvent>(events, ownership_event_assign(target_binding, value_local));
+        return 0;
+    }
+    if (kind == 31) {
+        let result: i64 = source_control_expression_statement(
+            source, tokens, statement, operands, starts, lengths,
+            allocator, counters, direct, events
+        );
+        if (result < 0) { return 43; }
         return 0;
     }
     return checked_add(100, kind);

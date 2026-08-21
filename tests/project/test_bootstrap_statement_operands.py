@@ -97,6 +97,39 @@ def _span(tokens, first: int, last_exclusive: int):
     return start, last_start + last_length - start
 
 
+def _assignment_equals(data: bytes, tokens, index: int) -> int:
+    equals = _find_top_level(data, tokens, index, b"=")
+    if equals < 0:
+        return -1
+    if equals > index and _text(data, tokens[equals - 1]) in (b"=", b"!", b"<", b">"):
+        return -1
+    if equals + 1 < len(tokens) and _text(data, tokens[equals + 1]) in (b"=", b">"):
+        return -1
+    return equals
+
+
+def _statement_kind(data: bytes, tokens, index: int) -> int:
+    text = _text(data, tokens[index])
+    keyword_kind = STATEMENT_KINDS.get(text, 0)
+    if keyword_kind:
+        return keyword_kind
+    if index == 0 or tokens[index][0] == 4:
+        return 0
+    if _text(data, tokens[index - 1]) not in (b"{", b"}", b";"):
+        return 0
+    semicolon = _find_top_level(data, tokens, index, b";")
+    if semicolon <= index:
+        return 0
+    opening_body = _find_top_level(data, tokens, index, b"{")
+    if 0 <= opening_body < semicolon:
+        return 0
+    colon = _find_top_level(data, tokens, index, b":")
+    if 0 <= colon < semicolon:
+        return 0
+    equals = _assignment_equals(data, tokens, index)
+    return 30 if 0 <= equals < semicolon else 31
+
+
 def _statement_operands(data: bytes, tokens, index: int, kind: int):
     result = []
     if kind in (20, 21):
@@ -140,6 +173,24 @@ def _statement_operands(data: bytes, tokens, index: int, kind: int):
         if span:
             result.append((3, *span))
         return result
+    if kind == 30:
+        equals = _assignment_equals(data, tokens, index)
+        if equals <= index:
+            return result
+        span = _span(tokens, index, equals)
+        if span:
+            result.append((3, *span))
+        semicolon = _find_top_level(data, tokens, equals + 1, b";")
+        span = _span(tokens, equals + 1, semicolon)
+        if span:
+            result.append((3, *span))
+        return result
+    if kind == 31:
+        semicolon = _find_top_level(data, tokens, index, b";")
+        span = _span(tokens, index, semicolon)
+        if span:
+            result.append((3, *span))
+        return result
     first = index + 1
     delimiter = b"{" if 25 <= kind <= 27 else b";"
     end_index = _find_top_level(data, tokens, first, delimiter)
@@ -160,7 +211,7 @@ def reference_statement_records(source: str):
         if text == b"}" and depth:
             depth -= 1
         if depth:
-            kind = STATEMENT_KINDS.get(text, 0)
+            kind = _statement_kind(data, tokens, index)
             if kind:
                 statement_operands = _statement_operands(data, tokens, index, kind)
                 start = token[1]
@@ -266,10 +317,15 @@ CASES = [
     "let target:i32=f(1,2+3); "
     "replace(target[index(1,2)],f(3,4+5)); "
     "if check(f(1,2),3) { return g(4,5); } }\n",
+    "module effects\n"
+    "fn main()->i32 { var x:i32=1; x=x+1; x==2; x<=2; x!=3; return x; }\n",
 ]
 
 
-@pytest.mark.parametrize("source_text", CASES, ids=("all-statement-operands", "nested-delimiters"))
+@pytest.mark.parametrize(
+    "source_text", CASES,
+    ids=("all-statement-operands", "nested-delimiters", "assignment-expression-statements"),
+)
 def test_typed_statement_records_match_independent_oracle_interpreter_and_native(
     tmp_path, source_text
 ):
