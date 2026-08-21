@@ -1,5 +1,6 @@
 module bootstrap_mir_resolved_source_function_pipeline
 import bootstrap_tokens;
+import bootstrap_lexer_core;
 import bootstrap_statements;
 import bootstrap_statement_structure;
 import bootstrap_statement_semantics;
@@ -14,10 +15,6 @@ import bootstrap_mir_source_ownership_lowering;
 
 capability allocate;
 
-// The source-function body-record stage currently owns these statement kinds.
-// Resolved ownership/control owns the wider effect surface (drop, match,
-// capability scopes, replace). Keep that boundary explicit until the shared
-// expression traversal replaces both implementations.
 fn resolved_pipeline_body_kind(kind: i32) -> i32 {
     if (kind == 20) { return 1; }
     if (kind == 21) { return 1; }
@@ -44,10 +41,187 @@ requires_caps [allocate]
     return 0;
 }
 
-// Cross-stream guard for the duplicated traversal that still exists today.
-// Instruction placement differs because ownership inserts lifecycle operations,
-// so compare the semantic return surface only. Match/capability structure is
-// authoritative from the resolved ownership stream.
+fn resolved_pipeline_span_equal(
+    borrow source: Buffer,
+    left_start: i64,
+    left_length: i64,
+    right_start: i64,
+    right_length: i64
+) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(source, checked_add(left_start, offset)) !=
+            buffer_get(source, checked_add(right_start, offset))) {
+            return 0;
+        }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+// Build one semantic enum identity for each distinct match statement. The
+// structured statement stage already preserves the subject span on every arm,
+// so this stage only has to bind a simple local subject to its preceding
+// declared type and then bind that type to a top-level enum declaration.
+fn resolved_pipeline_derive_match_identities(
+    borrow source: Buffer,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow raw_arms: Vec<MatchArmRecord>,
+    allocator: Allocator,
+    borrow_mut identities: Vec<MatchEnumIdentity>
+) -> i32
+requires_caps [allocate]
+{
+    var declaration_tokens: Vec<Token> = lex(source, allocator);
+    var status: i32 = 0;
+    var last_match_statement: i64 = -1;
+    var arm_index: i64 = 0;
+
+    while (arm_index < vec_len<MatchArmRecord>(raw_arms)) {
+        if (status == 0) {
+            let arm: MatchArmRecord = vec_get<MatchArmRecord>(raw_arms, arm_index);
+            let match_statement: i64 = match_arm_statement(arm);
+            if (match_statement != last_match_statement) {
+                last_match_statement = match_statement;
+                let subject_start: i64 = match_arm_subject_start(arm);
+                let subject_length: i64 = match_arm_subject_length(arm);
+                if (subject_start < 0) { status = 1; }
+                if (subject_length <= 0) { status = 1; }
+
+                var type_start: i64 = -1;
+                var type_length: i64 = 0;
+                var binding_statement: i64 = 0;
+                while (binding_statement < match_statement) {
+                    if (status == 0) {
+                        let binding_record: StatementRecord = vec_get<StatementRecord>(statements, binding_statement);
+                        let binding_kind: i32 = statement_record_kind(binding_record);
+                        var supported_binding: i32 = 0;
+                        if (binding_kind == 20) { supported_binding = 1; }
+                        if (binding_kind == 21) { supported_binding = 1; }
+                        if (supported_binding != 0) {
+                            var name_start: i64 = -1;
+                            var name_length: i64 = 0;
+                            var declared_type_start: i64 = -1;
+                            var declared_type_length: i64 = 0;
+                            var operand_offset: i64 = 0;
+                            while (operand_offset < statement_record_operand_count(binding_record)) {
+                                let operand_index: i64 = checked_add(
+                                    statement_record_first_operand(binding_record), operand_offset
+                                );
+                                let operand_value: StatementOperand = vec_get<StatementOperand>(
+                                    statement_operands, operand_index
+                                );
+                                if (statement_operand_kind(operand_value) == 1) {
+                                    name_start = statement_operand_start(operand_value);
+                                    name_length = statement_operand_length(operand_value);
+                                }
+                                if (statement_operand_kind(operand_value) == 2) {
+                                    declared_type_start = statement_operand_start(operand_value);
+                                    declared_type_length = statement_operand_length(operand_value);
+                                }
+                                operand_offset = checked_add(operand_offset, 1);
+                            }
+                            if (name_start >= 0) {
+                                if (resolved_pipeline_span_equal(
+                                    source,
+                                    name_start, name_length,
+                                    subject_start, subject_length
+                                ) != 0) {
+                                    type_start = declared_type_start;
+                                    type_length = declared_type_length;
+                                }
+                            }
+                        }
+                    }
+                    binding_statement = checked_add(binding_statement, 1);
+                }
+                if (status == 0) {
+                    if (type_start < 0) { status = 2; }
+                    if (type_length <= 0) { status = 2; }
+                }
+
+                var enum_ordinal: i64 = 0;
+                var matching_enum_count: i64 = 0;
+                var effective_enum_id: i64 = -1;
+                var declaration_scan: i64 = 0;
+                var declaration_depth: i64 = 0;
+                while (declaration_scan < vec_len<Token>(declaration_tokens)) {
+                    if (status == 0) {
+                        let declaration_token: Token = vec_get<Token>(declaration_tokens, declaration_scan);
+                        let declaration_kind: i32 = token_kind(declaration_token);
+                        let declaration_length: i64 = token_length(declaration_token);
+                        var is_enum: i32 = 0;
+                        if (declaration_depth == 0) {
+                            if (declaration_kind == 1) {
+                                if (declaration_length == 4) {
+                                    is_enum = 1;
+                                    let declaration_start: i64 = token_start(declaration_token);
+                                    if (buffer_get(source, declaration_start) != 101) { is_enum = 0; }
+                                    if (buffer_get(source, checked_add(declaration_start, 1)) != 110) { is_enum = 0; }
+                                    if (buffer_get(source, checked_add(declaration_start, 2)) != 117) { is_enum = 0; }
+                                    if (buffer_get(source, checked_add(declaration_start, 3)) != 109) { is_enum = 0; }
+                                }
+                            }
+                        }
+                        if (is_enum != 0) {
+                            let enum_name_index: i64 = checked_add(declaration_scan, 1);
+                            if (enum_name_index >= vec_len<Token>(declaration_tokens)) {
+                                status = 3;
+                            } else {
+                                let enum_name: Token = vec_get<Token>(declaration_tokens, enum_name_index);
+                                if (token_kind(enum_name) != 1) {
+                                    status = 3;
+                                } else {
+                                    if (resolved_pipeline_span_equal(
+                                        source,
+                                        token_start(enum_name), token_length(enum_name),
+                                        type_start, type_length
+                                    ) != 0) {
+                                        effective_enum_id = enum_ordinal;
+                                        matching_enum_count = checked_add(matching_enum_count, 1);
+                                    }
+                                }
+                            }
+                            enum_ordinal = checked_add(enum_ordinal, 1);
+                        }
+                        if (declaration_kind == 4) {
+                            if (declaration_length == 1) {
+                                let declaration_byte: i64 = buffer_get(source, token_start(declaration_token));
+                                if (declaration_byte == 123) {
+                                    declaration_depth = checked_add(declaration_depth, 1);
+                                } else {
+                                    if (declaration_byte == 125) {
+                                        if (declaration_depth > 0) {
+                                            declaration_depth = checked_sub(declaration_depth, 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    declaration_scan = checked_add(declaration_scan, 1);
+                }
+                if (status == 0) {
+                    if (matching_enum_count != 1) {
+                        status = 4;
+                    } else {
+                        vec_push<MatchEnumIdentity>(identities, MatchEnumIdentity {
+                            match_statement: match_statement,
+                            enum_id: effective_enum_id
+                        });
+                    }
+                }
+            }
+        }
+        arm_index = checked_add(arm_index, 1);
+    }
+
+    drop(declaration_tokens);
+    return status;
+}
+
 pub fn validate_resolved_function_return_surface(
     borrow body_records: Vec<MirFunctionRecord>,
     borrow canonical_events: Vec<MirLowerEvent>
@@ -70,11 +244,6 @@ pub fn validate_resolved_function_return_surface(
     return 0;
 }
 
-// One production entrypoint for the currently separate real-source semantic
-// stages. The caller supplies typed declaration catalogs and ownership metadata;
-// all statement structure, resolved match/capability identities, clauses,
-// contracts, ownership effects, and canonical structured events are derived
-// from the same source/tokens/statements in this function.
 pub fn lower_resolved_source_function_semantics(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -103,9 +272,6 @@ requires_caps [allocate]
     let filter_status: i32 = resolved_pipeline_filter_body_statements(statements, body_statements);
     if (filter_status != 0) { return checked_add(100, filter_status); }
 
-    // #64 body + function-clause path. Its structured events are deliberately
-    // scratch here: canonical structure for resolved effects comes from the
-    // path-sensitive ownership reducer below.
     var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
     let function_status: i32 = lower_source_function_semantics(
         source, tokens, body_statements, statement_operands, capability_catalog,
@@ -123,11 +289,32 @@ requires_caps [allocate]
     if (scope_status != 0) { return checked_add(400, scope_status); }
 
     if (vec_len<MatchArmRecord>(raw_arms) > 0) {
-        let resolve_arms_status: i32 = resolve_match_arms(
-            source, raw_arms, enum_catalog, match_enum_id, resolved_arms
-        );
-        if (resolve_arms_status != 0) { return checked_add(500, resolve_arms_status); }
+        if (match_enum_id >= 0) {
+            let resolve_arms_status: i32 = resolve_match_arms(
+                source, raw_arms, enum_catalog, match_enum_id, resolved_arms
+            );
+            if (resolve_arms_status != 0) { return checked_add(520, resolve_arms_status); }
+        } else {
+            var match_identities: Vec<MatchEnumIdentity> = vec_new<MatchEnumIdentity>(
+                allocator, vec_len<MatchArmRecord>(raw_arms)
+            );
+            var derived_status: i32 = resolved_pipeline_derive_match_identities(
+                source, statements, statement_operands, raw_arms,
+                allocator, match_identities
+            );
+            if (derived_status == 0) {
+                derived_status = resolve_match_arms_by_identity(
+                    source, raw_arms, enum_catalog, match_identities, resolved_arms
+                );
+                if (derived_status != 0) {
+                    derived_status = checked_add(20, derived_status);
+                }
+            }
+            drop(match_identities);
+            if (derived_status != 0) { return checked_add(500, derived_status); }
+        }
     }
+
     let resolve_scopes_status: i32 = resolve_capability_scopes(
         source, raw_scopes, capability_catalog, resolved_scopes
     );

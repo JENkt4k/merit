@@ -31,13 +31,19 @@ UNKNOWN_CAPABILITY_SOURCE = (
 ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left, Right }\n"
-    "fn main()->i32 { let flag:i64=0; match (flag) { Left => { return 7; } Right => { return 8; } } }\n"
+    "fn main()->i32 { let flag:Choice=0; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
 )
-AMBIGUOUS_ENUM_SOURCE = (
+MULTI_ENUM_TYPED_SOURCE = (
+    "module main\n"
+    "enum OtherChoice { First, Second }\n"
+    "enum Choice { Left, Right }\n"
+    "fn main()->i32 { let flag:Choice=0; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
+)
+UNTYPED_MULTI_ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left, Right }\n"
     "enum OtherChoice { First, Second }\n"
-    "fn main()->i32 { let flag:i64=0; match (flag) { Left => { return 7; } Right => { return 8; } } }\n"
+    "fn main()->i32 { let flag:i64=0; match (flag) { Left => { return 7; } Right => { } } return 8; }\n"
 )
 PAYLOAD_ENUM_SOURCE = (
     "module main\n"
@@ -176,9 +182,35 @@ def test_concrete_native_driver_derives_payload_free_enum_catalog_from_source(tm
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_ambiguous_match_enum_identity(tmp_path: Path) -> None:
+def test_concrete_native_driver_derives_match_enum_identity_from_declared_subject_type(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
-    root = _project(tmp_path, AMBIGUOUS_ENUM_SOURCE)
+
+    completed = subprocess.run(
+        [str(driver.executable)],
+        input=MULTI_ENUM_TYPED_SOURCE,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    values = tuple(int(line) for line in completed.stdout.splitlines())
+    bundle = decode_resolved_source_function_bundle(values)
+    assert len(bundle.functions) == 1
+
+    root = _project(tmp_path, MULTI_ENUM_TYPED_SOURCE)
+    project = load_project(root / "Merit.toml")
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+
+    artifact = build_replacement_project(project, root / "build" / "replacement-native-typed-match")
+    executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert executed.returncode == 7
+    assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_when_match_subject_type_is_not_an_enum(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path, UNTYPED_MULTI_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
 
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
