@@ -182,7 +182,7 @@ requires_caps [allocate]
             if (frame.d != 0) { return 10; }
             lower_finish_open_path(cfg, terminated, current, frame.c);
             vec_set<MirLowerFrame>(frames, frame_index, MirLowerFrame {
-                kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0, f: 0, g: 0
+                kind: 10, a: frame.a, b: frame.b, c: frame.c, d: 1, e: 0, f: 0, g: terminated
             });
             current = frame.b;
             local_ordinal = 0;
@@ -195,12 +195,20 @@ requires_caps [allocate]
             let frame: MirLowerFrame = vec_pop<MirLowerFrame>(frames);
             if (frame.kind != 10) { return 12; }
             lower_finish_open_path(cfg, terminated, current, frame.c);
+            var branch_terminated: i32 = 0;
             if (frame.d == 0) {
                 vec_push<MirCfgRecord>(cfg, cfg_jump(frame.b, frame.c));
+            } else {
+                if (frame.g != 0) {
+                    if (terminated != 0) { branch_terminated = 1; }
+                }
             }
             current = frame.c;
             local_ordinal = 0;
-            terminated = 0;
+            terminated = branch_terminated;
+            if (branch_terminated != 0) {
+                vec_push<MirCfgRecord>(cfg, cfg_unreachable(current));
+            }
         }
 
         if (kind == 20) {

@@ -257,6 +257,25 @@ def lower_native_whole_function_assembly(
         instructions = tuple(global_instructions[instruction_id] for _, instruction_id in placements_by_block.get(block_id, []))
         blocks.append(MirBlock(block_id, instructions, terminator))
 
+    # Structured lowering may reserve a join before it knows that every branch
+    # terminates. Canonical MIR, like the reference compiler's MIR, contains
+    # reachable blocks only. Prune those reserved joins before constructing the
+    # validated function rather than treating an implementation detail as a
+    # second semantic path.
+    blocks_by_id = {block.block_id: block for block in blocks}
+    reachable: set[int] = set()
+    pending = [0]
+    while pending:
+        block_id = pending.pop()
+        if block_id in reachable:
+            continue
+        block = blocks_by_id.get(block_id)
+        if block is None:
+            raise NativeWholeFunctionMirError(f"CFG targets unknown block {block_id}")
+        reachable.add(block_id)
+        pending.extend(block.terminator.targets)
+    blocks = [block for block in blocks if block.block_id in reachable]
+
     resolved_capabilities: list[str] = []
     for raw_id in capability_ids:
         capability_id = int(raw_id)
