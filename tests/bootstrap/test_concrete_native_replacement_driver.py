@@ -9,6 +9,7 @@ from lark.exceptions import UnexpectedInput
 
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
+from merit.bootstrap.resolved_source_function_snapshot import materialize_resolved_source_function_snapshot
 from merit.compiler import CompileError, parse
 from merit.project.build import build
 from merit.project.loader import load_project
@@ -50,8 +51,13 @@ UNTYPED_MULTI_ENUM_SOURCE = (
 )
 PAYLOAD_ENUM_SOURCE = (
     "module main\n"
-    "enum Choice { Left(i64), Right(i64) }\n"
-    "fn main()->i32 { let flag:Choice=Left(1); match (flag) { Left(x) => { return 7; } Right(y) => { return 8; } } }\n"
+    "enum Choice { Left(i32), Right(i32) }\n"
+    "fn main()->i32 { let flag:Choice=Left(7); match (flag) { Left(x) => { return x; } Right(y) => { return y; } } }\n"
+)
+OWNED_PAYLOAD_ENUM_SOURCE = (
+    "module main\n"
+    "enum Choice { Data(Buffer) }\n"
+    "fn main()->i32 { return 7; }\n"
 )
 CONTROL_FLOW_SOURCES = (
     (
@@ -345,9 +351,38 @@ def test_concrete_native_driver_fails_closed_when_match_subject_type_is_not_an_e
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_payload_enum_lifecycle(tmp_path: Path) -> None:
+def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=PAYLOAD_ENUM_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=PAYLOAD_ENUM_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=PAYLOAD_ENUM_SOURCE,
+        module_name="main",
+        snapshot=bundle.functions[0],
+        capability_names={},
+    )
+    instructions = [instruction for block in module.functions[0].blocks for instruction in block.instructions]
+    assert [instruction.kind for instruction in instructions].count("construct") == 1
+    assert [instruction.symbol for instruction in instructions if instruction.kind == "load_field"] == ["tag", "payload", "payload"]
     root = _project(tmp_path, PAYLOAD_ENUM_SOURCE)
+    project = load_project(root / "Merit.toml")
+
+    _, _, reference_executable = build(project, root / "build" / "reference-copy-payload-enum")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+    artifact = build_replacement_project(project, root / "build" / "replacement-copy-payload-enum")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (7, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_owned_payload_enum_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path, OWNED_PAYLOAD_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
 
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):

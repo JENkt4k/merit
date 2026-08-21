@@ -23,6 +23,8 @@ pub fn lower_source_function_semantics(
     borrow tokens: Vec<Token>,
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow resolved_arms: Vec<ResolvedMatchArm>,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
     allocator: Allocator,
     borrow_mut body_records: Vec<MirFunctionRecord>,
@@ -33,7 +35,7 @@ pub fn lower_source_function_semantics(
 requires_caps [allocate]
 {
     let body_status: i32 = lower_source_function_body_records(
-        source, tokens, statements, statement_operands, allocator,
+        source, tokens, statements, statement_operands, enum_catalog, resolved_arms, allocator,
         body_records, body_events
     );
     if (body_status != 0) { return checked_add(100, body_status); }

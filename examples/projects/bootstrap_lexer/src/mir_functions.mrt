@@ -3,7 +3,8 @@ module bootstrap_mir_functions
 // bootstrap-function-mir-v1 is the first whole-function replacement record
 // family. It deliberately covers one basic block only; CFG records are a later
 // additive contract. Kinds: 1 function, 2 source local, 3 temporary local,
-// 4 const, 5 binary, 6 copy-to-binding, 7 return, 8 print.
+// 4 const, 5 binary, 6 copy-to-binding, 7 return, 8 print,
+// 9 Copy-payload enum construct, 10 enum tag load, 11 enum payload load.
 pub struct MirFunctionRecord {
     kind: i32;
     start: i64;
@@ -39,6 +40,20 @@ pub fn function_mir_binding_id(borrow node: MirFunctionRecord) -> i64 { return n
 pub fn function_mir_mutable(borrow node: MirFunctionRecord) -> i32 { return node.mutable; }
 pub fn function_mir_hir_node_id(borrow node: MirFunctionRecord) -> i64 { return node.hir_node_id; }
 pub fn function_mir_ordinal(borrow node: MirFunctionRecord) -> i64 { return node.ordinal; }
+pub fn function_mir_is_construct(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 9) { return 1; } return 0; }
+pub fn function_mir_is_enum_tag_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 10) { return 1; } return 0; }
+pub fn function_mir_is_enum_payload_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 11) { return 1; } return 0; }
+pub fn function_mir_is_enum_instruction(borrow node: MirFunctionRecord) -> i32 {
+    if (function_mir_is_construct(node) != 0) { return 1; }
+    if (function_mir_is_enum_tag_load(node) != 0) { return 1; }
+    return function_mir_is_enum_payload_load(node);
+}
+
+// bootstrap-function-mir-v1 reserves codes at and above this boundary for
+// Copy-payload enum identities. The explicit value is part of the record ABI.
+pub fn function_mir_copy_payload_enum_type_code(enum_id: i32) -> i32 {
+    return checked_add(1000, enum_id);
+}
 
 pub fn function_mir_header(start: i64, length: i64, symbol_start: i64, symbol_length: i64, result_type_code: i32) -> MirFunctionRecord {
     return MirFunctionRecord {
@@ -108,6 +123,33 @@ pub fn function_mir_print(start: i64, length: i64, instruction_id: i64, operand_
         kind: 8, start: start, length: length, id: instruction_id, result: -1,
         left: operand_local, right: -1, symbol_start: -1, symbol_length: 0,
         symbol_code: 0, type_code: 0, numeric_policy: 0, binding_id: -1,
+        mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_construct(start: i64, length: i64, instruction_id: i64, result_local: i64, payload_local: i64, variant_ordinal: i32, type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 9, start: start, length: length, id: instruction_id, result: result_local,
+        left: payload_local, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: variant_ordinal, type_code: type_code, numeric_policy: 0,
+        binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_enum_tag_load(start: i64, length: i64, instruction_id: i64, result_local: i64, enum_local: i64, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 10, start: start, length: length, id: instruction_id, result: result_local,
+        left: enum_local, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: 1, numeric_policy: 0, binding_id: -1,
+        mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_enum_payload_load(start: i64, length: i64, instruction_id: i64, result_local: i64, enum_local: i64, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 11, start: start, length: length, id: instruction_id, result: result_local,
+        left: enum_local, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: 1, numeric_policy: 0, binding_id: -1,
         mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
     };
 }
@@ -187,7 +229,19 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                                     if (node.left < 0) { return 35; }
                                     if (node.hir_node_id < 0) { return 36; }
                                     next_instruction = checked_add(next_instruction, 1);
-                                } else { return 32; }
+                                } else {
+                                    if (function_mir_is_enum_instruction(node) != 0) {
+                                        if (node.id != next_instruction) { return 37; }
+                                        if (node.result < 0) { return 38; }
+                                        if (node.left < 0) { return 38; }
+                                        if (node.hir_node_id < 0) { return 39; }
+                                        if (function_mir_is_construct(node) != 0) {
+                                            if (node.type_code < function_mir_copy_payload_enum_type_code(0)) { return 40; }
+                                            if (node.symbol_code < 0) { return 41; }
+                                        }
+                                        next_instruction = checked_add(next_instruction, 1);
+                                    } else { return 32; }
+                                }
                             }
                         }
                     }

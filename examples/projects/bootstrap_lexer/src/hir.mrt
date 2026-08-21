@@ -21,6 +21,8 @@ pub fn hir_symbol(borrow node: HirExpressionRecord) -> i32 { return node.symbol;
 pub fn hir_type_code(borrow node: HirExpressionRecord) -> i32 { return node.type_code; }
 pub fn hir_numeric_policy(borrow node: HirExpressionRecord) -> i32 { return node.numeric_policy; }
 pub fn hir_binding_id(borrow node: HirExpressionRecord) -> i64 { return node.binding_id; }
+pub fn hir_is_call(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 6) { return 1; } return 0; }
+pub fn hir_is_symbol_reference(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 9) { return 1; } return 0; }
 
 fn hir_binary_symbol(kind: i32) -> i32 {
     if (kind == 50) { return 1; }

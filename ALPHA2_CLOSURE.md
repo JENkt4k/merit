@@ -59,7 +59,7 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | canonical replacement MIR | ✓ | ✓ | ✓ | ✓ | ✓ | indirect | CLOSED |
 | deterministic C emission | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | replacement executable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
-| payload-bearing enums | ✓ | OPEN | OPEN | OPEN | partial | — | OPEN |
+| payload-bearing enums | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | — | OPEN |
 | complete branching/control flow | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
 | loops | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
 | rich owned structs/aggregates | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
@@ -145,6 +145,16 @@ Includes:
 - early-return cleanup;
 - no double destruction;
 - negative ownership cases.
+
+**Current production evidence:** `test_concrete_native_driver_executes_copy_payload_enum_lifecycle`
+drives a Copy `i32` payload enum through native declaration discovery, symbolic
+enum typing, constructor/tag/payload MIR, MRBF, prepared replacement artifacts,
+deterministic C, and reference/replacement executable parity. Repeated native
+driver output is byte-identical. The adjacent owned-`Buffer` payload case remains
+fail-closed and publishes no replacement manifest. This closes only the Copy
+single-payload subset; recursive owned payloads, mixed payload shapes,
+destructors, and move/drop/replace cleanup remain open, so the matrix row and M2
+remain `PARTIAL`/OPEN.
 
 ### M3 — Exact numerics and aggregate closure
 

@@ -21,6 +21,7 @@ def _probe_source() -> str:
 import bootstrap_tokens;
 import bootstrap_lexer_core;
 import bootstrap_statements;
+import bootstrap_statement_semantics;
 import bootstrap_mir_functions;
 import bootstrap_mir_source_function_records;
 import bootstrap_mir_source_function_record_stats;
@@ -62,7 +63,9 @@ fn main() -> i32 {{
   let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
   var body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,48);
   var body_events:Vec<MirLowerEvent>=vec_new<MirLowerEvent>(allocator,48);
-  print(-201); print(lower_source_function_body_records(source,tokens,statements,operands,allocator,body,body_events));
+  var enum_catalog:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,0);
+  var resolved_arms:Vec<ResolvedMatchArm>=vec_new<ResolvedMatchArm>(allocator,0);
+  print(-201); print(lower_source_function_body_records(source,tokens,statements,operands,enum_catalog,resolved_arms,allocator,body,body_events));
   var stats:Vec<i64>=vec_new<i64>(allocator,4);
   print(source_function_record_stats(body,stats));
   print(vec_len<i64>(stats)); var si:i64=0; while(si<vec_len<i64>(stats)){{ print(vec_get<i64>(stats,si)); si=checked_add(si,1); }}

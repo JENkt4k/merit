@@ -23,7 +23,7 @@ SOURCE = (
     "requires_caps [clock]\n"
     "requires 1 < 2;\n"
     "ensures 2 > 1;\n"
-    "{ let a:Resource=1; let flag:i64=1; match flag { Left(x) => { drop(a); return 1; } "
+    "{ let a:Resource=1; let flag:Choice=Right(1); match flag { Left(x) => { drop(a); return 1; } "
     "Right(y) => { drop(a); } Other(z) => { drop(a); } } with capability clock { return 2; } }\n"
 )
 

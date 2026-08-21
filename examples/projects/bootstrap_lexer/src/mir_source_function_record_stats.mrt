@@ -40,7 +40,12 @@ requires_caps [allocate]
                             if (kind == 8) {
                                 if (function_mir_id(record) != instructions) { return 12; }
                                 instructions = checked_add(instructions, 1);
-                            } else { return 13; }
+                            } else {
+                                if (function_mir_is_enum_instruction(record) != 0) {
+                                    if (function_mir_id(record) != instructions) { return 12; }
+                                    instructions = checked_add(instructions, 1);
+                                } else { return 13; }
+                            }
                         }
                     }
                 } else { return 14; }

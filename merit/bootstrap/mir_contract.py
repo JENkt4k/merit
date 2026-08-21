@@ -301,6 +301,12 @@ def _validate_function(function: MirFunction) -> None:
             if instruction.kind == "print":
                 if instruction.result is not None or len(instruction.operands) != 1:
                     raise MirContractError("print instructions require one operand and no result")
+            if instruction.kind == "construct":
+                if instruction.result is None or not instruction.symbol:
+                    raise MirContractError("construct instructions require a result and a symbol")
+            if instruction.kind == "load_field":
+                if instruction.result is None or len(instruction.operands) != 1 or not instruction.symbol:
+                    raise MirContractError("load_field instructions require one operand, a result, and a symbol")
         for operand in block.terminator.operands:
             if operand not in local_set:
                 raise MirContractError(f"terminator reads unknown local {operand}")
