@@ -156,6 +156,20 @@ single-payload subset; recursive owned payloads, mixed payload shapes,
 destructors, and move/drop/replace cleanup remain open, so the matrix row and M2
 remain `PARTIAL`/OPEN.
 
+`test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle`
+adds production evidence for an exactly one-field `i64` non-copy struct. The
+native source-unit catalog owns nominal struct/field identity; construction,
+field access, ownership activation, implicit early-return cleanup, canonical
+`drop`, explicit `drop`, direct-binding `move`, MRBF preparation, deterministic
+C, and reference/replacement executable parity all traverse the concrete
+replacement path. Repeated driver output is byte-identical. Wrong field
+identities, unrepresented multi-field shapes, and `replace` on this non-copy but
+no-destructor shape are rejected deterministically and publish no replacement
+manifest. The rich-owned-aggregate row remains `PARTIAL`/OPEN because
+multi-field and recursively owned
+fields, observable destructors, replacement and branch-sensitive lifecycle
+variants, and double-destruction coverage are still open.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.

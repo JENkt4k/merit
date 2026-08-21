@@ -59,6 +59,37 @@ OWNED_PAYLOAD_ENUM_SOURCE = (
     "enum Choice { Data(Buffer) }\n"
     "fn main()->i32 { return 7; }\n"
 )
+SINGLE_I64_STRUCT_SOURCE = (
+    "module main\n"
+    "struct Box { value:i64; }\n"
+    "fn main()->i64 { let box:Box=Box { value:7 }; return box.value; }\n"
+)
+INVALID_SINGLE_I64_STRUCT_FIELD_SOURCE = (
+    "module main\n"
+    "struct Box { value:i64; }\n"
+    "fn main()->i64 { let box:Box=Box { wrong:7 }; return box.value; }\n"
+)
+UNSUPPORTED_MULTI_FIELD_STRUCT_SOURCE = (
+    "module main\n"
+    "struct Pair { left:i64; right:i64; }\n"
+    "fn main()->i64 { return 7; }\n"
+)
+INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE = (
+    "module main\nstruct Box { value:i64; }\n"
+    "fn main()->i64 { var target:Box=Box { value:1 }; let replacement:Box=Box { value:7 }; replace(target,replacement); return target.value; }\n"
+)
+SINGLE_I64_STRUCT_LIFECYCLE_SOURCES = (
+    (
+        "explicit-drop",
+        "module main\nstruct Box { value:i64; }\n"
+        "fn main()->i64 { let box:Box=Box { value:7 }; drop(box); return 7; }\n",
+    ),
+    (
+        "move",
+        "module main\nstruct Box { value:i64; }\n"
+        "fn main()->i64 { let first:Box=Box { value:7 }; let second:Box=first; return second.value; }\n",
+    ),
+)
 CONTROL_FLOW_SOURCES = (
     (
         "if-else",
@@ -388,3 +419,78 @@ def test_concrete_native_driver_fails_closed_for_owned_payload_enum_lifecycle(tm
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)
     assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=SINGLE_I64_STRUCT_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=SINGLE_I64_STRUCT_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=SINGLE_I64_STRUCT_SOURCE,
+        module_name="main",
+        snapshot=bundle.functions[0],
+        capability_names={},
+    )
+    instructions = [instruction for block in module.functions[0].blocks for instruction in block.instructions]
+    assert [instruction.kind for instruction in instructions].count("construct") == 1
+    assert [instruction.symbol for instruction in instructions if instruction.kind == "load_field"] == ["field_0"]
+    drops = [instruction for instruction in instructions if instruction.kind == "drop"]
+    assert len(drops) == 1
+    assert drops[0].ownership == "owned"
+
+    root = _project(tmp_path, SINGLE_I64_STRUCT_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-single-i64-struct")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+    artifact = build_replacement_project(project, root / "build" / "replacement-single-i64-struct")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (7, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("source", [
+    INVALID_SINGLE_I64_STRUCT_FIELD_SOURCE,
+    UNSUPPORTED_MULTI_FIELD_STRUCT_SOURCE,
+    INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE,
+])
+def test_concrete_native_driver_fails_closed_for_unrepresented_struct_shapes(tmp_path: Path, source: str) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    if source == INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE:
+        with pytest.raises(CompileError, match="replace requires owned storage"):
+            build(project, root / "build" / "reference-invalid-replace")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_single_i64_struct_drop_and_move(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    for case_name, source in SINGLE_I64_STRUCT_LIFECYCLE_SOURCES:
+        root = _project(tmp_path / case_name, source)
+        project = load_project(root / "Merit.toml")
+        _, _, reference_executable = build(project, root / "build" / "reference")
+        reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+        first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+        second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+        assert first.stdout == second.stdout
+        prepared = prepare_replacement_artifacts(project, driver)
+        assert len(prepared.snapshot_paths) == 1
+        artifact = build_replacement_project(project, root / "build" / "replacement")
+        replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+        assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+        assert (replacement.returncode, replacement.stdout) == (7, "")

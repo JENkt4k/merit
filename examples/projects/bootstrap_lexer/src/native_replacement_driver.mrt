@@ -10,6 +10,7 @@ import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_source_type_lifecycle;
+import bootstrap_mir_source_function_records;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_structured_lowering;
 import bootstrap_mir_cfg;
@@ -171,6 +172,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
 
                 var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
+                var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
                 var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
                 var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
                 var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
@@ -190,6 +192,22 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
 
                 var function_status: i32 = slice_status;
                 if (function_status == 0) {
+                    var struct_status: i32 = derive_i64_struct_catalog(source, tokens, structs);
+                    if (struct_status == 0) {
+                        if (vec_len<I64StructCatalogEntry>(structs) > 0) {
+                            var struct_statement: i64 = 0;
+                            while (struct_statement < vec_len<StatementRecord>(statements)) {
+                                let candidate_statement: StatementRecord = vec_get<StatementRecord>(statements, struct_statement);
+                                if (statement_record_kind(candidate_statement) == 29) {
+                                    struct_status = i64_struct_catalog_replace_unsupported_status();
+                                }
+                                struct_statement = checked_add(struct_statement, 1);
+                            }
+                        }
+                    }
+                    if (struct_status != 0) {
+                        function_status = i64_struct_catalog_driver_status(struct_status);
+                    }
                     // Derive top-level payload-free enum declarations directly
                     // from the complete source unit. Enum identity is declaration
                     // ordinal; variant identity is deterministic source-unit
@@ -505,6 +523,8 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         capability_scan = checked_add(capability_scan, 1);
                     }
 
+                    if (function_status != 0) {
+                    } else {
                     if (enum_status != 0) {
                         function_status = checked_add(920, enum_status);
                     } else {
@@ -513,7 +533,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         } else {
                             let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
                                 source, function_tokens, statements, operands,
-                                variants, resolved_match_enum_id, capabilities, allocator,
+                                variants, structs, resolved_match_enum_id, capabilities, allocator,
                                 ownership, body, metadata, contracts, arms, scopes,
                                 ownership_events, effects, ownership_records, contract_locals,
                                 required, sources, assembled, cfg, placements
@@ -532,6 +552,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 }
                             }
                         }
+                    }
                     }
                 }
 
@@ -554,6 +575,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 drop(body);
                 drop(ownership);
                 drop(capabilities);
+                drop(structs);
                 drop(variants);
                 drop(operands);
                 drop(statements);

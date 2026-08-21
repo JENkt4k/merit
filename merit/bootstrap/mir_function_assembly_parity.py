@@ -34,7 +34,10 @@ _POLICIES = {1: "exact", 2: "checked"}
 _BODY_CONSTRUCT = 9
 _BODY_ENUM_TAG_LOAD = 10
 _BODY_ENUM_PAYLOAD_LOAD = 11
+_BODY_STRUCT_CONSTRUCT = 12
+_BODY_STRUCT_FIELD_LOAD = 13
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
+_I64_STRUCT_TYPE_CODE_BASE = 2000
 
 
 class NativeWholeFunctionMirError(ValueError):
@@ -81,6 +84,8 @@ def lower_native_whole_function_assembly(
         types.update(type_names)
 
     def resolved_type(code: int, label: str) -> MirType:
+        if code >= _I64_STRUCT_TYPE_CODE_BASE:
+            return MirType(f"struct_i64_{code - _I64_STRUCT_TYPE_CODE_BASE}")
         if code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE:
             return MirType(f"enum_copy_payload_{code - _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE}")
         try:
@@ -117,7 +122,10 @@ def lower_native_whole_function_assembly(
             if rid in locals_by_id or rid < 0 or hir_id < 0:
                 raise NativeWholeFunctionMirError(f"body temporary {index} is invalid")
             locals_by_id[rid] = MirLocal(rid, f"_t{hir_id}", resolved_type(type_code, f"body temporary {index}"))
-        elif kind in {4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD, _BODY_ENUM_PAYLOAD_LOAD}:
+        elif kind in {
+            4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD,
+            _BODY_ENUM_PAYLOAD_LOAD, _BODY_STRUCT_CONSTRUCT, _BODY_STRUCT_FIELD_LOAD,
+        }:
             if rid in body_instructions or rid < 0:
                 raise NativeWholeFunctionMirError(f"body instruction {index} has duplicate/invalid ID")
             instruction_span = span(start, length, f"body instruction {index}")
@@ -149,11 +157,24 @@ def lower_native_whole_function_assembly(
                 body_instructions[rid] = MirInstruction(
                     rid, "load_field", result=result, operands=(left,), symbol="tag", span=instruction_span,
                 )
-            else:
+            elif kind == _BODY_ENUM_PAYLOAD_LOAD:
                 if result < 0 or left < 0:
                     raise NativeWholeFunctionMirError(f"body enum payload load {index} is invalid")
                 body_instructions[rid] = MirInstruction(
                     rid, "load_field", result=result, operands=(left,), symbol="payload", span=instruction_span,
+                )
+            elif kind == _BODY_STRUCT_CONSTRUCT:
+                if result < 0 or left < 0 or symbol_code != 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
+                    raise NativeWholeFunctionMirError(f"body single-i64 struct construct {index} is invalid")
+                body_instructions[rid] = MirInstruction(
+                    rid, "construct", result=result, operands=(left,), symbol="field_0",
+                    span=instruction_span, ownership="owned",
+                )
+            else:
+                if result < 0 or left < 0 or symbol_code != 0:
+                    raise NativeWholeFunctionMirError(f"body single-i64 struct field load {index} is invalid")
+                body_instructions[rid] = MirInstruction(
+                    rid, "load_field", result=result, operands=(left,), symbol="field_0", span=instruction_span,
                 )
         elif kind == 7:
             # CFG records own return placement/operands after structured assembly.

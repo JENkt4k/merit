@@ -64,8 +64,9 @@ fn main() -> i32 {{
   var body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,48);
   var body_events:Vec<MirLowerEvent>=vec_new<MirLowerEvent>(allocator,48);
   var enum_catalog:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,0);
+  var struct_catalog:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
   var resolved_arms:Vec<ResolvedMatchArm>=vec_new<ResolvedMatchArm>(allocator,0);
-  print(-201); print(lower_source_function_body_records(source,tokens,statements,operands,enum_catalog,resolved_arms,allocator,body,body_events));
+  print(-201); print(lower_source_function_body_records(source,tokens,statements,operands,enum_catalog,struct_catalog,resolved_arms,allocator,body,body_events));
   var stats:Vec<i64>=vec_new<i64>(allocator,4);
   print(source_function_record_stats(body,stats));
   print(vec_len<i64>(stats)); var si:i64=0; while(si<vec_len<i64>(stats)){{ print(vec_get<i64>(stats,si)); si=checked_add(si,1); }}

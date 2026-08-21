@@ -171,6 +171,51 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     assert run.returncode == 0
 
 
+def test_emits_non_copy_single_i64_struct_construct_field_and_drop(tmp_path):
+    wrapper = MirType("struct_i64_0")
+    function = MirFunction(
+        "wrapped",
+        I64,
+        (
+            MirLocal(0, "seven", I64),
+            MirLocal(1, "wrapper", wrapper, ownership="owned"),
+            MirLocal(2, "value", I64),
+        ),
+        (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=7),
+                MirInstruction(1, "construct", result=1, operands=(0,), symbol="field_0", ownership="owned"),
+                MirInstruction(2, "load_field", result=2, operands=(1,), symbol="field_0"),
+                MirInstruction(3, "drop", operands=(1,), ownership="owned"),
+            ), MirTerminator("return", operands=(2,))),
+        ),
+        0,
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "typedef struct { int64_t field_0; } merit_struct_i64_0;" in generated
+    assert "m1 = (merit_struct_i64_0) { m0 };" in generated
+    assert "m2 = m1.field_0;" in generated
+    assert "deterministic drop of non-copy aggregate m1" in generated
+    run = compile_and_run(tmp_path, module, "int main(void) { return wrapped() == 7 ? 0 : 1; }")
+    assert run.returncode == 0
+
+
+def test_rejects_unrepresented_single_i64_struct_field_symbol():
+    wrapper = MirType("struct_i64_0")
+    function = MirFunction(
+        "bad_field",
+        I64,
+        (MirLocal(0, "wrapper", wrapper, ownership="owned"), MirLocal(1, "value", I64)),
+        (MirBlock(0, (
+            MirInstruction(0, "load_field", result=1, operands=(0,), symbol="field_1"),
+        ), MirTerminator("return", operands=(1,))),),
+        0,
+    )
+    with pytest.raises(MirToCError, match="single-i64 struct field load requires field_0"):
+        emit_c_module(scalar_module(function))
+
+
 def test_emits_switch_in_case_order(tmp_path):
     function = MirFunction(
         "classify",
