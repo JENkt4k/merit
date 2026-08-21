@@ -102,16 +102,19 @@ pub fn source_type_span_is_copy_builtin(borrow source: Buffer, start: i64, lengt
     return 0;
 }
 
-// Declaration classification for the current replacement surface.
-// Structs are owned/non-copy. Decimal and bounded declarations are Copy.
-// Payload-free enums and enums whose payloads are all supported Copy builtins
-// are Copy. Owned or unresolved payload lifecycle remains fail-closed.
-fn stl_declared_ownership(
+// Keep malformed/cyclic declared-type graphs deterministic rather than allowing
+// unbounded recursive classification. This bound is an implementation safety
+// limit, not a source-language nesting guarantee.
+fn stl_declared_lifecycle_depth_limit() -> i64 { return 64; }
+
+fn stl_declared_ownership_depth(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
     start: i64,
-    length: i64
+    length: i64,
+    depth: i64
 ) -> i32 {
+    if (depth >= stl_declared_lifecycle_depth_limit()) { return -2; }
     var index: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens,index);
@@ -129,6 +132,9 @@ fn stl_declared_ownership(
                     let name: Token = vec_get<Token>(tokens,name_index);
                     if (token_kind(name) == 1) {
                         if (stl_span_equal(source,start,length,token_start(name),token_length(name)) != 0) {
+                            // Alpha structs are non-Copy regardless of field shape.
+                            // Their recursive field destruction is represented by
+                            // later M2 lowering; lifecycle identity here is owned.
                             if (declaration_kind == 1) { return 1; }
                             if (declaration_kind == 2) {
                                 let open_index: i64 = checked_add(name_index,1);
@@ -139,8 +145,7 @@ fn stl_declared_ownership(
                                 if (buffer_get(source,token_start(open)) != 123) { return -2; }
                                 var cursor: i64 = checked_add(open_index,1);
                                 var closed: i32 = 0;
-                                var has_payload: i32 = 0;
-                                var unsupported_payload: i32 = 0;
+                                var has_owned_payload: i32 = 0;
                                 while (cursor < vec_len<Token>(tokens)) {
                                     if (closed == 0) {
                                         let member: Token = vec_get<Token>(tokens,cursor);
@@ -148,15 +153,30 @@ fn stl_declared_ownership(
                                             if (token_length(member) == 1) {
                                                 let byte: i64 = buffer_get(source,token_start(member));
                                                 if (byte == 40) {
-                                                    has_payload = 1;
                                                     let payload_index: i64 = checked_add(cursor, 1);
-                                                    if (payload_index >= vec_len<Token>(tokens)) { unsupported_payload = 1; }
-                                                    else {
-                                                        let payload: Token = vec_get<Token>(tokens, payload_index);
-                                                        if (stl_builtin_ownership(source, token_start(payload), token_length(payload)) != 0) {
-                                                            unsupported_payload = 1;
-                                                        }
+                                                    if (payload_index >= vec_len<Token>(tokens)) { return -2; }
+                                                    let payload: Token = vec_get<Token>(tokens, payload_index);
+                                                    if (token_kind(payload) != 1) { return -2; }
+                                                    // A direct self-payload is a cycle. Reject it before
+                                                    // recursive classification so both interpreter and
+                                                    // native paths fail closed without consuming host stack.
+                                                    if (stl_span_equal(
+                                                        source,
+                                                        token_start(payload), token_length(payload),
+                                                        token_start(name), token_length(name)
+                                                    ) != 0) { return -2; }
+                                                    var payload_ownership: i32 = stl_builtin_ownership(
+                                                        source, token_start(payload), token_length(payload)
+                                                    );
+                                                    if (payload_ownership < 0) {
+                                                        payload_ownership = stl_declared_ownership_depth(
+                                                            source, tokens,
+                                                            token_start(payload), token_length(payload),
+                                                            checked_add(depth, 1)
+                                                        );
                                                     }
+                                                    if (payload_ownership < 0) { return -2; }
+                                                    if (payload_ownership != 0) { has_owned_payload = 1; }
                                                 }
                                                 if (byte == 125) { closed = 1; }
                                             }
@@ -167,7 +187,7 @@ fn stl_declared_ownership(
                                     }
                                 }
                                 if (closed == 0) { return -2; }
-                                if (has_payload != 0) { if (unsupported_payload != 0) { return -2; } }
+                                if (has_owned_payload != 0) { return 1; }
                                 return 0;
                             }
                             return 0;
@@ -179,6 +199,20 @@ fn stl_declared_ownership(
         index = checked_add(index,1);
     }
     return -1;
+}
+
+// Declaration classification for the current replacement surface.
+// Structs are owned/non-copy. Decimal and bounded declarations are Copy.
+// Payload-free enums and enums whose payloads are all Copy are Copy. Enums with
+// owned builtin or declared payloads are owned. Malformed, cyclic, or unresolved
+// payload lifecycle remains fail-closed.
+fn stl_declared_ownership(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    start: i64,
+    length: i64
+) -> i32 {
+    return stl_declared_ownership_depth(source, tokens, start, length, 0);
 }
 
 fn stl_operand(
@@ -197,7 +231,7 @@ fn stl_operand(
 }
 
 // Derive the type-level ownership facts required by function-local ownership.
-// Errors: 1 missing declared type, 2 unsupported enum lifecycle, 3 unresolved type.
+// Errors: 1 missing declared type, 2 unsupported/malformed lifecycle, 3 unresolved type.
 pub fn derive_source_type_ownership_catalog(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
