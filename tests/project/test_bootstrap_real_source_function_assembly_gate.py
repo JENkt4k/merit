@@ -82,9 +82,10 @@ fn main()->i32 {{
   var assembled:Vec<MirLowerEvent>=vec_new<MirLowerEvent>(allocator,160);
   var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,64);
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,128);
+  var structs:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
 
   print(lower_resolved_source_function_assembly(
-    source,tokens,statements,operands,variants,7,capabilities,bindings,allocator,
+    source,tokens,statements,operands,variants,structs,7,capabilities,bindings,allocator,
     body,metadata,contracts,arms,scopes,ownership_events,effects,ownership_records,
     contract_locals,required,sources,assembled,cfg,placements
   ));

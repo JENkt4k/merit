@@ -10,6 +10,7 @@ import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_function_ownership_assembly;
 import bootstrap_mir_source_function_record_stats;
+import bootstrap_mir_source_function_records;
 import bootstrap_mir_source_ownership_metadata;
 import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_resolved_source_function_pipeline;
@@ -31,6 +32,7 @@ pub fn lower_resolved_source_function_assembly(
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
     borrow ownership_metadata: Vec<MirOwnershipBinding>,
@@ -55,7 +57,7 @@ requires_caps [allocate]
     var canonical_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 128);
     let semantic_status: i32 = lower_resolved_source_function_semantics(
         source, tokens, statements, statement_operands,
-        enum_catalog, match_enum_id, capability_catalog, ownership_metadata,
+        enum_catalog, struct_catalog, match_enum_id, capability_catalog, ownership_metadata,
         allocator, body_records, clause_metadata, contract_records,
         resolved_arms, resolved_scopes, ownership_events, capability_effects,
         canonical_events, ownership_records
@@ -110,6 +112,7 @@ pub fn lower_resolved_source_function_assembly_from_source_types(
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
     borrow type_ownership_catalog: Vec<SourceTypeOwnershipEntry>,
@@ -139,7 +142,7 @@ requires_caps [allocate]
 
     let assembly_status: i32 = lower_resolved_source_function_assembly(
         source, tokens, statements, statement_operands,
-        enum_catalog, match_enum_id, capability_catalog, ownership_metadata,
+        enum_catalog, struct_catalog, match_enum_id, capability_catalog, ownership_metadata,
         allocator, body_records, clause_metadata, contract_records,
         resolved_arms, resolved_scopes, ownership_events, capability_effects,
         ownership_records, contract_locals, required_capabilities,
@@ -165,6 +168,7 @@ pub fn lower_resolved_source_function_assembly_from_source(
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
     allocator: Allocator,
@@ -198,7 +202,7 @@ requires_caps [allocate]
 
     let assembly_status: i32 = lower_resolved_source_function_assembly_from_source_types(
         source, tokens, statements, statement_operands,
-        enum_catalog, match_enum_id, capability_catalog, type_ownership,
+        enum_catalog, struct_catalog, match_enum_id, capability_catalog, type_ownership,
         allocator, ownership_metadata, body_records, clause_metadata, contract_records,
         resolved_arms, resolved_scopes, ownership_events, capability_effects,
         ownership_records, contract_locals, required_capabilities,

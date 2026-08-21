@@ -34,7 +34,9 @@ _CHECKED_HELPERS = {
     "%": "merit_checked_rem_i64",
 }
 _COPY_PAYLOAD_ENUM_PREFIX = "enum_copy_payload_"
+_I64_STRUCT_PREFIX = "struct_i64_"
 _ENUM_VARIANT_PREFIX = "variant_"
+_STRUCT_FIELD_PREFIX = "field_"
 
 
 def _copy_payload_enum_identity(type_: MirType) -> str | None:
@@ -43,6 +45,15 @@ def _copy_payload_enum_identity(type_: MirType) -> str | None:
     identity = type_.name[len(_COPY_PAYLOAD_ENUM_PREFIX):]
     if not identity or not identity.isdecimal():
         raise MirToCError(f"invalid Copy-payload enum MIR type: {type_.name}")
+    return identity
+
+
+def _i64_struct_identity(type_: MirType) -> str | None:
+    if type_.arguments or not type_.name.startswith(_I64_STRUCT_PREFIX):
+        return None
+    identity = type_.name[len(_I64_STRUCT_PREFIX):]
+    if not identity or not identity.isdecimal():
+        raise MirToCError(f"invalid single-i64 struct MIR type: {type_.name}")
     return identity
 
 
@@ -57,6 +68,9 @@ def _type(type_: MirType) -> str:
     enum_identity = _copy_payload_enum_identity(type_)
     if enum_identity is not None:
         return f"merit_enum_copy_payload_{enum_identity}"
+    struct_identity = _i64_struct_identity(type_)
+    if struct_identity is not None:
+        return f"merit_struct_i64_{struct_identity}"
     if type_.arguments:
         raise MirToCError(f"generic MIR type is not supported by the core C emitter: {type_.name}")
     try:
@@ -115,11 +129,17 @@ def _instruction(
         return [f"{result} = {operands[0]};"]
     if kind == "construct":
         if result is None or len(operands) != 1 or not instruction.symbol:
-            raise MirToCError("Copy-payload enum construction requires one payload and a variant symbol")
+            raise MirToCError("aggregate construction requires one value and a constructor symbol")
         if local_types is None or instruction.result not in local_types:
-            raise MirToCError("Copy-payload enum construction requires a resolved result type")
-        if _copy_payload_enum_identity(local_types[instruction.result]) is None:
-            raise MirToCError("core C emission only supports Copy-payload enum construction")
+            raise MirToCError("aggregate construction requires a resolved result type")
+        result_type = local_types[instruction.result]
+        struct_identity = _i64_struct_identity(result_type)
+        if struct_identity is not None:
+            if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
+                raise MirToCError("single-i64 struct construction requires field_0")
+            return [f"{result} = ({_type(result_type)}) {{ {operands[0]} }};"]
+        if _copy_payload_enum_identity(result_type) is None:
+            raise MirToCError("core C emission only supports represented aggregate construction")
         if not instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
             raise MirToCError("Copy-payload enum construction has an invalid variant symbol")
         ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
@@ -127,12 +147,17 @@ def _instruction(
             raise MirToCError("Copy-payload enum construction has an invalid variant ordinal")
         return [f"{result} = ({_type(local_types[instruction.result])}) {{ INT64_C({ordinal}), {operands[0]} }};"]
     if kind == "load_field":
-        if result is None or len(operands) != 1 or instruction.symbol not in {"tag", "payload"}:
-            raise MirToCError("Copy-payload enum field load requires tag/payload and one receiver")
+        if result is None or len(operands) != 1 or not instruction.symbol:
+            raise MirToCError("aggregate field load requires one receiver and a field symbol")
         if local_types is None or instruction.operands[0] not in local_types:
-            raise MirToCError("Copy-payload enum field load requires a resolved receiver type")
-        if _copy_payload_enum_identity(local_types[instruction.operands[0]]) is None:
-            raise MirToCError("core C emission only supports fields on Copy-payload enums")
+            raise MirToCError("aggregate field load requires a resolved receiver type")
+        receiver_type = local_types[instruction.operands[0]]
+        if _i64_struct_identity(receiver_type) is not None:
+            if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
+                raise MirToCError("single-i64 struct field load requires field_0")
+            return [f"{result} = {operands[0]}.field_0;"]
+        if _copy_payload_enum_identity(receiver_type) is None or instruction.symbol not in {"tag", "payload"}:
+            raise MirToCError("core C emission only supports represented aggregate fields")
         return [f"{result} = {operands[0]}.{instruction.symbol};"]
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
@@ -176,7 +201,14 @@ def _instruction(
         if result is not None or len(operands) != 1:
             raise MirToCError("print instruction requires one operand and no result")
         return [f'printf("%lld\\n", (long long){operands[0]});']
-    if kind in {"drop", "deallocate", "nop"}:
+    if kind == "drop":
+        if len(operands) != 1:
+            raise MirToCError("drop instruction requires one operand")
+        if local_types is not None and instruction.operands[0] in local_types:
+            if _i64_struct_identity(local_types[instruction.operands[0]]) is not None:
+                return [f"/* deterministic drop of non-copy aggregate {operands[0]} */"]
+        return ["/* explicit no-op in scalar bootstrap C subset */"]
+    if kind in {"deallocate", "nop"}:
         return ["/* explicit no-op in scalar bootstrap C subset */"]
     raise MirToCError(f"unsupported MIR instruction for C emission: {kind}")
 
@@ -218,7 +250,10 @@ def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | N
         local_type = _type(local.type)
         if local_type == "void":
             raise MirToCError("MIR locals cannot have unit type in core C emission")
-        initializer = "{0}" if _copy_payload_enum_identity(local.type) is not None else "0"
+        initializer = "{0}" if (
+            _copy_payload_enum_identity(local.type) is not None
+            or _i64_struct_identity(local.type) is not None
+        ) else "0"
         lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
     lines.append(f"    goto b{function.entry_block};")
     for block in function.blocks:
@@ -319,6 +354,20 @@ def emit_c_module(module: MirModule) -> str:
             *[
                 f"typedef struct {{ int64_t tag; int64_t payload; }} merit_enum_copy_payload_{identity};"
                 for identity in enum_identities
+            ],
+            "",
+        ])
+    struct_identities = sorted({
+        identity
+        for function in module.functions
+        for local in function.locals
+        if (identity := _i64_struct_identity(local.type)) is not None
+    }, key=int)
+    if struct_identities:
+        prelude.extend([
+            *[
+                f"typedef struct {{ int64_t field_0; }} merit_struct_i64_{identity};"
+                for identity in struct_identities
             ],
             "",
         ])

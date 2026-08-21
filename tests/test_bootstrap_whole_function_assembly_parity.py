@@ -12,6 +12,9 @@ from merit.bootstrap.mir_to_c import emit_c_module
 
 
 SOURCE = "module demo\nfn compute()->i64 requires_caps [clock] requires true ensures true { if 1 { return 7; } return 9; }\n"
+MIR_KIND_STRUCT_CONSTRUCT = 12
+MIR_KIND_STRUCT_FIELD_LOAD = 13
+MIR_TYPE_STRUCT_I64_0 = 2000
 
 
 def _span(text: str) -> tuple[int, int]:
@@ -169,6 +172,48 @@ def test_copy_payload_enum_records_materialize_and_execute(tmp_path: Path):
     c_source = emit_c_module(module) + "\nint main(void){ return payload() == 7 ? 0 : 1; }\n"
     c_path = tmp_path / "payload_enum.c"
     executable = tmp_path / "payload_enum"
+    c_path.write_text(c_source, encoding="utf-8")
+    subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(executable)], check=True, text=True, capture_output=True)
+    completed = subprocess.run([str(executable)], check=False)
+    assert completed.returncode == 0
+
+
+def test_single_i64_struct_records_materialize_and_execute(tmp_path: Path):
+    cc = shutil.which("cc")
+    if cc is None:
+        pytest.skip("system C compiler is unavailable")
+    source = "wrapped 7"
+    body = (
+        (1, 0, 7, 0, -1, -1, -1, 0, 7, 0, 1, 0, -1, 0, -1, 0),
+        (3, 0, 0, 0, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (3, 0, 0, 1, -1, -1, -1, -1, 0, 0, MIR_TYPE_STRUCT_I64_0, 0, -1, 0, 1, 1),
+        (3, 0, 0, 2, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
+        (4, 8, 1, 0, 0, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (MIR_KIND_STRUCT_CONSTRUCT, 8, 1, 1, 1, 0, -1, -1, 0, 0, MIR_TYPE_STRUCT_I64_0, 0, -1, 0, 1, 1),
+        (MIR_KIND_STRUCT_FIELD_LOAD, 8, 1, 2, 2, 1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
+    )
+    sources = tuple((index, 2, index, 0, -1, -1, -1, -1) for index in range(3))
+    cfg = ((10, 0, -1, -1, -1, 0, 0), (15, 0, 2, -1, -1, 0, 0))
+    module = lower_native_whole_function_assembly(
+        source=source,
+        module_name="demo",
+        body_records=body,
+        contract_records=(),
+        contract_locals=(),
+        instruction_sources=sources,
+        cfg_records=cfg,
+        placements=((0, 0, 0), (0, 1, 1), (0, 2, 2)),
+        capability_ids=(),
+        capability_names={},
+    )
+    function = module.functions[0]
+    assert function.locals[1].type.name == "struct_i64_0"
+    assert [instruction.kind for instruction in function.blocks[0].instructions] == [
+        "const", "construct", "load_field",
+    ]
+    c_source = emit_c_module(module) + "\nint main(void){ return wrapped() == 7 ? 0 : 1; }\n"
+    c_path = tmp_path / "single_i64_struct.c"
+    executable = tmp_path / "single_i64_struct"
     c_path.write_text(c_source, encoding="utf-8")
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(executable)], check=True, text=True, capture_output=True)
     completed = subprocess.run([str(executable)], check=False)

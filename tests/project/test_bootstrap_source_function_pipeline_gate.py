@@ -47,12 +47,13 @@ fn main()->i32 {{
         var catalog: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(a, 1);
         vec_push<CapabilityCatalogEntry>(catalog, CapabilityCatalogEntry{{capability_id:42,name_start:{clock},name_length:5}});
         var enum_catalog: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(a, 0);
+        var struct_catalog: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(a, 0);
         var resolved_arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(a, 0);
         var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(a, 64);
         var events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(a, 64);
         var metadata: Vec<MirFunctionClauseMetadata> = vec_new<MirFunctionClauseMetadata>(a, 8);
         var contracts: Vec<MirFunctionContractRecord> = vec_new<MirFunctionContractRecord>(a, 32);
-        print(lower_source_function_semantics(source,tokens,statements,operands,enum_catalog,resolved_arms,catalog,a,body,events,metadata,contracts));
+        print(lower_source_function_semantics(source,tokens,statements,operands,enum_catalog,struct_catalog,resolved_arms,catalog,a,body,events,metadata,contracts));
         print(vec_len<MirFunctionRecord>(body));
         print(vec_len<MirLowerEvent>(events));
         print(vec_len<MirFunctionClauseMetadata>(metadata));

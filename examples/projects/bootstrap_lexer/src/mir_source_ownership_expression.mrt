@@ -162,7 +162,30 @@ requires_caps [allocate]
                                     vec_set<i64>(local_ids, current, next_local);
                                     vec_set<i64>(counters, 0, checked_add(next_local, 1));
                                     vec_push<i64>(stack, hir_right(hir));
-                                } else { status = -4; }
+                                } else {
+                                    if (kind == 8) {
+                                        vec_push<i64>(stack, hir_right(hir));
+                                        vec_push<i64>(stack, hir_left(hir));
+                                    } else {
+                                        if (kind == 11) {
+                                            vec_push<i64>(stack, hir_right(hir));
+                                        } else {
+                                            if (kind == 10) {
+                                                let next_local: i64 = vec_get<i64>(counters, 0);
+                                                vec_set<i64>(local_ids, current, next_local);
+                                                vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                                                if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
+                                            } else {
+                                                if (kind == 7) {
+                                                    let next_local: i64 = vec_get<i64>(counters, 0);
+                                                    vec_set<i64>(local_ids, current, next_local);
+                                                    vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                                                    vec_push<i64>(stack, hir_left(hir));
+                                                } else { status = -4; }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -190,6 +213,8 @@ requires_caps [allocate]
             if (kind == 2) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             if (kind == 5) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             if (hir_is_call(hir) != 0) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            if (kind == 10) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            if (kind == 7) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             index = checked_add(index, 1);
         }
     }

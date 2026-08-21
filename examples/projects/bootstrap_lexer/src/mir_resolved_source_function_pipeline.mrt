@@ -9,6 +9,7 @@ import bootstrap_mir_structured_lowering;
 import bootstrap_mir_function_clause_metadata;
 import bootstrap_mir_function_contracts;
 import bootstrap_mir_source_function_pipeline;
+import bootstrap_mir_source_function_records;
 import bootstrap_mir_statement_lowering;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_ownership_flow;
@@ -247,6 +248,7 @@ pub fn lower_resolved_source_function_semantics(
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
     borrow ownership_metadata: Vec<MirOwnershipBinding>,
@@ -301,7 +303,7 @@ requires_caps [allocate]
 
     var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
     let function_status: i32 = lower_source_function_semantics(
-        source, tokens, statements, statement_operands, enum_catalog, resolved_arms,
+        source, tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
         capability_catalog, allocator, body_records, body_events, clause_metadata, contract_records
     );
     if (function_status != 0) { return checked_add(200, function_status); }

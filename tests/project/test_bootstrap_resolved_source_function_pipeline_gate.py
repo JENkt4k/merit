@@ -66,9 +66,10 @@ fn main()->i32 {{
         var effects:Vec<MirCapabilityEffect>=vec_new<MirCapabilityEffect>(allocator,4);
         var canonical:Vec<MirLowerEvent>=vec_new<MirLowerEvent>(allocator,128);
         var ownership_records:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,64);
+        var structs:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
 
         print(lower_resolved_source_function_semantics(
-            source,tokens,statements,operands,variants,7,capabilities,bindings,allocator,
+            source,tokens,statements,operands,variants,structs,7,capabilities,bindings,allocator,
             body,metadata,contracts,arms,scopes,ownership_events,effects,canonical,ownership_records
         ));
         print(vec_len<MirFunctionRecord>(body));

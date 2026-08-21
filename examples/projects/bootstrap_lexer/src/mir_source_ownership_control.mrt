@@ -8,6 +8,15 @@ import bootstrap_mir_source_ownership_expression;
 
 capability allocate;
 
+fn source_control_expression_failure_status(status: i64) -> i32 {
+    if (status == -1) { return 61; }
+    if (status == -2) { return 62; }
+    if (status == -3) { return 63; }
+    if (status == -4) { return 64; }
+    if (status == -5) { return 65; }
+    return 66;
+}
+
 struct SourceOwnershipFrame { kind: i32; open_end: i64; body_depth: i64; state: i32; }
 
 fn source_control_token_end(borrow token: Token) -> i64 { return checked_add(token_start(token), token_length(token)); }
@@ -67,7 +76,7 @@ requires_caps [allocate]
         statement_operand_start(expression), statement_operand_length(expression),
         allocator, counters, direct, events
     );
-    if (result_local < 0) { return 13; }
+    if (result_local < 0) { return source_control_expression_failure_status(result_local); }
     let source_binding: i64 = vec_get<i64>(direct, 0);
     if (ownership_binding_owned(semantic) != 0) {
         if (source_binding >= 0) {
