@@ -1,52 +1,220 @@
 # Codex Working Agreement — Merit
 
 ## Mission
-Continue Merit as a deterministic systems language. Preserve exact numerics, explicit allocation, ownership, contracts, capability-gated hazardous operations, stable C interoperability, and interpreter/native semantic equivalence.
+
+Continue Merit as a deterministic systems language. Preserve exact numerics,
+explicit allocation, ownership, contracts, capability-gated hazardous operations,
+stable C interoperability, and interpreter/native semantic equivalence.
+
+The active release objective is `v0.1.0-alpha.2`: eliminate Python semantic
+authority from normal production compilation while retaining the Python compiler
+as an independent oracle until the replacement compiler qualifies as trusted.
+
+Do not broaden the language during alpha.2 closure.
 
 ## Start here
-1. Read `CODEX_HANDOFF.md`, `STATUS.md`, `ROADMAP.md`, and `BOOTSTRAP_STATUS.md`.
-2. Read `ARCHITECTURE.md`, `EPOCH-III.md`, and the files under `spec/` as relevant to the milestone.
-3. Re-anchor on current `main`: verify the previous PR merged, verify its authoritative gate, and inspect open PRs/branches for overlapping work.
-4. Run the relevant baseline/gate before claiming a milestone complete.
+
+1. Read `ALPHA2_CLOSURE.md` first. Treat its open coverage cells and milestone
+   ordering as the authoritative alpha.2 work queue.
+2. Read `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `CODEX_HANDOFF.md`
+   for architecture/history. When those conflict with `ALPHA2_CLOSURE.md` or
+   current `main`, current `main` and `ALPHA2_CLOSURE.md` win.
+3. Read `ARCHITECTURE.md`, `EPOCH-III.md`, and relevant files under `spec/`.
+4. Re-anchor on current `main`:
+   - verify the previous PR is actually merged;
+   - verify its authoritative Local Gate;
+   - inspect open PRs/branches for overlapping work;
+   - never continue from an obsolete branch merely because it exists.
+5. Run focused baseline tests for the subsystem being changed before modifying it.
 
 ## Non-negotiable invariants
-- Every accepted program must have matching interpreter and native C behavior for the surface under comparison.
+
+- Every accepted program must have matching interpreter and native C behavior
+  for the surface under comparison.
 - Side-effecting expressions must be evaluated exactly once in generated C.
 - Owned values cannot be copied implicitly.
-- Moves, explicit drops, implicit drops, and early returns must never double-destroy resources.
+- Moves, explicit drops, implicit drops, and early returns must never
+  double-destroy resources.
 - Allocation and other hazardous operations require the appropriate capability.
 - Decimal arithmetic remains exact and its rounding policy explicit.
-- Stable-layout declarations must preserve deterministic layout and generated C assertions.
-- Preserve one semantic pipeline; do not create a second independent meaning for Merit programs.
-- Replacement work must fail closed when a construct is not represented faithfully; never silently fall back to Python in replacement mode.
-- Python may remain an independent oracle and temporary orchestration layer, but the `alpha.2` objective is to remove Python semantic authority from normal production compilation.
+- Stable-layout declarations must preserve deterministic layout and generated
+  C assertions.
+- Preserve one semantic pipeline; do not create a second independent meaning
+  for Merit programs.
+- Replacement work must fail closed when a construct is not represented
+  faithfully.
+- Never silently fall back to Python in replacement mode.
+- Python may remain an independent oracle and temporary orchestration layer,
+  but must not regain production semantic authority.
+- Do not weaken or delete a valid test merely to make a gate green.
+- Prefer the final alpha.2 representation over temporary compatibility seams
+  when the final representation can reasonably be implemented in the same PR.
+
+## Alpha.2 development strategy
+
+The replacement compiler architecture is established through:
+
+```text
+Merit source
+  -> Merit-native frontend
+  -> typed/resolved semantics
+  -> ownership/contracts/capabilities/control flow
+  -> resolved multi-function bundle
+  -> prepared replacement artifacts
+  -> canonical replacement MIR
+  -> deterministic C
+  -> native executable
+```
+
+Do not split every internal seam into a separate PR anymore.
+
+Prefer the largest coherent vertical milestone that can be completely validated.
+A PR may touch many files and contain substantial implementation work if it
+closes one coherent semantic block and the full gate remains authoritative.
+
+Current large milestone sequence:
+
+1. accepted-alpha statement/control-flow closure;
+2. resource model and payload-enum lifecycle closure;
+3. exact numeric and aggregate closure;
+4. generics/traits closure;
+5. module/project/import/export closure;
+6. complete accepted/rejected corpus convergence;
+7. all alpha acceptance applications through replacement compilation;
+8. production compiler-path cutover;
+9. stage-0/stage-1 reproducibility and deterministic equivalence;
+10. alpha.2 release audit/documentation closure.
+
+Update `ALPHA2_CLOSURE.md` as evidence changes. Do not mark a surface closed
+because a parser fixture exists; closure requires the vertical replacement path
+defined in that document.
 
 ## Development loop
+
 1. Re-anchor on `main` and verify the previous merge/gate.
-2. Choose exactly one highest-value coherent critical-path milestone.
-3. Create one branch; do not start parallel autonomous branches.
-4. Implement a complete vertical slice with positive, negative/fail-closed, differential, native, and deterministic-artifact tests as applicable.
-5. Open or repair exactly one PR.
-6. Treat the GitHub Local Gate as authoritative and repair failures on that same PR until green.
-7. Stop for manual merge review. Never auto-merge.
-8. Do not begin the next milestone until the previous PR is confirmed on `main`.
+2. Read `ALPHA2_CLOSURE.md`.
+3. Choose the highest-value coherent open milestone.
+4. Create one branch. Do not start parallel autonomous branches.
+5. Analyze the complete affected surface before editing.
+6. Implement the complete vertical slice, including as applicable:
+   - accepted cases;
+   - rejected/fail-closed cases;
+   - Python-oracle differential cases;
+   - interpreter/native parity;
+   - replacement-driver coverage;
+   - deterministic artifact checks;
+   - acceptance-project coverage.
+7. Run focused tests during implementation.
+8. Run affected subsystem tests after coherent changes.
+9. Run the full clean gate only when the candidate PR is believed complete,
+   or when a failure may be cross-cutting.
+10. Open or repair exactly one PR.
+11. Treat GitHub Local Gate as authoritative.
+12. Diagnose the first/root failure before making changes. Do not react to the
+    raw fan-out failure count as if each failed test were independent.
+13. Repair failures on that same PR until green.
+14. Stop for manual merge review. Never auto-merge.
+15. Do not begin the next milestone until the previous PR is confirmed on main.
+
+## Testing policy
+
+Use the narrowest test level that answers the current question.
+
+### During implementation
+
+Run the directly affected test file or explicit pytest test names.
+
+Examples:
+
+```bash
+python -m pytest tests/project/test_relevant_gate.py -q
+python -m pytest tests/project/test_relevant_gate.py::test_specific_case -q
+```
+
+### After a coherent subsystem change
+
+Run the affected subsystem/project tests.
+
+### Before PR readiness
+
+Run:
+
+```bash
+bash scripts/ci.sh
+```
+
+The GitHub Ubuntu Local Gate remains authoritative.
+
+Do not repeatedly run the entire suite after every small source edit.
+
+If a full run fails:
+
+1. find the earliest meaningful/root failure;
+2. determine whether later failures are fan-out;
+3. fix the root cause;
+4. rerun focused tests first;
+5. rerun the full gate only after the focused repair passes.
+
+## Development environment
+
+Preferred local development environment:
+
+- WSL2 Ubuntu 24.04;
+- Python 3.11;
+- GCC;
+- repository stored in the WSL/Linux filesystem, not under `/mnt/c`, `/mnt/d`,
+  or another Windows-mounted filesystem when practical.
+
+Preferred repository location:
+
+```text
+~/src/merit-lang
+```
+
+The hosted Ubuntu Local Gate is the clean-environment authority.
+The Windows native smoke gate remains an independent portability check.
 
 ## Commands
+
 ```bash
 ./scripts/bootstrap.sh
 ./scripts/test.sh
 bash scripts/ci.sh
 ```
 
+Use focused pytest invocations during implementation rather than automatically
+running all three commands after each edit.
+
 ## Current checkpoint
-The **`v0.1.0-alpha.1` local release gate is complete**. The active target is **`v0.1.0-alpha.2`**, eliminating Python from the normal compiler path while retaining it as an independent reference oracle.
 
-Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct. The conceptual compiler pipeline remains:
+`v0.1.0-alpha.1` is complete.
 
-```text
-Source -> Lexer -> Tokens -> CST/AST -> typed semantic/HIR -> ownership/contracts/capabilities -> MIR -> deterministic C -> native compilation
-```
+Development is closing `v0.1.0-alpha.2`.
 
-The implementation has progressed beyond isolated parser-stage sequencing. Native source-backed function records now reach ownership/control/capability-aware resolved snapshots, multi-function bundles, canonical replacement MIR, deterministic C, and project replacement builds for the supported subset. `prepare-replacement` now exposes a first-class `NativeReplacementDriver` executable boundary.
+The following production replacement boundaries are already established:
 
-The immediate critical path is to attach the concrete Merit-native source-unit frontend executable behind that driver boundary and prove source -> native bundle -> prepared artifacts -> replacement MIR -> deterministic C -> executable end to end. Then expand that vertical path across the accepted alpha corpus. Do not broaden the language during bootstrap.
+- Merit-native source lexing/discovery;
+- source-backed functions;
+- multi-function discovery and slicing;
+- ownership/control/contracts/capabilities;
+- native capability declaration catalogs;
+- native payload-free enum catalogs;
+- typed match-subject enum identity;
+- per-match enum identity for multiple matches/enums;
+- resolved multi-function MRBF bundles;
+- prepared replacement artifacts;
+- canonical replacement MIR reconstruction;
+- deterministic C generation;
+- native execution;
+- fail-closed replacement project builds.
+
+Do not recreate these milestones or introduce older transitional architecture
+because older status documents mention them.
+
+The active objective is to close the remaining alpha.1 semantic surface through
+this already-established replacement pipeline, as tracked in
+`ALPHA2_CLOSURE.md`.
+
+Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
+Self-hosting begins only after the alpha.2 replacement compiler satisfies the
+trust/reproducibility gate.
