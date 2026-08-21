@@ -70,6 +70,7 @@ pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }
 pub fn expression_right(borrow node: ExpressionNode) -> i64 { return node.right; }
 
 pub fn ast_kind(borrow node: AstNodeRecord) -> i32 { return node.kind; }
+pub fn ast_is_call(borrow node: AstNodeRecord) -> i32 { if (node.kind == 34) { return 1; } return 0; }
 pub fn ast_start(borrow node: AstNodeRecord) -> i64 { return node.start; }
 pub fn ast_length(borrow node: AstNodeRecord) -> i64 { return node.length; }
 pub fn ast_left(borrow node: AstNodeRecord) -> i64 { return node.left; }

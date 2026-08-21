@@ -9,6 +9,7 @@ import bootstrap_mir_function_contracts;
 import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_match_capability_flow;
+import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_structured_lowering;
 import bootstrap_mir_cfg;
@@ -269,6 +270,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                     } else {
                                                         let separator_token: Token = vec_get<Token>(tokens, separator_index);
                                                         var separator_kind: i32 = 0;
+                                                        var effective_separator_index: i64 = separator_index;
                                                         if (token_kind(separator_token) == 4) {
                                                             if (token_length(separator_token) == 1) {
                                                                 let separator_byte: i64 = buffer_get(source, token_start(separator_token));
@@ -278,9 +280,41 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                             }
                                                         }
                                                         if (separator_kind == 3) {
-                                                            enum_status = 3;
-                                                            enum_end_found = 1;
-                                                        } else {
+                                                            let payload_index: i64 = checked_add(separator_index, 1);
+                                                            let payload_close_index: i64 = checked_add(separator_index, 2);
+                                                            let payload_separator_index: i64 = checked_add(separator_index, 3);
+                                                            if (payload_separator_index >= vec_len<Token>(tokens)) {
+                                                                enum_status = 3;
+                                                            } else {
+                                                                let payload: Token = vec_get<Token>(tokens, payload_index);
+                                                                let payload_close: Token = vec_get<Token>(tokens, payload_close_index);
+                                                                let payload_separator: Token = vec_get<Token>(tokens, payload_separator_index);
+                                                                var copy_payload: i32 = source_type_span_is_copy_builtin(
+                                                                    source, token_start(payload), token_length(payload)
+                                                                );
+                                                                if (token_kind(payload_close) != 4) { copy_payload = 0; }
+                                                                if (token_length(payload_close) != 1) { copy_payload = 0; }
+                                                                if (copy_payload != 0) {
+                                                                    if (buffer_get(source, token_start(payload_close)) != 41) { copy_payload = 0; }
+                                                                }
+                                                                if (copy_payload == 0) {
+                                                                    enum_status = 3;
+                                                                } else {
+                                                                    separator_kind = 0;
+                                                                    if (token_kind(payload_separator) == 4) {
+                                                                        if (token_length(payload_separator) == 1) {
+                                                                            let payload_separator_byte: i64 = buffer_get(source, token_start(payload_separator));
+                                                                            if (payload_separator_byte == 44) { separator_kind = 1; }
+                                                                            if (payload_separator_byte == 125) { separator_kind = 2; }
+                                                                        }
+                                                                    }
+                                                                    effective_separator_index = payload_separator_index;
+                                                                    if (separator_kind == 0) { enum_status = 3; }
+                                                                }
+                                                            }
+                                                        }
+                                                        if (enum_status != 0) { enum_end_found = 1; }
+                                                        if (enum_status == 0) {
                                                             if (separator_kind == 0) {
                                                                 enum_status = 1;
                                                                 enum_end_found = 1;
@@ -319,10 +353,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                     variant_identity = checked_add(variant_identity, 1);
                                                                     variant_ordinal = checked_add(variant_ordinal, 1);
                                                                     if (separator_kind == 1) {
-                                                                        variant_scan = checked_add(separator_index, 1);
+                                                                        variant_scan = checked_add(effective_separator_index, 1);
                                                                     } else {
                                                                         enum_end_found = 1;
-                                                                        enum_scan = separator_index;
+                                                                        enum_scan = effective_separator_index;
                                                                     }
                                                                 }
                                                             }

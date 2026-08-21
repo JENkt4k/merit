@@ -8,6 +8,18 @@ import bootstrap_mir_structured_lowering;
 
 capability allocate;
 
+pub fn statement_lowering_supports_kind(kind: i32) -> i32 {
+    if (kind == 20) { return 1; }
+    if (kind == 21) { return 1; }
+    if (kind == 22) { return 1; }
+    if (kind == 23) { return 1; }
+    if (kind == 25) { return 1; }
+    if (kind == 26) { return 1; }
+    if (kind == 30) { return 1; }
+    if (kind == 31) { return 1; }
+    return 0;
+}
+
 // Native source/statement -> structured-MIR bridge.
 //
 // This module deliberately consumes the already measured native statement

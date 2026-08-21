@@ -20,6 +20,7 @@ pub struct StatementOperand {
 }
 
 pub fn statement_record_kind(borrow record: StatementRecord) -> i32 { return record.kind; }
+pub fn statement_record_is_match(borrow record: StatementRecord) -> i32 { if (record.kind == 27) { return 1; } return 0; }
 pub fn statement_record_start(borrow record: StatementRecord) -> i64 { return record.start; }
 pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return record.length; }
 pub fn statement_record_first_operand(borrow record: StatementRecord) -> i64 { return record.first_operand; }

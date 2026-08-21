@@ -6,6 +6,7 @@ import bootstrap_expression_spans;
 import bootstrap_hir;
 import bootstrap_mir_functions;
 import bootstrap_mir_statement_lowering;
+import bootstrap_statement_semantics;
 
 capability allocate;
 
@@ -32,6 +33,158 @@ fn sfr_function_name_index(borrow source: Buffer, borrow tokens: Vec<Token>) -> 
         index = checked_add(index, 1);
     }
     return -1;
+}
+
+fn sfr_span_equal(borrow source: Buffer, left_start: i64, left_length: i64, right_start: i64, right_length: i64) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(source, checked_add(left_start, offset)) != buffer_get(source, checked_add(right_start, offset))) { return 0; }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn sfr_is_enum(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != 1) { return 0; }
+    if (token_length(token) != 4) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != 101) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != 110) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != 117) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != 109) { return 0; }
+    return 1;
+}
+
+fn sfr_is_payload_match_subject(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>, borrow arms: Vec<ResolvedMatchArm>,
+    binding_start: i64, binding_length: i64
+) -> i32 {
+    var statement_index: i64 = 0;
+    while (statement_index < vec_len<StatementRecord>(statements)) {
+        let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
+        if (statement_record_is_match(statement) != 0) {
+            var payload_match: i32 = 0;
+            var arm_index: i64 = 0;
+            while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+                let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
+                if (resolved_match_statement(arm) == statement_index) {
+                    if (resolved_match_binding_start(arm) >= 0) { payload_match = 1; }
+                }
+                arm_index = checked_add(arm_index, 1);
+            }
+            if (payload_match != 0) {
+                var operand_offset: i64 = 0;
+                while (operand_offset < statement_record_operand_count(statement)) {
+                    let operand_index: i64 = checked_add(statement_record_first_operand(statement), operand_offset);
+                    let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
+                    if (statement_operand_kind(operand) == 3) {
+                        let expression_start: i64 = statement_operand_start(operand);
+                        let expression_end: i64 = checked_add(expression_start, statement_operand_length(operand));
+                        var token_index: i64 = 0;
+                        while (token_index < vec_len<Token>(tokens)) {
+                            let token: Token = vec_get<Token>(tokens, token_index);
+                            if (token_start(token) >= expression_start) {
+                                if (checked_add(token_start(token), token_length(token)) <= expression_end) {
+                                    if (sfr_span_equal(source, binding_start, binding_length, token_start(token), token_length(token)) != 0) { return 1; }
+                                }
+                            }
+                            token_index = checked_add(token_index, 1);
+                        }
+                    }
+                    operand_offset = checked_add(operand_offset, 1);
+                }
+            }
+        }
+        statement_index = checked_add(statement_index, 1);
+    }
+    return 0;
+}
+
+fn sfr_declared_type_code(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow catalog: Vec<EnumVariantCatalogEntry>,
+    borrow arms: Vec<ResolvedMatchArm>, start: i64, length: i64, payload_match_subject: i32
+) -> i32 {
+    var enum_code: i32 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (sfr_is_enum(source, token) != 0) {
+            let name_index: i64 = checked_add(index, 1);
+            if (name_index >= vec_len<Token>(tokens)) { return 0; }
+            let name: Token = vec_get<Token>(tokens, name_index);
+            if (sfr_span_equal(source, start, length, token_start(name), token_length(name)) != 0) {
+                var cursor: i64 = checked_add(name_index, 1);
+                var has_payload: i32 = 0;
+                var closed: i32 = 0;
+                while (cursor < vec_len<Token>(tokens)) {
+                    if (closed == 0) {
+                        let member: Token = vec_get<Token>(tokens, cursor);
+                        if (token_kind(member) == 4) {
+                            if (token_length(member) == 1) {
+                                let byte: i64 = buffer_get(source, token_start(member));
+                                if (byte == 40) { has_payload = 1; }
+                                if (byte == 125) { closed = 1; }
+                            }
+                        }
+                        cursor = checked_add(cursor, 1);
+                    } else { cursor = vec_len<Token>(tokens); }
+                }
+                if (has_payload != 0) { return function_mir_copy_payload_enum_type_code(enum_code); }
+                return 1;
+            }
+            enum_code = checked_add(enum_code, 1);
+        }
+        index = checked_add(index, 1);
+    }
+    if (payload_match_subject != 0) {
+        let first_arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, 0);
+        if (resolved_match_binding_start(first_arm) < 0) { return 1; }
+        let wanted_enum: i64 = resolved_match_enum_id(first_arm);
+        var group_code: i32 = -1;
+        index = 0;
+        while (index < vec_len<EnumVariantCatalogEntry>(catalog)) {
+            let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, index);
+            if (entry.ordinal == 0) { group_code = checked_add(group_code, 1); }
+            if (entry.enum_id == wanted_enum) { return function_mir_copy_payload_enum_type_code(group_code); }
+            index = checked_add(index, 1);
+        }
+    }
+    return 1;
+}
+
+fn sfr_variant_code(
+    borrow source: Buffer, borrow catalog: Vec<EnumVariantCatalogEntry>, enum_type_code: i32,
+    start: i64, length: i64
+) -> i32 {
+    var enum_code: i32 = -1;
+    var variant_code: i32 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<EnumVariantCatalogEntry>(catalog)) {
+        let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, index);
+        if (entry.ordinal == 0) { enum_code = checked_add(enum_code, 1); variant_code = 0; }
+        if (function_mir_copy_payload_enum_type_code(0) <= enum_type_code) {
+            if (function_mir_copy_payload_enum_type_code(enum_code) == enum_type_code) {
+                if (sfr_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) { return variant_code; }
+            }
+        }
+        variant_code = checked_add(variant_code, 1);
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn sfr_local_type_code(borrow records: Vec<MirFunctionRecord>, local_id: i64) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<MirFunctionRecord>(records)) {
+        let record: MirFunctionRecord = vec_get<MirFunctionRecord>(records, index);
+        let kind: i32 = function_mir_kind(record);
+        if (kind == 2) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
+        if (kind == 3) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
+        index = checked_add(index, 1);
+    }
+    return 0;
 }
 
 fn sfr_operand(
@@ -77,6 +230,8 @@ fn sfr_emit_expression(
     borrow binding_lengths: Vec<i64>,
     expression_start: i64,
     expression_length: i64,
+    expected_type_code: i32,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
     allocator: Allocator,
     borrow_mut output: Vec<MirFunctionRecord>,
     borrow_mut counters: Vec<i64>
@@ -98,10 +253,13 @@ requires_caps [allocate]
             binding_id = hir_find_binding_id(
                 source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
             );
+            if (binding_id < 0) { binding_id = -2; }
         }
+        var resolved_type: i32 = 1;
+        if (ast_is_call(ast) != 0) { resolved_type = expected_type_code; }
         vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
             ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
-            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, 1
+            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, resolved_type
         ));
         ast_index = checked_add(ast_index, 1);
     }
@@ -141,6 +299,9 @@ requires_caps [allocate]
             if (kind == 4) {
                 vec_set<i64>(local_ids, current_index, hir_binding_id(hir));
             } else {
+                if (hir_is_symbol_reference(hir) != 0) {
+                    vec_set<i64>(local_ids, current_index, -1);
+                } else {
                 if (vec_get<i64>(local_ids, current_index) < 0) {
                     let next_local: i64 = vec_get<i64>(counters, 0);
                     vec_set<i64>(local_ids, current_index, next_local);
@@ -157,8 +318,19 @@ requires_caps [allocate]
                     vec_push<i64>(stack, hir_right(hir));
                     vec_push<i64>(stack, hir_left(hir));
                 }
+                if (hir_is_call(hir) != 0) { vec_push<i64>(stack, hir_right(hir)); }
+                }
             }
         }
+    }
+
+    var alias_index: i64 = 0;
+    while (alias_index < count) {
+        let alias: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, alias_index);
+        if (hir_kind(alias) == 3) {
+            vec_set<i64>(local_ids, alias_index, vec_get<i64>(local_ids, hir_left(alias)));
+        }
+        alias_index = checked_add(alias_index, 1);
     }
 
     var hir_index: i64 = 0;
@@ -196,6 +368,21 @@ requires_caps [allocate]
             ));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
+        if (hir_is_call(hir) != 0) {
+            let callee: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(hir));
+            if (hir_is_symbol_reference(callee) == 0) { return -20; }
+            let variant: i32 = sfr_variant_code(
+                source, enum_catalog, hir_type_code(hir), hir_start(callee), hir_length(callee)
+            );
+            if (variant < 0) { return -21; }
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirFunctionRecord>(output, function_mir_construct(
+                hir_start(hir), hir_length(hir), instruction_id,
+                vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(hir)),
+                variant, hir_type_code(hir), vec_get<i64>(canonical_ids, hir_index)
+            ));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
         hir_index = checked_add(hir_index, 1);
     }
 
@@ -209,6 +396,8 @@ pub fn lower_source_function_body_records(
     borrow tokens: Vec<Token>,
     borrow statements: Vec<StatementRecord>,
     borrow operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow resolved_arms: Vec<ResolvedMatchArm>,
     allocator: Allocator,
     borrow_mut records: Vec<MirFunctionRecord>,
     borrow_mut events: Vec<MirLowerEvent>
@@ -236,8 +425,16 @@ requires_caps [allocate]
             let binding_id: i64 = vec_len<i64>(binding_starts);
             vec_push<i64>(binding_starts, statement_operand_start(binding));
             vec_push<i64>(binding_lengths, statement_operand_length(binding));
+            let type_index: i64 = sfr_operand(statement, operands, 2);
+            if (type_index < 0) { return 4; }
+            let declared: StatementOperand = vec_get<StatementOperand>(operands, type_index);
+            let payload_subject: i32 = sfr_is_payload_match_subject(
+                source, tokens, statements, operands, resolved_arms,
+                statement_operand_start(binding), statement_operand_length(binding)
+            );
+            let type_code: i32 = sfr_declared_type_code(source, tokens, enum_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
             vec_push<MirFunctionRecord>(records, function_mir_source_local(
-                statement_operand_start(binding), statement_operand_length(binding), binding_id, 1, binding_id, 0
+                statement_operand_start(binding), statement_operand_length(binding), binding_id, type_code, binding_id, 0
             ));
         }
         if (kind == 21) {
@@ -247,11 +444,31 @@ requires_caps [allocate]
             let binding_id: i64 = vec_len<i64>(binding_starts);
             vec_push<i64>(binding_starts, statement_operand_start(binding));
             vec_push<i64>(binding_lengths, statement_operand_length(binding));
+            let type_index: i64 = sfr_operand(statement, operands, 2);
+            if (type_index < 0) { return 5; }
+            let declared: StatementOperand = vec_get<StatementOperand>(operands, type_index);
+            let payload_subject: i32 = sfr_is_payload_match_subject(
+                source, tokens, statements, operands, resolved_arms,
+                statement_operand_start(binding), statement_operand_length(binding)
+            );
+            let type_code: i32 = sfr_declared_type_code(source, tokens, enum_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
             vec_push<MirFunctionRecord>(records, function_mir_source_local(
-                statement_operand_start(binding), statement_operand_length(binding), binding_id, 1, binding_id, 1
+                statement_operand_start(binding), statement_operand_length(binding), binding_id, type_code, binding_id, 1
             ));
         }
         statement_index = checked_add(statement_index, 1);
+    }
+
+    var arm_index: i64 = 0;
+    while (arm_index < vec_len<ResolvedMatchArm>(resolved_arms)) {
+        let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(resolved_arms, arm_index);
+        if (resolved_match_binding_start(arm) >= 0) {
+            let local_id: i64 = vec_len<i64>(binding_starts);
+            vec_push<i64>(binding_starts, resolved_match_binding_start(arm));
+            vec_push<i64>(binding_lengths, resolved_match_binding_length(arm));
+            vec_push<MirFunctionRecord>(records, function_mir_temporary(local_id, 1, local_id));
+        }
+        arm_index = checked_add(arm_index, 1);
     }
 
     var counters: Vec<i64> = vec_new<i64>(allocator, 3);
@@ -269,12 +486,13 @@ requires_caps [allocate]
             if (expression_index < 0) { return 10; }
             if (binding_index < 0) { return 10; }
             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
-            let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
-                statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
-            if (source_local < 0) { return 11; }
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
             let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
                 statement_operand_start(binding), statement_operand_length(binding));
+            let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                statement_operand_start(expression), statement_operand_length(expression),
+                sfr_local_type_code(records, destination), enum_catalog, allocator, records, counters);
+            if (source_local < 0) { return 11; }
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(records, function_mir_copy(
                 statement_record_start(statement), statement_record_length(statement), instruction_id,
@@ -289,12 +507,13 @@ requires_caps [allocate]
                 if (expression_index < 0) { return 12; }
                 if (binding_index < 0) { return 12; }
                 let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
-                let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
-                    statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
-                if (source_local < 0) { return 13; }
                 let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
                 let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
                     statement_operand_start(binding), statement_operand_length(binding));
+                let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
+                    statement_operand_start(expression), statement_operand_length(expression),
+                    sfr_local_type_code(records, destination), enum_catalog, allocator, records, counters);
+                if (source_local < 0) { return 13; }
                 let instruction_id: i64 = vec_get<i64>(counters, 1);
                 vec_push<MirFunctionRecord>(records, function_mir_copy(
                     statement_record_start(statement), statement_record_length(statement), instruction_id,
@@ -308,7 +527,8 @@ requires_caps [allocate]
                     if (expression_index < 0) { return 14; }
                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                     let result_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
-                        statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters);
+                        statement_operand_start(expression), statement_operand_length(expression),
+                        1, enum_catalog, allocator, records, counters);
                     if (result_local < 0) { return 15; }
                     vec_push<MirFunctionRecord>(records, function_mir_return(
                         statement_record_start(statement), statement_record_length(statement), result_local, vec_get<i64>(counters, 2)
@@ -322,7 +542,7 @@ requires_caps [allocate]
                         let result_local: i64 = sfr_emit_expression(
                             source, tokens, binding_starts, binding_lengths,
                             statement_operand_start(expression), statement_operand_length(expression),
-                            allocator, records, counters
+                            1, enum_catalog, allocator, records, counters
                         );
                         if (result_local < 0) { return 26; }
                         let instruction_id: i64 = vec_get<i64>(counters, 1);
@@ -338,14 +558,16 @@ requires_caps [allocate]
                         if (expression_index < 0) { return 16; }
                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                         if (sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
-                            statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters) < 0) { return 17; }
+                            statement_operand_start(expression), statement_operand_length(expression),
+                            1, enum_catalog, allocator, records, counters) < 0) { return 17; }
                     } else {
                         if (kind == 26) {
                             let expression_index: i64 = sfr_operand(statement, operands, 3);
                             if (expression_index < 0) { return 18; }
                             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                             if (sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
-                                statement_operand_start(expression), statement_operand_length(expression), allocator, records, counters) < 0) { return 19; }
+                                statement_operand_start(expression), statement_operand_length(expression),
+                                1, enum_catalog, allocator, records, counters) < 0) { return 19; }
                         } else {
                             if (kind == 30) {
                                 let target_index: i64 = sfr_operand_ordinal(statement, operands, 3, 0);
@@ -362,7 +584,7 @@ requires_caps [allocate]
                                 let source_local: i64 = sfr_emit_expression(
                                     source, tokens, binding_starts, binding_lengths,
                                     statement_operand_start(value), statement_operand_length(value),
-                                    allocator, records, counters
+                                    sfr_local_type_code(records, destination), enum_catalog, allocator, records, counters
                                 );
                                 if (source_local < 0) { return 22; }
                                 let instruction_id: i64 = vec_get<i64>(counters, 1);
@@ -381,8 +603,61 @@ requires_caps [allocate]
                                     if (sfr_emit_expression(
                                         source, tokens, binding_starts, binding_lengths,
                                         statement_operand_start(expression), statement_operand_length(expression),
-                                        allocator, records, counters
+                                        1, enum_catalog, allocator, records, counters
                                     ) < 0) { return 24; }
+                                } else {
+                                    if (kind == 27) {
+                                        let expression_index: i64 = sfr_operand(statement, operands, 3);
+                                        if (expression_index < 0) { return 27; }
+                                        let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                                        let enum_local: i64 = sfr_emit_expression(
+                                            source, tokens, binding_starts, binding_lengths,
+                                            statement_operand_start(expression), statement_operand_length(expression),
+                                            1, enum_catalog, allocator, records, counters
+                                        );
+                                        if (enum_local < 0) { return 28; }
+                                        var has_payload: i32 = 0;
+                                        var payload_arm: i64 = 0;
+                                        while (payload_arm < vec_len<ResolvedMatchArm>(resolved_arms)) {
+                                            let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(resolved_arms, payload_arm);
+                                            if (resolved_match_statement(arm) == statement_index) {
+                                                if (resolved_match_binding_start(arm) >= 0) { has_payload = 1; }
+                                            }
+                                            payload_arm = checked_add(payload_arm, 1);
+                                        }
+                                        if (has_payload != 0) {
+                                        let tag_local: i64 = vec_get<i64>(counters, 0);
+                                        vec_push<MirFunctionRecord>(records, function_mir_temporary(tag_local, 1, vec_get<i64>(counters, 2)));
+                                        vec_set<i64>(counters, 0, checked_add(tag_local, 1));
+                                        let tag_instruction: i64 = vec_get<i64>(counters, 1);
+                                        vec_push<MirFunctionRecord>(records, function_mir_enum_tag_load(
+                                            statement_record_start(statement), statement_record_length(statement),
+                                            tag_instruction, tag_local, enum_local, vec_get<i64>(counters, 2)
+                                        ));
+                                        vec_set<i64>(counters, 1, checked_add(tag_instruction, 1));
+                                        vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+                                        payload_arm = 0;
+                                        while (payload_arm < vec_len<ResolvedMatchArm>(resolved_arms)) {
+                                            let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(resolved_arms, payload_arm);
+                                            if (resolved_match_statement(arm) == statement_index) {
+                                                if (resolved_match_binding_start(arm) >= 0) {
+                                                    let payload_local: i64 = hir_find_binding_id(
+                                                        source, binding_starts, binding_lengths,
+                                                        resolved_match_binding_start(arm), resolved_match_binding_length(arm)
+                                                    );
+                                                    let payload_instruction: i64 = vec_get<i64>(counters, 1);
+                                                    vec_push<MirFunctionRecord>(records, function_mir_enum_payload_load(
+                                                        statement_record_start(statement), statement_record_length(statement),
+                                                        payload_instruction, payload_local, enum_local, vec_get<i64>(counters, 2)
+                                                    ));
+                                                    vec_set<i64>(counters, 1, checked_add(payload_instruction, 1));
+                                                    vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+                                                }
+                                            }
+                                            payload_arm = checked_add(payload_arm, 1);
+                                        }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -394,9 +669,22 @@ requires_caps [allocate]
         statement_index = checked_add(statement_index, 1);
     }
 
-    let status: i32 = lower_typed_statements_to_mir_events(
-        source, tokens, statements, operands, allocator, events
-    );
+    var event_statements: Vec<StatementRecord> = vec_new<StatementRecord>(allocator, vec_len<StatementRecord>(statements));
+    var event_index: i64 = 0;
+    while (event_index < vec_len<StatementRecord>(statements)) {
+        let event_statement: StatementRecord = vec_get<StatementRecord>(statements, event_index);
+        if (statement_lowering_supports_kind(statement_record_kind(event_statement)) != 0) {
+            vec_push<StatementRecord>(event_statements, event_statement);
+        }
+        event_index = checked_add(event_index, 1);
+    }
+    var status: i32 = 0;
+    if (vec_len<EnumVariantCatalogEntry>(enum_catalog) == 0) {
+        status = lower_typed_statements_to_mir_events(
+            source, tokens, event_statements, operands, allocator, events
+        );
+    }
+    drop(event_statements);
     drop(counters); drop(binding_lengths); drop(binding_starts);
     return status;
 }

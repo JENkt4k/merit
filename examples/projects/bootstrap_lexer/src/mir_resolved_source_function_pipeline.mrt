@@ -9,6 +9,7 @@ import bootstrap_mir_structured_lowering;
 import bootstrap_mir_function_clause_metadata;
 import bootstrap_mir_function_contracts;
 import bootstrap_mir_source_function_pipeline;
+import bootstrap_mir_statement_lowering;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_source_ownership_lowering;
@@ -16,14 +17,7 @@ import bootstrap_mir_source_ownership_lowering;
 capability allocate;
 
 fn resolved_pipeline_body_kind(kind: i32) -> i32 {
-    if (kind == 20) { return 1; }
-    if (kind == 21) { return 1; }
-    if (kind == 22) { return 1; }
-    if (kind == 23) { return 1; }
-    if (kind == 25) { return 1; }
-    if (kind == 26) { return 1; }
-    if (kind == 30) { return 1; }
-    if (kind == 31) { return 1; }
+    if (statement_lowering_supports_kind(kind) != 0) { return 1; }
     return 0;
 }
 
@@ -269,19 +263,6 @@ pub fn lower_resolved_source_function_semantics(
 ) -> i32
 requires_caps [allocate]
 {
-    var body_statements: Vec<StatementRecord> = vec_new<StatementRecord>(
-        allocator, vec_len<StatementRecord>(statements)
-    );
-    let filter_status: i32 = resolved_pipeline_filter_body_statements(statements, body_statements);
-    if (filter_status != 0) { return checked_add(100, filter_status); }
-
-    var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
-    let function_status: i32 = lower_source_function_semantics(
-        source, tokens, body_statements, statement_operands, capability_catalog,
-        allocator, body_records, body_events, clause_metadata, contract_records
-    );
-    if (function_status != 0) { return checked_add(200, function_status); }
-
     var raw_arms: Vec<MatchArmRecord> = vec_new<MatchArmRecord>(allocator, 8);
     var raw_scopes: Vec<CapabilityScopeRecord> = vec_new<CapabilityScopeRecord>(allocator, 8);
     let arm_status: i32 = lower_match_arm_records(source, tokens, statements, raw_arms);
@@ -318,6 +299,13 @@ requires_caps [allocate]
         }
     }
 
+    var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
+    let function_status: i32 = lower_source_function_semantics(
+        source, tokens, statements, statement_operands, enum_catalog, resolved_arms,
+        capability_catalog, allocator, body_records, body_events, clause_metadata, contract_records
+    );
+    if (function_status != 0) { return checked_add(200, function_status); }
+
     let resolve_scopes_status: i32 = resolve_capability_scopes(
         source, raw_scopes, capability_catalog, resolved_scopes
     );
@@ -347,6 +335,5 @@ requires_caps [allocate]
     drop(raw_scopes);
     drop(raw_arms);
     drop(body_events);
-    drop(body_statements);
     return 0;
 }

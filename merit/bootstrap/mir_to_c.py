@@ -33,6 +33,17 @@ _CHECKED_HELPERS = {
     "/": "merit_checked_div_i64",
     "%": "merit_checked_rem_i64",
 }
+_COPY_PAYLOAD_ENUM_PREFIX = "enum_copy_payload_"
+_ENUM_VARIANT_PREFIX = "variant_"
+
+
+def _copy_payload_enum_identity(type_: MirType) -> str | None:
+    if type_.arguments or not type_.name.startswith(_COPY_PAYLOAD_ENUM_PREFIX):
+        return None
+    identity = type_.name[len(_COPY_PAYLOAD_ENUM_PREFIX):]
+    if not identity or not identity.isdecimal():
+        raise MirToCError(f"invalid Copy-payload enum MIR type: {type_.name}")
+    return identity
 
 
 def _identifier(name: str) -> str:
@@ -43,6 +54,9 @@ def _identifier(name: str) -> str:
 
 
 def _type(type_: MirType) -> str:
+    enum_identity = _copy_payload_enum_identity(type_)
+    if enum_identity is not None:
+        return f"merit_enum_copy_payload_{enum_identity}"
     if type_.arguments:
         raise MirToCError(f"generic MIR type is not supported by the core C emitter: {type_.name}")
     try:
@@ -83,7 +97,11 @@ def _function_table(module: MirModule) -> dict[str, MirFunction]:
     return table
 
 
-def _instruction(instruction: MirInstruction, functions: dict[str, MirFunction]) -> list[str]:
+def _instruction(
+    instruction: MirInstruction,
+    functions: dict[str, MirFunction],
+    local_types: dict[int, MirType] | None = None,
+) -> list[str]:
     result = _local(instruction.result) if instruction.result is not None else None
     operands = [_local(value) for value in instruction.operands]
     kind = instruction.kind
@@ -95,6 +113,27 @@ def _instruction(instruction: MirInstruction, functions: dict[str, MirFunction])
         if result is None or len(operands) != 1:
             raise MirToCError(f"{kind} instruction requires one operand and a result")
         return [f"{result} = {operands[0]};"]
+    if kind == "construct":
+        if result is None or len(operands) != 1 or not instruction.symbol:
+            raise MirToCError("Copy-payload enum construction requires one payload and a variant symbol")
+        if local_types is None or instruction.result not in local_types:
+            raise MirToCError("Copy-payload enum construction requires a resolved result type")
+        if _copy_payload_enum_identity(local_types[instruction.result]) is None:
+            raise MirToCError("core C emission only supports Copy-payload enum construction")
+        if not instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
+            raise MirToCError("Copy-payload enum construction has an invalid variant symbol")
+        ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
+        if not ordinal or not ordinal.isdecimal():
+            raise MirToCError("Copy-payload enum construction has an invalid variant ordinal")
+        return [f"{result} = ({_type(local_types[instruction.result])}) {{ INT64_C({ordinal}), {operands[0]} }};"]
+    if kind == "load_field":
+        if result is None or len(operands) != 1 or instruction.symbol not in {"tag", "payload"}:
+            raise MirToCError("Copy-payload enum field load requires tag/payload and one receiver")
+        if local_types is None or instruction.operands[0] not in local_types:
+            raise MirToCError("Copy-payload enum field load requires a resolved receiver type")
+        if _copy_payload_enum_identity(local_types[instruction.operands[0]]) is None:
+            raise MirToCError("core C emission only supports fields on Copy-payload enums")
+        return [f"{result} = {operands[0]}.{instruction.symbol};"]
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
@@ -174,16 +213,18 @@ def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | N
     functions = functions or {function.name: function}
     return_type = _type(function.return_type)
     lines = [f"{return_type} {_identifier(function.name)}(void) {{"]
+    local_types = {local.local_id: local.type for local in function.locals}
     for local in function.locals:
         local_type = _type(local.type)
         if local_type == "void":
             raise MirToCError("MIR locals cannot have unit type in core C emission")
-        lines.append(f"    {local_type} {_local(local.local_id)} = 0;")
+        initializer = "{0}" if _copy_payload_enum_identity(local.type) is not None else "0"
+        lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
     lines.append(f"    goto b{function.entry_block};")
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _instruction(instruction, functions):
+            for statement in _instruction(instruction, functions, local_types):
                 lines.append(f"    {statement}")
         for statement in _terminator(block.terminator, return_type):
             lines.append(f"    {statement}")
@@ -267,6 +308,20 @@ def emit_c_module(module: MirModule) -> str:
         "#include <stdlib.h>",
         "",
     ]
+    enum_identities = sorted({
+        identity
+        for function in module.functions
+        for local in function.locals
+        if (identity := _copy_payload_enum_identity(local.type)) is not None
+    }, key=int)
+    if enum_identities:
+        prelude.extend([
+            *[
+                f"typedef struct {{ int64_t tag; int64_t payload; }} merit_enum_copy_payload_{identity};"
+                for identity in enum_identities
+            ],
+            "",
+        ])
     runtime = _checked_helpers(checked_operators)
     if needs_contract:
         runtime.append("static void merit_contract_failure(const char *kind) { (void)kind; abort(); }")

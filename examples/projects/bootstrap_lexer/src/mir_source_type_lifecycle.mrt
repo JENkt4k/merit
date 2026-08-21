@@ -97,10 +97,15 @@ fn stl_builtin_ownership(borrow source: Buffer, start: i64, length: i64) -> i32 
     return -1;
 }
 
+pub fn source_type_span_is_copy_builtin(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (stl_builtin_ownership(source, start, length) == 0) { return 1; }
+    return 0;
+}
+
 // Declaration classification for the current replacement surface.
 // Structs are owned/non-copy. Decimal and bounded declarations are Copy.
-// Payload-free enums are Copy; payload-bearing enums fail closed until their
-// payload lifecycle is recursively represented.
+// Payload-free enums and enums whose payloads are all supported Copy builtins
+// are Copy. Owned or unresolved payload lifecycle remains fail-closed.
 fn stl_declared_ownership(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -135,13 +140,24 @@ fn stl_declared_ownership(
                                 var cursor: i64 = checked_add(open_index,1);
                                 var closed: i32 = 0;
                                 var has_payload: i32 = 0;
+                                var unsupported_payload: i32 = 0;
                                 while (cursor < vec_len<Token>(tokens)) {
                                     if (closed == 0) {
                                         let member: Token = vec_get<Token>(tokens,cursor);
                                         if (token_kind(member) == 4) {
                                             if (token_length(member) == 1) {
                                                 let byte: i64 = buffer_get(source,token_start(member));
-                                                if (byte == 40) { has_payload = 1; }
+                                                if (byte == 40) {
+                                                    has_payload = 1;
+                                                    let payload_index: i64 = checked_add(cursor, 1);
+                                                    if (payload_index >= vec_len<Token>(tokens)) { unsupported_payload = 1; }
+                                                    else {
+                                                        let payload: Token = vec_get<Token>(tokens, payload_index);
+                                                        if (stl_builtin_ownership(source, token_start(payload), token_length(payload)) != 0) {
+                                                            unsupported_payload = 1;
+                                                        }
+                                                    }
+                                                }
                                                 if (byte == 125) { closed = 1; }
                                             }
                                         }
@@ -151,7 +167,7 @@ fn stl_declared_ownership(
                                     }
                                 }
                                 if (closed == 0) { return -2; }
-                                if (has_payload != 0) { return -2; }
+                                if (has_payload != 0) { if (unsupported_payload != 0) { return -2; } }
                                 return 0;
                             }
                             return 0;

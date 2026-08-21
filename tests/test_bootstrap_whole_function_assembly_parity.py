@@ -123,6 +123,58 @@ def test_canonical_assembled_mir_emits_and_executes_c(tmp_path: Path):
     assert completed.stdout.strip() == "7"
 
 
+def test_copy_payload_enum_records_materialize_and_execute(tmp_path: Path):
+    cc = shutil.which("cc")
+    if cc is None:
+        pytest.skip("system C compiler is unavailable")
+    source = "payload 7"
+    body = (
+        (1, 0, 7, 0, -1, -1, -1, 0, 7, 0, 1, 0, -1, 0, -1, 0),
+        (3, 0, 0, 0, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (3, 0, 0, 1, -1, -1, -1, -1, 0, 0, 1000, 0, -1, 0, 1, 1),
+        (3, 0, 0, 2, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
+        (3, 0, 0, 3, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 3, 3),
+        (4, 8, 1, 0, 0, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (9, 8, 1, 1, 1, 0, -1, -1, 0, 0, 1000, 0, -1, 0, 1, 1),
+        (10, 8, 1, 2, 2, 1, -1, -1, 0, 0, 1, 0, -1, 0, 2, 2),
+        (11, 8, 1, 3, 3, 1, -1, -1, 0, 0, 1, 0, -1, 0, 3, 3),
+    )
+    sources = tuple((index, 2, index, 0, -1, -1, -1, -1) for index in range(4))
+    cfg = (
+        (10, 0, -1, -1, -1, 0, 0),
+        (10, 1, -1, -1, -1, 0, 1),
+        (10, 2, -1, -1, -1, 0, 2),
+        (13, 0, 2, 1, -1, 0, 0),
+        (14, 0, 2, 2, -1, 0, 1),
+        (15, 1, 3, -1, -1, 0, 0),
+        (15, 2, 2, -1, -1, 0, 0),
+    )
+    module = lower_native_whole_function_assembly(
+        source=source,
+        module_name="demo",
+        body_records=body,
+        contract_records=(),
+        contract_locals=(),
+        instruction_sources=sources,
+        cfg_records=cfg,
+        placements=((0, 0, 0), (0, 1, 1), (0, 2, 2), (1, 3, 0)),
+        capability_ids=(),
+        capability_names={},
+    )
+    function = module.functions[0]
+    assert function.locals[1].type.name == "enum_copy_payload_0"
+    assert [instruction.kind for block in function.blocks for instruction in block.instructions] == [
+        "const", "construct", "load_field", "load_field",
+    ]
+    c_source = emit_c_module(module) + "\nint main(void){ return payload() == 7 ? 0 : 1; }\n"
+    c_path = tmp_path / "payload_enum.c"
+    executable = tmp_path / "payload_enum"
+    c_path.write_text(c_source, encoding="utf-8")
+    subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-O2", str(c_path), "-o", str(executable)], check=True, text=True, capture_output=True)
+    completed = subprocess.run([str(executable)], check=False)
+    assert completed.returncode == 0
+
+
 def test_assembly_rejects_unresolved_capability_identity():
     body, contracts, contract_locals, sources, cfg, placements = _records()
     with pytest.raises(ValueError, match="unresolved capability identity 9"):

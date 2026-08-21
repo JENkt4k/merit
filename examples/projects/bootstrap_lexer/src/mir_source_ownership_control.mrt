@@ -185,7 +185,30 @@ requires_caps [allocate]
         let count: i64 = source_control_match_count(arms, statement_index); if (count <= 0) { return 127; }
         let value_local: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (value_local < 0) { return 32; }
-        vec_push<MirOwnershipEvent>(events, ownership_event_match(value_local, count)); return 0;
+        var match_local: i64 = value_local;
+        var has_payload: i32 = 0;
+        var arm_index: i64 = 0;
+        while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+            let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
+            if (resolved_match_statement(arm) == statement_index) {
+                if (resolved_match_binding_start(arm) >= 0) { has_payload = 1; }
+            }
+            arm_index = checked_add(arm_index, 1);
+        }
+        if (has_payload != 0) {
+            match_local = vec_get<i64>(counters, 0);
+            vec_set<i64>(counters, 0, checked_add(match_local, 1));
+            vec_push<MirOwnershipEvent>(events, ownership_event_place(statement_index));
+            arm_index = 0;
+            while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+                let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
+                if (resolved_match_statement(arm) == statement_index) {
+                    if (resolved_match_binding_start(arm) >= 0) { vec_push<MirOwnershipEvent>(events, ownership_event_place(arm_index)); }
+                }
+                arm_index = checked_add(arm_index, 1);
+            }
+        }
+        vec_push<MirOwnershipEvent>(events, ownership_event_match(match_local, count)); return 0;
     }
     if (kind == 28) { if (source_control_scope_exists(scopes, statement_index) == 0) { return 128; } return 0; }
     if (kind == 29) {
@@ -319,6 +342,15 @@ requires_caps [allocate]
     if (vec_len<StatementRecord>(statements) == 0) { return 1; }
     var starts: Vec<i64> = vec_new<i64>(allocator, 8); var lengths: Vec<i64> = vec_new<i64>(allocator, 8);
     let binding_status: i32 = source_collect_bindings(statements, operands, starts, lengths, metadata);
+    var arm_index: i64 = 0;
+    while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
+        let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
+        if (resolved_match_binding_start(arm) >= 0) {
+            vec_push<i64>(starts, resolved_match_binding_start(arm));
+            vec_push<i64>(lengths, resolved_match_binding_length(arm));
+        }
+        arm_index = checked_add(arm_index, 1);
+    }
     var frames: Vec<SourceOwnershipFrame> = vec_new<SourceOwnershipFrame>(allocator, 8);
     var counters: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(counters, vec_len<i64>(starts));
     var direct: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(direct, -1);
