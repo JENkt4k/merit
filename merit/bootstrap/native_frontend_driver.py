@@ -91,6 +91,7 @@ int main(void) {
     }
     merit_String source = { data, length };
     int32_t status = merit_emit_replacement_bundle(source);
+    if (status != 0) fprintf(stderr, "replacement driver status %d\\n", status);
     free(data);
     return (int)status;
 }

@@ -5,9 +5,12 @@ import shutil
 import subprocess
 
 import pytest
+from lark.exceptions import UnexpectedInput
 
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
+from merit.compiler import parse
+from merit.project.build import build
 from merit.project.loader import load_project
 from merit.project.replacement import ReplacementProjectError, build_replacement_project
 from merit.project.replacement_prepare import prepare_replacement_artifacts
@@ -49,6 +52,31 @@ PAYLOAD_ENUM_SOURCE = (
     "module main\n"
     "enum Choice { Left(i64), Right(i64) }\n"
     "fn main()->i32 { let flag:Choice=Left(1); match (flag) { Left(x) => { return 7; } Right(y) => { return 8; } } }\n"
+)
+CONTROL_FLOW_SOURCES = (
+    (
+        "if-else",
+        "module main\nfn main()->i32 { if 2<3 { return 17; } else { return 18; } }\n",
+        17,
+    ),
+    (
+        "nested-early-return",
+        "module main\nfn main()->i32 { if 1<2 { if 4>3 { return 19; } else { return 20; } } else { return 21; } }\n",
+        19,
+    ),
+    (
+        "loop-early-return",
+        "module main\nfn main()->i32 { while 1<2 { if 3==3 { return 22; } else { return 23; } } return 24; }\n",
+        22,
+    ),
+    (
+        "skipped-loop",
+        "module main\nfn main()->i32 { while 2<1 { return 25; } return 26; }\n",
+        26,
+    ),
+)
+INVALID_CONTROL_FLOW_SOURCE = (
+    "module main\nfn main()->i32 { if 1<2 { return 7; } else { return 8; }\n"
 )
 
 
@@ -116,6 +144,62 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+
+    for case_name, source, expected_status in CONTROL_FLOW_SOURCES:
+        root = _project(tmp_path / case_name, source)
+        project = load_project(root / "Merit.toml")
+
+        _, _, reference_executable = build(project, root / "build" / "reference")
+        reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+        assert reference.returncode == expected_status
+        assert reference.stdout == ""
+
+        first = subprocess.run(
+            [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+        )
+        second = subprocess.run(
+            [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+        )
+        assert first.stdout == second.stdout
+        bundle = decode_resolved_source_function_bundle(
+            tuple(int(line) for line in first.stdout.splitlines())
+        )
+        assert len(bundle.functions) == 1
+
+        prepared = prepare_replacement_artifacts(project, driver)
+        assert len(prepared.snapshot_paths) == 1
+        artifact = build_replacement_project(project, root / "build" / "replacement")
+        replacement = subprocess.run(
+            [str(artifact.executable)], text=True, capture_output=True
+        )
+        assert replacement.returncode == reference.returncode
+        assert replacement.stdout == reference.stdout
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_rejects_malformed_control_flow_deterministically(tmp_path: Path) -> None:
+    with pytest.raises(UnexpectedInput):
+        parse(INVALID_CONTROL_FLOW_SOURCE)
+
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=INVALID_CONTROL_FLOW_SOURCE, text=True, capture_output=True
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=INVALID_CONTROL_FLOW_SOURCE, text=True, capture_output=True
+    )
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode,
+        second.stdout,
+        second.stderr,
+    )
+    assert first.stderr.startswith("replacement driver status ")
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

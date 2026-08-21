@@ -82,6 +82,27 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 
 `PARTIAL` is intentionally conservative. Replace it with concrete evidence rather than assuming coverage from neighboring tests.
 
+### M1 evidence audit (2026-08-20)
+
+The alpha.1 reference surface is exercised by the established compiler/project
+suite. Replacement evidence must additionally reach the concrete native driver;
+parser or isolated MIR fixtures do not close a production-path cell.
+
+| M1 form | Alpha.1/reference evidence | Replacement evidence | Audit result |
+|---|---|---|---|
+| `let` / `var` / return | `tests/test_epoch_*.py`; acceptance projects | `tests/bootstrap/test_concrete_native_replacement_driver.py` drives source through native driver, MRBF, prepared artifacts, canonical MIR, C, and executable | production-proven |
+| `if` / `else`, nested branches, early return | reference interpreter/native tests; `tests/project/test_bootstrap_mir_statement_lowering_gate.py` and `test_bootstrap_mir_structured_lowering_gate.py` prove native intermediate structure | `test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow` compares reference/replacement executables and repeated bundles; malformed control flow is rejected deterministically | production-proven for scalar branch/return forms; aggregate row remains partial |
+| `while`, nested loop control, loop exit | reference interpreter/native tests; the same statement/structured-MIR gates prove native intermediate structure | the concrete-driver closure test covers taken/untaken loops, nested branching, early return, deterministic artifacts, and native parity | production-proven for scalar loop forms; acceptance migration remains open |
+| payload-free `match` integration | alpha.1 enum tests | concrete driver enum/typed-identity cases in `tests/bootstrap/test_concrete_native_replacement_driver.py` | production-proven for the payload-free subset; lifecycle work remains M2 |
+| capability regions | alpha.1 capability tests | concrete driver capability catalog/scope case in `tests/bootstrap/test_concrete_native_replacement_driver.py` | production-proven |
+| assignment / `replace` / owned path merges | alpha.1 ownership tests; `tests/project/test_bootstrap_owned_source_replace_merge_gate.py` | native source/ownership/CFG evidence does not yet reach concrete-driver executable behavior | partial: intermediate-only |
+| expression statements / `print` / `drop` | alpha.1 compiler and acceptance tests; parser recognizes `print` and `drop` | not represented by the concrete production driver | open |
+
+This audit deliberately leaves the aggregate `complete branching/control flow`
+and `loops` rows OPEN: scalar accepted/rejected cases now traverse the complete
+production path, but assignment/effect statements and replacement-mode
+acceptance coverage remain outstanding.
+
 ## Large remaining milestones
 
 ### M1 — Accepted-alpha statement/control-flow closure
