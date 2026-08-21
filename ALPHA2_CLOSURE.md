@@ -213,6 +213,20 @@ Do **not** split merely because a change touches many files or exceeds an arbitr
 
 Do **not** add temporary compatibility seams when the final alpha.2 representation can reasonably be implemented and tested in the same PR.
 
+## Alpha.2 semantic numeric cleanup freeze
+
+While alpha.2 remains open, do not perform repository-wide or opportunistic
+cleanup of existing semantic magic numbers. Existing magic numbers may be
+changed only when required to complete the current alpha.2 work, and any
+required change must stay within the smallest practical scope.
+
+Do not expand an alpha.2 PR merely because nearby existing magic-number debt is
+discovered. Defer that debt to a dedicated post-alpha.2 cleanup PR.
+
+This temporary restriction expires when alpha.2 is formally closed and tagged.
+Expiration removes only this cleanup freeze; the permanent `AGENTS.md` rule
+against introducing new semantic magic numbers remains in force.
+
 ## Testing cadence
 
 During development:
