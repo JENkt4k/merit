@@ -315,6 +315,24 @@ requires_caps [allocate]
                     ));
                     vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                 } else {
+                    if (kind == 23) {
+                        let expression_index: i64 = sfr_operand(statement, operands, 3);
+                        if (expression_index < 0) { return 25; }
+                        let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                        let result_local: i64 = sfr_emit_expression(
+                            source, tokens, binding_starts, binding_lengths,
+                            statement_operand_start(expression), statement_operand_length(expression),
+                            allocator, records, counters
+                        );
+                        if (result_local < 0) { return 26; }
+                        let instruction_id: i64 = vec_get<i64>(counters, 1);
+                        vec_push<MirFunctionRecord>(records, function_mir_print(
+                            statement_record_start(statement), statement_record_length(statement),
+                            instruction_id, result_local, vec_get<i64>(counters, 2)
+                        ));
+                        vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+                        vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
+                    } else {
                     if (kind == 25) {
                         let expression_index: i64 = sfr_operand(statement, operands, 3);
                         if (expression_index < 0) { return 16; }
@@ -368,6 +386,7 @@ requires_caps [allocate]
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

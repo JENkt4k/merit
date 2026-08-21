@@ -188,10 +188,9 @@ def test_typed_statements_drive_structured_mir_events_and_cfg_interpreter_and_na
 
 
 def test_statement_lowering_contract_rejects_unimplemented_effect_kinds():
-    # The source-backed bridge intentionally stops before print/drop/with/match/
-    # replace until those effects have native semantic records. Their stable
+    # The source-backed bridge intentionally stops before drop/with/match/replace
+    # until those effects have native semantic records. Their stable
     # status range is 100 + bootstrap statement kind, preventing silent fallback.
-    assert 123 == 100 + 23
     assert 124 == 100 + 24
     assert 127 == 100 + 27
     assert 128 == 100 + 28

@@ -36,7 +36,12 @@ requires_caps [allocate]
                         instructions = checked_add(instructions, 1);
                     } else {
                         if (kind == 7) { returns = checked_add(returns, 1); }
-                        else { return 13; }
+                        else {
+                            if (kind == 8) {
+                                if (function_mir_id(record) != instructions) { return 12; }
+                                instructions = checked_add(instructions, 1);
+                            } else { return 13; }
+                        }
                     }
                 } else { return 14; }
             }

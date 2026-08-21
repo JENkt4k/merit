@@ -155,6 +155,11 @@ requires_caps [allocate]
         if (result < 0) { return 20; }
         vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); return 0;
     }
+    if (kind == 23) {
+        let result: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
+        if (result < 0) { return 44; }
+        vec_push<MirOwnershipEvent>(events, ownership_event_print(result)); return 0;
+    }
     if (kind == 24) {
         let result: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (result < 0) { return 21; }

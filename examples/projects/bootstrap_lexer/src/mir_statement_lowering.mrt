@@ -319,6 +319,20 @@ requires_caps [allocate]
                             if (result_local < 0) { return 15; }
                             vec_push<MirLowerEvent>(events, mir_event_return(result_local));
                         } else {
+                            if (kind == 23) {
+                                let expression_index: i64 = lower_expression_operand(statement, operands);
+                                if (expression_index < 0) { return 24; }
+                                let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+                                let result_local: i64 = lower_expression_to_events(
+                                    source, tokens, binding_starts, binding_lengths,
+                                    statement_operand_start(expression), statement_operand_length(expression),
+                                    allocator, counters, events
+                                );
+                                if (result_local < 0) { return 25; }
+                                let print_instruction: i64 = vec_get<i64>(counters, 1);
+                                vec_push<MirLowerEvent>(events, mir_event_place(print_instruction));
+                                vec_set<i64>(counters, 1, checked_add(print_instruction, 1));
+                            } else {
                             if (kind == 25) {
                                 let expression_index: i64 = lower_expression_operand(statement, operands);
                                 if (expression_index < 0) { return 16; }
@@ -386,6 +400,7 @@ requires_caps [allocate]
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }

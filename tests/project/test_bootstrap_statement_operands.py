@@ -191,6 +191,16 @@ def _statement_operands(data: bytes, tokens, index: int, kind: int):
         if span:
             result.append((3, *span))
         return result
+    if kind == 23:
+        open_index = index + 1
+        if open_index >= len(tokens) or _text(data, tokens[open_index]) != b"(":
+            return result
+        first = open_index + 1
+        close = _find_top_level(data, tokens, first, b")")
+        span = _span(tokens, first, close)
+        if span:
+            result.append((3, *span))
+        return result
     first = index + 1
     delimiter = b"{" if 25 <= kind <= 27 else b";"
     end_index = _find_top_level(data, tokens, first, delimiter)

@@ -89,6 +89,7 @@ def emit_c_materialized_cleanup(abi: MirAbiModule, policy: CleanupCPolicy) -> st
         for block in function.blocks
         for instruction in block.instructions
     ]
+    needs_print = any(instruction.kind == "print" for instruction in instructions)
     checked_operators = {
         instruction.symbol
         for instruction in instructions
@@ -100,6 +101,7 @@ def emit_c_materialized_cleanup(abi: MirAbiModule, policy: CleanupCPolicy) -> st
         "/* generated from bootstrap-mir-cleanup-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
+        *(["#include <stdio.h>"] if needs_print else []),
         "#include <stdlib.h>",
         "",
     ]

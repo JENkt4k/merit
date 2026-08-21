@@ -133,6 +133,10 @@ def _instruction(instruction: MirInstruction, functions: dict[str, MirFunction])
         return [f"if (!{operands[0]}) merit_contract_failure({json.dumps(instruction.contract_kind)});"]
     if kind == "capability_check":
         return [f"merit_capability_check({json.dumps(capability)});" for capability in instruction.capabilities]
+    if kind == "print":
+        if result is not None or len(operands) != 1:
+            raise MirToCError("print instruction requires one operand and no result")
+        return [f'printf("%lld\\n", (long long){operands[0]});']
     if kind in {"drop", "deallocate", "nop"}:
         return ["/* explicit no-op in scalar bootstrap C subset */"]
     raise MirToCError(f"unsupported MIR instruction for C emission: {kind}")
@@ -247,6 +251,7 @@ def emit_c_module(module: MirModule) -> str:
     ]
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
     needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
+    needs_print = any(instruction.kind == "print" for instruction in instructions)
     checked_operators = {
         instruction.symbol
         for instruction in instructions
@@ -258,6 +263,7 @@ def emit_c_module(module: MirModule) -> str:
         "/* generated from bootstrap-mir-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
+        *(["#include <stdio.h>"] if needs_print else []),
         "#include <stdlib.h>",
         "",
     ]

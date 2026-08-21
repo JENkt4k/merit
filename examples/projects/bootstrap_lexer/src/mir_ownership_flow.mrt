@@ -35,6 +35,7 @@ pub fn ownership_event_drop(id: i64) -> MirOwnershipEvent { return MirOwnershipE
 pub fn ownership_event_replace(id: i64, local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 5, a: id, b: local }; }
 pub fn ownership_event_replace_from_binding(target: i64, source: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 6, a: target, b: source }; }
 pub fn ownership_event_assign(target: i64, local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 7, a: target, b: local }; }
+pub fn ownership_event_print(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 8, a: local, b: 0 }; }
 pub fn ownership_event_return(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 10, a: local, b: 0 }; }
 pub fn ownership_event_if(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 20, a: local, b: 0 }; }
 pub fn ownership_event_else() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 21, a: 0, b: 0 }; }
@@ -253,6 +254,11 @@ requires_caps [allocate]
             if (target.mutable == 0) { return 92; }
             if (target.owned != 0) { return 93; }
             if (event.b < 0) { return 94; }
+            emit_place(output, next);
+        }
+        if (kind == 8) {
+            handled = 1; if (terminated != 0) { return 95; }
+            if (event.a < 0) { return 96; }
             emit_place(output, next);
         }
         if (kind == 4) {

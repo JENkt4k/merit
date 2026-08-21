@@ -117,6 +117,26 @@ def test_emits_loop_back_edge(tmp_path):
     assert run.returncode == 0
 
 
+def test_emits_print_in_instruction_order(tmp_path):
+    function = MirFunction(
+        "show",
+        I64,
+        (MirLocal(0, "value", I64),),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=42),
+            MirInstruction(1, "print", operands=(0,)),
+        ), MirTerminator("return", operands=(0,))),),
+        0,
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "#include <stdio.h>" in generated
+    assert generated.index("m0 = INT64_C(42)") < generated.index('printf("%lld\\n", (long long)m0)')
+    run = compile_and_run(tmp_path, module, "int main(void) { return show() == 42 ? 0 : 1; }")
+    assert run.returncode == 0
+    assert run.stdout == "42\n"
+
+
 def test_emits_switch_in_case_order(tmp_path):
     function = MirFunction(
         "classify",
