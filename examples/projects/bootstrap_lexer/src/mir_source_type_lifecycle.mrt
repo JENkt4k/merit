@@ -157,6 +157,14 @@ fn stl_declared_ownership_depth(
                                                     if (payload_index >= vec_len<Token>(tokens)) { return -2; }
                                                     let payload: Token = vec_get<Token>(tokens, payload_index);
                                                     if (token_kind(payload) != 1) { return -2; }
+                                                    // A direct self-payload is a cycle. Reject it before
+                                                    // recursive classification so both interpreter and
+                                                    // native paths fail closed without consuming host stack.
+                                                    if (stl_span_equal(
+                                                        source,
+                                                        token_start(payload), token_length(payload),
+                                                        token_start(name), token_length(name)
+                                                    ) != 0) { return -2; }
                                                     var payload_ownership: i32 = stl_builtin_ownership(
                                                         source, token_start(payload), token_length(payload)
                                                     );
