@@ -50,6 +50,31 @@ Do not broaden the language during alpha.2 closure.
 - Prefer the final alpha.2 representation over temporary compatibility seams
   when the final representation can reasonably be implemented in the same PR.
 
+## Semantic numeric identifiers
+
+Do not introduce new unexplained numeric literals for semantic compiler
+identifiers, tags, opcodes, kinds, statuses, encoded domain values, or similar
+meanings. This includes MIR kinds, statement kinds, token kinds, policy IDs,
+capability/effect kinds, serialized discriminants, and equivalent domain
+identifiers.
+
+Follow `docs/design/NUMERIC_IDENTIFIERS.md` for normative guidance on
+classification, canonical placement, representation-boundary exceptions,
+bootstrap/Python parity, and discriminants, errors, sentinels, character
+encodings, and ordinary mathematical literals.
+
+Use an existing named constant or enum member when one is available. If a new
+semantic value is required, define a clearly named symbolic constant or enum
+member at the appropriate canonical definition site and reference that symbol
+from implementation logic. Explicit numeric values may remain at canonical
+serialization, ABI, bootstrap, wire-format, compatibility, or encoding
+definition boundaries when the numeric value itself is part of the contract;
+consumers should use the symbolic representation rather than duplicate the raw
+value.
+
+This rule is forward-looking and does not authorize unrelated cleanup or
+refactoring of existing numeric debt.
+
 ## Alpha.2 development strategy
 
 The replacement compiler architecture is established through:
