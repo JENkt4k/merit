@@ -11,3 +11,4 @@ dist/
 *.obj
 *.exe
 .vscode/settings.json
+benchmarks/
