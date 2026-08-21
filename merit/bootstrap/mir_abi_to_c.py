@@ -140,6 +140,7 @@ def emit_c_abi_module(abi: MirAbiModule) -> str:
     ]
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
     needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
+    needs_print = any(instruction.kind == "print" for instruction in instructions)
     checked_operators = {
         instruction.symbol
         for instruction in instructions
@@ -151,6 +152,7 @@ def emit_c_abi_module(abi: MirAbiModule) -> str:
         "/* generated from bootstrap-mir-abi-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
+        *(["#include <stdio.h>"] if needs_print else []),
         "#include <stdlib.h>",
         "",
     ]

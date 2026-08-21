@@ -111,7 +111,7 @@ def lower_native_whole_function_assembly(
             if rid in locals_by_id or rid < 0 or hir_id < 0:
                 raise NativeWholeFunctionMirError(f"body temporary {index} is invalid")
             locals_by_id[rid] = MirLocal(rid, f"_t{hir_id}", resolved_type(type_code, f"body temporary {index}"))
-        elif kind in {4, 5, 6}:
+        elif kind in {4, 5, 6, 8}:
             if rid in body_instructions or rid < 0:
                 raise NativeWholeFunctionMirError(f"body instruction {index} has duplicate/invalid ID")
             instruction_span = span(start, length, f"body instruction {index}")
@@ -124,8 +124,12 @@ def lower_native_whole_function_assembly(
                 except KeyError as error:
                     raise NativeWholeFunctionMirError(f"body binary {index} has invalid operator/policy") from error
                 body_instructions[rid] = MirInstruction(rid, "binary", result=result, operands=(left, right), symbol=symbol, span=instruction_span, numeric_policy=numeric_policy)
-            else:
+            elif kind == 6:
                 body_instructions[rid] = MirInstruction(rid, "copy", result=result, operands=(left,), span=instruction_span)
+            else:
+                if result != -1 or left < 0:
+                    raise NativeWholeFunctionMirError(f"body print {index} has invalid operands")
+                body_instructions[rid] = MirInstruction(rid, "print", operands=(left,), span=instruction_span)
         elif kind == 7:
             # CFG records own return placement/operands after structured assembly.
             continue

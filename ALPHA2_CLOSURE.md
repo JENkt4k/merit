@@ -82,7 +82,7 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 
 `PARTIAL` is intentionally conservative. Replace it with concrete evidence rather than assuming coverage from neighboring tests.
 
-### M1 evidence audit (2026-08-20)
+### M1 evidence audit (2026-08-21)
 
 The alpha.1 reference surface is exercised by the established compiler/project
 suite. Replacement evidence must additionally reach the concrete native driver;
@@ -98,12 +98,14 @@ parser or isolated MIR fixtures do not close a production-path cell.
 | ordinary scalar assignment | alpha.1 assignment tests and reference interpreter/native compiler | `test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow` exercises assignments in both branch arms and a loop through native discovery, ownership/control flow, MRBF, canonical MIR, C, and executable parity; immutable assignment is rejected deterministically | production-proven for direct scalar bindings |
 | `replace` / owned path merges | alpha.1 ownership tests; `tests/project/test_bootstrap_owned_source_replace_merge_gate.py` | native source/ownership/CFG evidence does not yet reach concrete-driver executable behavior | partial: intermediate-only; closes with M2 lifecycle work |
 | pure expression statements | alpha.1 compiler tests and reference interpreter/native compiler | the concrete-driver assignment/control case evaluates `x+100;` through the production path; parser-oracle coverage distinguishes it from assignment and equality expressions | production-proven for the current scalar expression surface |
-| `print` / `drop` | alpha.1 compiler and acceptance tests; parser recognizes both forms | neither effect has a complete concrete-driver instruction/lifecycle representation | open; `drop` closes with M2 resource lifecycle |
+| `print` / `drop` | alpha.1 compiler and acceptance tests; parser recognizes both forms | scalar `print` has a native source record, ownership/control-flow placement, canonical MIR instruction, deterministic C emission, and repeated loop-output parity in `test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow`; `drop` has intermediate ownership evidence only | scalar `print` production-proven; `drop` remains open and closes with M2 resource lifecycle |
 
 This audit deliberately leaves the aggregate `complete branching/control flow`
 and `loops` rows OPEN: scalar accepted/rejected cases now traverse the complete
-production path, but assignment/effect statements and replacement-mode
-acceptance coverage remain outstanding.
+production path, but resource-effect statements and replacement-mode acceptance
+coverage remain outstanding. The remaining M1 `drop`/`replace` boundary is owned
+by M2 because closing it requires the recursive lifecycle and destructor model,
+not a scalar no-op compatibility seam.
 
 ## Large remaining milestones
 

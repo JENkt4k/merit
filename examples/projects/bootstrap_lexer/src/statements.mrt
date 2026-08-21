@@ -487,6 +487,18 @@ requires_caps [allocate]
         }
         return 0;
     }
+    if kind == 23 {
+        let open_index: i64 = checked_add(index, 1);
+        if open_index >= vec_len<Token>(tokens) { return 0; }
+        let open: Token = vec_get<Token>(tokens, open_index);
+        if stmt_punctuation(source, open, 40) == 0 { return 0; }
+        let first_argument: i64 = checked_add(open_index, 1);
+        let close: i64 = stmt_find_top_level(source, tokens, first_argument, 41);
+        if (close > first_argument) {
+            let pushed_print_argument: i32 = stmt_push_span(operands, 3, tokens, first_argument, close);
+        }
+        return 0;
+    }
     let first: i64 = checked_add(index, 1);
     if first >= vec_len<Token>(tokens) { return 0; }
     var delimiter: i64 = 59;

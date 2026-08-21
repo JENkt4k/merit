@@ -18,6 +18,7 @@ INSTRUCTION_KINDS = frozenset({
     "const", "copy", "move", "borrow", "load_field", "store_field",
     "binary", "convert", "call", "construct", "contract_check",
     "capability_check", "allocate", "deallocate", "drop", "nop",
+    "print",
 })
 TERMINATOR_KINDS = frozenset({"return", "jump", "branch", "switch", "unreachable"})
 OWNERSHIP_MODES = frozenset({"value", "owned", "borrowed", "mutable_borrow", "moved", "none"})
@@ -297,6 +298,9 @@ def _validate_function(function: MirFunction) -> None:
                 raise MirContractError("capability checks require at least one capability")
             if instruction.kind in {"move", "borrow", "drop", "deallocate"} and not instruction.operands:
                 raise MirContractError(f"{instruction.kind} instructions require an operand")
+            if instruction.kind == "print":
+                if instruction.result is not None or len(instruction.operands) != 1:
+                    raise MirContractError("print instructions require one operand and no result")
         for operand in block.terminator.operands:
             if operand not in local_set:
                 raise MirContractError(f"terminator reads unknown local {operand}")

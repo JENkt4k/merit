@@ -58,26 +58,37 @@ CONTROL_FLOW_SOURCES = (
         "if-else",
         "module main\nfn main()->i32 { if 2<3 { return 17; } else { return 18; } }\n",
         17,
+        "",
     ),
     (
         "nested-early-return",
         "module main\nfn main()->i32 { if 1<2 { if 4>3 { return 19; } else { return 20; } } else { return 21; } }\n",
         19,
+        "",
     ),
     (
         "loop-early-return",
         "module main\nfn main()->i32 { while 1<2 { if 3==3 { return 22; } else { return 23; } } return 24; }\n",
         22,
+        "",
     ),
     (
         "skipped-loop",
         "module main\nfn main()->i32 { while 2<1 { return 25; } return 26; }\n",
         26,
+        "",
     ),
     (
         "branch-loop-assignment",
         "module main\nfn main()->i32 { var x:i32=1; if 2<3 { x=x+4; } else { x=9; } while x<7 { x=x+1; } x+100; return x+20; }\n",
         27,
+        "",
+    ),
+    (
+        "loop-print",
+        "module main\nfn main()->i32 { var x:i32=0; while x<3 { print(x); x=x+1; } return x; }\n",
+        3,
+        "0\n1\n2\n",
     ),
 )
 INVALID_CONTROL_FLOW_SOURCE = (
@@ -158,14 +169,14 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
 def test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
 
-    for case_name, source, expected_status in CONTROL_FLOW_SOURCES:
+    for case_name, source, expected_status, expected_stdout in CONTROL_FLOW_SOURCES:
         root = _project(tmp_path / case_name, source)
         project = load_project(root / "Merit.toml")
 
         _, _, reference_executable = build(project, root / "build" / "reference")
         reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
         assert reference.returncode == expected_status
-        assert reference.stdout == ""
+        assert reference.stdout == expected_stdout
 
         first = subprocess.run(
             [str(driver.executable)], input=source, text=True, capture_output=True, check=True

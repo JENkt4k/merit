@@ -3,7 +3,7 @@ module bootstrap_mir_functions
 // bootstrap-function-mir-v1 is the first whole-function replacement record
 // family. It deliberately covers one basic block only; CFG records are a later
 // additive contract. Kinds: 1 function, 2 source local, 3 temporary local,
-// 4 const, 5 binary, 6 copy-to-binding, 7 return.
+// 4 const, 5 binary, 6 copy-to-binding, 7 return, 8 print.
 pub struct MirFunctionRecord {
     kind: i32;
     start: i64;
@@ -103,6 +103,15 @@ pub fn function_mir_return(start: i64, length: i64, operand_local: i64, hir_node
     };
 }
 
+pub fn function_mir_print(start: i64, length: i64, instruction_id: i64, operand_local: i64, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: 8, start: start, length: length, id: instruction_id, result: -1,
+        left: operand_local, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: 0, type_code: 0, numeric_policy: 0, binding_id: -1,
+        mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
 // Stable structural validation. Semantic local availability is checked by the
 // canonical adapter because a flat stream interleaves local declarations with
 // instruction records while canonical MIR stores locals separately.
@@ -172,7 +181,14 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                                 if (node.left < -1) { return 30; }
                                 if (node.hir_node_id < 0) { return 31; }
                                 saw_return = 1;
-                            } else { return 32; }
+                            } else {
+                                if (node.kind == 8) {
+                                    if (node.id != next_instruction) { return 34; }
+                                    if (node.left < 0) { return 35; }
+                                    if (node.hir_node_id < 0) { return 36; }
+                                    next_instruction = checked_add(next_instruction, 1);
+                                } else { return 32; }
+                            }
                         }
                     }
                 }
