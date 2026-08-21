@@ -9,7 +9,7 @@ from lark.exceptions import UnexpectedInput
 
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
-from merit.compiler import parse
+from merit.compiler import CompileError, parse
 from merit.project.build import build
 from merit.project.loader import load_project
 from merit.project.replacement import ReplacementProjectError, build_replacement_project
@@ -74,9 +74,17 @@ CONTROL_FLOW_SOURCES = (
         "module main\nfn main()->i32 { while 2<1 { return 25; } return 26; }\n",
         26,
     ),
+    (
+        "branch-loop-assignment",
+        "module main\nfn main()->i32 { var x:i32=1; if 2<3 { x=x+4; } else { x=9; } while x<7 { x=x+1; } x+100; return x+20; }\n",
+        27,
+    ),
 )
 INVALID_CONTROL_FLOW_SOURCE = (
     "module main\nfn main()->i32 { if 1<2 { return 7; } else { return 8; }\n"
+)
+IMMUTABLE_ASSIGNMENT_SOURCE = (
+    "module main\nfn main()->i32 { let x:i32=1; x=2; return x; }\n"
 )
 
 
@@ -194,12 +202,35 @@ def test_concrete_native_driver_rejects_malformed_control_flow_deterministically
         [str(driver.executable)], input=INVALID_CONTROL_FLOW_SOURCE, text=True, capture_output=True
     )
     assert first.returncode != 0
+    assert first.stderr.startswith("replacement driver status ")
     assert (first.returncode, first.stdout, first.stderr) == (
         second.returncode,
         second.stdout,
         second.stderr,
     )
     assert first.stderr.startswith("replacement driver status ")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_rejects_immutable_assignment_deterministically(tmp_path: Path) -> None:
+    root = _project(tmp_path, IMMUTABLE_ASSIGNMENT_SOURCE)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(CompileError, match="cannot assign to immutable"):
+        build(project, root / "build" / "reference")
+
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=IMMUTABLE_ASSIGNMENT_SOURCE, text=True, capture_output=True
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=IMMUTABLE_ASSIGNMENT_SOURCE, text=True, capture_output=True
+    )
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode,
+        second.stdout,
+        second.stderr,
+    )
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

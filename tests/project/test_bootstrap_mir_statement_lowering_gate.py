@@ -146,7 +146,7 @@ def _parse(output: str):
 EXPECTED_EVENTS = [
     (1, 0, 0), (1, 1, 0), (1, 2, 0), (1, 3, 0),
     (1, 4, 0), (1, 5, 0), (10, 4, 0),
-    (1, 6, 0), (1, 7, 0), (20, 6, 0),
+    (19, 0, 0), (1, 6, 0), (1, 7, 0), (20, 6, 0),
     (1, 8, 0), (1, 9, 0), (2, 8, 0), (21, 0, 0),
     (11, 0, 0),
     (1, 10, 0), (1, 11, 0), (2, 10, 0), (12, 0, 0),
@@ -155,9 +155,9 @@ EXPECTED_EVENTS = [
 
 EXPECTED_PLACEMENTS = [
     (0, 0, 0), (0, 1, 1), (0, 2, 2), (0, 3, 3), (0, 4, 4), (0, 5, 5),
-    # The while-condition expression is evaluated in the enclosing if-then block;
-    # mir_event_while then creates the dedicated loop condition/body/exit blocks.
-    (1, 6, 0), (1, 7, 1),
+    # The while-condition expression is placed in the dedicated condition block
+    # so its instructions execute again on every loop backedge.
+    (4, 6, 0), (4, 7, 1),
     (5, 8, 0), (5, 9, 1),
     (2, 10, 0), (2, 11, 1),
     (3, 12, 0), (3, 13, 1),

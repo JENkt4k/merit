@@ -29,6 +29,7 @@ fn main() -> i32 {
         var events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 32);
         // Entry instruction, then nested while -> if/else, followed by match.
         vec_push<MirLowerEvent>(events, mir_event_place(0));
+        vec_push<MirLowerEvent>(events, mir_event_begin_while());
         vec_push<MirLowerEvent>(events, mir_event_while(0));
         vec_push<MirLowerEvent>(events, mir_event_place(1));
         vec_push<MirLowerEvent>(events, mir_event_if(1));

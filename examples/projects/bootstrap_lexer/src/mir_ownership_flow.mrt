@@ -34,10 +34,12 @@ pub fn ownership_event_move(source: i64, destination: i64) -> MirOwnershipEvent 
 pub fn ownership_event_drop(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 4, a: id, b: 0 }; }
 pub fn ownership_event_replace(id: i64, local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 5, a: id, b: local }; }
 pub fn ownership_event_replace_from_binding(target: i64, source: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 6, a: target, b: source }; }
+pub fn ownership_event_assign(target: i64, local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 7, a: target, b: local }; }
 pub fn ownership_event_return(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 10, a: local, b: 0 }; }
 pub fn ownership_event_if(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 20, a: local, b: 0 }; }
 pub fn ownership_event_else() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 21, a: 0, b: 0 }; }
 pub fn ownership_event_end_if() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 22, a: 0, b: 0 }; }
+pub fn ownership_event_begin_while() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 29, a: 0, b: 0 }; }
 pub fn ownership_event_while(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 30, a: local, b: 0 }; }
 pub fn ownership_event_end_while() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 31, a: 0, b: 0 }; }
 pub fn ownership_event_match(local: i64, arms: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 40, a: local, b: arms }; }
@@ -243,6 +245,16 @@ requires_caps [allocate]
             let id: i64 = emit_place(output, next); append_record(records, 2, id, event.a, event.b, s.local_id, 0, 1, 2);
             vec_set<i32>(states, si, 2); vec_set<i32>(states, di, 1);
         }
+        if (kind == 7) {
+            handled = 1; if (terminated != 0) { return 90; }
+            let target_index: i64 = find_binding(bindings, event.a);
+            if (target_index < 0) { return 91; }
+            let target: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, target_index);
+            if (target.mutable == 0) { return 92; }
+            if (target.owned != 0) { return 93; }
+            if (event.b < 0) { return 94; }
+            emit_place(output, next);
+        }
         if (kind == 4) {
             handled = 1; if (terminated != 0) { return 31; }
             let bi: i64 = find_binding(bindings, event.a); if (bi < 0) { return 32; }
@@ -282,10 +294,17 @@ requires_caps [allocate]
             let s: i32 = merge_if(bindings, states, snapshots, f, terminated); if (s == 61) { return 61; } if (s == 62) { return 62; }
             vec_push<MirLowerEvent>(output, mir_event_end_if()); if (s == 1) { terminated = 1; } else { terminated = 0; }
         }
-        if (kind == 30) {
-            handled = 1; if (terminated != 0) { return 50; } if (event.a < 0) { return 51; }
+        if (kind == 29) {
+            handled = 1; if (terminated != 0) { return 50; }
             let entry: i64 = snapshot(states, snapshots);
             vec_push<OwnershipFrame>(frames, OwnershipFrame { kind: 30, entry_start: entry, then_start: -1, then_terminated: 0, seen_else: 0, match_count: 0, match_started: 0 });
+            vec_push<MirLowerEvent>(output, mir_event_begin_while()); terminated = 0;
+        }
+        if (kind == 30) {
+            handled = 1; if (terminated != 0) { return 51; } if (event.a < 0) { return 54; }
+            if (vec_len<OwnershipFrame>(frames) == 0) { return 55; }
+            let frame: OwnershipFrame = vec_get<OwnershipFrame>(frames, checked_sub(vec_len<OwnershipFrame>(frames), 1));
+            if (frame.kind != 30) { return 56; }
             vec_push<MirLowerEvent>(output, mir_event_while(event.a)); terminated = 0;
         }
         if (kind == 31) {

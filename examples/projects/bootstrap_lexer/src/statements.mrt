@@ -182,6 +182,99 @@ fn stmt_find_top_level(borrow source: Buffer, borrow tokens: Vec<Token>, start_i
     return -1;
 }
 
+fn stmt_statement_boundary(
+    borrow source: Buffer, borrow tokens: Vec<Token>, index: i64
+) -> i32 {
+    if (index <= 0) { return 0; }
+    let previous: Token = vec_get<Token>(tokens, checked_sub(index, 1));
+    if (stmt_punctuation(source, previous, 123)) { return 1; }
+    if (stmt_punctuation(source, previous, 125)) { return 1; }
+    if (stmt_punctuation(source, previous, 59)) { return 1; }
+    return 0;
+}
+
+fn stmt_find_statement_semicolon(
+    borrow source: Buffer, borrow tokens: Vec<Token>, start_index: i64
+) -> i64 {
+    var index: i64 = start_index;
+    var parens: i64 = 0;
+    var brackets: i64 = 0;
+    var braces: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (parens == 0) {
+            if (brackets == 0) {
+                if (braces == 0) {
+                    if (stmt_punctuation(source, token, 59)) { return index; }
+                    if (stmt_punctuation(source, token, 125)) { return -1; }
+                }
+            }
+        }
+        if (stmt_punctuation(source, token, 40)) { parens = checked_add(parens, 1); }
+        if (stmt_punctuation(source, token, 41)) { if parens > 0 { parens = checked_sub(parens, 1); } }
+        if (stmt_punctuation(source, token, 91)) { brackets = checked_add(brackets, 1); }
+        if (stmt_punctuation(source, token, 93)) { if brackets > 0 { brackets = checked_sub(brackets, 1); } }
+        if (stmt_punctuation(source, token, 123)) { braces = checked_add(braces, 1); }
+        if (stmt_punctuation(source, token, 125)) { if braces > 0 { braces = checked_sub(braces, 1); } }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn stmt_assignment_equals(
+    borrow source: Buffer, borrow tokens: Vec<Token>, index: i64
+) -> i64 {
+    let equals: i64 = stmt_find_top_level(source, tokens, index, 61);
+    if (equals < 0) { return -1; }
+    if (equals > index) {
+        let previous: Token = vec_get<Token>(tokens, checked_sub(equals, 1));
+        if (stmt_punctuation(source, previous, 61)) { return -1; }
+        if (stmt_punctuation(source, previous, 33)) { return -1; }
+        if (stmt_punctuation(source, previous, 60)) { return -1; }
+        if (stmt_punctuation(source, previous, 62)) { return -1; }
+    }
+    let next_index: i64 = checked_add(equals, 1);
+    if (next_index < vec_len<Token>(tokens)) {
+        let next: Token = vec_get<Token>(tokens, next_index);
+        if (stmt_punctuation(source, next, 61)) { return -1; }
+        if (stmt_punctuation(source, next, 62)) { return -1; }
+    }
+    return equals;
+}
+
+// Additive statement identities beyond the original keyword-introducer slice:
+// 30 assignment, 31 expression statement. Classification is restricted to a
+// lexical statement boundary so identifiers inside declarations/expressions
+// cannot be reinterpreted as statements.
+fn stmt_classify(
+    borrow source: Buffer, borrow tokens: Vec<Token>, index: i64
+) -> i32 {
+    let candidate: Token = vec_get<Token>(tokens, index);
+    let keyword_kind: i32 = stmt_kind(source, candidate);
+    if (keyword_kind != 0) { return keyword_kind; }
+    // Punctuation may follow a semicolon or closing body, but cannot begin the
+    // currently supported assignment/expression-statement surface. In
+    // particular, do not reinterpret a closing brace as an expression whose
+    // span reaches the next statement's semicolon.
+    if (token_kind(candidate) == 4) { return 0; }
+    if (stmt_statement_boundary(source, tokens, index) == 0) { return 0; }
+    let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
+    if (semicolon <= index) { return 0; }
+    let opening_body: i64 = stmt_find_top_level(source, tokens, index, 123);
+    if (opening_body >= 0) {
+        if (opening_body < semicolon) { return 0; }
+    }
+    let colon: i64 = stmt_find_top_level(source, tokens, index, 58);
+    if (colon >= 0) {
+        if (colon < semicolon) { return 0; }
+    }
+    let equals: i64 = stmt_assignment_equals(source, tokens, index);
+    if (equals >= 0) {
+        if (equals < semicolon) { return 30; }
+    }
+    return 31;
+}
+
 fn stmt_push_span(borrow_mut operands: Vec<StatementOperand>, kind: i32, borrow tokens: Vec<Token>, first: i64, last_exclusive: i64) -> i32
 requires_caps [allocate]
 {
@@ -252,6 +345,19 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         if (close > second) { count = checked_add(count, 1); }
         return count;
     }
+    if kind == 30 {
+        let equals: i64 = stmt_assignment_equals(source, tokens, index);
+        if (equals <= index) { return 0; }
+        let value_start: i64 = checked_add(equals, 1);
+        let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, value_start);
+        if (semicolon <= value_start) { return 0; }
+        return 2;
+    }
+    if kind == 31 {
+        let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
+        if (semicolon > index) { return 1; }
+        return 0;
+    }
     let first: i64 = checked_add(index, 1);
     if first >= vec_len<Token>(tokens) { return 0; }
     var delimiter: i64 = 59;
@@ -272,7 +378,7 @@ requires_caps [allocate]
         let token: Token = vec_get<Token>(tokens, index);
         if stmt_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
         if depth > 0 {
-            let kind: i32 = stmt_kind(source, token);
+            let kind: i32 = stmt_classify(source, tokens, index);
             if kind != 0 {
                 let count: i64 = stmt_operand_count(source, tokens, index, kind);
                 let record: StatementRecord = StatementRecord {
@@ -363,6 +469,24 @@ requires_caps [allocate]
         }
         return 0;
     }
+    if kind == 30 {
+        let equals: i64 = stmt_assignment_equals(source, tokens, index);
+        if (equals <= index) { return 0; }
+        let pushed_target: i32 = stmt_push_span(operands, 3, tokens, index, equals);
+        let value_start: i64 = checked_add(equals, 1);
+        let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, value_start);
+        if (semicolon > value_start) {
+            let pushed_value: i32 = stmt_push_span(operands, 3, tokens, value_start, semicolon);
+        }
+        return 0;
+    }
+    if kind == 31 {
+        let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
+        if (semicolon > index) {
+            let pushed_statement: i32 = stmt_push_span(operands, 3, tokens, index, semicolon);
+        }
+        return 0;
+    }
     let first: i64 = checked_add(index, 1);
     if first >= vec_len<Token>(tokens) { return 0; }
     var delimiter: i64 = 59;
@@ -384,7 +508,7 @@ requires_caps [allocate]
         let token: Token = vec_get<Token>(tokens, index);
         if stmt_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
         if depth > 0 {
-            let kind: i32 = stmt_kind(source, token);
+            let kind: i32 = stmt_classify(source, tokens, index);
             if kind != 0 {
                 let emitted: i32 = stmt_emit_operands(source, tokens, index, kind, operands);
             }

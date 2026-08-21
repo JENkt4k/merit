@@ -21,6 +21,8 @@ fn resolved_pipeline_body_kind(kind: i32) -> i32 {
     if (kind == 22) { return 1; }
     if (kind == 25) { return 1; }
     if (kind == 26) { return 1; }
+    if (kind == 30) { return 1; }
+    if (kind == 31) { return 1; }
     return 0;
 }
 

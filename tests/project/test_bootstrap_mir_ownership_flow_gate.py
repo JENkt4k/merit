@@ -100,6 +100,7 @@ requires_caps [allocate]
     vec_push<MirOwnershipBinding>(bindings, ownership_binding(0, 0, 1, 1));
     var input: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 6);
     vec_push<MirOwnershipEvent>(input, ownership_event_activate(0));
+    vec_push<MirOwnershipEvent>(input, ownership_event_begin_while());
     vec_push<MirOwnershipEvent>(input, ownership_event_while(2));
     vec_push<MirOwnershipEvent>(input, ownership_event_drop(0));
     vec_push<MirOwnershipEvent>(input, ownership_event_end_while());
@@ -128,6 +129,7 @@ fn main() -> i32 {
         vec_push<MirOwnershipEvent>(input, ownership_event_if(9));
         vec_push<MirOwnershipEvent>(input, ownership_event_return(11));
         vec_push<MirOwnershipEvent>(input, ownership_event_else());
+        vec_push<MirOwnershipEvent>(input, ownership_event_begin_while());
         vec_push<MirOwnershipEvent>(input, ownership_event_while(10));
         vec_push<MirOwnershipEvent>(input, ownership_event_place(55));
         vec_push<MirOwnershipEvent>(input, ownership_event_end_while());
@@ -236,7 +238,7 @@ def _parse(output: str):
 EXPECTED_EVENTS = [
     (1, 0, 0), (1, 1, 0), (10, 9, 0),
     (1, 2, 0), (1, 3, 0), (2, 11, 0),
-    (11, 0, 0), (20, 10, 0), (1, 4, 0), (21, 0, 0),
+    (11, 0, 0), (19, 0, 0), (20, 10, 0), (1, 4, 0), (21, 0, 0),
     (1, 5, 0), (1, 6, 0), (1, 7, 0), (12, 0, 0),
     (1, 8, 0), (2, 13, 0),
 ]
