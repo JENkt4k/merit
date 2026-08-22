@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
+
+mcp = MCPServer("Merit Code Search")
 
 try:
     from .config import REPO_ROOT
@@ -13,11 +15,40 @@ except ImportError:
     from search import get_search_engine
 
 
-mcp = FastMCP("Merit Code Search")
+# mcp = FastMCP("Merit Code Search")
 
 
-def _serialize_results(results: list) -> list[dict[str, Any]]:
-    return [result.as_dict() for result in results]
+# def _serialize_results(results: list) -> list[dict[str, Any]]:
+#     return [result.as_dict() for result in results]
+def _serialize_results(
+    results: list,
+    max_results: int = 5,
+    max_result_chars: int = 6000,
+    max_total_chars: int = 18000,
+) -> list[dict[str, Any]]:
+    output = []
+    total_chars = 0
+
+    for result in results[:max_results]:
+        item = result.as_dict()
+
+        text = item.get("text", "")
+
+        remaining = max_total_chars - total_chars
+        if remaining <= 0:
+            break
+
+        allowed = min(max_result_chars, remaining)
+
+        if len(text) > allowed:
+            text = text[:allowed] + "\n...[truncated]"
+
+        item["text"] = text
+
+        output.append(item)
+        total_chars += len(text)
+
+    return output
 
 
 def _safe_repo_path(path: str) -> Path:

@@ -54,8 +54,13 @@ EXCLUDE_DIRS = {
 
 # Line-based chunking is intentionally simple for v1. AST-aware chunking can
 # replace this later without changing the MCP/search API.
-CHUNK_LINES = 120
-CHUNK_OVERLAP = 20
+CHUNK_LINES = 60 #120
+CHUNK_OVERLAP = 10 #20
 
 # Embedding several chunks at once is substantially faster than one-by-one.
 EMBED_BATCH_SIZE = 64
+
+MAX_SEARCH_RESULTS = 5
+MAX_RESULT_CHARS = 6000
+MAX_TOTAL_RESULT_CHARS = 18000
+MAX_FILE_CHARS = 24000
