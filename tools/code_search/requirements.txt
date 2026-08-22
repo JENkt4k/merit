@@ -1,0 +1,6 @@
+mcp[cli]>=2,<3
+lancedb>=0.20
+sentence-transformers>=3
+pyarrow>=15
+rank-bm25>=0.2.2
+watchdog>=4

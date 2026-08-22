@@ -14,3 +14,5 @@ dist/
 
 benchmarks/modernization/csharp/obj/
 .continue/
+# Local AI code index
+.merit-index/
