@@ -35,6 +35,7 @@ _CHECKED_HELPERS = {
 }
 _COPY_PAYLOAD_ENUM_PREFIX = "enum_copy_payload_"
 _I64_STRUCT_PREFIX = "struct_i64_"
+_DESTRUCTOR_I64_STRUCT_PREFIX = "struct_i64_destructor_"
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
 
@@ -49,11 +50,20 @@ def _copy_payload_enum_identity(type_: MirType) -> str | None:
 
 
 def _i64_struct_identity(type_: MirType) -> str | None:
-    if type_.arguments or not type_.name.startswith(_I64_STRUCT_PREFIX):
+    if type_.arguments or not type_.name.startswith(_I64_STRUCT_PREFIX) or type_.name.startswith(_DESTRUCTOR_I64_STRUCT_PREFIX):
         return None
     identity = type_.name[len(_I64_STRUCT_PREFIX):]
     if not identity or not identity.isdecimal():
         raise MirToCError(f"invalid single-i64 struct MIR type: {type_.name}")
+    return identity
+
+
+def _destructor_i64_struct_identity(type_: MirType) -> str | None:
+    if type_.arguments or not type_.name.startswith(_DESTRUCTOR_I64_STRUCT_PREFIX):
+        return None
+    identity = type_.name[len(_DESTRUCTOR_I64_STRUCT_PREFIX):]
+    if not identity or not identity.isdecimal():
+        raise MirToCError(f"invalid destructor single-i64 struct MIR type: {type_.name}")
     return identity
 
 
@@ -71,6 +81,9 @@ def _type(type_: MirType) -> str:
     struct_identity = _i64_struct_identity(type_)
     if struct_identity is not None:
         return f"merit_struct_i64_{struct_identity}"
+    destructor_identity = _destructor_i64_struct_identity(type_)
+    if destructor_identity is not None:
+        return f"merit_struct_i64_destructor_{destructor_identity}"
     if type_.arguments:
         raise MirToCError(f"generic MIR type is not supported by the core C emitter: {type_.name}")
     try:
@@ -134,6 +147,8 @@ def _instruction(
             raise MirToCError("aggregate construction requires a resolved result type")
         result_type = local_types[instruction.result]
         struct_identity = _i64_struct_identity(result_type)
+        if struct_identity is None:
+            struct_identity = _destructor_i64_struct_identity(result_type)
         if struct_identity is not None:
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("single-i64 struct construction requires field_0")
@@ -152,7 +167,7 @@ def _instruction(
         if local_types is None or instruction.operands[0] not in local_types:
             raise MirToCError("aggregate field load requires a resolved receiver type")
         receiver_type = local_types[instruction.operands[0]]
-        if _i64_struct_identity(receiver_type) is not None:
+        if _i64_struct_identity(receiver_type) is not None or _destructor_i64_struct_identity(receiver_type) is not None:
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("single-i64 struct field load requires field_0")
             return [f"{result} = {operands[0]}.field_0;"]
@@ -205,7 +220,10 @@ def _instruction(
         if len(operands) != 1:
             raise MirToCError("drop instruction requires one operand")
         if local_types is not None and instruction.operands[0] in local_types:
-            if _i64_struct_identity(local_types[instruction.operands[0]]) is not None:
+            operand_type = local_types[instruction.operands[0]]
+            if _destructor_i64_struct_identity(operand_type) is not None:
+                return [f'printf("%lld\\n", (long long){operands[0]}.field_0);']
+            if _i64_struct_identity(operand_type) is not None:
                 return [f"/* deterministic drop of non-copy aggregate {operands[0]} */"]
         return ["/* explicit no-op in scalar bootstrap C subset */"]
     if kind in {"deallocate", "nop"}:
@@ -253,6 +271,7 @@ def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | N
         initializer = "{0}" if (
             _copy_payload_enum_identity(local.type) is not None
             or _i64_struct_identity(local.type) is not None
+            or _destructor_i64_struct_identity(local.type) is not None
         ) else "0"
         lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
     lines.append(f"    goto b{function.entry_block};")
@@ -327,7 +346,10 @@ def emit_c_module(module: MirModule) -> str:
     ]
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
     needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
-    needs_print = any(instruction.kind == "print" for instruction in instructions)
+    needs_print = any(instruction.kind == "print" for instruction in instructions) or any(
+        _destructor_i64_struct_identity(local.type) is not None
+        for function in module.functions for local in function.locals
+    )
     checked_operators = {
         instruction.symbol
         for instruction in instructions
@@ -368,6 +390,20 @@ def emit_c_module(module: MirModule) -> str:
             *[
                 f"typedef struct {{ int64_t field_0; }} merit_struct_i64_{identity};"
                 for identity in struct_identities
+            ],
+            "",
+        ])
+    destructor_struct_identities = sorted({
+        identity
+        for function in module.functions
+        for local in function.locals
+        if (identity := _destructor_i64_struct_identity(local.type)) is not None
+    }, key=int)
+    if destructor_struct_identities:
+        prelude.extend([
+            *[
+                f"typedef struct {{ int64_t field_0; }} merit_struct_i64_destructor_{identity};"
+                for identity in destructor_struct_identities
             ],
             "",
         ])

@@ -38,6 +38,7 @@ _BODY_STRUCT_CONSTRUCT = 12
 _BODY_STRUCT_FIELD_LOAD = 13
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
 _I64_STRUCT_TYPE_CODE_BASE = 2000
+_DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE = 3000
 
 
 class NativeWholeFunctionMirError(ValueError):
@@ -84,6 +85,8 @@ def lower_native_whole_function_assembly(
         types.update(type_names)
 
     def resolved_type(code: int, label: str) -> MirType:
+        if code >= _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE:
+            return MirType(f"struct_i64_destructor_{code - _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE}")
         if code >= _I64_STRUCT_TYPE_CODE_BASE:
             return MirType(f"struct_i64_{code - _I64_STRUCT_TYPE_CODE_BASE}")
         if code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE:

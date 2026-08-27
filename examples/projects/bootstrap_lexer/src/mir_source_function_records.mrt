@@ -32,6 +32,7 @@ pub struct I64StructCatalogEntry {
     name_length: i64;
     field_start: i64;
     field_length: i64;
+    destructor_policy: i32;
 }
 
 pub fn i64_struct_catalog_id(borrow value: I64StructCatalogEntry) -> i32 { return value.struct_id; }
@@ -39,6 +40,7 @@ pub fn i64_struct_catalog_name_start(borrow value: I64StructCatalogEntry) -> i64
 pub fn i64_struct_catalog_name_length(borrow value: I64StructCatalogEntry) -> i64 { return value.name_length; }
 pub fn i64_struct_catalog_field_start(borrow value: I64StructCatalogEntry) -> i64 { return value.field_start; }
 pub fn i64_struct_catalog_field_length(borrow value: I64StructCatalogEntry) -> i64 { return value.field_length; }
+pub fn i64_struct_catalog_destructor_policy(borrow value: I64StructCatalogEntry) -> i32 { return value.destructor_policy; }
 pub fn i64_struct_catalog_invalid_status() -> i32 { return 1; }
 pub fn i64_struct_catalog_replace_unsupported_status() -> i32 { return 2; }
 pub fn i64_struct_catalog_driver_status(status: i32) -> i32 { return checked_add(970, status); }
@@ -102,6 +104,103 @@ fn sfr_is_struct(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
+fn sfr_token_byte_is(borrow source: Buffer, borrow token: Token, expected: i64) -> i32 {
+    if (token_kind(token) != 4) { return 0; }
+    if (token_length(token) != 1) { return 0; }
+    if (buffer_get(source, token_start(token)) != expected) { return 0; }
+    return 1;
+}
+
+// Canonical source-encoding bytes used by the destructor policy recognizer.
+// Merit character literals are not available at this bootstrap stage.
+fn sfr_ascii_c() -> i64 { return 99; }
+fn sfr_ascii_d() -> i64 { return 100; }
+fn sfr_ascii_e() -> i64 { return 101; }
+fn sfr_ascii_f() -> i64 { return 102; }
+fn sfr_ascii_i() -> i64 { return 105; }
+fn sfr_ascii_l() -> i64 { return 108; }
+fn sfr_ascii_n() -> i64 { return 110; }
+fn sfr_ascii_o() -> i64 { return 111; }
+fn sfr_ascii_p() -> i64 { return 112; }
+fn sfr_ascii_r() -> i64 { return 114; }
+fn sfr_ascii_s() -> i64 { return 115; }
+fn sfr_ascii_t() -> i64 { return 116; }
+fn sfr_ascii_u() -> i64 { return 117; }
+fn sfr_ascii_left_paren() -> i64 { return 40; }
+fn sfr_ascii_right_paren() -> i64 { return 41; }
+fn sfr_ascii_dot() -> i64 { return 46; }
+fn sfr_ascii_semicolon() -> i64 { return 59; }
+fn sfr_ascii_open_brace() -> i64 { return 123; }
+fn sfr_ascii_close_brace() -> i64 { return 125; }
+
+fn sfr_is_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != 1) { return 0; }
+    if (token_length(token) != 10) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != sfr_ascii_d()) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != sfr_ascii_e()) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != sfr_ascii_s()) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != sfr_ascii_t()) { return 0; }
+    if (buffer_get(source, checked_add(start, 4)) != sfr_ascii_r()) { return 0; }
+    if (buffer_get(source, checked_add(start, 5)) != sfr_ascii_u()) { return 0; }
+    if (buffer_get(source, checked_add(start, 6)) != sfr_ascii_c()) { return 0; }
+    if (buffer_get(source, checked_add(start, 7)) != sfr_ascii_t()) { return 0; }
+    if (buffer_get(source, checked_add(start, 8)) != sfr_ascii_o()) { return 0; }
+    if (buffer_get(source, checked_add(start, 9)) != sfr_ascii_r()) { return 0; }
+    return 1;
+}
+
+// Policy 1 is the first observable production destructor shape:
+// `destructor T { print(self.field); }`. Any destructor for the represented
+// struct outside that exact shape fails closed instead of being approximated.
+fn sfr_i64_struct_destructor_policy(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow name: Token, borrow field: Token
+) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (sfr_is_destructor(source, token) != 0) {
+            let end_index: i64 = checked_add(index, 10);
+            if (end_index >= vec_len<Token>(tokens)) { return -1; }
+            let target: Token = vec_get<Token>(tokens, checked_add(index, 1));
+            if (sfr_span_equal(source, token_start(target), token_length(target), token_start(name), token_length(name)) != 0) {
+                let open: Token = vec_get<Token>(tokens, checked_add(index, 2));
+                let print_token: Token = vec_get<Token>(tokens, checked_add(index, 3));
+                let left_paren: Token = vec_get<Token>(tokens, checked_add(index, 4));
+                let self_token: Token = vec_get<Token>(tokens, checked_add(index, 5));
+                let dot: Token = vec_get<Token>(tokens, checked_add(index, 6));
+                let selected_field: Token = vec_get<Token>(tokens, checked_add(index, 7));
+                let right_paren: Token = vec_get<Token>(tokens, checked_add(index, 8));
+                let semicolon: Token = vec_get<Token>(tokens, checked_add(index, 9));
+                let close: Token = vec_get<Token>(tokens, end_index);
+                if (sfr_token_byte_is(source, open, sfr_ascii_open_brace()) == 0) { return -1; }
+                if (token_kind(print_token) != 1) { return -1; }
+                if (token_length(print_token) != 5) { return -1; }
+                if (buffer_get(source, token_start(print_token)) != sfr_ascii_p()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(print_token), 1)) != sfr_ascii_r()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(print_token), 2)) != sfr_ascii_i()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(print_token), 3)) != sfr_ascii_n()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(print_token), 4)) != sfr_ascii_t()) { return -1; }
+                if (sfr_token_byte_is(source, left_paren, sfr_ascii_left_paren()) == 0) { return -1; }
+                if (token_kind(self_token) != 1) { return -1; }
+                if (token_length(self_token) != 4) { return -1; }
+                if (buffer_get(source, token_start(self_token)) != sfr_ascii_s()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(self_token), 1)) != sfr_ascii_e()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(self_token), 2)) != sfr_ascii_l()) { return -1; }
+                if (buffer_get(source, checked_add(token_start(self_token), 3)) != sfr_ascii_f()) { return -1; }
+                if (sfr_token_byte_is(source, dot, sfr_ascii_dot()) == 0) { return -1; }
+                if (sfr_span_equal(source, token_start(selected_field), token_length(selected_field), token_start(field), token_length(field)) == 0) { return -1; }
+                if (sfr_token_byte_is(source, right_paren, sfr_ascii_right_paren()) == 0) { return -1; }
+                if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return -1; }
+                if (sfr_token_byte_is(source, close, sfr_ascii_close_brace()) == 0) { return -1; }
+                return 1;
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
 // Derive canonical identities for exactly one-field `i64` structs. Other
 // shapes remain fail-closed until their complete field catalog is represented.
 pub fn derive_i64_struct_catalog(
@@ -148,10 +247,13 @@ requires_caps [allocate]
                 if (buffer_get(source, checked_add(token_start(field_type), 2)) != 52) { return i64_struct_catalog_invalid_status(); }
                 if (buffer_get(source, token_start(semicolon)) != 59) { return i64_struct_catalog_invalid_status(); }
                 if (buffer_get(source, token_start(close)) != 125) { return i64_struct_catalog_invalid_status(); }
+                let destructor_policy: i32 = sfr_i64_struct_destructor_policy(source, tokens, name, field);
+                if (destructor_policy < 0) { return i64_struct_catalog_invalid_status(); }
                 vec_push<I64StructCatalogEntry>(output, I64StructCatalogEntry {
                     struct_id: struct_id,
                     name_start: token_start(name), name_length: token_length(name),
-                    field_start: token_start(field), field_length: token_length(field)
+                    field_start: token_start(field), field_length: token_length(field),
+                    destructor_policy: destructor_policy
                 });
             struct_id = checked_add(struct_id, 1);
         }
@@ -167,6 +269,9 @@ fn sfr_i64_struct_type_code(
     while (index < vec_len<I64StructCatalogEntry>(catalog)) {
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
         if (sfr_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) {
+            if (entry.destructor_policy == 1) {
+                return function_mir_destructor_i64_struct_type_code(entry.struct_id);
+            }
             return function_mir_i64_struct_type_code(entry.struct_id);
         }
         index = checked_add(index, 1);
@@ -178,7 +283,10 @@ fn sfr_i64_struct_field_matches(
     borrow source: Buffer, borrow catalog: Vec<I64StructCatalogEntry>, type_code: i32,
     start: i64, length: i64
 ) -> i32 {
-    let struct_id: i32 = checked_sub(type_code, function_mir_i64_struct_type_code(0));
+    var struct_id: i32 = checked_sub(type_code, function_mir_i64_struct_type_code(0));
+    if (type_code >= function_mir_destructor_i64_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_destructor_i64_struct_type_code(0));
+    }
     var index: i64 = 0;
     while (index < vec_len<I64StructCatalogEntry>(catalog)) {
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
@@ -559,7 +667,7 @@ requires_caps [allocate]
             vec_push<MirFunctionRecord>(output, function_mir_struct_construct(
                 hir_start(hir), hir_length(hir), instruction_id,
                 vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(initializer)),
-                checked_sub(hir_type_code(hir), function_mir_i64_struct_type_code(0)),
+                hir_type_code(hir),
                 vec_get<i64>(canonical_ids, hir_index)
             ));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));

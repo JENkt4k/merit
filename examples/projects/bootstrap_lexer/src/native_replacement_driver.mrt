@@ -195,11 +195,22 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                     var struct_status: i32 = derive_i64_struct_catalog(source, tokens, structs);
                     if (struct_status == 0) {
                         if (vec_len<I64StructCatalogEntry>(structs) > 0) {
+                            var represented_replace: i32 = 1;
+                            var struct_entry: i64 = 0;
+                            while (struct_entry < vec_len<I64StructCatalogEntry>(structs)) {
+                                let catalog_entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(structs, struct_entry);
+                                if (i64_struct_catalog_destructor_policy(catalog_entry) != 1) {
+                                    represented_replace = 0;
+                                }
+                                struct_entry = checked_add(struct_entry, 1);
+                            }
                             var struct_statement: i64 = 0;
                             while (struct_statement < vec_len<StatementRecord>(statements)) {
                                 let candidate_statement: StatementRecord = vec_get<StatementRecord>(statements, struct_statement);
                                 if (statement_record_kind(candidate_statement) == 29) {
-                                    struct_status = i64_struct_catalog_replace_unsupported_status();
+                                    if (represented_replace == 0) {
+                                        struct_status = i64_struct_catalog_replace_unsupported_status();
+                                    }
                                 }
                                 struct_statement = checked_add(struct_statement, 1);
                             }
