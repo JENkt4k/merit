@@ -170,6 +170,25 @@ multi-field and recursively owned
 fields, observable destructors, replacement and branch-sensitive lifecycle
 variants, and double-destruction coverage are still open.
 
+PR #97 adds native recursive declared-type lifecycle classification across
+struct and enum payload dependencies, with deterministic rejection of direct
+self-payload cycles, unresolved payload types, and depth-bounded malformed
+graphs in `test_bootstrap_recursive_type_lifecycle_gate.py`. This is concrete
+native classification evidence, but it does not by itself close payload
+construction or recursive destruction through the production executable path.
+
+`test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecycle`
+adds the first observable destructor-backed production slice for an exactly
+one-field `i64` struct. Native declaration records distinguish the exact
+`print(self.field)` destructor policy from destructor-free structs; canonical
+MIR and deterministic C execute implicit cleanup, explicit `drop`, direct move,
+early-return cleanup, and `replace` with reference/replacement output parity.
+The move case proves no double destruction, repeated native bundles are
+byte-identical, and an unrepresented destructor body fails closed without a
+replacement manifest. M2 remains OPEN because general destructor bodies,
+owned fields and payload enums, multi-field aggregates, and branch/match
+lifecycle convergence remain incomplete.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.

@@ -90,6 +90,48 @@ SINGLE_I64_STRUCT_LIFECYCLE_SOURCES = (
         "fn main()->i64 { let first:Box=Box { value:7 }; let second:Box=first; return second.value; }\n",
     ),
 )
+DESTRUCTOR_I64_STRUCT_LIFECYCLE_SOURCES = (
+    (
+        "implicit-cleanup",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { let marker:Marker=Marker { number:7 }; return 0; }\n",
+        "7\n",
+    ),
+    (
+        "explicit-drop",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { let marker:Marker=Marker { number:11 }; drop(marker); return 0; }\n",
+        "11\n",
+    ),
+    (
+        "move-no-double-drop",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { let first:Marker=Marker { number:13 }; let second:Marker=first; drop(second); return 0; }\n",
+        "13\n",
+    ),
+    (
+        "early-return-cleanup",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { let marker:Marker=Marker { number:17 }; if 1<2 { return 0; } else { return 1; } }\n",
+        "17\n",
+    ),
+    (
+        "replace",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { var target:Marker=Marker { number:1 }; let replacement:Marker=Marker { number:19 }; replace(target,replacement); drop(target); return 0; }\n",
+        "1\n19\n",
+    ),
+)
+UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE = (
+    "module main\nstruct Marker { number:i64; }\n"
+    "destructor Marker { print(23); }\n"
+    "fn main()->i32 { let marker:Marker=Marker { number:23 }; return 0; }\n"
+)
 CONTROL_FLOW_SOURCES = (
     (
         "if-else",
@@ -494,3 +536,51 @@ def test_concrete_native_driver_executes_single_i64_struct_drop_and_move(tmp_pat
         replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
         assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
         assert (replacement.returncode, replacement.stdout) == (7, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source,expected_stdout", DESTRUCTOR_I64_STRUCT_LIFECYCLE_SOURCES)
+def test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecycle(
+    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    )
+    assert any(local.type.name.startswith("struct_i64_destructor_") for local in module.functions[0].locals)
+
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_unrepresented_i64_struct_destructor(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE,
+        text=True, capture_output=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE,
+        text=True, capture_output=True,
+    )
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+    root = _project(tmp_path, UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
