@@ -189,6 +189,23 @@ replacement manifest. M2 remains OPEN because general destructor bodies,
 owned fields and payload enums, multi-field aggregates, and branch/match
 lifecycle convergence remain incomplete.
 
+`test_concrete_native_driver_executes_owned_destructor_payload_enum_lifecycle`
+extends that observable destructor policy through an owned payload enum on the
+production replacement path. Native declaration discovery preserves nominal
+enum and payload-struct identity; match payloads enter the canonical ownership
+binding namespace; enum construction consumes its owned source; and match
+transfers ownership from the consumed subject into exactly one arm-local
+payload. Implicit enum cleanup, explicit `drop`, direct move, early-return
+cleanup, `replace`, and a two-variant match all reach MRBF preparation,
+canonical MIR, deterministic C, and reference/replacement executable parity.
+Destructor output proves replacement drops the old value during `replace` and
+does not double-destroy moved or matched payloads. Repeated native bundles are
+byte-identical. A mixed Copy/owned payload shape is rejected deterministically
+and publishes no replacement manifest. This closes the represented homogeneous
+single-payload/destructor-struct vertical slice; general recursive payload
+shapes, multi-field aggregates, and general destructor bodies keep the
+payload-bearing-enum and rich-owned-aggregate rows `PARTIAL` and M2 OPEN.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.

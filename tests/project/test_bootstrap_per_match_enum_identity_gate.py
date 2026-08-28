@@ -27,6 +27,7 @@ import bootstrap_lexer_core;
 import bootstrap_statements;
 import bootstrap_statement_structure;
 import bootstrap_statement_semantics;
+import bootstrap_mir_functions;
 
 capability allocate;
 
@@ -41,10 +42,10 @@ fn main()->i32 {{
         print(vec_len<MatchArmRecord>(arms));
 
         var catalog:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,4);
-        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:0,variant_id:0,ordinal:0,name_start:{a0},name_length:2,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:0,variant_id:1,ordinal:1,name_start:{a1},name_length:2,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:1,variant_id:2,ordinal:0,name_start:{b0},name_length:2,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:1,variant_id:3,ordinal:1,name_start:{b1},name_length:2,payload_owned:0}});
+        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:0,ordinal:0,name_start:{a0},name_length:2,payload_owned:0,payload_type_code:function_mir_unresolved_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:1,ordinal:1,name_start:{a1},name_length:2,payload_owned:0,payload_type_code:function_mir_unresolved_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:1,enum_name_start:0,enum_name_length:0,variant_id:2,ordinal:0,name_start:{b0},name_length:2,payload_owned:0,payload_type_code:function_mir_unresolved_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(catalog,EnumVariantCatalogEntry{{enum_id:1,enum_name_start:0,enum_name_length:0,variant_id:3,ordinal:1,name_start:{b1},name_length:2,payload_owned:0,payload_type_code:function_mir_unresolved_type_code()}});
 
         var identities:Vec<MatchEnumIdentity>=vec_new<MatchEnumIdentity>(allocator,2);
         if(vec_len<MatchArmRecord>(arms)==4){{

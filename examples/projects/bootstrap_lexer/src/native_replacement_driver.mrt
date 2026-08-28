@@ -272,6 +272,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 } else {
                                     var variant_scan: i64 = checked_add(enum_open_index, 1);
                                     var variant_ordinal: i64 = 0;
+                                    var enum_payload_type_code: i32 = function_mir_unresolved_type_code();
                                     var enum_end_found: i32 = 0;
                                     while (variant_scan < vec_len<Token>(tokens)) {
                                         if (enum_end_found == 0) {
@@ -300,6 +301,8 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                         let separator_token: Token = vec_get<Token>(tokens, separator_index);
                                                         var separator_kind: i32 = 0;
                                                         var effective_separator_index: i64 = separator_index;
+                                                        var variant_payload_owned: i32 = 0;
+                                                        var variant_payload_type_code: i32 = function_mir_unresolved_type_code();
                                                         if (token_kind(separator_token) == 4) {
                                                             if (token_length(separator_token) == 1) {
                                                                 let separator_byte: i64 = buffer_get(source, token_start(separator_token));
@@ -321,6 +324,16 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                 var copy_payload: i32 = source_type_span_is_copy_builtin(
                                                                     source, token_start(payload), token_length(payload)
                                                                 );
+                                                                if (copy_payload != 0) { variant_payload_type_code = function_mir_i64_type_code(); }
+                                                                if (copy_payload == 0) {
+                                                                    variant_payload_type_code = source_i64_struct_type_code(
+                                                                        source, structs, token_start(payload), token_length(payload)
+                                                                    );
+                                                                    if (variant_payload_type_code >= function_mir_destructor_i64_struct_type_code(0)) {
+                                                                        variant_payload_owned = 1;
+                                                                        copy_payload = 1;
+                                                                    }
+                                                                }
                                                                 if (token_kind(payload_close) != 4) { copy_payload = 0; }
                                                                 if (token_length(payload_close) != 1) { copy_payload = 0; }
                                                                 if (copy_payload != 0) {
@@ -339,6 +352,15 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                     }
                                                                     effective_separator_index = payload_separator_index;
                                                                     if (separator_kind == 0) { enum_status = 3; }
+                                                                }
+                                                            }
+                                                        }
+                                                        if (enum_status == 0) {
+                                                            if (variant_ordinal == 0) {
+                                                                enum_payload_type_code = variant_payload_type_code;
+                                                            } else {
+                                                                if (variant_payload_type_code != enum_payload_type_code) {
+                                                                    enum_status = 3;
                                                                 }
                                                             }
                                                         }
@@ -373,11 +395,14 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                 } else {
                                                                     vec_push<EnumVariantCatalogEntry>(variants, EnumVariantCatalogEntry {
                                                                         enum_id: enum_ordinal,
+                                                                        enum_name_start: token_start(enum_name),
+                                                                        enum_name_length: token_length(enum_name),
                                                                         variant_id: variant_identity,
                                                                         ordinal: variant_ordinal,
                                                                         name_start: token_start(variant_token),
                                                                         name_length: token_length(variant_token),
-                                                                        payload_owned: 0
+                                                                        payload_owned: variant_payload_owned,
+                                                                        payload_type_code: variant_payload_type_code
                                                                     });
                                                                     variant_identity = checked_add(variant_identity, 1);
                                                                     variant_ordinal = checked_add(variant_ordinal, 1);

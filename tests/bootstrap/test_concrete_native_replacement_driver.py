@@ -59,6 +59,49 @@ OWNED_PAYLOAD_ENUM_SOURCE = (
     "enum Choice { Data(Buffer) }\n"
     "fn main()->i32 { return 7; }\n"
 )
+OWNED_DESTRUCTOR_PAYLOAD_ENUM_SOURCES = (
+    (
+        "implicit-cleanup",
+        "fn main()->i32 { let marker:Marker=Marker { number:31 }; let value:Envelope=Full(marker); return 0; }\n",
+        "31\n",
+    ),
+    (
+        "explicit-drop",
+        "fn main()->i32 { let marker:Marker=Marker { number:37 }; let value:Envelope=Full(marker); drop(value); return 0; }\n",
+        "37\n",
+    ),
+    (
+        "move-no-double-drop",
+        "fn main()->i32 { let marker:Marker=Marker { number:41 }; let first:Envelope=Full(marker); let second:Envelope=first; drop(second); return 0; }\n",
+        "41\n",
+    ),
+    (
+        "early-return-cleanup",
+        "fn main()->i32 { let marker:Marker=Marker { number:43 }; let value:Envelope=Full(marker); if 1<2 { return 0; } else { return 1; } }\n",
+        "43\n",
+    ),
+    (
+        "replace",
+        "fn main()->i32 { let first_marker:Marker=Marker { number:47 }; var target:Envelope=Full(first_marker); let second_marker:Marker=Marker { number:53 }; let replacement:Envelope=Full(second_marker); replace(target,replacement); drop(target); return 0; }\n",
+        "47\n53\n",
+    ),
+    (
+        "match-payload-transfer",
+        "fn main()->i32 { let marker:Marker=Marker { number:59 }; let value:Envelope=Spare(marker); match (value) { Full(payload) => { drop(payload); } Spare(payload) => { drop(payload); } } return 0; }\n",
+        "59\n",
+    ),
+)
+OWNED_DESTRUCTOR_PAYLOAD_ENUM_PREFIX = (
+    "module main\nstruct Marker { number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "enum Envelope { Full(Marker), Spare(Marker) }\n"
+)
+UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE = (
+    "module main\nstruct Marker { number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "enum Envelope { Full(Marker), Count(i64) }\n"
+    "fn main()->i32 { return 0; }\n"
+)
 SINGLE_I64_STRUCT_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
@@ -458,6 +501,54 @@ def test_concrete_native_driver_fails_closed_for_owned_payload_enum_lifecycle(tm
     root = _project(tmp_path, OWNED_PAYLOAD_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
 
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_stdout", OWNED_DESTRUCTOR_PAYLOAD_ENUM_SOURCES)
+def test_concrete_native_driver_executes_owned_destructor_payload_enum_lifecycle(
+    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+) -> None:
+    source = OWNED_DESTRUCTOR_PAYLOAD_ENUM_PREFIX + body
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    )
+    assert any(local.type.name.startswith("enum_owned_payload_") for local in module.functions[0].locals)
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_mixed_owned_payload_enum_shape(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True,
+    )
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+    root = _project(tmp_path, UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE)
+    project = load_project(root / "Merit.toml")
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)
     assert not (root / ".merit" / "replacement-build-v1.json").exists()

@@ -38,6 +38,7 @@ import bootstrap_statements;
 import bootstrap_statement_structure;
 import bootstrap_statement_semantics;
 import bootstrap_mir_match_capability_flow;
+import bootstrap_mir_functions;
 
 capability allocate;
 
@@ -58,12 +59,12 @@ fn main() -> i32 {{
 
         var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 2);
         vec_push<EnumVariantCatalogEntry>(variants, EnumVariantCatalogEntry {{
-            enum_id: 7, variant_id: 70, ordinal: 0,
-            name_start: {left_decl}, name_length: 4, payload_owned: 1
+            enum_id: 7, enum_name_start: 0, enum_name_length: 0, variant_id: 70, ordinal: 0,
+            name_start: {left_decl}, name_length: 4, payload_owned: 1, payload_type_code: function_mir_i64_type_code()
         }});
         vec_push<EnumVariantCatalogEntry>(variants, EnumVariantCatalogEntry {{
-            enum_id: 7, variant_id: 71, ordinal: 1,
-            name_start: {right_decl}, name_length: 5, payload_owned: 1
+            enum_id: 7, enum_name_start: 0, enum_name_length: 0, variant_id: 71, ordinal: 1,
+            name_start: {right_decl}, name_length: 5, payload_owned: 1, payload_type_code: function_mir_i64_type_code()
         }});
         var capability_catalog: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 1);
         vec_push<CapabilityCatalogEntry>(capability_catalog, CapabilityCatalogEntry {{

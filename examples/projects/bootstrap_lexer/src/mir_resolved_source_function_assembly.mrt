@@ -35,7 +35,7 @@ pub fn lower_resolved_source_function_assembly(
     borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
-    borrow ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
     allocator: Allocator,
     borrow_mut body_records: Vec<MirFunctionRecord>,
     borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,

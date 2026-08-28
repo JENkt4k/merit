@@ -44,10 +44,10 @@ fn main()->i32 {{
         let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
 
         var variants:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,4);
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:0,variant_id:0,ordinal:0,name_start:{first},name_length:5,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:0,variant_id:1,ordinal:1,name_start:{second},name_length:6,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:1,variant_id:2,ordinal:0,name_start:{left},name_length:4,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:1,variant_id:3,ordinal:1,name_start:{right},name_length:5,payload_owned:0}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:0,ordinal:0,name_start:{first},name_length:5,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:1,ordinal:1,name_start:{second},name_length:6,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:1,enum_name_start:0,enum_name_length:0,variant_id:2,ordinal:0,name_start:{left},name_length:4,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:1,enum_name_start:0,enum_name_length:0,variant_id:3,ordinal:1,name_start:{right},name_length:5,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
         var capabilities:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
         var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
         vec_push<MirOwnershipBinding>(bindings,ownership_binding(0,0,0,0));

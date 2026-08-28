@@ -262,7 +262,7 @@ requires_caps [allocate]
     return 0;
 }
 
-fn sfr_i64_struct_type_code(
+pub fn source_i64_struct_type_code(
     borrow source: Buffer, borrow catalog: Vec<I64StructCatalogEntry>, start: i64, length: i64
 ) -> i32 {
     var index: i64 = 0;
@@ -349,9 +349,35 @@ fn sfr_declared_type_code(
     borrow struct_catalog: Vec<I64StructCatalogEntry>,
     borrow arms: Vec<ResolvedMatchArm>, start: i64, length: i64, payload_match_subject: i32
 ) -> i32 {
-    let struct_type_code: i32 = sfr_i64_struct_type_code(source, struct_catalog, start, length);
+    let struct_type_code: i32 = source_i64_struct_type_code(source, struct_catalog, start, length);
     if (struct_type_code != 0) { return struct_type_code; }
+    var catalog_group: i32 = -1;
+    var catalog_scan: i64 = 0;
+    while (catalog_scan < vec_len<EnumVariantCatalogEntry>(catalog)) {
+        let catalog_entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_scan);
+        if (catalog_entry.ordinal == 0) {
+            catalog_group = checked_add(catalog_group, 1);
+            if (sfr_span_equal(
+                source, start, length,
+                enum_variant_enum_name_start(catalog_entry), enum_variant_enum_name_length(catalog_entry)
+            ) != 0) {
+                if (catalog_entry.payload_owned != 0) {
+                    let payload_struct_id: i32 = checked_sub(
+                        enum_variant_payload_type_code(catalog_entry),
+                        function_mir_destructor_i64_struct_type_code(0)
+                    );
+                    return function_mir_owned_payload_enum_type_code(catalog_group, payload_struct_id);
+                }
+                if (enum_variant_payload_type_code(catalog_entry) != function_mir_unresolved_type_code()) {
+                    return function_mir_copy_payload_enum_type_code(catalog_group);
+                }
+                return 1;
+            }
+        }
+        catalog_scan = checked_add(catalog_scan, 1);
+    }
     var enum_code: i32 = 0;
+    var enum_identity: i64 = 0;
     var index: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
@@ -360,6 +386,20 @@ fn sfr_declared_type_code(
             if (name_index >= vec_len<Token>(tokens)) { return 0; }
             let name: Token = vec_get<Token>(tokens, name_index);
             if (sfr_span_equal(source, start, length, token_start(name), token_length(name)) != 0) {
+                var catalog_index: i64 = 0;
+                while (catalog_index < vec_len<EnumVariantCatalogEntry>(catalog)) {
+                    let catalog_entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
+                    if (catalog_entry.enum_id == enum_identity) {
+                        if (catalog_entry.payload_owned != 0) {
+                            let payload_struct_id: i32 = checked_sub(
+                                enum_variant_payload_type_code(catalog_entry),
+                                function_mir_destructor_i64_struct_type_code(0)
+                            );
+                            return function_mir_owned_payload_enum_type_code(enum_code, payload_struct_id);
+                        }
+                    }
+                    catalog_index = checked_add(catalog_index, 1);
+                }
                 var cursor: i64 = checked_add(name_index, 1);
                 var has_payload: i32 = 0;
                 var closed: i32 = 0;
@@ -380,6 +420,7 @@ fn sfr_declared_type_code(
                 return 1;
             }
             enum_code = checked_add(enum_code, 1);
+            enum_identity = checked_add(enum_identity, 1);
         }
         index = checked_add(index, 1);
     }
@@ -392,7 +433,16 @@ fn sfr_declared_type_code(
         while (index < vec_len<EnumVariantCatalogEntry>(catalog)) {
             let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, index);
             if (entry.ordinal == 0) { group_code = checked_add(group_code, 1); }
-            if (entry.enum_id == wanted_enum) { return function_mir_copy_payload_enum_type_code(group_code); }
+            if (entry.enum_id == wanted_enum) {
+                if (entry.payload_owned != 0) {
+                    let payload_struct_id: i32 = checked_sub(
+                        enum_variant_payload_type_code(entry),
+                        function_mir_destructor_i64_struct_type_code(0)
+                    );
+                    return function_mir_owned_payload_enum_type_code(group_code, payload_struct_id);
+                }
+                return function_mir_copy_payload_enum_type_code(group_code);
+            }
             index = checked_add(index, 1);
         }
     }
@@ -409,7 +459,11 @@ fn sfr_variant_code(
     while (index < vec_len<EnumVariantCatalogEntry>(catalog)) {
         let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, index);
         if (entry.ordinal == 0) { enum_code = checked_add(enum_code, 1); variant_code = 0; }
-        if (function_mir_copy_payload_enum_type_code(0) <= enum_type_code) {
+        if (function_mir_type_is_owned_payload_enum(enum_type_code) != 0) {
+            if (function_mir_owned_payload_enum_id(enum_type_code) == enum_code) {
+                if (sfr_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) { return variant_code; }
+            }
+        } else {
             if (function_mir_copy_payload_enum_type_code(enum_code) == enum_type_code) {
                 if (sfr_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) { return variant_code; }
             }
@@ -651,7 +705,7 @@ requires_caps [allocate]
         if (kind == 10) {
             let constructor_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(hir));
             if (hir_is_symbol_reference(constructor_symbol) == 0) { return sfr_invalid_struct_symbol_error(); }
-            if (sfr_i64_struct_type_code(
+            if (source_i64_struct_type_code(
                 source, struct_catalog, hir_start(constructor_symbol), hir_length(constructor_symbol)
             ) != hir_type_code(hir)) { return sfr_unresolved_struct_type_error(); }
             if (hir_right(hir) < 0) { return sfr_missing_struct_initializer_error(); }
@@ -775,7 +829,10 @@ requires_caps [allocate]
             let local_id: i64 = vec_len<i64>(binding_starts);
             vec_push<i64>(binding_starts, resolved_match_binding_start(arm));
             vec_push<i64>(binding_lengths, resolved_match_binding_length(arm));
-            vec_push<MirFunctionRecord>(records, function_mir_temporary(local_id, 1, local_id));
+            vec_push<MirFunctionRecord>(records, function_mir_source_local(
+                resolved_match_binding_start(arm), resolved_match_binding_length(arm),
+                local_id, resolved_match_payload_type_code(arm), local_id, 0
+            ));
         }
         arm_index = checked_add(arm_index, 1);
     }
@@ -804,7 +861,7 @@ requires_caps [allocate]
             if (source_local < 0) { return sfr_expression_failure_status(source_local); }
             var body_owns_transfer: i32 = 1;
             if (source_local < vec_len<i64>(binding_starts)) {
-                if (function_mir_type_is_i64_struct(sfr_local_type_code(records, destination)) != 0) {
+                if (function_mir_type_uses_ownership_transfer(sfr_local_type_code(records, destination)) != 0) {
                     body_owns_transfer = 0;
                 }
             }
@@ -833,7 +890,7 @@ requires_caps [allocate]
                 if (source_local < 0) { return sfr_expression_failure_status(source_local); }
                 var body_owns_transfer: i32 = 1;
                 if (source_local < vec_len<i64>(binding_starts)) {
-                    if (function_mir_type_is_i64_struct(sfr_local_type_code(records, destination)) != 0) {
+                    if (function_mir_type_uses_ownership_transfer(sfr_local_type_code(records, destination)) != 0) {
                         body_owns_transfer = 0;
                     }
                 }
