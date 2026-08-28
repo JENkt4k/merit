@@ -48,9 +48,9 @@ fn main()->i32 {{
         let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
 
         var variants:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,3);
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,variant_id:70,ordinal:0,name_start:{left},name_length:4,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,variant_id:71,ordinal:1,name_start:{right},name_length:5,payload_owned:0}});
-        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,variant_id:72,ordinal:2,name_start:{other},name_length:5,payload_owned:0}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,enum_name_start:0,enum_name_length:0,variant_id:70,ordinal:0,name_start:{left},name_length:4,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,enum_name_start:0,enum_name_length:0,variant_id:71,ordinal:1,name_start:{right},name_length:5,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
+        vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{{enum_id:7,enum_name_start:0,enum_name_length:0,variant_id:72,ordinal:2,name_start:{other},name_length:5,payload_owned:0,payload_type_code:function_mir_i64_type_code()}});
         var capabilities:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,1);
         vec_push<CapabilityCatalogEntry>(capabilities,CapabilityCatalogEntry{{capability_id:9,name_start:{clock},name_length:5}});
         var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,2);

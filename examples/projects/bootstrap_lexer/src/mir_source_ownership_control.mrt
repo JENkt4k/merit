@@ -84,6 +84,13 @@ requires_caps [allocate]
             if (ownership_binding_owned(source_semantic) == 0) { return 14; }
             vec_push<MirOwnershipEvent>(events, ownership_event_move(source_binding, destination));
         } else {
+            let consumed_binding: i64 = vec_get<i64>(direct, 1);
+            if (consumed_binding >= 0) {
+                let consumed_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, consumed_binding);
+                if (ownership_binding_owned(consumed_semantic) != 0) {
+                    vec_push<MirOwnershipEvent>(events, ownership_event_consume(consumed_binding));
+                }
+            }
             vec_push<MirOwnershipEvent>(events, ownership_event_place(0));
             vec_push<MirOwnershipEvent>(events, ownership_event_activate(destination));
         }
@@ -113,6 +120,7 @@ fn source_control_scope_exists(borrow scopes: Vec<ResolvedCapabilityScope>, stat
 
 fn source_control_emit_match_boundary(
     borrow source: Buffer, borrow token: Token, borrow arms: Vec<ResolvedMatchArm>,
+    borrow metadata: Vec<MirOwnershipBinding>, borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
     borrow_mut events: Vec<MirOwnershipEvent>
 ) -> i32
 requires_caps [allocate]
@@ -128,12 +136,38 @@ requires_caps [allocate]
                 vec_push<MirOwnershipEvent>(events, ownership_event_case(
                     resolved_match_variant_ordinal(arm), resolved_match_ordinal(arm)
                 ));
+                if (resolved_match_binding_start(arm) >= 0) {
+                    let binding_id: i64 = source_find_binding(
+                        source, starts, lengths,
+                        resolved_match_binding_start(arm), resolved_match_binding_length(arm)
+                    );
+                    if (binding_id < 0) { return 51; }
+                    if (binding_id < vec_len<MirOwnershipBinding>(metadata)) {
+                        let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, binding_id);
+                        if (ownership_binding_owned(binding) != 0) {
+                            vec_push<MirOwnershipEvent>(events, ownership_event_activate(binding_id));
+                        }
+                    }
+                }
             }
         }
         if (closing != 0) {
             if (token_start(token) == checked_add(
                 resolved_match_body_start(arm), resolved_match_body_length(arm)
             )) {
+                if (resolved_match_binding_start(arm) >= 0) {
+                    let binding_id: i64 = source_find_binding(
+                        source, starts, lengths,
+                        resolved_match_binding_start(arm), resolved_match_binding_length(arm)
+                    );
+                    if (binding_id < 0) { return 52; }
+                    if (binding_id < vec_len<MirOwnershipBinding>(metadata)) {
+                        let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, binding_id);
+                        if (ownership_binding_owned(binding) != 0) {
+                            vec_push<MirOwnershipEvent>(events, ownership_event_end_scope(binding_id));
+                        }
+                    }
+                }
                 let count: i64 = source_control_match_count(arms, resolved_match_statement(arm));
                 if (count <= 0) { return 50; }
                 if (resolved_match_ordinal(arm) == checked_sub(count, 1)) {
@@ -205,6 +239,13 @@ requires_caps [allocate]
             arm_index = checked_add(arm_index, 1);
         }
         if (has_payload != 0) {
+            let subject_binding: i64 = vec_get<i64>(direct, 0);
+            if (subject_binding >= 0) {
+                let subject: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, subject_binding);
+                if (ownership_binding_owned(subject) != 0) {
+                    vec_push<MirOwnershipEvent>(events, ownership_event_consume(subject_binding));
+                }
+            }
             match_local = vec_get<i64>(counters, 0);
             vec_set<i64>(counters, 0, checked_add(match_local, 1));
             vec_push<MirOwnershipEvent>(events, ownership_event_place(statement_index));
@@ -298,7 +339,7 @@ requires_caps [allocate]
                 statement_index = checked_add(statement_index, 1);
             }
         }
-        let boundary_status: i32 = source_control_emit_match_boundary(source, token, arms, events);
+        let boundary_status: i32 = source_control_emit_match_boundary(source, token, arms, metadata, starts, lengths, events);
         if (boundary_status != 0) { return boundary_status; }
         if (source_control_punctuation(source, token, 123)) {
             brace_depth = checked_add(brace_depth, 1);
@@ -362,7 +403,7 @@ requires_caps [allocate]
     }
     var frames: Vec<SourceOwnershipFrame> = vec_new<SourceOwnershipFrame>(allocator, 8);
     var counters: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(counters, vec_len<i64>(starts));
-    var direct: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(direct, -1);
+    var direct: Vec<i64> = vec_new<i64>(allocator, 2); vec_push<i64>(direct, -1); vec_push<i64>(direct, -1);
     var status: i32 = binding_status;
     if (status == 0) { status = source_control_worker(source,tokens,statements,operands,metadata,arms,scopes,allocator,starts,lengths,frames,counters,direct,events); }
     drop(direct); drop(counters); drop(frames); drop(lengths); drop(starts); return status;

@@ -251,7 +251,7 @@ pub fn lower_resolved_source_function_semantics(
     borrow struct_catalog: Vec<I64StructCatalogEntry>,
     match_enum_id: i64,
     borrow capability_catalog: Vec<CapabilityCatalogEntry>,
-    borrow ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
     allocator: Allocator,
     borrow_mut body_records: Vec<MirFunctionRecord>,
     borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
@@ -299,6 +299,22 @@ requires_caps [allocate]
             drop(match_identities);
             if (derived_status != 0) { return checked_add(500, derived_status); }
         }
+    }
+
+    var payload_arm_index: i64 = 0;
+    while (payload_arm_index < vec_len<ResolvedMatchArm>(resolved_arms)) {
+        let payload_arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(resolved_arms, payload_arm_index);
+        if (resolved_match_binding_start(payload_arm) >= 0) {
+            let binding_id: i64 = vec_len<MirOwnershipBinding>(ownership_metadata);
+            var payload_owned: i32 = 0;
+            if (function_mir_type_uses_ownership_transfer(resolved_match_payload_type_code(payload_arm)) != 0) {
+                payload_owned = 1;
+            }
+            vec_push<MirOwnershipBinding>(ownership_metadata, ownership_binding(
+                binding_id, binding_id, payload_owned, 0
+            ));
+        }
+        payload_arm_index = checked_add(payload_arm_index, 1);
     }
 
     var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);

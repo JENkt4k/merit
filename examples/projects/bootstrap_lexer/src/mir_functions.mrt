@@ -61,6 +61,8 @@ pub fn function_mir_is_struct_field_load(borrow node: MirFunctionRecord) -> i32 
 pub fn function_mir_copy_payload_enum_type_code(enum_id: i32) -> i32 {
     return checked_add(1000, enum_id);
 }
+pub fn function_mir_i64_type_code() -> i32 { return 1; }
+pub fn function_mir_unresolved_type_code() -> i32 { return 0; }
 
 // Single-i64 non-copy struct identities occupy a disjoint record-ABI range.
 // The explicit boundary is part of bootstrap-function-mir-v1.
@@ -72,9 +74,28 @@ pub fn function_mir_i64_struct_type_code(struct_id: i32) -> i32 {
 pub fn function_mir_destructor_i64_struct_type_code(struct_id: i32) -> i32 {
     return checked_add(3000, struct_id);
 }
-pub fn function_mir_type_is_i64_struct(type_code: i32) -> i32 {
-    if (type_code >= function_mir_i64_struct_type_code(0)) { return 1; }
+// Owned single-payload enum identities encode both the enum declaration and
+// its represented destructor-struct payload in one bootstrap record value.
+// The explicit base and stride are bootstrap-function-mir-v1 encoding data.
+pub fn function_mir_owned_payload_enum_type_code(enum_id: i32, payload_struct_id: i32) -> i32 {
+    return checked_add(4000, checked_add(checked_mul(enum_id, 1000), payload_struct_id));
+}
+pub fn function_mir_owned_payload_enum_id(type_code: i32) -> i32 {
+    return checked_sub(type_code, 4000) / 1000;
+}
+pub fn function_mir_type_is_owned_payload_enum(type_code: i32) -> i32 {
+    if (type_code >= function_mir_owned_payload_enum_type_code(0, 0)) { return 1; }
     return 0;
+}
+pub fn function_mir_type_is_i64_struct(type_code: i32) -> i32 {
+    if (type_code >= function_mir_i64_struct_type_code(0)) {
+        if (type_code < function_mir_owned_payload_enum_type_code(0, 0)) { return 1; }
+    }
+    return 0;
+}
+pub fn function_mir_type_uses_ownership_transfer(type_code: i32) -> i32 {
+    if (function_mir_type_is_i64_struct(type_code) != 0) { return 1; }
+    return function_mir_type_is_owned_payload_enum(type_code);
 }
 
 pub fn function_mir_header(start: i64, length: i64, symbol_start: i64, symbol_length: i64, result_type_code: i32) -> MirFunctionRecord {

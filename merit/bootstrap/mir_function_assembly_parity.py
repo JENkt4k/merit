@@ -39,6 +39,8 @@ _BODY_STRUCT_FIELD_LOAD = 13
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
 _I64_STRUCT_TYPE_CODE_BASE = 2000
 _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE = 3000
+_OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE = 4000
+_OWNED_PAYLOAD_ENUM_TYPE_CODE_STRIDE = 1000
 
 
 class NativeWholeFunctionMirError(ValueError):
@@ -85,6 +87,10 @@ def lower_native_whole_function_assembly(
         types.update(type_names)
 
     def resolved_type(code: int, label: str) -> MirType:
+        if code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE:
+            encoded = code - _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE
+            enum_id, payload_struct_id = divmod(encoded, _OWNED_PAYLOAD_ENUM_TYPE_CODE_STRIDE)
+            return MirType(f"enum_owned_payload_{enum_id}_{payload_struct_id}")
         if code >= _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE:
             return MirType(f"struct_i64_destructor_{code - _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE}")
         if code >= _I64_STRUCT_TYPE_CODE_BASE:
@@ -152,7 +158,8 @@ def lower_native_whole_function_assembly(
                     raise NativeWholeFunctionMirError(f"body enum construct {index} is invalid")
                 body_instructions[rid] = MirInstruction(
                     rid, "construct", result=result, operands=(left,), symbol=f"variant_{symbol_code}",
-                    span=instruction_span, ownership="value",
+                    span=instruction_span,
+                    ownership="owned" if type_code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE else "value",
                 )
             elif kind == _BODY_ENUM_TAG_LOAD:
                 if result < 0 or left < 0:

@@ -26,7 +26,7 @@ pub fn source_ownership_operand(
     return -1;
 }
 
-fn source_find_binding(
+pub fn source_find_binding(
     borrow source: Buffer, borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
     start: i64, length: i64
 ) -> i64 {
@@ -60,9 +60,9 @@ requires_caps [allocate]
         }
         index = checked_add(index, 1);
     }
-    if (vec_len<i64>(starts) != vec_len<MirOwnershipBinding>(metadata)) { return 2; }
+    if (vec_len<i64>(starts) > vec_len<MirOwnershipBinding>(metadata)) { return 2; }
     index = 0;
-    while (index < vec_len<MirOwnershipBinding>(metadata)) {
+    while (index < vec_len<i64>(starts)) {
         let semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, index);
         if (ownership_binding_id(semantic) != index) { return 3; }
         if (ownership_binding_local_id(semantic) != index) { return 4; }
@@ -93,6 +93,8 @@ pub fn source_expression(
 ) -> i64
 requires_caps [allocate]
 {
+    vec_set<i64>(direct_binding, 0, -1);
+    vec_set<i64>(direct_binding, 1, -1);
     let expressions: Vec<ExpressionNode> = parse_expression_span(
         source, tokens, expression_start, expression_length, allocator
     );
@@ -221,6 +223,7 @@ requires_caps [allocate]
 
     var result: i64 = status;
     var root_binding: i64 = -1;
+    var consumed_binding: i64 = -1;
     if (status == 0) {
         if (count == 0) { result = -5; }
         else {
@@ -233,9 +236,35 @@ requires_caps [allocate]
                 root_kind = hir_kind(root);
             }
             if (root_kind == 4) { root_binding = hir_binding_id(root); }
+            if (hir_is_call(root) != 0) {
+                if (hir_right(root) >= 0) {
+                    var payload: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(root));
+                    var payload_kind: i32 = hir_kind(payload);
+                    while (payload_kind == 3) {
+                        payload = vec_get<HirExpressionRecord>(hir_nodes, hir_left(payload));
+                        payload_kind = hir_kind(payload);
+                    }
+                    if (payload_kind == 4) { consumed_binding = hir_binding_id(payload); }
+                }
+            }
+            if (root_kind == 10) {
+                if (hir_right(root) >= 0) {
+                    let initializer: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(root));
+                    if (hir_kind(initializer) == 11) {
+                        var field_value: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(initializer));
+                        var field_kind: i32 = hir_kind(field_value);
+                        while (field_kind == 3) {
+                            field_value = vec_get<HirExpressionRecord>(hir_nodes, hir_left(field_value));
+                            field_kind = hir_kind(field_value);
+                        }
+                        if (field_kind == 4) { consumed_binding = hir_binding_id(field_value); }
+                    }
+                }
+            }
         }
     }
     vec_set<i64>(direct_binding, 0, root_binding);
+    vec_set<i64>(direct_binding, 1, consumed_binding);
     drop(local_ids); drop(hir_nodes); drop(ast_nodes); drop(expressions);
     return result;
 }
