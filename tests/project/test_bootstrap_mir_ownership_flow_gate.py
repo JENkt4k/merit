@@ -113,6 +113,23 @@ requires_caps [allocate]
     return status;
 }
 
+fn run_scope_exit(allocator: Allocator, consume: i32) -> i32
+requires_caps [allocate]
+{
+    var bindings: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 1);
+    vec_push<MirOwnershipBinding>(bindings, ownership_binding(0, 0, 1, 0));
+    var input: Vec<MirOwnershipEvent> = vec_new<MirOwnershipEvent>(allocator, 4);
+    vec_push<MirOwnershipEvent>(input, ownership_event_activate(0));
+    if (consume != 0) { vec_push<MirOwnershipEvent>(input, ownership_event_drop(0)); }
+    vec_push<MirOwnershipEvent>(input, ownership_event_end_scope(0));
+    vec_push<MirOwnershipEvent>(input, ownership_event_return(-1));
+    var output: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 8);
+    var records: Vec<MirOwnershipRecord> = vec_new<MirOwnershipRecord>(allocator, 8);
+    let status: i32 = lower_ownership_flow(input, bindings, allocator, output, records);
+    drop(records); drop(output); drop(input); drop(bindings);
+    return status;
+}
+
 fn main() -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
@@ -179,6 +196,8 @@ fn main() -> i32 {
         print(run_immutable_replace(allocator));
         print(run_branch_divergence(allocator));
         print(run_loop_divergence(allocator));
+        print(run_scope_exit(allocator, 0));
+        print(run_scope_exit(allocator, 1));
 
         drop(placements); drop(cfg); drop(records); drop(output); drop(input); drop(bindings);
     }
@@ -272,7 +291,7 @@ def test_native_ownership_flow_inserts_exact_cleanup_and_preserves_cfg(tmp_path)
     assert interpreted[2] == EXPECTED_RECORDS
     assert interpreted[3] == 0
     assert interpreted[4] == EXPECTED_PLACEMENTS
-    assert interpreted[5] == (34, 38, 61, 63)
+    assert interpreted[5] == (34, 38, 61, 63, 105, 0)
 
     _, _, executable = build(project, root / "native")
     native_output = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout

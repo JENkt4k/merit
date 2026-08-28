@@ -96,16 +96,17 @@ parser or isolated MIR fixtures do not close a production-path cell.
 | payload-free `match` integration | alpha.1 enum tests | concrete driver enum/typed-identity cases in `tests/bootstrap/test_concrete_native_replacement_driver.py` | production-proven for the payload-free subset; lifecycle work remains M2 |
 | capability regions | alpha.1 capability tests | concrete driver capability catalog/scope case in `tests/bootstrap/test_concrete_native_replacement_driver.py` | production-proven |
 | ordinary scalar assignment | alpha.1 assignment tests and reference interpreter/native compiler | `test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow` exercises assignments in both branch arms and a loop through native discovery, ownership/control flow, MRBF, canonical MIR, C, and executable parity; immutable assignment is rejected deterministically | production-proven for direct scalar bindings |
-| `replace` / owned path merges | alpha.1 ownership tests; `tests/project/test_bootstrap_owned_source_replace_merge_gate.py` | native source/ownership/CFG evidence does not yet reach concrete-driver executable behavior | partial: intermediate-only; closes with M2 lifecycle work |
+| `replace` / owned path merges | alpha.1 ownership tests; `tests/project/test_bootstrap_owned_source_replace_merge_gate.py` | concrete-driver destructor and recursive-owned lifecycle cases execute `replace` through MRBF, canonical MIR, C, and reference parity; path-sensitive owned control-flow cases cover convergent branch state | production-proven for represented owned aggregates; remaining storage/resource shapes close with M2/M3 |
 | pure expression statements | alpha.1 compiler tests and reference interpreter/native compiler | the concrete-driver assignment/control case evaluates `x+100;` through the production path; parser-oracle coverage distinguishes it from assignment and equality expressions | production-proven for the current scalar expression surface |
-| `print` / `drop` | alpha.1 compiler and acceptance tests; parser recognizes both forms | scalar `print` has a native source record, ownership/control-flow placement, canonical MIR instruction, deterministic C emission, and repeated loop-output parity in `test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow`; `drop` has intermediate ownership evidence only | scalar `print` production-proven; `drop` remains open and closes with M2 resource lifecycle |
+| `print` / `drop` | alpha.1 compiler and acceptance tests; parser recognizes both forms | scalar `print` and owned aggregate `drop` have native source records, ownership/control-flow placement, canonical MIR, deterministic C, and reference parity in the concrete-driver control-flow and lifecycle cases | production-proven for scalar print and represented owned aggregates; remaining resource shapes close with M2/M3 |
 
 This audit deliberately leaves the aggregate `complete branching/control flow`
 and `loops` rows OPEN: scalar accepted/rejected cases now traverse the complete
 production path, but resource-effect statements and replacement-mode acceptance
-coverage remain outstanding. The remaining M1 `drop`/`replace` boundary is owned
-by M2 because closing it requires the recursive lifecycle and destructor model,
-not a scalar no-op compatibility seam.
+coverage remain outstanding. The represented M1 `drop`/`replace` boundary now
+has recursive lifecycle and destructor-backed production evidence. Unrepresented
+resource/storage shapes remain owned by M2/M3 rather than a scalar compatibility
+seam.
 
 ## Large remaining milestones
 
@@ -221,6 +222,25 @@ and the descriptor validation tests reject cyclic, unresolved, duplicate,
 noncanonical, and unsupported schemas. This closes the acyclic single-field
 recursive-owned slice; multi-field aggregates, general destructor bodies, and
 the remaining alpha.1 resource shapes keep both aggregate rows and M2 OPEN.
+
+`test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_flow`
+drives represented recursive owned values through scoped `if`, `while`, and
+match-arm bodies, convergent drops in both branch arms, scoped replacement
+transfer, and drop-versus-early-return cleanup. Capability regions nested in a
+branch preserve the enclosing ownership scope, while function-owned values
+declared inside a capability region still receive function-epilogue cleanup.
+Each accepted case compares reference and replacement executables and repeats
+the native bundle to prove deterministic artifacts. Native source lowering now
+emits explicit owned-binding scope exits in reverse declaration order; the
+ownership state machine requires scoped values and owned match payloads to have
+been moved or dropped, while terminated paths retain valid return cleanup. The
+adjacent fail-closed test proves deterministic rejection and no manifest
+publication for live scoped owners in branches, loops, and match arms;
+branch-divergent reuse; double drop; and an unconsumed owned match payload, with
+matching alpha.1 reference rejection categories. This closes path-sensitive
+lifecycle behavior for the represented recursive-owned slice; general
+destructor bodies, multi-field/resource aggregates, and acceptance migration
+keep M2 OPEN.
 
 ### M3 — Exact numerics and aggregate closure
 
