@@ -173,6 +173,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
 
                 var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
                 var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
+                var type_descriptors: Vec<MirTypeDescriptor> = vec_new<MirTypeDescriptor>(allocator, 8);
                 var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
                 var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
                 var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
@@ -200,7 +201,14 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             while (struct_entry < vec_len<I64StructCatalogEntry>(structs)) {
                                 let catalog_entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(structs, struct_entry);
                                 if (i64_struct_catalog_destructor_policy(catalog_entry) != 1) {
-                                    represented_replace = 0;
+                                    let represented_type: i32 = source_i64_struct_type_code(
+                                        source, structs,
+                                        i64_struct_catalog_name_start(catalog_entry),
+                                        i64_struct_catalog_name_length(catalog_entry)
+                                    );
+                                    if (represented_type < function_mir_owned_field_struct_type_code(0)) {
+                                        represented_replace = 0;
+                                    }
                                 }
                                 struct_entry = checked_add(struct_entry, 1);
                             }
@@ -567,6 +575,12 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         if (capability_status != 0) {
                             function_status = checked_add(950, capability_status);
                         } else {
+                            let descriptor_status: i32 = derive_source_type_descriptors(
+                                source, structs, variants, type_descriptors
+                            );
+                            if (descriptor_status != 0) {
+                                function_status = source_type_descriptor_driver_status(descriptor_status);
+                            } else {
                             let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
                                 source, function_tokens, statements, operands,
                                 variants, structs, resolved_match_enum_id, capabilities, allocator,
@@ -579,13 +593,14 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             } else {
                                 let item_status: i32 = print_resolved_source_function_bundle_item(
                                     body, contracts, contract_locals, sources, ownership,
-                                    ownership_records, cfg, placements, required
+                                    ownership_records, cfg, placements, required, type_descriptors
                                 );
                                 if (item_status != 0) {
                                     function_status = checked_add(3000, item_status);
                                 } else {
                                     emitted_functions = checked_add(emitted_functions, 1);
                                 }
+                            }
                             }
                         }
                     }
@@ -611,15 +626,14 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 drop(body);
                 drop(ownership);
                 drop(capabilities);
+                drop(type_descriptors);
                 drop(structs);
                 drop(variants);
                 drop(operands);
                 drop(statements);
                 drop(function_tokens);
 
-                if (function_status != 0) {
-                    return function_status;
-                }
+                if (function_status != 0) { return function_status; }
             }
         }
         if (emitted_functions != function_count) { return 906; }

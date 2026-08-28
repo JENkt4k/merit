@@ -115,9 +115,10 @@ fn main()->i32 {{
     i=checked_add(i,1);
   }}
   print(switches); print(returns); print(unreachable);
-  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required);
+  var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors);
 
-  drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);
+  drop(type_descriptors); drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);
   drop(ownership_records); drop(effects); drop(ownership_events); drop(scopes); drop(arms);
   drop(contracts); drop(metadata); drop(body); drop(bindings); drop(capabilities); drop(variants);
   drop(operands); drop(statements); drop(tokens); drop(source);

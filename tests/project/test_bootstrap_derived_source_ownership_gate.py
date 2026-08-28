@@ -72,6 +72,7 @@ fn main()->i32 {{
   var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,16);
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,64);
   var structs:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
+  var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
 
   print(lower_resolved_source_function_assembly_from_source(
     source,tokens,statements,operands,variants,structs,-1,capabilities,allocator,
@@ -85,12 +86,12 @@ fn main()->i32 {{
   print(ownership_binding_owned(first)); print(ownership_binding_mutable(first));
   print(ownership_binding_id(second)); print(ownership_binding_local_id(second));
   print(ownership_binding_owned(second)); print(ownership_binding_mutable(second));
-  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required);
+  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors);
 
   drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);
   drop(ownership_records); drop(effects); drop(ownership_events); drop(scopes); drop(arms);
   drop(contracts); drop(metadata); drop(body); drop(bindings);
-  drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
+  drop(type_descriptors); drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
  }}
  return 0;
 }}

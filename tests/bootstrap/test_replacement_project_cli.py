@@ -44,7 +44,7 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     # Structurally valid empty-section snapshot; semantic materialization is a
     # later boundary. This proves project loading transports native records
     # rather than deriving semantic records from Program.
-    values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 9
+    values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 10
     (artifact_dir / "main.snapshot").write_text("\n".join(map(str, values)) + "\n", encoding="utf-8")
     (artifact_dir / REPLACEMENT_MANIFEST).write_text(
         json.dumps({

@@ -64,6 +64,7 @@ pub fn diagnostic_length(borrow diagnostic: ParseDiagnostic) -> i64 {
 }
 
 pub fn expression_kind(borrow node: ExpressionNode) -> i32 { return node.kind; }
+pub fn ast_field_initializer_kind() -> i32 { return 38; }
 pub fn expression_start(borrow node: ExpressionNode) -> i64 { return node.start; }
 pub fn expression_length(borrow node: ExpressionNode) -> i64 { return node.length; }
 pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }

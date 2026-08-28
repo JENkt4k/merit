@@ -102,6 +102,50 @@ UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE = (
     "enum Envelope { Full(Marker), Count(i64) }\n"
     "fn main()->i32 { return 0; }\n"
 )
+RECURSIVE_OWNED_AGGREGATE_PREFIX = (
+    "module main\n"
+    "struct Marker { number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "struct Wrapper { marker:Marker; }\n"
+    "struct Outer { wrapper:Wrapper; }\n"
+    "enum Parcel { Wrapped(Outer), Spare(Outer) }\n"
+)
+RECURSIVE_OWNED_AGGREGATE_SOURCES = (
+    (
+        "implicit-cleanup",
+        "fn main()->i32 { let marker:Marker=Marker { number:101 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; return 0; }\n",
+        "101\n",
+    ),
+    (
+        "explicit-drop",
+        "fn main()->i32 { let marker:Marker=Marker { number:103 }; let wrapper:Wrapper=Wrapper { marker:marker }; drop(wrapper); return 0; }\n",
+        "103\n",
+    ),
+    (
+        "move-no-double-drop",
+        "fn main()->i32 { let marker:Marker=Marker { number:107 }; let first:Wrapper=Wrapper { marker:marker }; let second:Wrapper=first; drop(second); return 0; }\n",
+        "107\n",
+    ),
+    (
+        "early-return-cleanup",
+        "fn main()->i32 { let marker:Marker=Marker { number:109 }; let wrapper:Wrapper=Wrapper { marker:marker }; if 1<2 { return 0; } else { return 1; } }\n",
+        "109\n",
+    ),
+    (
+        "replace",
+        "fn main()->i32 { let first_marker:Marker=Marker { number:113 }; var target:Wrapper=Wrapper { marker:first_marker }; let second_marker:Marker=Marker { number:127 }; let replacement:Wrapper=Wrapper { marker:second_marker }; replace(target,replacement); drop(target); return 0; }\n",
+        "113\n127\n",
+    ),
+    (
+        "enum-match-transfer",
+        "fn main()->i32 { let marker:Marker=Marker { number:131 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; let parcel:Parcel=Spare(outer); match (parcel) { Wrapped(value) => { drop(value); } Spare(value) => { drop(value); } } return 0; }\n",
+        "131\n",
+    ),
+)
+RECURSIVE_OWNED_AGGREGATE_CYCLE = (
+    "module main\nstruct First { second:Second; }\nstruct Second { first:First; }\n"
+    "fn main()->i32 { return 0; }\n"
+)
 SINGLE_I64_STRUCT_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
@@ -548,6 +592,48 @@ def test_concrete_native_driver_fails_closed_for_mixed_owned_payload_enum_shape(
     assert first.returncode != 0
     assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
     root = _project(tmp_path, UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_stdout", RECURSIVE_OWNED_AGGREGATE_SOURCES)
+def test_concrete_native_driver_executes_recursive_owned_aggregate_lifecycle(
+    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+) -> None:
+    source = RECURSIVE_OWNED_AGGREGATE_PREFIX + body
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert bundle.functions[0].type_descriptors
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    )
+    assert any(local.type.name.startswith("struct_owned_field_") for local in module.functions[0].locals)
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=RECURSIVE_OWNED_AGGREGATE_CYCLE, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=RECURSIVE_OWNED_AGGREGATE_CYCLE, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+    root = _project(tmp_path, RECURSIVE_OWNED_AGGREGATE_CYCLE)
     project = load_project(root / "Merit.toml")
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)
