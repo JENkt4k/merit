@@ -22,9 +22,10 @@ pub fn resolved_source_function_snapshot_value_count(
     borrow ownership_records: Vec<MirOwnershipRecord>,
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
-    borrow capabilities: Vec<i64>
+    borrow capabilities: Vec<i64>,
+    borrow type_descriptors: Vec<MirTypeDescriptor>
 ) -> i64 {
-    var count: i64 = 11; // magic + version + nine section counts
+    var count: i64 = 12; // magic + version + ten section counts
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(body), 16));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractRecord>(contracts), 12));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractLocal>(contract_locals), 5));
@@ -34,6 +35,7 @@ pub fn resolved_source_function_snapshot_value_count(
     count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(cfg), 7));
     count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(placements), 3));
     count = checked_add(count, vec_len<i64>(capabilities));
+    count = checked_add(count, checked_mul(vec_len<MirTypeDescriptor>(type_descriptors), 5));
     return count;
 }
 
@@ -54,16 +56,17 @@ pub fn print_resolved_source_function_bundle_item(
     borrow ownership_records: Vec<MirOwnershipRecord>,
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
-    borrow capabilities: Vec<i64>
+    borrow capabilities: Vec<i64>,
+    borrow type_descriptors: Vec<MirTypeDescriptor>
 ) -> i32 {
     let value_count: i64 = resolved_source_function_snapshot_value_count(
         body, contracts, contract_locals, sources, ownership_bindings,
-        ownership_records, cfg, placements, capabilities
+        ownership_records, cfg, placements, capabilities, type_descriptors
     );
-    if (value_count < 11) { return 1; }
+    if (value_count < 12) { return 1; }
     print(value_count);
     return print_resolved_source_function_snapshot(
         body, contracts, contract_locals, sources, ownership_bindings,
-        ownership_records, cfg, placements, capabilities
+        ownership_records, cfg, placements, capabilities, type_descriptors
     );
 }

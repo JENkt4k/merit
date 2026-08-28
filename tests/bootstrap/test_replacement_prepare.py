@@ -33,7 +33,7 @@ def _project(tmp_path: Path) -> Path:
 
 
 def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> Path:
-    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * 9))
+    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * 10))
     values = encode_resolved_source_function_bundle(snapshot for _ in range(function_count))
     path = tmp_path / "replacement-driver"
     path.write_text(
@@ -111,7 +111,7 @@ def test_prepare_replacement_rejects_unframed_single_snapshot(tmp_path: Path) ->
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
     path = tmp_path / "legacy-driver"
-    snapshot = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 9
+    snapshot = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 10
     path.write_text(
         f"#!{sys.executable}\n"
         "import sys\nsys.stdin.read()\n"

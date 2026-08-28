@@ -7,10 +7,10 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 
-// bootstrap-resolved-source-function-snapshot-v1.
+// bootstrap-resolved-source-function-snapshot-v2.
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
-// then nine count-prefixed fixed-width sections matching the canonical adapter.
+// then ten count-prefixed fixed-width sections matching the canonical adapter.
 pub fn print_resolved_source_function_snapshot(
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
@@ -20,11 +20,12 @@ pub fn print_resolved_source_function_snapshot(
     borrow ownership_records: Vec<MirOwnershipRecord>,
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
-    borrow capabilities: Vec<i64>
+    borrow capabilities: Vec<i64>,
+    borrow type_descriptors: Vec<MirTypeDescriptor>
 ) -> i32
 {
     print(1297240902); // MRSF
-    print(1);
+    print(2);
 
     print(vec_len<MirFunctionRecord>(body));
     var i: i64 = 0;
@@ -100,5 +101,14 @@ pub fn print_resolved_source_function_snapshot(
 
     print(vec_len<i64>(capabilities)); i = 0;
     while (i < vec_len<i64>(capabilities)) { print(vec_get<i64>(capabilities, i)); i = checked_add(i, 1); }
+
+    print(vec_len<MirTypeDescriptor>(type_descriptors)); i = 0;
+    while (i < vec_len<MirTypeDescriptor>(type_descriptors)) {
+        let r: MirTypeDescriptor = vec_get<MirTypeDescriptor>(type_descriptors, i);
+        print(function_mir_type_descriptor_code(r)); print(function_mir_type_descriptor_kind(r));
+        print(function_mir_type_descriptor_identity(r)); print(function_mir_type_descriptor_child(r));
+        print(function_mir_type_descriptor_destructor_policy(r));
+        i = checked_add(i, 1);
+    }
     return 0;
 }

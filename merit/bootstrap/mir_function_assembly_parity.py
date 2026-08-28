@@ -38,6 +38,7 @@ _BODY_STRUCT_CONSTRUCT = 12
 _BODY_STRUCT_FIELD_LOAD = 13
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
 _I64_STRUCT_TYPE_CODE_BASE = 2000
+_OWNED_FIELD_STRUCT_TYPE_CODE_BASE = 1_000_000
 _DESTRUCTOR_I64_STRUCT_TYPE_CODE_BASE = 3000
 _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE = 4000
 _OWNED_PAYLOAD_ENUM_TYPE_CODE_STRIDE = 1000
@@ -87,7 +88,9 @@ def lower_native_whole_function_assembly(
         types.update(type_names)
 
     def resolved_type(code: int, label: str) -> MirType:
-        if code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE:
+        if code in types:
+            return types[code]
+        if _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE <= code < _OWNED_FIELD_STRUCT_TYPE_CODE_BASE:
             encoded = code - _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE
             enum_id, payload_struct_id = divmod(encoded, _OWNED_PAYLOAD_ENUM_TYPE_CODE_STRIDE)
             return MirType(f"enum_owned_payload_{enum_id}_{payload_struct_id}")
@@ -97,10 +100,7 @@ def lower_native_whole_function_assembly(
             return MirType(f"struct_i64_{code - _I64_STRUCT_TYPE_CODE_BASE}")
         if code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE:
             return MirType(f"enum_copy_payload_{code - _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE}")
-        try:
-            return types[code]
-        except KeyError as error:
-            raise NativeWholeFunctionMirError(f"{label} has unresolved type code {code}") from error
+        raise NativeWholeFunctionMirError(f"{label} has unresolved type code {code}")
 
     def span(start: int, length: int, label: str) -> SourceSpan:
         if start < 0 or length < 0 or start + length > len(source):

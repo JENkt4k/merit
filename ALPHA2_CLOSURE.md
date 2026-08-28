@@ -206,6 +206,22 @@ single-payload/destructor-struct vertical slice; general recursive payload
 shapes, multi-field aggregates, and general destructor bodies keep the
 payload-bearing-enum and rich-owned-aggregate rows `PARTIAL` and M2 OPEN.
 
+`test_concrete_native_driver_executes_recursive_owned_aggregate_lifecycle`
+extends the production path through acyclic single-field owned aggregate
+nesting and an owned enum whose payload is such an aggregate. Native declaration
+resolution emits canonical type descriptors into the resolved snapshot; the
+Python handoff only validates and materializes those already-resolved schemas.
+Implicit cleanup, explicit `drop`, direct move, early-return cleanup, `replace`,
+and match-payload transfer all reach canonical MIR, deterministic C, and
+reference/replacement executable parity. Observable nested destructor output
+proves recursive cleanup and no double destruction after moves and match
+transfer, while repeated native bundles prove deterministic transport.
+`test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle`
+and the descriptor validation tests reject cyclic, unresolved, duplicate,
+noncanonical, and unsupported schemas. This closes the acyclic single-field
+recursive-owned slice; multi-field aggregates, general destructor bodies, and
+the remaining alpha.1 resource shapes keep both aggregate rows and M2 OPEN.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.
