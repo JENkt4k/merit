@@ -146,6 +146,97 @@ RECURSIVE_OWNED_AGGREGATE_CYCLE = (
     "module main\nstruct First { second:Second; }\nstruct Second { first:First; }\n"
     "fn main()->i32 { return 0; }\n"
 )
+
+PATH_SENSITIVE_OWNED_SOURCES = (
+    (
+        "scoped-if-explicit-drop",
+        "fn main()->i32 { if 1<2 { let marker:Marker=Marker { number:137 }; let scoped:Wrapper=Wrapper { marker:marker }; drop(scoped); } else {} return 0; }\n",
+        "137\n",
+    ),
+    (
+        "scoped-while-explicit-drop",
+        "fn main()->i32 { var flag:i64=0; while flag<1 { let marker:Marker=Marker { number:139 }; let scoped:Wrapper=Wrapper { marker:marker }; drop(scoped); flag=flag+1; } return 0; }\n",
+        "139\n",
+    ),
+    (
+        "outer-drop-converges",
+        "fn main()->i32 { let marker:Marker=Marker { number:141 }; let owned:Wrapper=Wrapper { marker:marker }; if 1<2 { drop(owned); } else { drop(owned); } return 0; }\n",
+        "141\n",
+    ),
+    (
+        "drop-or-early-return",
+        "fn main()->i32 { let marker:Marker=Marker { number:149 }; let owned:Wrapper=Wrapper { marker:marker }; if 1<2 { drop(owned); } else { return 0; } return 0; }\n",
+        "149\n",
+    ),
+    (
+        "scoped-replacement-transfer",
+        "fn main()->i32 { let first:Marker=Marker { number:179 }; var target:Wrapper=Wrapper { marker:first }; if 1<2 { let second:Marker=Marker { number:181 }; let replacement:Wrapper=Wrapper { marker:second }; replace(target,replacement); } else {} drop(target); return 0; }\n",
+        "179\n181\n",
+    ),
+    (
+        "scoped-else-explicit-drop",
+        "fn main()->i32 { if 2<1 {} else { let marker:Marker=Marker { number:193 }; let scoped:Wrapper=Wrapper { marker:marker }; drop(scoped); } return 0; }\n",
+        "193\n",
+    ),
+    (
+        "scoped-drop-before-early-return",
+        "fn main()->i32 { if 1<2 { let marker:Marker=Marker { number:199 }; let scoped:Wrapper=Wrapper { marker:marker }; drop(scoped); return 0; } else {} return 1; }\n",
+        "199\n",
+    ),
+    (
+        "scoped-match-arm-cleanup",
+        "fn main()->i32 { let marker:Marker=Marker { number:211 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; let parcel:Parcel=Wrapped(outer); match (parcel) { Wrapped(value) => { let inner_marker:Marker=Marker { number:223 }; let arm_owned:Wrapper=Wrapper { marker:inner_marker }; drop(arm_owned); drop(value); } Spare(value) => { drop(value); } } return 0; }\n",
+        "223\n211\n",
+    ),
+)
+
+PATH_SENSITIVE_CAPABILITY_OWNED_SOURCES = (
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "capability allocate;\n"
+        + "fn main()->i32 { if 1<2 { with capability allocate { let marker:Marker=Marker { number:191 }; let scoped:Wrapper=Wrapper { marker:marker }; drop(scoped); } } else {} return 0; }\n",
+        "191\n",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "capability allocate;\n"
+        + "fn main()->i32 { with capability allocate { let marker:Marker=Marker { number:197 }; let function_owned:Wrapper=Wrapper { marker:marker }; } return 0; }\n",
+        "197\n",
+    ),
+)
+
+PATH_SENSITIVE_OWNED_REJECTIONS = (
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { if 1<2 { let marker:Marker=Marker { number:151 }; let leaked:Wrapper=Wrapper { marker:marker }; } else {} return 0; }\n",
+        "M5212: scoped owned binding leaked",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { let marker:Marker=Marker { number:157 }; let owned:Wrapper=Wrapper { marker:marker }; if 1<2 { drop(owned); } else {} drop(owned); return 0; }\n",
+        "M5101: binding owned already consumed",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { let marker:Marker=Marker { number:163 }; let owned:Wrapper=Wrapper { marker:marker }; drop(owned); drop(owned); return 0; }\n",
+        "M5101: binding owned already consumed",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { let marker:Marker=Marker { number:167 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; let parcel:Parcel=Wrapped(outer); match (parcel) { Wrapped(value) => { print(1); } Spare(value) => { drop(value); } } return 0; }\n",
+        "M5211: owned match payload value",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { var flag:i64=0; while flag<1 { let marker:Marker=Marker { number:173 }; let leaked:Wrapper=Wrapper { marker:marker }; flag=flag+1; } return 0; }\n",
+        "M5212: scoped owned binding leaked",
+    ),
+    (
+        RECURSIVE_OWNED_AGGREGATE_PREFIX
+        + "fn main()->i32 { let marker:Marker=Marker { number:227 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; let parcel:Parcel=Wrapped(outer); match (parcel) { Wrapped(value) => { let inner_marker:Marker=Marker { number:229 }; let leaked:Wrapper=Wrapper { marker:inner_marker }; drop(value); } Spare(value) => { drop(value); } } return 0; }\n",
+        "M5212: scoped owned binding leaked",
+    ),
+)
 SINGLE_I64_STRUCT_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
@@ -635,6 +726,93 @@ def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle
     assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
     root = _project(tmp_path, RECURSIVE_OWNED_AGGREGATE_CYCLE)
     project = load_project(root / "Merit.toml")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_stdout", PATH_SENSITIVE_OWNED_SOURCES)
+def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_flow(
+    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+) -> None:
+    source = RECURSIVE_OWNED_AGGREGATE_PREFIX + body
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    first = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+    )
+    assert first.stdout == second.stdout
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    )
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("source,expected_stdout", PATH_SENSITIVE_CAPABILITY_OWNED_SOURCES)
+def test_concrete_native_driver_tracks_enclosing_owned_scope_through_capability_region(
+    tmp_path: Path, source: str, expected_stdout: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    first = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True, check=True
+    )
+    assert first.stdout == second.stdout
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    )
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("source,reference_error", PATH_SENSITIVE_OWNED_REJECTIONS)
+def test_concrete_native_driver_fails_closed_for_invalid_path_sensitive_ownership(
+    tmp_path: Path, source: str, reference_error: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=source, text=True, capture_output=True
+    )
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode,
+        second.stdout,
+        second.stderr,
+    )
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(CompileError, match=reference_error):
+        build(project, root / "build" / "reference-invalid-ownership")
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)
     assert not (root / ".merit" / "replacement-build-v1.json").exists()

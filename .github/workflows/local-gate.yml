@@ -15,7 +15,7 @@ jobs:
   test:
     name: Python 3.11 / Ubuntu / system C compiler
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
