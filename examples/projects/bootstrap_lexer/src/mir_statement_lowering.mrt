@@ -219,6 +219,13 @@ requires_caps [allocate]
             vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
+        // Each field initializer becomes one explicit aggregate construct/store
+        // instruction in bootstrap-resolved-source-function-snapshot-v3.
+        if (kind == 11) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
         hir_index = checked_add(hir_index, 1);
     }
 

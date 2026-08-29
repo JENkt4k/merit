@@ -18,11 +18,13 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
+_TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
 _OWNED_FIELD_STRUCT_TYPE_BASE = 1_000_000
 _OWNED_PAYLOAD_ENUM_TYPE_BASE = 1_100_000
+_AGGREGATE_STRUCT_TYPE_BASE = 1_200_000
 _COPY_PAYLOAD_ENUM_TYPE_BASE = 1_000
 _I64_STRUCT_TYPE_BASE = 2_000
 _DESTRUCTOR_I64_STRUCT_TYPE_BASE = 3_000
@@ -30,6 +32,7 @@ _LEGACY_OWNED_PAYLOAD_ENUM_TYPE_BASE = 4_000
 _SECTION_WIDTHS_BY_VERSION = {
     1: (16, 12, 5, 8, 4, 8, 7, 3, 1),
     2: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
+    3: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
 }
 
 
@@ -49,6 +52,7 @@ class ResolvedSourceFunctionSnapshot:
     placements: tuple[tuple[int, ...], ...]
     capability_ids: tuple[int, ...]
     type_descriptors: tuple[tuple[int, ...], ...] = ()
+    version: int = SNAPSHOT_VERSION
 
 
 def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedSourceFunctionSnapshot:
@@ -101,23 +105,52 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         placements=sections[7],
         capability_ids=capabilities,
         type_descriptors=sections[9] if len(sections) > 9 else (),
+        version=data[1],
     )
 
 
-def _descriptor_type_names(rows: tuple[tuple[int, ...], ...]) -> dict[int, MirType]:
+def _descriptor_type_names(
+    rows: tuple[tuple[int, ...], ...], *, version: int = 2
+) -> dict[int, MirType]:
     raw: dict[int, tuple[int, int, int, int]] = {}
+    aggregate_fields: dict[int, list[int]] = {}
+    aggregate_policies: dict[int, int] = {}
     for index, row in enumerate(rows):
         code, kind, identity, child_code, destructor_policy = row
         if code <= 0 or identity < 0 or child_code <= 0 or kind not in {
             _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT,
             _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM,
+            *({_TYPE_DESCRIPTOR_AGGREGATE_STRUCT} if version >= 3 else set()),
         }:
             raise ResolvedSourceFunctionSnapshotError(f"type descriptor {index} is invalid")
+        if kind == _TYPE_DESCRIPTOR_AGGREGATE_STRUCT:
+            if destructor_policy not in {0, 1}:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has unsupported destructor policy"
+                )
+            expected_code = _AGGREGATE_STRUCT_TYPE_BASE + identity
+            if code != expected_code:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has noncanonical type code"
+                )
+            if code in raw:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} conflicts with another descriptor kind"
+                )
+            fields = aggregate_fields.setdefault(code, [])
+            if code in aggregate_policies and destructor_policy:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has duplicate destructor policy"
+                )
+            if destructor_policy:
+                aggregate_policies[code] = len(fields)
+            fields.append(child_code)
+            continue
         if destructor_policy != 0:
             raise ResolvedSourceFunctionSnapshotError(
                 f"type descriptor {index} has unsupported destructor policy"
             )
-        if code in raw:
+        if code in raw or code in aggregate_fields:
             raise ResolvedSourceFunctionSnapshotError(f"duplicate type descriptor code {code}")
         expected_code = (
             _OWNED_FIELD_STRUCT_TYPE_BASE + identity
@@ -129,6 +162,10 @@ def _descriptor_type_names(rows: tuple[tuple[int, ...], ...]) -> dict[int, MirTy
                 f"type descriptor {index} has noncanonical type code"
             )
         raw[code] = (kind, identity, child_code, destructor_policy)
+
+    for code in aggregate_fields:
+        if code in raw:
+            raise ResolvedSourceFunctionSnapshotError(f"duplicate type descriptor code {code}")
 
     resolved: dict[int, MirType] = {
         1: MirType("i64"),
@@ -145,6 +182,18 @@ def _descriptor_type_names(rows: tuple[tuple[int, ...], ...]) -> dict[int, MirTy
         if _DESTRUCTOR_I64_STRUCT_TYPE_BASE <= code < _LEGACY_OWNED_PAYLOAD_ENUM_TYPE_BASE:
             return MirType(f"struct_i64_destructor_{code - _DESTRUCTOR_I64_STRUCT_TYPE_BASE}")
         descriptor = raw.get(code)
+        aggregate = aggregate_fields.get(code)
+        if aggregate is not None:
+            if code in active:
+                raise ResolvedSourceFunctionSnapshotError("type descriptor graph is cyclic")
+            identity = code - _AGGREGATE_STRUCT_TYPE_BASE
+            children = tuple(resolve(child, active | {code}) for child in aggregate)
+            if not children:
+                raise ResolvedSourceFunctionSnapshotError("aggregate type descriptor has no fields")
+            policy = aggregate_policies.get(code, -1)
+            result = MirType(f"struct_aggregate_{identity}_destructor_{policy}", children)
+            resolved[code] = result
+            return result
         if descriptor is None:
             raise ResolvedSourceFunctionSnapshotError(
                 f"type descriptor references unresolved child code {code}"
@@ -162,9 +211,9 @@ def _descriptor_type_names(rows: tuple[tuple[int, ...], ...]) -> dict[int, MirTy
         resolved[code] = result
         return result
 
-    for code in raw:
+    for code in (*raw, *aggregate_fields):
         resolve(code, frozenset())
-    return {code: resolved[code] for code in raw}
+    return {code: resolved[code] for code in (*raw, *aggregate_fields)}
 
 
 def materialize_resolved_source_function_snapshot(
@@ -177,7 +226,7 @@ def materialize_resolved_source_function_snapshot(
 ) -> MirModule:
     """Materialize a decoded native snapshot as canonical bootstrap-mir-v1."""
 
-    descriptor_names = _descriptor_type_names(snapshot.type_descriptors)
+    descriptor_names = _descriptor_type_names(snapshot.type_descriptors, version=snapshot.version)
     if type_names:
         for code, type_ in type_names.items():
             if code in descriptor_names and descriptor_names[code] != type_:

@@ -12,7 +12,7 @@ from merit.bootstrap.resolved_source_function_bundle import decode_resolved_sour
 from merit.bootstrap.resolved_source_function_snapshot import materialize_resolved_source_function_snapshot
 from merit.compiler import CompileError, parse
 from merit.project.build import build
-from merit.project.loader import load_project
+from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import ReplacementProjectError, build_replacement_project
 from merit.project.replacement_prepare import prepare_replacement_artifacts
 
@@ -147,6 +147,66 @@ RECURSIVE_OWNED_AGGREGATE_CYCLE = (
     "fn main()->i32 { return 0; }\n"
 )
 
+MULTI_FIELD_OWNED_AGGREGATE_PREFIX = (
+    "module main\n"
+    "struct Marker { prefix:i64; number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "struct Pair { left:Marker; code:i64; right:Marker; }\n"
+    "enum Packet { Full(Pair), Spare(Pair) }\n"
+)
+MULTI_FIELD_OWNED_AGGREGATE_SOURCES = (
+    (
+        "implicit-cleanup",
+        "fn main()->i32 { let left:Marker=Marker { prefix:1, number:233 }; let right:Marker=Marker { prefix:2, number:239 }; let pair:Pair=Pair { left:left, code:3, right:right }; return 0; }\n",
+        "233\n239\n",
+    ),
+    (
+        "explicit-drop",
+        "fn main()->i32 { let left:Marker=Marker { prefix:1, number:241 }; let right:Marker=Marker { prefix:2, number:251 }; let pair:Pair=Pair { left:left, code:3, right:right }; drop(pair); return 0; }\n",
+        "241\n251\n",
+    ),
+    (
+        "move-no-double-drop",
+        "fn main()->i32 { let left:Marker=Marker { prefix:1, number:257 }; let right:Marker=Marker { prefix:2, number:263 }; let first:Pair=Pair { left:left, code:3, right:right }; let second:Pair=first; drop(second); return 0; }\n",
+        "257\n263\n",
+    ),
+    (
+        "replace",
+        "fn main()->i32 { let old_left:Marker=Marker { prefix:1, number:269 }; let old_right:Marker=Marker { prefix:2, number:271 }; var target:Pair=Pair { left:old_left, code:3, right:old_right }; let new_left:Marker=Marker { prefix:4, number:277 }; let new_right:Marker=Marker { prefix:5, number:281 }; let replacement:Pair=Pair { left:new_left, code:6, right:new_right }; replace(target,replacement); drop(target); return 0; }\n",
+        "269\n271\n277\n281\n",
+    ),
+    (
+        "enum-match-transfer",
+        "fn main()->i32 { let left:Marker=Marker { prefix:1, number:283 }; let right:Marker=Marker { prefix:2, number:293 }; let pair:Pair=Pair { left:left, code:3, right:right }; let packet:Packet=Spare(pair); match (packet) { Full(value) => { drop(value); } Spare(value) => { drop(value); } } return 0; }\n",
+        "283\n293\n",
+    ),
+)
+MULTI_FIELD_SCALAR_AGGREGATE_SOURCE = (
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "fn main()->i64 { let pair:Pair=Pair { right:2, left:1 }; return pair.left*10+pair.right; }\n"
+)
+NESTED_MULTI_FIELD_AGGREGATE_SOURCE = (
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "struct Wrapper { pair:Pair; }\n"
+    "fn main()->i64 { let pair:Pair=Pair { right:7, left:3 }; "
+    "let wrapper:Wrapper=Wrapper { pair:pair }; drop(wrapper); return 37; }\n"
+)
+INVALID_MULTI_FIELD_AGGREGATE_SOURCES = (
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "fn main()->i32 { let pair:Pair=Pair { left:1, left:2 }; return 0; }\n",
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "fn main()->i32 { let pair:Pair=Pair { left:1 }; return 0; }\n",
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "fn main()->i32 { let pair:Pair=Pair { left:1, missing:2 }; return 0; }\n",
+    "module main\nstruct First { value:i64; second:Second; }\n"
+    "struct Second { value:i64; first:First; }\nfn main()->i32 { return 0; }\n",
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "destructor Pair { print(self.missing); }\nfn main()->i32 { return 0; }\n",
+    "module main\nstruct Pair { left:i64; right:i64; }\n"
+    "destructor Pair { print(self.left); }\ndestructor Pair { print(self.right); }\n"
+    "fn main()->i32 { return 0; }\n",
+)
+
 PATH_SENSITIVE_OWNED_SOURCES = (
     (
         "scoped-if-explicit-drop",
@@ -246,11 +306,6 @@ INVALID_SINGLE_I64_STRUCT_FIELD_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
     "fn main()->i64 { let box:Box=Box { wrong:7 }; return box.value; }\n"
-)
-UNSUPPORTED_MULTI_FIELD_STRUCT_SOURCE = (
-    "module main\n"
-    "struct Pair { left:i64; right:i64; }\n"
-    "fn main()->i64 { return 7; }\n"
 )
 INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE = (
     "module main\nstruct Box { value:i64; }\n"
@@ -732,6 +787,95 @@ def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_stdout", MULTI_FIELD_OWNED_AGGREGATE_SOURCES)
+def test_concrete_native_driver_executes_multi_field_owned_aggregate_lifecycle(
+    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+) -> None:
+    source = MULTI_FIELD_OWNED_AGGREGATE_PREFIX + body
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    )
+    aggregate_types = [
+        local.type for local in module.functions[0].locals
+        if local.type.name.startswith("struct_aggregate_")
+    ]
+    assert aggregate_types
+    assert any(len(type_.arguments) == 3 for type_ in aggregate_types)
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_named_multi_field_scalar_aggregate(tmp_path: Path) -> None:
+    source = MULTI_FIELD_SCALAR_AGGREGATE_SOURCE
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout) == (12, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_one_field_wrapper_around_multi_field_aggregate(tmp_path: Path) -> None:
+    source = NESTED_MULTI_FIELD_AGGREGATE_SOURCE
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout) == (37, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("source", INVALID_MULTI_FIELD_AGGREGATE_SOURCES)
+def test_concrete_native_driver_fails_closed_for_invalid_multi_field_aggregate(
+    tmp_path: Path, source: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+    root = _project(tmp_path, source)
+    try:
+        project = load_project(root / "Merit.toml")
+    except ProjectError:
+        project = None
+    if project is not None:
+        with pytest.raises((CompileError, ReplacementProjectError)):
+            prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", PATH_SENSITIVE_OWNED_SOURCES)
 def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_flow(
     tmp_path: Path, case_name: str, body: str, expected_stdout: str
@@ -853,7 +997,6 @@ def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tm
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("source", [
     INVALID_SINGLE_I64_STRUCT_FIELD_SOURCE,
-    UNSUPPORTED_MULTI_FIELD_STRUCT_SOURCE,
     INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE,
 ])
 def test_concrete_native_driver_fails_closed_for_unrepresented_struct_shapes(tmp_path: Path, source: str) -> None:

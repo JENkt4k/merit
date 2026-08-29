@@ -156,12 +156,16 @@ requires_caps [allocate]
             if (ownership_binding_owned(source_semantic) == 0) { return 14; }
             vec_push<MirOwnershipEvent>(events, ownership_event_move(source_binding, destination));
         } else {
-            let consumed_binding: i64 = vec_get<i64>(direct, 1);
-            if (consumed_binding >= 0) {
-                let consumed_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, consumed_binding);
-                if (ownership_binding_owned(consumed_semantic) != 0) {
-                    vec_push<MirOwnershipEvent>(events, ownership_event_consume(consumed_binding));
+            var consumed_index: i64 = 1;
+            while (consumed_index < vec_len<i64>(direct)) {
+                let consumed_binding: i64 = vec_get<i64>(direct, consumed_index);
+                if (consumed_binding >= 0) {
+                    let consumed_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, consumed_binding);
+                    if (ownership_binding_owned(consumed_semantic) != 0) {
+                        vec_push<MirOwnershipEvent>(events, ownership_event_consume(consumed_binding));
+                    }
                 }
+                consumed_index = checked_add(consumed_index, 1);
             }
             vec_push<MirOwnershipEvent>(events, ownership_event_place(0));
             vec_push<MirOwnershipEvent>(events, ownership_event_activate(destination));

@@ -28,6 +28,7 @@ fn sfr_expression_failure_status(status: i64) -> i32 {
 
 pub struct I64StructCatalogEntry {
     struct_id: i32;
+    field_ordinal: i32;
     name_start: i64;
     name_length: i64;
     field_start: i64;
@@ -38,6 +39,7 @@ pub struct I64StructCatalogEntry {
 }
 
 pub fn i64_struct_catalog_id(borrow value: I64StructCatalogEntry) -> i32 { return value.struct_id; }
+pub fn i64_struct_catalog_field_ordinal(borrow value: I64StructCatalogEntry) -> i32 { return value.field_ordinal; }
 pub fn i64_struct_catalog_name_start(borrow value: I64StructCatalogEntry) -> i64 { return value.name_start; }
 pub fn i64_struct_catalog_name_length(borrow value: I64StructCatalogEntry) -> i64 { return value.name_length; }
 pub fn i64_struct_catalog_field_start(borrow value: I64StructCatalogEntry) -> i64 { return value.field_start; }
@@ -134,6 +136,7 @@ fn sfr_ascii_u() -> i64 { return 117; }
 fn sfr_ascii_left_paren() -> i64 { return 40; }
 fn sfr_ascii_right_paren() -> i64 { return 41; }
 fn sfr_ascii_dot() -> i64 { return 46; }
+fn sfr_ascii_colon() -> i64 { return 58; }
 fn sfr_ascii_semicolon() -> i64 { return 59; }
 fn sfr_ascii_open_brace() -> i64 { return 123; }
 fn sfr_ascii_close_brace() -> i64 { return 125; }
@@ -194,7 +197,7 @@ fn sfr_i64_struct_destructor_policy(
                 if (buffer_get(source, checked_add(token_start(self_token), 2)) != sfr_ascii_l()) { return -1; }
                 if (buffer_get(source, checked_add(token_start(self_token), 3)) != sfr_ascii_f()) { return -1; }
                 if (sfr_token_byte_is(source, dot, sfr_ascii_dot()) == 0) { return -1; }
-                if (sfr_span_equal(source, token_start(selected_field), token_length(selected_field), token_start(field), token_length(field)) == 0) { return -1; }
+                if (sfr_span_equal(source, token_start(selected_field), token_length(selected_field), token_start(field), token_length(field)) == 0) { return 0; }
                 if (sfr_token_byte_is(source, right_paren, sfr_ascii_right_paren()) == 0) { return -1; }
                 if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return -1; }
                 if (sfr_token_byte_is(source, close, sfr_ascii_close_brace()) == 0) { return -1; }
@@ -204,6 +207,26 @@ fn sfr_i64_struct_destructor_policy(
         index = checked_add(index, 1);
     }
     return 0;
+}
+
+fn sfr_i64_struct_destructor_count(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow name: Token
+) -> i32 {
+    var count: i32 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (sfr_is_destructor(source, token) != 0) {
+            let target_index: i64 = checked_add(index, 1);
+            if (target_index >= vec_len<Token>(tokens)) { return -1; }
+            let target: Token = vec_get<Token>(tokens, target_index);
+            if (sfr_span_equal(source, token_start(target), token_length(target), token_start(name), token_length(name)) != 0) {
+                count = checked_add(count, 1);
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return count;
 }
 
 // Canonical source spellings at the native type-recognition boundary.
@@ -226,10 +249,9 @@ fn sfr_is_scalar_integer_type(borrow source: Buffer, start: i64, length: i64) ->
     return 0;
 }
 
-// Derive canonical identities for exactly one-field structs. Scalar integer
-// fields retain the established representation; acyclic declared struct fields
-// are represented by native-resolved type descriptors. Multi-field and other
-// field kinds remain fail-closed until their complete schema is represented.
+// Derive canonical ordered field rows for declared structs. Each field is one
+// row so v3 descriptors can represent arbitrary finite aggregate arity without
+// embedding a variable-width schema in an implementation-language handoff.
 pub fn derive_i64_struct_catalog(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut output: Vec<I64StructCatalogEntry>
 ) -> i32
@@ -244,41 +266,52 @@ requires_caps [allocate]
             if (name_index >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
             let name: Token = vec_get<Token>(tokens, name_index);
             let open_index: i64 = checked_add(name_index, 1);
-                let field_index: i64 = checked_add(name_index, 2);
-                let colon_index: i64 = checked_add(name_index, 3);
-                let type_index: i64 = checked_add(name_index, 4);
-                let semicolon_index: i64 = checked_add(name_index, 5);
-                let close_index: i64 = checked_add(name_index, 6);
-                if (close_index >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
-                let open: Token = vec_get<Token>(tokens, open_index);
+            if (open_index >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
+            let open: Token = vec_get<Token>(tokens, open_index);
+            if (sfr_token_byte_is(source, open, sfr_ascii_open_brace()) == 0) { return i64_struct_catalog_invalid_status(); }
+            var cursor: i64 = checked_add(open_index, 1);
+            var field_ordinal: i32 = 0;
+            var selected_destructor_policy: i32 = 0;
+            var closed: i32 = 0;
+            while (closed == 0) {
+                if (cursor >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
+                let candidate: Token = vec_get<Token>(tokens, cursor);
+                if (sfr_token_byte_is(source, candidate, sfr_ascii_close_brace()) != 0) {
+                    closed = 1;
+                } else {
+                let field_index: i64 = cursor;
+                let colon_index: i64 = checked_add(cursor, 1);
+                let type_index: i64 = checked_add(cursor, 2);
+                let semicolon_index: i64 = checked_add(cursor, 3);
+                if (semicolon_index >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
                 let field: Token = vec_get<Token>(tokens, field_index);
                 let colon: Token = vec_get<Token>(tokens, colon_index);
                 let field_type: Token = vec_get<Token>(tokens, type_index);
                 let semicolon: Token = vec_get<Token>(tokens, semicolon_index);
-                let close: Token = vec_get<Token>(tokens, close_index);
-                if (token_kind(open) != 4) { return i64_struct_catalog_invalid_status(); }
                 if (token_kind(field) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_kind(colon) != 4) { return i64_struct_catalog_invalid_status(); }
                 if (token_kind(field_type) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_kind(semicolon) != 4) { return i64_struct_catalog_invalid_status(); }
-                if (token_kind(close) != 4) { return i64_struct_catalog_invalid_status(); }
-                if (token_length(open) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_length(colon) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_length(semicolon) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_length(close) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (buffer_get(source, token_start(open)) != 123) { return i64_struct_catalog_invalid_status(); }
-                if (buffer_get(source, token_start(colon)) != 58) { return i64_struct_catalog_invalid_status(); }
-                if (buffer_get(source, token_start(semicolon)) != 59) { return i64_struct_catalog_invalid_status(); }
-                if (buffer_get(source, token_start(close)) != 125) { return i64_struct_catalog_invalid_status(); }
+                if (sfr_token_byte_is(source, colon, sfr_ascii_colon()) == 0) { return i64_struct_catalog_invalid_status(); }
+                if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return i64_struct_catalog_invalid_status(); }
                 let destructor_policy: i32 = sfr_i64_struct_destructor_policy(source, tokens, name, field);
                 if (destructor_policy < 0) { return i64_struct_catalog_invalid_status(); }
+                if (destructor_policy != 0) { selected_destructor_policy = checked_add(selected_destructor_policy, 1); }
                 vec_push<I64StructCatalogEntry>(output, I64StructCatalogEntry {
                     struct_id: struct_id,
+                    field_ordinal: field_ordinal,
                     name_start: token_start(name), name_length: token_length(name),
                     field_start: token_start(field), field_length: token_length(field),
                     field_type_start: token_start(field_type), field_type_length: token_length(field_type),
                     destructor_policy: destructor_policy
                 });
+                field_ordinal = checked_add(field_ordinal, 1);
+                cursor = checked_add(cursor, 4);
+                }
+            }
+            if (field_ordinal == 0) { return i64_struct_catalog_invalid_status(); }
+            let destructor_count: i32 = sfr_i64_struct_destructor_count(source, tokens, name);
+            if (destructor_count < 0) { return i64_struct_catalog_invalid_status(); }
+            if (destructor_count != selected_destructor_policy) { return i64_struct_catalog_invalid_status(); }
+            if (destructor_count > 1) { return i64_struct_catalog_invalid_status(); }
             struct_id = checked_add(struct_id, 1);
         }
         index = checked_add(index, 1);
@@ -286,10 +319,10 @@ requires_caps [allocate]
     var validate_index: i64 = 0;
     while (validate_index < vec_len<I64StructCatalogEntry>(output)) {
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(output, validate_index);
-        let resolved: i32 = source_i64_struct_type_code(
-            source, output, entry.name_start, entry.name_length
-        );
-        if (resolved == function_mir_unresolved_type_code()) { return i64_struct_catalog_invalid_status(); }
+        if (entry.field_ordinal == 0) {
+            let resolved: i32 = source_i64_struct_type_code(source, output, entry.name_start, entry.name_length);
+            if (resolved == function_mir_unresolved_type_code()) { return i64_struct_catalog_invalid_status(); }
+        }
         validate_index = checked_add(validate_index, 1);
     }
     return 0;
@@ -304,19 +337,37 @@ fn source_i64_struct_type_code_depth(
     while (index < vec_len<I64StructCatalogEntry>(catalog)) {
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
         if (sfr_span_equal(source, start, length, entry.name_start, entry.name_length) != 0) {
-            if (sfr_is_scalar_integer_type(source, entry.field_type_start, entry.field_type_length) != 0) {
-                if (entry.destructor_policy == 1) {
-                    return function_mir_destructor_i64_struct_type_code(entry.struct_id);
+            var field_count: i32 = 0;
+            var field_index: i64 = 0;
+            var single_child: i32 = function_mir_unresolved_type_code();
+            while (field_index < vec_len<I64StructCatalogEntry>(catalog)) {
+                let field_entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, field_index);
+                if (field_entry.struct_id == entry.struct_id) {
+                    var child: i32 = function_mir_i64_type_code();
+                    if (sfr_is_scalar_integer_type(source, field_entry.field_type_start, field_entry.field_type_length) == 0) {
+                        child = source_i64_struct_type_code_depth(
+                            source, catalog, field_entry.field_type_start, field_entry.field_type_length,
+                            checked_add(depth, 1)
+                        );
+                    }
+                    if (child == function_mir_unresolved_type_code()) { return child; }
+                    single_child = child;
+                    field_count = checked_add(field_count, 1);
                 }
-                return function_mir_i64_struct_type_code(entry.struct_id);
+                field_index = checked_add(field_index, 1);
             }
-            if (entry.destructor_policy != 0) { return function_mir_unresolved_type_code(); }
-            let child: i32 = source_i64_struct_type_code_depth(
-                source, catalog, entry.field_type_start, entry.field_type_length,
-                checked_add(depth, 1)
-            );
-            if (child == function_mir_unresolved_type_code()) { return child; }
-            return function_mir_owned_field_struct_type_code(entry.struct_id);
+            if (field_count == 1) {
+                if (single_child == function_mir_i64_type_code()) {
+                    if (entry.destructor_policy == 1) { return function_mir_destructor_i64_struct_type_code(entry.struct_id); }
+                    return function_mir_i64_struct_type_code(entry.struct_id);
+                }
+                if (entry.destructor_policy != 0) { return function_mir_unresolved_type_code(); }
+                if (single_child >= function_mir_aggregate_struct_type_code(0)) {
+                    return function_mir_aggregate_struct_type_code(entry.struct_id);
+                }
+                return function_mir_owned_field_struct_type_code(entry.struct_id);
+            }
+            return function_mir_aggregate_struct_type_code(entry.struct_id);
         }
         index = checked_add(index, 1);
     }
@@ -341,15 +392,31 @@ requires_caps [allocate]
         let type_code: i32 = source_i64_struct_type_code(
             source, structs, entry.name_start, entry.name_length
         );
-        if (type_code >= function_mir_owned_field_struct_type_code(0)) {
-            let child_type_code: i32 = source_i64_struct_type_code(
-                source, structs, entry.field_type_start, entry.field_type_length
-            );
+        if (type_code >= function_mir_aggregate_struct_type_code(0)) {
+            var child_type_code: i32 = function_mir_i64_type_code();
+            if (sfr_is_scalar_integer_type(source, entry.field_type_start, entry.field_type_length) == 0) {
+                child_type_code = source_i64_struct_type_code(
+                    source, structs, entry.field_type_start, entry.field_type_length
+                );
+            }
             if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
             vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
-                type_code, function_mir_type_descriptor_owned_field_struct_kind(),
+                type_code, function_mir_type_descriptor_aggregate_struct_kind(),
                 entry.struct_id, child_type_code, entry.destructor_policy
             ));
+        } else {
+            if (type_code >= function_mir_owned_field_struct_type_code(0)) {
+                if (entry.field_ordinal == 0) {
+                    let child_type_code: i32 = source_i64_struct_type_code(
+                        source, structs, entry.field_type_start, entry.field_type_length
+                    );
+                    if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
+                    vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
+                        type_code, function_mir_type_descriptor_owned_field_struct_kind(),
+                        entry.struct_id, child_type_code, entry.destructor_policy
+                    ));
+                }
+            }
         }
         index = checked_add(index, 1);
     }
@@ -385,15 +452,68 @@ fn sfr_i64_struct_field_matches(
     if (type_code >= function_mir_owned_field_struct_type_code(0)) {
         struct_id = checked_sub(type_code, function_mir_owned_field_struct_type_code(0));
     }
+    if (type_code >= function_mir_aggregate_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_aggregate_struct_type_code(0));
+    }
     var index: i64 = 0;
     while (index < vec_len<I64StructCatalogEntry>(catalog)) {
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
         if (entry.struct_id == struct_id) {
-            return sfr_span_equal(source, start, length, entry.field_start, entry.field_length);
+            if (sfr_span_equal(source, start, length, entry.field_start, entry.field_length) != 0) { return 1; }
         }
         index = checked_add(index, 1);
     }
     return 0;
+}
+
+fn sfr_i64_struct_field_ordinal(
+    borrow source: Buffer, borrow catalog: Vec<I64StructCatalogEntry>, type_code: i32,
+    start: i64, length: i64
+) -> i32 {
+    var struct_id: i32 = checked_sub(type_code, function_mir_i64_struct_type_code(0));
+    if (type_code >= function_mir_destructor_i64_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_destructor_i64_struct_type_code(0));
+    }
+    if (type_code >= function_mir_owned_field_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_owned_field_struct_type_code(0));
+    }
+    if (type_code >= function_mir_aggregate_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_aggregate_struct_type_code(0));
+    }
+    var index: i64 = 0;
+    while (index < vec_len<I64StructCatalogEntry>(catalog)) {
+        let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
+        if (entry.struct_id == struct_id) {
+            if (sfr_span_equal(source, start, length, entry.field_start, entry.field_length) != 0) {
+                return entry.field_ordinal;
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn sfr_i64_struct_field_count(
+    borrow catalog: Vec<I64StructCatalogEntry>, type_code: i32
+) -> i32 {
+    var struct_id: i32 = checked_sub(type_code, function_mir_i64_struct_type_code(0));
+    if (type_code >= function_mir_destructor_i64_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_destructor_i64_struct_type_code(0));
+    }
+    if (type_code >= function_mir_owned_field_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_owned_field_struct_type_code(0));
+    }
+    if (type_code >= function_mir_aggregate_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_aggregate_struct_type_code(0));
+    }
+    var count: i32 = 0;
+    var index: i64 = 0;
+    while (index < vec_len<I64StructCatalogEntry>(catalog)) {
+        let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
+        if (entry.struct_id == struct_id) { count = checked_add(count, 1); }
+        index = checked_add(index, 1);
+    }
+    return count;
 }
 
 fn sfr_is_payload_match_subject(
@@ -829,22 +949,54 @@ requires_caps [allocate]
                 source, struct_catalog, hir_start(constructor_symbol), hir_length(constructor_symbol)
             ) != hir_type_code(hir)) { return sfr_unresolved_struct_type_error(); }
             if (hir_right(hir) < 0) { return sfr_missing_struct_initializer_error(); }
-            let initializer: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(hir));
-            if (hir_kind(initializer) != 11) { return sfr_invalid_struct_initializer_error(); }
-            let initializer_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(initializer));
-            if (hir_is_symbol_reference(initializer_symbol) == 0) { return sfr_invalid_struct_initializer_error(); }
-            if (sfr_i64_struct_field_matches(
-                source, struct_catalog, hir_type_code(hir),
-                hir_start(initializer_symbol), hir_length(initializer_symbol)
-            ) == 0) { return sfr_invalid_struct_initializer_error(); }
-            let instruction_id: i64 = vec_get<i64>(counters, 1);
-            vec_push<MirFunctionRecord>(output, function_mir_struct_construct(
-                hir_start(hir), hir_length(hir), instruction_id,
-                vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(initializer)),
-                hir_type_code(hir),
-                vec_get<i64>(canonical_ids, hir_index)
-            ));
-            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+            let field_count: i32 = sfr_i64_struct_field_count(struct_catalog, hir_type_code(hir));
+            if (field_count <= 0) { return sfr_invalid_struct_initializer_error(); }
+            var seen: Vec<i32> = vec_new<i32>(allocator, 0);
+            var initializer_stack: Vec<i64> = vec_new<i64>(allocator, 0);
+            vec_push<i64>(initializer_stack, hir_right(hir));
+            var emitted_fields: i32 = 0;
+            while (vec_len<i64>(initializer_stack) > 0) {
+                let initializer_index: i64 = vec_pop<i64>(initializer_stack);
+                let initializer: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, initializer_index);
+                if (hir_kind(initializer) == 8) {
+                    vec_push<i64>(initializer_stack, hir_right(initializer));
+                    vec_push<i64>(initializer_stack, hir_left(initializer));
+                } else {
+                    if (hir_kind(initializer) != 11) { return sfr_invalid_struct_initializer_error(); }
+                    let initializer_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(initializer));
+                    if (hir_is_symbol_reference(initializer_symbol) == 0) { return sfr_invalid_struct_initializer_error(); }
+                    let field_ordinal: i32 = sfr_i64_struct_field_ordinal(
+                        source, struct_catalog, hir_type_code(hir),
+                        hir_start(initializer_symbol), hir_length(initializer_symbol)
+                    );
+                    if (field_ordinal < 0) { return sfr_invalid_struct_initializer_error(); }
+                    if (field_ordinal >= field_count) { return sfr_invalid_struct_initializer_error(); }
+                    var seen_scan: i64 = 0;
+                    while (seen_scan < vec_len<i32>(seen)) {
+                        if (vec_get<i32>(seen, seen_scan) == field_ordinal) { return sfr_invalid_struct_initializer_error(); }
+                        seen_scan = checked_add(seen_scan, 1);
+                    }
+                    vec_push<i32>(seen, field_ordinal);
+                    let instruction_id: i64 = vec_get<i64>(counters, 1);
+                    if (emitted_fields == 0) {
+                        vec_push<MirFunctionRecord>(output, function_mir_struct_construct(
+                            hir_start(hir), hir_length(hir), instruction_id,
+                            vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(initializer)),
+                            field_ordinal, hir_type_code(hir), vec_get<i64>(canonical_ids, hir_index)
+                        ));
+                    } else {
+                        vec_push<MirFunctionRecord>(output, function_mir_struct_field_store(
+                            hir_start(initializer), hir_length(initializer), instruction_id,
+                            vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(initializer)),
+                            field_ordinal, hir_type_code(hir), vec_get<i64>(canonical_ids, hir_index)
+                        ));
+                    }
+                    vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+                    emitted_fields = checked_add(emitted_fields, 1);
+                }
+            }
+            drop(initializer_stack); drop(seen);
+            if (emitted_fields != field_count) { return sfr_invalid_struct_initializer_error(); }
         }
         if (kind == 7) {
             let receiver_local: i64 = vec_get<i64>(local_ids, hir_left(hir));
@@ -853,14 +1005,16 @@ requires_caps [allocate]
             if (receiver_type_code < function_mir_i64_struct_type_code(0)) { return sfr_unresolved_struct_receiver_error(); }
             let field_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(hir));
             if (hir_is_symbol_reference(field_symbol) == 0) { return sfr_invalid_struct_receiver_error(); }
-            if (sfr_i64_struct_field_matches(
+            let field_ordinal: i32 = sfr_i64_struct_field_ordinal(
                 source, struct_catalog, receiver_type_code,
                 hir_start(field_symbol), hir_length(field_symbol)
-            ) == 0) { return sfr_invalid_struct_receiver_error(); }
+            );
+            if (field_ordinal < 0) { return sfr_invalid_struct_receiver_error(); }
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(output, function_mir_struct_field_load(
                 hir_start(hir), hir_length(hir), instruction_id,
                 vec_get<i64>(local_ids, hir_index), receiver_local,
+                field_ordinal,
                 vec_get<i64>(canonical_ids, hir_index)
             ));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
