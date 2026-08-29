@@ -174,6 +174,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
                 var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
                 var type_descriptors: Vec<MirTypeDescriptor> = vec_new<MirTypeDescriptor>(allocator, 8);
+                var destructor_descriptors: Vec<MirDestructorDescriptor> = vec_new<MirDestructorDescriptor>(allocator, 4);
+                var destructor_body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 64);
+                var destructor_cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 32);
+                var destructor_placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
                 var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
                 var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
                 var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
@@ -581,6 +585,159 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             if (descriptor_status != 0) {
                                 function_status = source_type_descriptor_driver_status(descriptor_status);
                             } else {
+                            // Destructors are canonical executable programs, not
+                            // type-name policies. Lower every top-level destructor
+                            // through the same expression/statement/CFG records and
+                            // frame those records separately from ordinary functions.
+                            var destructor_scan: i64 = 0;
+                            var destructor_depth: i64 = 0;
+                            while (destructor_scan < vec_len<Token>(tokens)) {
+                                let destructor_token: Token = vec_get<Token>(tokens, destructor_scan);
+                                var is_destructor_declaration: i32 = 0;
+                                if (destructor_depth == 0) {
+                                    is_destructor_declaration = source_token_is_destructor(source, destructor_token);
+                                }
+                                if (is_destructor_declaration == 0) {
+                                    if (token_kind(destructor_token) == token_punctuation_kind()) {
+                                        if (token_length(destructor_token) == 1) {
+                                            let destructor_byte: i64 = buffer_get(source, token_start(destructor_token));
+                                            if (destructor_byte == token_open_brace_byte()) {
+                                                destructor_depth = checked_add(destructor_depth, 1);
+                                            } else {
+                                                if (destructor_byte == token_close_brace_byte()) {
+                                                    if (destructor_depth > 0) {
+                                                        destructor_depth = checked_sub(destructor_depth, 1);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    destructor_scan = checked_add(destructor_scan, 1);
+                                } else {
+                                    let destructor_name_index: i64 = checked_add(destructor_scan, 1);
+                                    let destructor_open_index: i64 = checked_add(destructor_scan, 2);
+                                    if (destructor_open_index >= vec_len<Token>(tokens)) {
+                                        function_status = function_mir_destructor_header_error();
+                                    } else {
+                                        let destructor_name: Token = vec_get<Token>(tokens, destructor_name_index);
+                                        let destructor_type_code: i32 = source_i64_struct_type_code(
+                                            source, structs, token_start(destructor_name), token_length(destructor_name)
+                                        );
+                                        if (destructor_type_code < function_mir_i64_struct_type_code(0)) {
+                                            function_status = function_mir_destructor_type_error();
+                                        } else {
+                                            var destructor_tokens: Vec<Token> = vec_new<Token>(allocator, 32);
+                                            var local_depth: i64 = 0;
+                                            var local_started: i32 = 0;
+                                            var local_closed: i32 = 0;
+                                            var local_scan: i64 = destructor_scan;
+                                            var next_destructor_scan: i64 = destructor_scan;
+                                            while (local_scan < vec_len<Token>(tokens)) {
+                                                if (local_closed == 0) {
+                                                    let local_token: Token = vec_get<Token>(tokens, local_scan);
+                                                    if (token_kind(local_token) == token_punctuation_kind()) {
+                                                        if (token_length(local_token) == 1) {
+                                                            let local_byte: i64 = buffer_get(source, token_start(local_token));
+                                                            if (local_byte == token_open_brace_byte()) {
+                                                                local_started = 1;
+                                                                local_depth = checked_add(local_depth, 1);
+                                                            } else {
+                                                                if (local_byte == token_close_brace_byte()) {
+                                                                    if (local_started == 0) { function_status = function_mir_destructor_unopened_body_error(); }
+                                                                    local_depth = checked_sub(local_depth, 1);
+                                                                    if (local_depth == 0) {
+                                                                        local_closed = 1;
+                                                                        next_destructor_scan = checked_add(local_scan, 1);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    vec_push<Token>(destructor_tokens, local_token);
+                                                    local_scan = checked_add(local_scan, 1);
+                                                } else {
+                                                    local_scan = vec_len<Token>(tokens);
+                                                }
+                                            }
+                                            if (local_closed == 0) { function_status = function_mir_destructor_unclosed_body_error(); }
+
+                                            let destructor_statements: Vec<StatementRecord> = parse_statement_records(
+                                                source, destructor_tokens, allocator
+                                            );
+                                            let destructor_operands: Vec<StatementOperand> = parse_statement_operands(
+                                                source, destructor_tokens, allocator
+                                            );
+                                            var destructor_statement_index: i64 = 0;
+                                            while (destructor_statement_index < vec_len<StatementRecord>(destructor_statements)) {
+                                                let destructor_statement: StatementRecord = vec_get<StatementRecord>(
+                                                    destructor_statements, destructor_statement_index
+                                                );
+                                                let destructor_statement_kind: i32 = statement_record_kind(destructor_statement);
+                                                var destructor_statement_allowed: i32 = 0;
+                                                if (destructor_statement_kind == statement_record_print_kind()) { destructor_statement_allowed = 1; }
+                                                if (destructor_statement_kind == statement_record_if_kind()) { destructor_statement_allowed = 1; }
+                                                if (destructor_statement_kind == statement_record_while_kind()) { destructor_statement_allowed = 1; }
+                                                if (destructor_statement_kind == statement_record_assign_kind()) { destructor_statement_allowed = 1; }
+                                                if (destructor_statement_kind == statement_record_expression_kind()) { destructor_statement_allowed = 1; }
+                                                if (destructor_statement_allowed == 0) { function_status = function_mir_destructor_statement_error(); }
+                                                destructor_statement_index = checked_add(destructor_statement_index, 1);
+                                            }
+
+                                            var local_body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 64);
+                                            var local_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
+                                            var local_cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 32);
+                                            var local_placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
+                                            var empty_destructor_arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(allocator, 0);
+                                            if (function_status == 0) {
+                                                let destructor_body_status: i32 = lower_source_function_body_records(
+                                                    source, destructor_tokens, destructor_statements, destructor_operands,
+                                                    variants, structs, empty_destructor_arms, allocator, local_body, local_events
+                                                );
+                                                if (destructor_body_status != 0) {
+                                                    function_status = function_mir_destructor_body_error(destructor_body_status);
+                                                } else {
+                                                    vec_push<MirLowerEvent>(local_events, mir_event_return(-1));
+                                                    let destructor_cfg_status: i32 = lower_structured_mir(
+                                                        local_events, allocator, local_cfg, local_placements
+                                                    );
+                                                    if (destructor_cfg_status != 0) {
+                                                        function_status = function_mir_destructor_cfg_error(destructor_cfg_status);
+                                                    }
+                                                }
+                                            }
+                                            if (function_status == 0) {
+                                                vec_push<MirDestructorDescriptor>(destructor_descriptors, function_mir_destructor_descriptor(
+                                                    destructor_type_code,
+                                                    vec_len<MirFunctionRecord>(destructor_body), vec_len<MirFunctionRecord>(local_body),
+                                                    vec_len<MirCfgRecord>(destructor_cfg), vec_len<MirCfgRecord>(local_cfg),
+                                                    vec_len<MirPlacementRecord>(destructor_placements), vec_len<MirPlacementRecord>(local_placements)
+                                                ));
+                                                var append_index: i64 = 0;
+                                                while (append_index < vec_len<MirFunctionRecord>(local_body)) {
+                                                    vec_push<MirFunctionRecord>(destructor_body, vec_get<MirFunctionRecord>(local_body, append_index));
+                                                    append_index = checked_add(append_index, 1);
+                                                }
+                                                append_index = 0;
+                                                while (append_index < vec_len<MirCfgRecord>(local_cfg)) {
+                                                    vec_push<MirCfgRecord>(destructor_cfg, vec_get<MirCfgRecord>(local_cfg, append_index));
+                                                    append_index = checked_add(append_index, 1);
+                                                }
+                                                append_index = 0;
+                                                while (append_index < vec_len<MirPlacementRecord>(local_placements)) {
+                                                    vec_push<MirPlacementRecord>(destructor_placements, vec_get<MirPlacementRecord>(local_placements, append_index));
+                                                    append_index = checked_add(append_index, 1);
+                                                }
+                                            }
+                                            drop(empty_destructor_arms);
+                                            drop(local_placements); drop(local_cfg); drop(local_events); drop(local_body);
+                                            drop(destructor_operands); drop(destructor_statements); drop(destructor_tokens);
+                                            destructor_scan = next_destructor_scan;
+                                        }
+                                    }
+                                    if (function_status != 0) { destructor_scan = vec_len<Token>(tokens); }
+                                }
+                            }
+                            if (function_status == 0) {
                             let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
                                 source, function_tokens, statements, operands,
                                 variants, structs, resolved_match_enum_id, capabilities, allocator,
@@ -593,13 +750,15 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             } else {
                                 let item_status: i32 = print_resolved_source_function_bundle_item(
                                     body, contracts, contract_locals, sources, ownership,
-                                    ownership_records, cfg, placements, required, type_descriptors
+                                    ownership_records, cfg, placements, required, type_descriptors,
+                                    destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
                                 );
                                 if (item_status != 0) {
                                     function_status = checked_add(3000, item_status);
                                 } else {
                                     emitted_functions = checked_add(emitted_functions, 1);
                                 }
+                            }
                             }
                             }
                         }
@@ -626,6 +785,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 drop(body);
                 drop(ownership);
                 drop(capabilities);
+                drop(destructor_placements);
+                drop(destructor_cfg);
+                drop(destructor_body);
+                drop(destructor_descriptors);
                 drop(type_descriptors);
                 drop(structs);
                 drop(variants);

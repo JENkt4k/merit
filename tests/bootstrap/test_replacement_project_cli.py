@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from merit.bootstrap.replacement_project import ReplacementFunctionInput
-from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_MAGIC, SNAPSHOT_VERSION
+from merit.bootstrap.resolved_source_function_snapshot import (
+    SNAPSHOT_MAGIC,
+    SNAPSHOT_SECTION_COUNT,
+    SNAPSHOT_VERSION,
+)
 from merit.project.cli import main
 from merit.project.loader import load_project
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, load_replacement_inputs
@@ -44,7 +48,7 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     # Structurally valid empty-section snapshot; semantic materialization is a
     # later boundary. This proves project loading transports native records
     # rather than deriving semantic records from Program.
-    values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * 10
+    values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * SNAPSHOT_SECTION_COUNT
     (artifact_dir / "main.snapshot").write_text("\n".join(map(str, values)) + "\n", encoding="utf-8")
     (artifact_dir / REPLACEMENT_MANIFEST).write_text(
         json.dumps({

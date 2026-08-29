@@ -77,6 +77,39 @@ fn sfr_function_name_index(borrow source: Buffer, borrow tokens: Vec<Token>) -> 
     return -1;
 }
 
+fn sfr_destructor_name_index(borrow source: Buffer, borrow tokens: Vec<Token>) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (sfr_is_destructor(source, token) != 0) {
+            let name_index: i64 = checked_add(index, 1);
+            if (name_index < vec_len<Token>(tokens)) { return name_index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn sfr_self_token_index(borrow source: Buffer, borrow tokens: Vec<Token>) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (token_kind(token) == token_identifier_kind()) {
+            if (token_length(token) == 4) {
+                if (sfr_byte(source, token, 0) == sfr_ascii_s()) {
+                    if (sfr_byte(source, token, 1) == sfr_ascii_e()) {
+                        if (sfr_byte(source, token, 2) == sfr_ascii_l()) {
+                            if (sfr_byte(source, token, 3) == sfr_ascii_f()) { return index; }
+                        }
+                    }
+                }
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
 fn sfr_span_equal(borrow source: Buffer, left_start: i64, left_length: i64, right_start: i64, right_length: i64) -> i32 {
     if (left_length != right_length) { return 0; }
     var offset: i64 = 0;
@@ -120,11 +153,14 @@ fn sfr_token_byte_is(borrow source: Buffer, borrow token: Token, expected: i64) 
 
 // Canonical source-encoding bytes used by the destructor policy recognizer.
 // Merit character literals are not available at this bootstrap stage.
+fn sfr_ascii_a() -> i64 { return 97; }
 fn sfr_ascii_c() -> i64 { return 99; }
 fn sfr_ascii_d() -> i64 { return 100; }
 fn sfr_ascii_e() -> i64 { return 101; }
 fn sfr_ascii_f() -> i64 { return 102; }
+fn sfr_ascii_h() -> i64 { return 104; }
 fn sfr_ascii_i() -> i64 { return 105; }
+fn sfr_ascii_k() -> i64 { return 107; }
 fn sfr_ascii_l() -> i64 { return 108; }
 fn sfr_ascii_n() -> i64 { return 110; }
 fn sfr_ascii_o() -> i64 { return 111; }
@@ -138,8 +174,26 @@ fn sfr_ascii_right_paren() -> i64 { return 41; }
 fn sfr_ascii_dot() -> i64 { return 46; }
 fn sfr_ascii_colon() -> i64 { return 58; }
 fn sfr_ascii_semicolon() -> i64 { return 59; }
+fn sfr_ascii_underscore() -> i64 { return 95; }
 fn sfr_ascii_open_brace() -> i64 { return 123; }
 fn sfr_ascii_close_brace() -> i64 { return 125; }
+
+fn sfr_is_checked_add(borrow source: Buffer, borrow token: HirExpressionRecord) -> i32 {
+    if (hir_length(token) != 11) { return 0; }
+    let start: i64 = hir_start(token);
+    if (buffer_get(source, start) != sfr_ascii_c()) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != sfr_ascii_h()) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != sfr_ascii_e()) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != sfr_ascii_c()) { return 0; }
+    if (buffer_get(source, checked_add(start, 4)) != sfr_ascii_k()) { return 0; }
+    if (buffer_get(source, checked_add(start, 5)) != sfr_ascii_e()) { return 0; }
+    if (buffer_get(source, checked_add(start, 6)) != sfr_ascii_d()) { return 0; }
+    if (buffer_get(source, checked_add(start, 7)) != sfr_ascii_underscore()) { return 0; }
+    if (buffer_get(source, checked_add(start, 8)) != sfr_ascii_a()) { return 0; }
+    if (buffer_get(source, checked_add(start, 9)) != sfr_ascii_d()) { return 0; }
+    if (buffer_get(source, checked_add(start, 10)) != sfr_ascii_d()) { return 0; }
+    return 1;
+}
 
 fn sfr_is_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
     if (token_kind(token) != 1) { return 0; }
@@ -157,56 +211,8 @@ fn sfr_is_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
     if (buffer_get(source, checked_add(start, 9)) != sfr_ascii_r()) { return 0; }
     return 1;
 }
-
-// Policy 1 is the first observable production destructor shape:
-// `destructor T { print(self.field); }`. Any destructor for the represented
-// struct outside that exact shape fails closed instead of being approximated.
-fn sfr_i64_struct_destructor_policy(
-    borrow source: Buffer, borrow tokens: Vec<Token>, borrow name: Token, borrow field: Token
-) -> i32 {
-    var index: i64 = 0;
-    while (index < vec_len<Token>(tokens)) {
-        let token: Token = vec_get<Token>(tokens, index);
-        if (sfr_is_destructor(source, token) != 0) {
-            let end_index: i64 = checked_add(index, 10);
-            if (end_index >= vec_len<Token>(tokens)) { return -1; }
-            let target: Token = vec_get<Token>(tokens, checked_add(index, 1));
-            if (sfr_span_equal(source, token_start(target), token_length(target), token_start(name), token_length(name)) != 0) {
-                let open: Token = vec_get<Token>(tokens, checked_add(index, 2));
-                let print_token: Token = vec_get<Token>(tokens, checked_add(index, 3));
-                let left_paren: Token = vec_get<Token>(tokens, checked_add(index, 4));
-                let self_token: Token = vec_get<Token>(tokens, checked_add(index, 5));
-                let dot: Token = vec_get<Token>(tokens, checked_add(index, 6));
-                let selected_field: Token = vec_get<Token>(tokens, checked_add(index, 7));
-                let right_paren: Token = vec_get<Token>(tokens, checked_add(index, 8));
-                let semicolon: Token = vec_get<Token>(tokens, checked_add(index, 9));
-                let close: Token = vec_get<Token>(tokens, end_index);
-                if (sfr_token_byte_is(source, open, sfr_ascii_open_brace()) == 0) { return -1; }
-                if (token_kind(print_token) != 1) { return -1; }
-                if (token_length(print_token) != 5) { return -1; }
-                if (buffer_get(source, token_start(print_token)) != sfr_ascii_p()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(print_token), 1)) != sfr_ascii_r()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(print_token), 2)) != sfr_ascii_i()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(print_token), 3)) != sfr_ascii_n()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(print_token), 4)) != sfr_ascii_t()) { return -1; }
-                if (sfr_token_byte_is(source, left_paren, sfr_ascii_left_paren()) == 0) { return -1; }
-                if (token_kind(self_token) != 1) { return -1; }
-                if (token_length(self_token) != 4) { return -1; }
-                if (buffer_get(source, token_start(self_token)) != sfr_ascii_s()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(self_token), 1)) != sfr_ascii_e()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(self_token), 2)) != sfr_ascii_l()) { return -1; }
-                if (buffer_get(source, checked_add(token_start(self_token), 3)) != sfr_ascii_f()) { return -1; }
-                if (sfr_token_byte_is(source, dot, sfr_ascii_dot()) == 0) { return -1; }
-                if (sfr_span_equal(source, token_start(selected_field), token_length(selected_field), token_start(field), token_length(field)) == 0) { return 0; }
-                if (sfr_token_byte_is(source, right_paren, sfr_ascii_right_paren()) == 0) { return -1; }
-                if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return -1; }
-                if (sfr_token_byte_is(source, close, sfr_ascii_close_brace()) == 0) { return -1; }
-                return 1;
-            }
-        }
-        index = checked_add(index, 1);
-    }
-    return 0;
+pub fn source_token_is_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
+    return sfr_is_destructor(source, token);
 }
 
 fn sfr_i64_struct_destructor_count(
@@ -272,6 +278,9 @@ requires_caps [allocate]
             var cursor: i64 = checked_add(open_index, 1);
             var field_ordinal: i32 = 0;
             var selected_destructor_policy: i32 = 0;
+            let destructor_count: i32 = sfr_i64_struct_destructor_count(source, tokens, name);
+            if (destructor_count < 0) { return i64_struct_catalog_invalid_status(); }
+            if (destructor_count > 1) { return i64_struct_catalog_invalid_status(); }
             var closed: i32 = 0;
             while (closed == 0) {
                 if (cursor >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
@@ -292,8 +301,10 @@ requires_caps [allocate]
                 if (token_kind(field_type) != 1) { return i64_struct_catalog_invalid_status(); }
                 if (sfr_token_byte_is(source, colon, sfr_ascii_colon()) == 0) { return i64_struct_catalog_invalid_status(); }
                 if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return i64_struct_catalog_invalid_status(); }
-                let destructor_policy: i32 = sfr_i64_struct_destructor_policy(source, tokens, name, field);
-                if (destructor_policy < 0) { return i64_struct_catalog_invalid_status(); }
+                var destructor_policy: i32 = 0;
+                if (destructor_count == 1) {
+                    if (field_ordinal == 0) { destructor_policy = 1; }
+                }
                 if (destructor_policy != 0) { selected_destructor_policy = checked_add(selected_destructor_policy, 1); }
                 vec_push<I64StructCatalogEntry>(output, I64StructCatalogEntry {
                     struct_id: struct_id,
@@ -308,10 +319,7 @@ requires_caps [allocate]
                 }
             }
             if (field_ordinal == 0) { return i64_struct_catalog_invalid_status(); }
-            let destructor_count: i32 = sfr_i64_struct_destructor_count(source, tokens, name);
-            if (destructor_count < 0) { return i64_struct_catalog_invalid_status(); }
             if (destructor_count != selected_destructor_policy) { return i64_struct_catalog_invalid_status(); }
-            if (destructor_count > 1) { return i64_struct_catalog_invalid_status(); }
             struct_id = checked_add(struct_id, 1);
         }
         index = checked_add(index, 1);
@@ -514,6 +522,37 @@ fn sfr_i64_struct_field_count(
         index = checked_add(index, 1);
     }
     return count;
+}
+
+fn sfr_i64_struct_field_type_code(
+    borrow source: Buffer, borrow catalog: Vec<I64StructCatalogEntry>, type_code: i32, ordinal: i32
+) -> i32 {
+    var struct_id: i32 = checked_sub(type_code, function_mir_i64_struct_type_code(0));
+    if (type_code >= function_mir_destructor_i64_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_destructor_i64_struct_type_code(0));
+    }
+    if (type_code >= function_mir_owned_field_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_owned_field_struct_type_code(0));
+    }
+    if (type_code >= function_mir_aggregate_struct_type_code(0)) {
+        struct_id = checked_sub(type_code, function_mir_aggregate_struct_type_code(0));
+    }
+    var index: i64 = 0;
+    while (index < vec_len<I64StructCatalogEntry>(catalog)) {
+        let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
+        if (entry.struct_id == struct_id) {
+            if (entry.field_ordinal == ordinal) {
+                if (sfr_is_scalar_integer_type(source, entry.field_type_start, entry.field_type_length) != 0) {
+                    return function_mir_i64_type_code();
+                }
+                return source_i64_struct_type_code(
+                    source, catalog, entry.field_type_start, entry.field_type_length
+                );
+            }
+        }
+        index = checked_add(index, 1);
+    }
+    return function_mir_unresolved_type_code();
 }
 
 fn sfr_is_payload_match_subject(
@@ -930,16 +969,28 @@ requires_caps [allocate]
         if (hir_is_call(hir) != 0) {
             let callee: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(hir));
             if (hir_is_symbol_reference(callee) == 0) { return -20; }
-            let variant: i32 = sfr_variant_code(
-                source, enum_catalog, hir_type_code(hir), hir_start(callee), hir_length(callee)
-            );
-            if (variant < 0) { return -21; }
             let instruction_id: i64 = vec_get<i64>(counters, 1);
-            vec_push<MirFunctionRecord>(output, function_mir_construct(
-                hir_start(hir), hir_length(hir), instruction_id,
-                vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(hir)),
-                variant, hir_type_code(hir), vec_get<i64>(canonical_ids, hir_index)
-            ));
+            if (sfr_is_checked_add(source, callee) != 0) {
+                let arguments: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(hir));
+                if (hir_is_pair(arguments) == 0) { return -21; }
+                vec_push<MirFunctionRecord>(output, function_mir_binary(
+                    hir_start(hir), hir_length(hir), instruction_id,
+                    vec_get<i64>(local_ids, hir_index),
+                    vec_get<i64>(local_ids, hir_left(arguments)), vec_get<i64>(local_ids, hir_right(arguments)),
+                    function_mir_binary_add_symbol(), function_mir_i64_type_code(),
+                    function_mir_checked_numeric_policy(), vec_get<i64>(canonical_ids, hir_index)
+                ));
+            } else {
+                let variant: i32 = sfr_variant_code(
+                    source, enum_catalog, hir_type_code(hir), hir_start(callee), hir_length(callee)
+                );
+                if (variant < 0) { return -21; }
+                vec_push<MirFunctionRecord>(output, function_mir_construct(
+                    hir_start(hir), hir_length(hir), instruction_id,
+                    vec_get<i64>(local_ids, hir_index), vec_get<i64>(local_ids, hir_right(hir)),
+                    variant, hir_type_code(hir), vec_get<i64>(canonical_ids, hir_index)
+                ));
+            }
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
         if (kind == 10) {
@@ -1041,16 +1092,38 @@ pub fn lower_source_function_body_records(
 ) -> i32
 requires_caps [allocate]
 {
-    let name_index: i64 = sfr_function_name_index(source, tokens);
+    var destructor_body: i32 = 0;
+    var name_index: i64 = sfr_function_name_index(source, tokens);
+    if (name_index < 0) {
+        name_index = sfr_destructor_name_index(source, tokens);
+        if (name_index >= 0) { destructor_body = 1; }
+    }
     if (name_index < 0) { return 1; }
     let name_token: Token = vec_get<Token>(tokens, name_index);
+    var result_type_code: i32 = function_mir_i64_type_code();
+    if (destructor_body != 0) {
+        result_type_code = source_i64_struct_type_code(
+            source, struct_catalog, token_start(name_token), token_length(name_token)
+        );
+        if (result_type_code < function_mir_i64_struct_type_code(0)) { return 1; }
+    }
     vec_push<MirFunctionRecord>(records, function_mir_header(
         token_start(name_token), token_length(name_token),
-        token_start(name_token), token_length(name_token), 1
+        token_start(name_token), token_length(name_token), result_type_code
     ));
 
     var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
     var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    if (destructor_body != 0) {
+        var self_index: i64 = sfr_self_token_index(source, tokens);
+        if (self_index < 0) { self_index = name_index; }
+        let self_token: Token = vec_get<Token>(tokens, self_index);
+        vec_push<i64>(binding_starts, token_start(self_token));
+        vec_push<i64>(binding_lengths, token_length(self_token));
+        vec_push<MirFunctionRecord>(records, function_mir_source_local(
+            token_start(self_token), token_length(self_token), 0, result_type_code, 0, 1
+        ));
+    }
     var statement_index: i64 = 0;
     while (statement_index < vec_len<StatementRecord>(statements)) {
         let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
@@ -1231,24 +1304,72 @@ requires_caps [allocate]
                                 if (target_index < 0) { return 20; }
                                 if (value_index < 0) { return 20; }
                                 let target: StatementOperand = vec_get<StatementOperand>(operands, target_index);
-                                let destination: i64 = hir_find_binding_id(
+                                var destination: i64 = hir_find_binding_id(
                                     source, binding_starts, binding_lengths,
                                     statement_operand_start(target), statement_operand_length(target)
                                 );
+                                var field_ordinal: i32 = -1;
+                                if (destination < 0) {
+                                    let target_end: i64 = checked_add(
+                                        statement_operand_start(target), statement_operand_length(target)
+                                    );
+                                    var target_scan: i64 = 0;
+                                    while (target_scan < vec_len<Token>(tokens)) {
+                                        let receiver_token: Token = vec_get<Token>(tokens, target_scan);
+                                        if (token_start(receiver_token) == statement_operand_start(target)) {
+                                            let dot_index: i64 = checked_add(target_scan, 1);
+                                            let field_index: i64 = checked_add(target_scan, 2);
+                                            if (field_index < vec_len<Token>(tokens)) {
+                                                let dot_token: Token = vec_get<Token>(tokens, dot_index);
+                                                let field_token: Token = vec_get<Token>(tokens, field_index);
+                                                if (checked_add(token_start(field_token), token_length(field_token)) == target_end) {
+                                                    if (sfr_token_byte_is(source, dot_token, sfr_ascii_dot()) != 0) {
+                                                        destination = hir_find_binding_id(
+                                                            source, binding_starts, binding_lengths,
+                                                            token_start(receiver_token), token_length(receiver_token)
+                                                        );
+                                                        if (destination >= 0) {
+                                                            field_ordinal = sfr_i64_struct_field_ordinal(
+                                                                source, struct_catalog, sfr_local_type_code(records, destination),
+                                                                token_start(field_token), token_length(field_token)
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        target_scan = checked_add(target_scan, 1);
+                                    }
+                                }
                                 if (destination < 0) { return 21; }
+                                var destination_type: i32 = sfr_local_type_code(records, destination);
+                                if (field_ordinal >= 0) {
+                                    destination_type = sfr_i64_struct_field_type_code(
+                                        source, struct_catalog, destination_type, field_ordinal
+                                    );
+                                    if (destination_type != function_mir_i64_type_code()) { return 21; }
+                                }
                                 let value: StatementOperand = vec_get<StatementOperand>(operands, value_index);
                                 let source_local: i64 = sfr_emit_expression(
                                     source, tokens, binding_starts, binding_lengths,
                                     statement_operand_start(value), statement_operand_length(value),
-                                    sfr_local_type_code(records, destination), enum_catalog, struct_catalog, allocator, records, counters
+                                    destination_type, enum_catalog, struct_catalog, allocator, records, counters
                                 );
                                 if (source_local < 0) { return 22; }
                                 let instruction_id: i64 = vec_get<i64>(counters, 1);
-                                vec_push<MirFunctionRecord>(records, function_mir_copy(
-                                    statement_record_start(statement), statement_record_length(statement),
-                                    instruction_id, destination, source_local, destination,
-                                    vec_get<i64>(counters, 2)
-                                ));
+                                if (field_ordinal >= 0) {
+                                    vec_push<MirFunctionRecord>(records, function_mir_struct_field_store(
+                                        statement_record_start(statement), statement_record_length(statement),
+                                        instruction_id, destination, source_local, field_ordinal,
+                                        sfr_local_type_code(records, destination), vec_get<i64>(counters, 2)
+                                    ));
+                                } else {
+                                    vec_push<MirFunctionRecord>(records, function_mir_copy(
+                                        statement_record_start(statement), statement_record_length(statement),
+                                        instruction_id, destination, source_local, destination,
+                                        vec_get<i64>(counters, 2)
+                                    ));
+                                }
                                 vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
                                 vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                             } else {
@@ -1335,9 +1456,23 @@ requires_caps [allocate]
         event_index = checked_add(event_index, 1);
     }
     var status: i32 = 0;
+    // Destructor bodies in this Alpha.2 slice cannot contain enum/match
+    // operations, so unrelated enums in the module must not suppress their
+    // structured placement stream.
+    var lower_structured_events: i32 = destructor_body;
     if (vec_len<EnumVariantCatalogEntry>(enum_catalog) == 0) {
+        lower_structured_events = 1;
+    }
+    if (lower_structured_events != 0) {
+        var initial_binding_start: i64 = -1;
+        var initial_binding_length: i64 = -1;
+        if (destructor_body != 0) {
+            initial_binding_start = vec_get<i64>(binding_starts, 0);
+            initial_binding_length = vec_get<i64>(binding_lengths, 0);
+        }
         status = lower_typed_statements_to_mir_events(
-            source, tokens, event_statements, operands, allocator, events
+            source, tokens, event_statements, operands,
+            initial_binding_start, initial_binding_length, allocator, events
         );
     }
     drop(event_statements);

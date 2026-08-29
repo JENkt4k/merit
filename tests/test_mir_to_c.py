@@ -5,6 +5,7 @@ import pytest
 
 from merit.bootstrap.mir_contract import (
     MirBlock,
+    MirDestructor,
     MirFunction,
     MirInstruction,
     MirLocal,
@@ -240,6 +241,51 @@ def test_output_is_deterministic():
     function = MirFunction("empty", UNIT, (), (MirBlock(0, (), MirTerminator("return")),), 0)
     module = scalar_module(function)
     assert emit_c_module(module) == emit_c_module(module)
+
+
+def test_executable_destructor_program_compiles_and_runs(tmp_path):
+    target = MirType("struct_i64_destructor_0")
+    destructor = MirDestructor(
+        target,
+        (
+            MirLocal(0, "self", target, mutable=True, ownership="mutable_borrow"),
+            MirLocal(1, "field", I64),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "load_field", result=1, operands=(0,), symbol="field_0"),
+                    MirInstruction(1, "print", operands=(1,)),
+                ),
+                MirTerminator("return"),
+            ),
+        ),
+        0,
+    )
+    cleanup = MirFunction(
+        "cleanup",
+        UNIT,
+        (MirLocal(0, "value", target, ownership="owned"), MirLocal(1, "field", I64)),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "const", result=1, value=42),
+                    MirInstruction(1, "construct", result=0, operands=(1,), symbol="field_0", ownership="owned"),
+                    MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+                ),
+                MirTerminator("return"),
+            ),
+        ),
+        0,
+    )
+    module = MirModule("destructor", (cleanup,), destructors=(destructor,))
+    generated = emit_c_module(module)
+    assert "merit_custom_destructor_merit_struct_i64_destructor_0" in generated
+    assert generated == emit_c_module(module)
+    run = compile_and_run(tmp_path, module, "int main(void) { cleanup(); return 0; }")
+    assert (run.returncode, run.stdout) == (0, "42\n")
 
 
 def test_contract_and_capability_checks_are_explicit():

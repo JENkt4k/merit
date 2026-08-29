@@ -46,7 +46,7 @@ fn main() -> i32 {{
         let operands: Vec<StatementOperand> = parse_statement_operands(source, tokens, allocator);
         var events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 32);
         let statement_status: i32 = lower_typed_statements_to_mir_events(
-            source, tokens, statements, operands, allocator, events
+            source, tokens, statements, operands, -1, -1, allocator, events
         );
 
         print(-81);

@@ -9,16 +9,21 @@ materializer.  It deliberately performs no source/HIR/ownership re-lowering.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping
 
-from merit.bootstrap.mir_contract import MirModule, MirType
+from merit.bootstrap.mir_contract import MirDestructor, MirModule, MirType
+from merit.bootstrap.mir_function_assembly_parity import (
+    BODY_INSTRUCTION_KINDS,
+    BODY_INSTRUCTION_SOURCE_KIND,
+    lower_native_whole_function_assembly,
+)
 from merit.bootstrap.mir_function_ownership_assembly_parity import (
     lower_native_ownership_whole_function_assembly,
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
@@ -33,7 +38,17 @@ _SECTION_WIDTHS_BY_VERSION = {
     1: (16, 12, 5, 8, 4, 8, 7, 3, 1),
     2: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
     3: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
+    4: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5, 7, 16, 7, 3),
 }
+SNAPSHOT_SECTION_COUNT = len(_SECTION_WIDTHS_BY_VERSION[SNAPSHOT_VERSION])
+
+
+@dataclass(frozen=True)
+class ResolvedSourceDestructorSnapshot:
+    type_code: int
+    body_records: tuple[tuple[int, ...], ...]
+    cfg_records: tuple[tuple[int, ...], ...]
+    placements: tuple[tuple[int, ...], ...]
 
 
 class ResolvedSourceFunctionSnapshotError(ValueError):
@@ -52,6 +67,7 @@ class ResolvedSourceFunctionSnapshot:
     placements: tuple[tuple[int, ...], ...]
     capability_ids: tuple[int, ...]
     type_descriptors: tuple[tuple[int, ...], ...] = ()
+    destructors: tuple[ResolvedSourceDestructorSnapshot, ...] = ()
     version: int = SNAPSHOT_VERSION
 
 
@@ -94,6 +110,35 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         raise ResolvedSourceFunctionSnapshotError("resolved source snapshot has trailing data")
 
     capabilities = tuple(row[0] for row in sections[8])
+    destructor_snapshots: list[ResolvedSourceDestructorSnapshot] = []
+    if len(sections) > 10:
+        body_cursor = cfg_cursor = placement_cursor = 0
+        destructor_types: set[int] = set()
+        for index, row in enumerate(sections[10]):
+            type_code, body_start, body_count, cfg_start, cfg_count, placement_start, placement_count = row
+            if type_code <= 0 or min(body_start, body_count, cfg_start, cfg_count, placement_start, placement_count) < 0:
+                raise ResolvedSourceFunctionSnapshotError(f"destructor descriptor {index} is invalid")
+            if (body_start, cfg_start, placement_start) != (body_cursor, cfg_cursor, placement_cursor):
+                raise ResolvedSourceFunctionSnapshotError(f"destructor descriptor {index} is noncanonical")
+            if type_code in destructor_types:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"destructor descriptor {index} duplicates target type {type_code}"
+                )
+            destructor_types.add(type_code)
+            body_cursor += body_count
+            cfg_cursor += cfg_count
+            placement_cursor += placement_count
+            if body_cursor > len(sections[11]) or cfg_cursor > len(sections[12]) or placement_cursor > len(sections[13]):
+                raise ResolvedSourceFunctionSnapshotError(f"destructor descriptor {index} exceeds its record sections")
+            destructor_snapshots.append(ResolvedSourceDestructorSnapshot(
+                type_code,
+                sections[11][body_start:body_cursor],
+                sections[12][cfg_start:cfg_cursor],
+                sections[13][placement_start:placement_cursor],
+            ))
+        if (body_cursor, cfg_cursor, placement_cursor) != (len(sections[11]), len(sections[12]), len(sections[13])):
+            raise ResolvedSourceFunctionSnapshotError("destructor record sections contain unreferenced rows")
+
     return ResolvedSourceFunctionSnapshot(
         body_records=sections[0],
         contract_records=sections[1],
@@ -105,6 +150,7 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         placements=sections[7],
         capability_ids=capabilities,
         type_descriptors=sections[9] if len(sections) > 9 else (),
+        destructors=tuple(destructor_snapshots),
         version=data[1],
     )
 
@@ -234,7 +280,7 @@ def materialize_resolved_source_function_snapshot(
                     f"type name for code {code} conflicts with native descriptor"
                 )
         descriptor_names.update(type_names)
-    return lower_native_ownership_whole_function_assembly(
+    function_module = lower_native_ownership_whole_function_assembly(
         source=source,
         module_name=module_name,
         body_records=snapshot.body_records,
@@ -248,4 +294,45 @@ def materialize_resolved_source_function_snapshot(
         capability_ids=snapshot.capability_ids,
         capability_names=capability_names,
         type_names=descriptor_names,
+    )
+    destructors: list[MirDestructor] = []
+    for index, raw in enumerate(snapshot.destructors):
+        target = descriptor_names.get(raw.type_code)
+        if target is None and _DESTRUCTOR_I64_STRUCT_TYPE_BASE <= raw.type_code < _LEGACY_OWNED_PAYLOAD_ENUM_TYPE_BASE:
+            target = MirType(f"struct_i64_destructor_{raw.type_code - _DESTRUCTOR_I64_STRUCT_TYPE_BASE}")
+        if target is None:
+            raise ResolvedSourceFunctionSnapshotError(
+                f"destructor descriptor {index} references unresolved type code {raw.type_code}"
+            )
+        lowered = lower_native_whole_function_assembly(
+            source=source,
+            module_name=module_name,
+            body_records=raw.body_records,
+            contract_records=(),
+            contract_locals=(),
+            instruction_sources=tuple(
+                (row[3], BODY_INSTRUCTION_SOURCE_KIND, row[3], 0, -1, row[4], row[5], row[6])
+                for row in raw.body_records
+                if row[0] in BODY_INSTRUCTION_KINDS
+            ),
+            cfg_records=raw.cfg_records,
+            placements=raw.placements,
+            capability_ids=(),
+            capability_names={},
+            type_names=descriptor_names,
+        ).functions[0]
+        if not lowered.locals or lowered.locals[0].type != target:
+            raise ResolvedSourceFunctionSnapshotError(
+                f"destructor descriptor {index} has invalid self local"
+            )
+        self_local = replace(
+            lowered.locals[0], name="self", mutable=True, ownership="mutable_borrow"
+        )
+        destructors.append(MirDestructor(
+            target, (self_local, *lowered.locals[1:]), lowered.blocks, lowered.entry_block
+        ))
+    return MirModule(
+        function_module.name,
+        function_module.functions,
+        destructors=tuple(destructors),
     )

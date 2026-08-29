@@ -10,7 +10,7 @@ from lark.exceptions import UnexpectedInput
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.bootstrap.resolved_source_function_snapshot import materialize_resolved_source_function_snapshot
-from merit.compiler import CompileError, parse
+from merit.compiler import Checker, CompileError, parse
 from merit.project.build import build
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import ReplacementProjectError, build_replacement_project
@@ -359,11 +359,26 @@ DESTRUCTOR_I64_STRUCT_LIFECYCLE_SOURCES = (
         "fn main()->i32 { var target:Marker=Marker { number:1 }; let replacement:Marker=Marker { number:19 }; replace(target,replacement); drop(target); return 0; }\n",
         "1\n19\n",
     ),
+    (
+        "copy-field-mutation-and-control-flow",
+        "module main\nstruct Counter { number:i64; }\n"
+        "destructor Counter { if self.number != 0 { self.number=checked_add(self.number,1); } "
+        "else { self.number=10; } while self.number < 3 { "
+        "self.number=checked_add(self.number,1); } print(self.number); }\n"
+        "fn main()->i32 { let first:Counter=Counter { number:1 }; "
+        "let second:Counter=Counter { number:0 }; return 0; }\n",
+        "10\n3\n",
+    ),
 )
-UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE = (
+CONSTANT_EXPRESSION_DESTRUCTOR_I64_STRUCT_SOURCE = (
     "module main\nstruct Marker { number:i64; }\n"
     "destructor Marker { print(23); }\n"
     "fn main()->i32 { let marker:Marker=Marker { number:23 }; return 0; }\n"
+)
+OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE = (
+    "module main\nstruct Marker { number:i64; }\n"
+    "destructor Marker { let copy:i64=self.number; print(copy); }\n"
+    "fn main()->i32 { return 0; }\n"
 )
 CONTROL_FLOW_SOURCES = (
     (
@@ -1065,20 +1080,52 @@ def test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecy
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_unrepresented_i64_struct_destructor(tmp_path: Path) -> None:
+def test_concrete_native_driver_executes_constant_expression_destructor(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
-        [str(driver.executable)], input=UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE,
+        [str(driver.executable)], input=CONSTANT_EXPRESSION_DESTRUCTOR_I64_STRUCT_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=CONSTANT_EXPRESSION_DESTRUCTOR_I64_STRUCT_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    root = _project(tmp_path, CONSTANT_EXPRESSION_DESTRUCTOR_I64_STRUCT_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "23\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_fails_closed_for_ownership_changing_destructor_body(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path, OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(CompileError, match="M5502"):
+        Checker(project.program).check()
+
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE,
         text=True, capture_output=True,
     )
     second = subprocess.run(
-        [str(driver.executable)], input=UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE,
+        [str(driver.executable)], input=OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE,
         text=True, capture_output=True,
     )
     assert first.returncode != 0
-    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
-    root = _project(tmp_path, UNSUPPORTED_DESTRUCTOR_I64_STRUCT_SOURCE)
-    project = load_project(root / "Merit.toml")
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode,
+        second.stdout,
+        second.stderr,
+    )
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)
     assert not (root / ".merit" / "replacement-build-v1.json").exists()
