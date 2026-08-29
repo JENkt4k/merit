@@ -242,6 +242,25 @@ lifecycle behavior for the represented recursive-owned slice; general
 destructor bodies, multi-field/resource aggregates, and acceptance migration
 keep M2 OPEN.
 
+`test_concrete_native_driver_executes_multi_field_owned_aggregate_lifecycle`
+and the adjacent scalar/nested aggregate cases extend the production path from
+single-field compatibility shapes to canonical arbitrary-arity aggregate
+schemas. Snapshot v3 carries one ordered descriptor row per field; canonical
+MIR identifies construction, stores, and loads by field ordinal; and C emission
+orders dependent aggregate definitions and recursively destroys owned fields.
+Named initializers are validated independently of source order. Implicit and
+explicit cleanup, direct move, `replace`, and owned enum match transfer execute
+multi-field values with deterministic native bundles and
+reference/replacement executable parity. Observable destructors select a
+declared scalar field without changing recursive field cleanup. Focused
+fail-closed cases reject duplicate, missing, and unknown initializer fields,
+unknown or duplicate destructor targets, cyclic multi-field graphs, and
+malformed/noncanonical aggregate descriptors without publishing a replacement
+manifest. This closes the general finite aggregate schema and represented
+multi-field owned-lifecycle slice. General destructor bodies, the remaining
+alpha.1 resource shapes, and acceptance migration keep M2 and the broad matrix
+rows `PARTIAL`/OPEN.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.

@@ -22,6 +22,38 @@ def test_native_type_descriptors_resolve_recursive_owned_aggregate_graph() -> No
     assert names[1_100_000].arguments[0] == names[1_000_002]
 
 
+def test_v3_native_type_descriptors_resolve_ordered_multi_field_aggregate() -> None:
+    names = _descriptor_type_names(
+        (
+            (1_200_000, 3, 0, 1, 0),
+            (1_200_000, 3, 0, 1, 1),
+            (1_200_001, 3, 1, 1_200_000, 0),
+            (1_200_001, 3, 1, 1, 0),
+        ),
+        version=3,
+    )
+
+    assert names[1_200_000].name == "struct_aggregate_0_destructor_1"
+    assert [field.name for field in names[1_200_000].arguments] == ["i64", "i64"]
+    assert names[1_200_001].arguments[0] == names[1_200_000]
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    (
+        (((1_200_000, 3, 0, 1, 1), (1_200_000, 3, 0, 1, 1)), "duplicate destructor"),
+        (((1_200_001, 3, 0, 1, 0), (1_200_001, 3, 0, 1, 0)), "noncanonical"),
+        (((1_200_000, 3, 0, 1_200_000, 0), (1_200_000, 3, 0, 1, 0)), "cyclic"),
+        (((1_200_000, 3, 0, 1, 2), (1_200_000, 3, 0, 1, 0)), "unsupported destructor"),
+    ),
+)
+def test_v3_native_multi_field_type_descriptors_fail_closed(
+    rows: tuple[tuple[int, ...], ...], message: str
+) -> None:
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match=message):
+        _descriptor_type_names(rows, version=3)
+
+
 @pytest.mark.parametrize(
     ("rows", "message"),
     (

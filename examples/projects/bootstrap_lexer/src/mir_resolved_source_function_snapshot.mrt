@@ -7,7 +7,7 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 
-// bootstrap-resolved-source-function-snapshot-v2.
+// bootstrap-resolved-source-function-snapshot-v3.
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
 // then ten count-prefixed fixed-width sections matching the canonical adapter.
@@ -25,7 +25,7 @@ pub fn print_resolved_source_function_snapshot(
 ) -> i32
 {
     print(1297240902); // MRSF
-    print(2);
+    print(3);
 
     print(vec_len<MirFunctionRecord>(body));
     var i: i64 = 0;

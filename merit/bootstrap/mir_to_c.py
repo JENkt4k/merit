@@ -38,6 +38,7 @@ _I64_STRUCT_PREFIX = "struct_i64_"
 _DESTRUCTOR_I64_STRUCT_PREFIX = "struct_i64_destructor_"
 _OWNED_PAYLOAD_ENUM_PREFIX = "enum_owned_payload_"
 _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
+_AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
 
@@ -97,6 +98,18 @@ def _recursive_owned_payload_enum_identity(type_: MirType) -> tuple[str, MirType
     return identity, type_.arguments[0]
 
 
+def _aggregate_struct_identity(type_: MirType) -> tuple[str, tuple[MirType, ...], int | None] | None:
+    if not type_.name.startswith(_AGGREGATE_STRUCT_PREFIX):
+        return None
+    match = re.fullmatch(r"struct_aggregate_(\d+)_destructor_(-1|\d+)", type_.name)
+    if match is None or not type_.arguments:
+        raise MirToCError(f"invalid aggregate struct MIR type: {type_.name}")
+    policy = int(match.group(2))
+    if policy >= len(type_.arguments):
+        raise MirToCError(f"aggregate struct destructor field is outside schema: {type_.name}")
+    return match.group(1), type_.arguments, None if policy < 0 else policy
+
+
 def _identifier(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", name)
     if not cleaned or cleaned[0].isdigit():
@@ -105,6 +118,9 @@ def _identifier(name: str) -> str:
 
 
 def _type(type_: MirType) -> str:
+    aggregate = _aggregate_struct_identity(type_)
+    if aggregate is not None:
+        return f"merit_struct_aggregate_{aggregate[0]}"
     owned_struct = _owned_field_struct_identity(type_)
     if owned_struct is not None:
         return f"merit_struct_owned_field_{owned_struct[0]}"
@@ -165,6 +181,17 @@ def _function_table(module: MirModule) -> dict[str, MirFunction]:
 
 
 def _drop_statements(expression: str, type_: MirType) -> list[str]:
+    aggregate = _aggregate_struct_identity(type_)
+    if aggregate is not None:
+        _, fields, destructor_field = aggregate
+        statements: list[str] = []
+        if destructor_field is not None:
+            statements.append(
+                f'printf("%lld\\n", (long long){expression}.field_{destructor_field});'
+            )
+        for ordinal, field_type in enumerate(fields):
+            statements.extend(_drop_statements(f"{expression}.field_{ordinal}", field_type))
+        return statements
     if _destructor_i64_struct_identity(type_) is not None:
         return [f'printf("%lld\\n", (long long){expression}.field_0);']
     owned_struct = _owned_field_struct_identity(type_)
@@ -202,6 +229,15 @@ def _instruction(
         if local_types is None or instruction.result not in local_types:
             raise MirToCError("aggregate construction requires a resolved result type")
         result_type = local_types[instruction.result]
+        aggregate = _aggregate_struct_identity(result_type)
+        if aggregate is not None:
+            _, fields, _ = aggregate
+            if not instruction.symbol.startswith(_STRUCT_FIELD_PREFIX):
+                raise MirToCError("aggregate construction requires a field symbol")
+            ordinal_text = instruction.symbol[len(_STRUCT_FIELD_PREFIX):]
+            if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
+                raise MirToCError("aggregate construction field is outside schema")
+            return [f"{result} = ({_type(result_type)}) {{ .{instruction.symbol} = {operands[0]} }};"]
         struct_identity = _i64_struct_identity(result_type)
         if struct_identity is None:
             struct_identity = _destructor_i64_struct_identity(result_type)
@@ -231,6 +267,15 @@ def _instruction(
         if local_types is None or instruction.operands[0] not in local_types:
             raise MirToCError("aggregate field load requires a resolved receiver type")
         receiver_type = local_types[instruction.operands[0]]
+        aggregate = _aggregate_struct_identity(receiver_type)
+        if aggregate is not None:
+            _, fields, _ = aggregate
+            if not instruction.symbol.startswith(_STRUCT_FIELD_PREFIX):
+                raise MirToCError("aggregate field load requires a field symbol")
+            ordinal_text = instruction.symbol[len(_STRUCT_FIELD_PREFIX):]
+            if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
+                raise MirToCError("aggregate field load is outside schema")
+            return [f"{result} = {operands[0]}.{instruction.symbol};"]
         if _i64_struct_identity(receiver_type) is not None or _destructor_i64_struct_identity(receiver_type) is not None:
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("single-i64 struct field load requires field_0")
@@ -246,6 +291,21 @@ def _instruction(
         ) or instruction.symbol not in {"tag", "payload"}:
             raise MirToCError("core C emission only supports represented aggregate fields")
         return [f"{result} = {operands[0]}.{instruction.symbol};"]
+    if kind == "store_field":
+        if result is None or len(operands) != 1 or not instruction.symbol:
+            raise MirToCError("aggregate field store requires one value, a receiver result, and a field symbol")
+        if local_types is None or instruction.result not in local_types:
+            raise MirToCError("aggregate field store requires a resolved receiver type")
+        aggregate = _aggregate_struct_identity(local_types[instruction.result])
+        if aggregate is None:
+            raise MirToCError("field stores are only supported for represented aggregate structs")
+        _, fields, _ = aggregate
+        if not instruction.symbol.startswith(_STRUCT_FIELD_PREFIX):
+            raise MirToCError("aggregate field store requires a field symbol")
+        ordinal_text = instruction.symbol[len(_STRUCT_FIELD_PREFIX):]
+        if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
+            raise MirToCError("aggregate field store is outside schema")
+        return [f"{result}.{instruction.symbol} = {operands[0]};"]
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
@@ -293,6 +353,8 @@ def _instruction(
             raise MirToCError("drop instruction requires one operand")
         if local_types is not None and instruction.operands[0] in local_types:
             operand_type = local_types[instruction.operands[0]]
+            if _aggregate_struct_identity(operand_type) is not None:
+                return _drop_statements(operands[0], operand_type)
             if _destructor_i64_struct_identity(operand_type) is not None:
                 return [f'printf("%lld\\n", (long long){operands[0]}.field_0);']
             if _owned_payload_enum_identity(operand_type) is not None:
@@ -355,6 +417,7 @@ def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | N
             or _owned_payload_enum_identity(local.type) is not None
             or _owned_field_struct_identity(local.type) is not None
             or _recursive_owned_payload_enum_identity(local.type) is not None
+            or _aggregate_struct_identity(local.type) is not None
         ) else "0"
         lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
     lines.append(f"    goto b{function.entry_block};")
@@ -427,9 +490,11 @@ def _walk_types(type_: MirType) -> tuple[MirType, ...]:
 
 
 def _type_needs_print(type_: MirType) -> bool:
+    aggregate = _aggregate_struct_identity(type_)
     return (
         _destructor_i64_struct_identity(type_) is not None
         or _owned_payload_enum_identity(type_) is not None
+        or (aggregate is not None and aggregate[2] is not None)
         or any(_type_needs_print(argument) for argument in type_.arguments)
     )
 
@@ -532,6 +597,38 @@ def emit_c_module(module: MirModule) -> str:
                 break
             if not progressed:
                 raise MirToCError("owned-field struct type graph is cyclic")
+        prelude.extend([*definitions, ""])
+    aggregate_structs = {
+        identity: (fields, destructor_field)
+        for type_ in all_types
+        if (aggregate := _aggregate_struct_identity(type_)) is not None
+        for identity, fields, destructor_field in (aggregate,)
+    }
+    if aggregate_structs:
+        pending = dict(aggregate_structs)
+        emitted_aggregates: set[str] = set()
+        definitions: list[str] = []
+        while pending:
+            progressed = False
+            for identity, (fields, _) in sorted(pending.items(), key=lambda item: int(item[0])):
+                dependencies = {
+                    dependency[0]
+                    for field in fields
+                    if (dependency := _aggregate_struct_identity(field)) is not None
+                }
+                if not dependencies <= emitted_aggregates:
+                    continue
+                members = " ".join(
+                    f"{_type(field)} field_{ordinal};"
+                    for ordinal, field in enumerate(fields)
+                )
+                definitions.append(f"typedef struct {{ {members} }} merit_struct_aggregate_{identity};")
+                emitted_aggregates.add(identity)
+                del pending[identity]
+                progressed = True
+                break
+            if not progressed:
+                raise MirToCError("aggregate struct type graph is cyclic")
         prelude.extend([*definitions, ""])
     owned_enum_identities = sorted({
         identity

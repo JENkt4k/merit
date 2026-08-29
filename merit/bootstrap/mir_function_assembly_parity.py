@@ -36,6 +36,7 @@ _BODY_ENUM_TAG_LOAD = 10
 _BODY_ENUM_PAYLOAD_LOAD = 11
 _BODY_STRUCT_CONSTRUCT = 12
 _BODY_STRUCT_FIELD_LOAD = 13
+_BODY_STRUCT_FIELD_STORE = 14
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
 _I64_STRUCT_TYPE_CODE_BASE = 2000
 _OWNED_FIELD_STRUCT_TYPE_CODE_BASE = 1_000_000
@@ -134,6 +135,7 @@ def lower_native_whole_function_assembly(
         elif kind in {
             4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD,
             _BODY_ENUM_PAYLOAD_LOAD, _BODY_STRUCT_CONSTRUCT, _BODY_STRUCT_FIELD_LOAD,
+            _BODY_STRUCT_FIELD_STORE,
         }:
             if rid in body_instructions or rid < 0:
                 raise NativeWholeFunctionMirError(f"body instruction {index} has duplicate/invalid ID")
@@ -174,17 +176,24 @@ def lower_native_whole_function_assembly(
                     rid, "load_field", result=result, operands=(left,), symbol="payload", span=instruction_span,
                 )
             elif kind == _BODY_STRUCT_CONSTRUCT:
-                if result < 0 or left < 0 or symbol_code != 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
-                    raise NativeWholeFunctionMirError(f"body single-i64 struct construct {index} is invalid")
+                if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
+                    raise NativeWholeFunctionMirError(f"body aggregate struct construct {index} is invalid")
                 body_instructions[rid] = MirInstruction(
-                    rid, "construct", result=result, operands=(left,), symbol="field_0",
+                    rid, "construct", result=result, operands=(left,), symbol=f"field_{symbol_code}",
+                    span=instruction_span, ownership="owned",
+                )
+            elif kind == _BODY_STRUCT_FIELD_STORE:
+                if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
+                    raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} is invalid")
+                body_instructions[rid] = MirInstruction(
+                    rid, "store_field", result=result, operands=(left,), symbol=f"field_{symbol_code}",
                     span=instruction_span, ownership="owned",
                 )
             else:
-                if result < 0 or left < 0 or symbol_code != 0:
-                    raise NativeWholeFunctionMirError(f"body single-i64 struct field load {index} is invalid")
+                if result < 0 or left < 0 or symbol_code < 0:
+                    raise NativeWholeFunctionMirError(f"body aggregate struct field load {index} is invalid")
                 body_instructions[rid] = MirInstruction(
-                    rid, "load_field", result=result, operands=(left,), symbol="field_0", span=instruction_span,
+                    rid, "load_field", result=result, operands=(left,), symbol=f"field_{symbol_code}", span=instruction_span,
                 )
         elif kind == 7:
             # CFG records own return placement/operands after structured assembly.
