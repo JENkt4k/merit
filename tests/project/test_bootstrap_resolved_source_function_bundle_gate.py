@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
+from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
 
@@ -38,18 +39,25 @@ fn main()->i32 {
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
   var capabilities:Vec<i64>=vec_new<i64>(allocator,0);
   var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var destructor_descriptors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
+  var destructor_body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var destructor_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,0);
+  var destructor_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
 
   let header_status:i32=print_resolved_source_function_bundle_header(2);
   if(header_status!=0){ return header_status; }
   let first_status:i32=print_resolved_source_function_bundle_item(
-    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors
+    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,
+    destructor_descriptors,destructor_body,destructor_cfg,destructor_placements
   );
   if(first_status!=0){ return checked_add(10,first_status); }
   let second_status:i32=print_resolved_source_function_bundle_item(
-    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors
+    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,
+    destructor_descriptors,destructor_body,destructor_cfg,destructor_placements
   );
   if(second_status!=0){ return checked_add(20,second_status); }
 
+  drop(destructor_placements); drop(destructor_cfg); drop(destructor_body); drop(destructor_descriptors);
   drop(type_descriptors); drop(capabilities); drop(placements); drop(cfg); drop(ownership); drop(bindings);
   drop(sources); drop(contract_locals); drop(contracts); drop(body);
  }
@@ -91,4 +99,4 @@ def test_native_bundle_framing_matches_interpreter_and_python_decoder(tmp_path: 
     bundle = decode_resolved_source_function_bundle(values)
     assert len(bundle.functions) == 2
     assert len(bundle.encoded_snapshots) == 2
-    assert all(len(snapshot) == 12 for snapshot in bundle.encoded_snapshots)
+    assert all(len(snapshot) == 2 + SNAPSHOT_SECTION_COUNT for snapshot in bundle.encoded_snapshots)

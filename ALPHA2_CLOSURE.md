@@ -261,6 +261,29 @@ multi-field owned-lifecycle slice. General destructor bodies, the remaining
 alpha.1 resource shapes, and acceptance migration keep M2 and the broad matrix
 rows `PARTIAL`/OPEN.
 
+`test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecycle`
+now closes the print-only destructor compatibility seam in favor of executable
+destructor programs carried by resolved snapshot v4. The concrete native driver
+discovers and lowers destructor `print` expressions, copy-field assignment,
+`if`/`else`, `while`, and checked arithmetic into destructor-local records,
+structured CFG, and instruction placements. Snapshot materialization reconstructs
+a canonical `MirDestructor`; deterministic C executes that body exactly once
+before recursive owned-field cleanup. The structured case mutates two values
+through different branch/loop paths and matches reference output `10\n3\n` in
+reverse cleanup order; constant-expression, implicit cleanup, explicit drop,
+move/no-double-drop, early return, `replace`, owned-payload-enum, and recursive
+aggregate lifecycle cases also retain reference/replacement parity. Repeated
+native bundles are byte-identical. The adjacent ownership-changing-body case
+fails closed deterministically and publishes no manifest, while snapshot tests
+reject invalid/noncanonical descriptor ranges, duplicate targets, excess or
+unreferenced body/CFG/placement rows. Canonical MIR round-trip and executable C
+tests independently cover destructor-program validation and deterministic
+emission. This closes general destructor bodies for the currently represented
+M2 aggregate/expression surface. Callable ownership/borrow boundaries, general
+payload-enum schemas and `try` lifecycle, and the minimal resource carriers still
+keep M2 and the broad matrix rows `PARTIAL`/OPEN; imported destructor helpers
+remain M5 rather than expanding this slice.
+
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.

@@ -11,7 +11,7 @@ import bootstrap_mir_resolved_source_function_snapshot;
 // resolved-source-function-bundle-v1
 // magic "MRBF", version, function count, then for each function:
 // snapshot value count followed by one complete
-// bootstrap-resolved-source-function-snapshot-v1 payload.
+// bootstrap-resolved-source-function-snapshot-v4 payload.
 
 pub fn resolved_source_function_snapshot_value_count(
     borrow body: Vec<MirFunctionRecord>,
@@ -23,9 +23,13 @@ pub fn resolved_source_function_snapshot_value_count(
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
-    borrow type_descriptors: Vec<MirTypeDescriptor>
+    borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
+    borrow destructor_body: Vec<MirFunctionRecord>,
+    borrow destructor_cfg: Vec<MirCfgRecord>,
+    borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i64 {
-    var count: i64 = 12; // magic + version + ten section counts
+    var count: i64 = 16; // magic + version + fourteen section counts
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(body), 16));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractRecord>(contracts), 12));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractLocal>(contract_locals), 5));
@@ -36,6 +40,10 @@ pub fn resolved_source_function_snapshot_value_count(
     count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(placements), 3));
     count = checked_add(count, vec_len<i64>(capabilities));
     count = checked_add(count, checked_mul(vec_len<MirTypeDescriptor>(type_descriptors), 5));
+    count = checked_add(count, checked_mul(vec_len<MirDestructorDescriptor>(destructor_descriptors), 7));
+    count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(destructor_body), 16));
+    count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(destructor_cfg), 7));
+    count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(destructor_placements), 3));
     return count;
 }
 
@@ -57,16 +65,22 @@ pub fn print_resolved_source_function_bundle_item(
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
-    borrow type_descriptors: Vec<MirTypeDescriptor>
+    borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
+    borrow destructor_body: Vec<MirFunctionRecord>,
+    borrow destructor_cfg: Vec<MirCfgRecord>,
+    borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i32 {
     let value_count: i64 = resolved_source_function_snapshot_value_count(
         body, contracts, contract_locals, sources, ownership_bindings,
-        ownership_records, cfg, placements, capabilities, type_descriptors
+        ownership_records, cfg, placements, capabilities, type_descriptors,
+        destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
     );
-    if (value_count < 12) { return 1; }
+    if (value_count < 16) { return 1; }
     print(value_count);
     return print_resolved_source_function_snapshot(
         body, contracts, contract_locals, sources, ownership_bindings,
-        ownership_records, cfg, placements, capabilities, type_descriptors
+        ownership_records, cfg, placements, capabilities, type_descriptors,
+        destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
     );
 }

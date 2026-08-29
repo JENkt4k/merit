@@ -31,6 +31,32 @@ pub struct MirFunctionRecord {
 pub struct MirTypeDescriptor {
     type_code: i32; kind: i32; identity: i32; child_type_code: i32; destructor_policy: i32;
 }
+pub struct MirDestructorDescriptor {
+    type_code: i32;
+    body_start: i64;
+    body_count: i64;
+    cfg_start: i64;
+    cfg_count: i64;
+    placement_start: i64;
+    placement_count: i64;
+}
+pub fn function_mir_destructor_descriptor(
+    type_code: i32, body_start: i64, body_count: i64,
+    cfg_start: i64, cfg_count: i64, placement_start: i64, placement_count: i64
+) -> MirDestructorDescriptor {
+    return MirDestructorDescriptor {
+        type_code:type_code, body_start:body_start, body_count:body_count,
+        cfg_start:cfg_start, cfg_count:cfg_count,
+        placement_start:placement_start, placement_count:placement_count
+    };
+}
+pub fn function_mir_destructor_type_code(borrow value: MirDestructorDescriptor) -> i32 { return value.type_code; }
+pub fn function_mir_destructor_body_start(borrow value: MirDestructorDescriptor) -> i64 { return value.body_start; }
+pub fn function_mir_destructor_body_count(borrow value: MirDestructorDescriptor) -> i64 { return value.body_count; }
+pub fn function_mir_destructor_cfg_start(borrow value: MirDestructorDescriptor) -> i64 { return value.cfg_start; }
+pub fn function_mir_destructor_cfg_count(borrow value: MirDestructorDescriptor) -> i64 { return value.cfg_count; }
+pub fn function_mir_destructor_placement_start(borrow value: MirDestructorDescriptor) -> i64 { return value.placement_start; }
+pub fn function_mir_destructor_placement_count(borrow value: MirDestructorDescriptor) -> i64 { return value.placement_count; }
 pub fn function_mir_type_descriptor_owned_field_struct_kind() -> i32 { return 1; }
 pub fn function_mir_type_descriptor_owned_payload_enum_kind() -> i32 { return 2; }
 pub fn function_mir_type_descriptor_aggregate_struct_kind() -> i32 { return 3; }
@@ -68,6 +94,15 @@ pub fn function_mir_kind_struct_construct() -> i32 { return 12; }
 pub fn function_mir_kind_struct_field_load() -> i32 { return 13; }
 pub fn function_mir_kind_struct_field_store() -> i32 { return 14; }
 pub fn function_mir_invalid_struct_record_status() -> i32 { return 42; }
+pub fn function_mir_binary_add_symbol() -> i32 { return 1; }
+pub fn function_mir_checked_numeric_policy() -> i32 { return 2; }
+pub fn function_mir_destructor_header_error() -> i32 { return 991; }
+pub fn function_mir_destructor_type_error() -> i32 { return 992; }
+pub fn function_mir_destructor_unopened_body_error() -> i32 { return 993; }
+pub fn function_mir_destructor_unclosed_body_error() -> i32 { return 994; }
+pub fn function_mir_destructor_statement_error() -> i32 { return 995; }
+pub fn function_mir_destructor_body_error(status: i32) -> i32 { return checked_add(996, status); }
+pub fn function_mir_destructor_cfg_error(status: i32) -> i32 { return checked_add(1100, status); }
 pub fn function_mir_is_construct(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 9) { return 1; } return 0; }
 pub fn function_mir_is_enum_tag_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 10) { return 1; } return 0; }
 pub fn function_mir_is_enum_payload_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 11) { return 1; } return 0; }

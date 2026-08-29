@@ -181,6 +181,13 @@ requires_caps [allocate]
                 if (kind == 4) {
                     vec_set<i64>(local_ids, current_index, hir_binding_id(hir));
                 } else {
+                    if (hir_is_pair(hir) != 0) {
+                        vec_push<i64>(stack, hir_right(hir));
+                        vec_push<i64>(stack, hir_left(hir));
+                    } else {
+                    if (hir_is_field_initializer(hir) != 0) {
+                        vec_push<i64>(stack, hir_right(hir));
+                    } else {
                     if (vec_get<i64>(local_ids, current_index) < 0) {
                         let next_local: i64 = vec_get<i64>(counters, 0);
                         vec_set<i64>(local_ids, current_index, next_local);
@@ -193,6 +200,17 @@ requires_caps [allocate]
                     if (kind == 5) {
                         vec_push<i64>(stack, hir_right(hir));
                         vec_push<i64>(stack, hir_left(hir));
+                    }
+                    if (hir_is_field_access(hir) != 0) {
+                        vec_push<i64>(stack, hir_left(hir));
+                    }
+                    if (hir_is_call(hir) != 0) {
+                        vec_push<i64>(stack, hir_right(hir));
+                    }
+                    if (hir_is_struct_constructor(hir) != 0) {
+                        if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
+                    }
+                    }
                     }
                 }
             }
@@ -215,6 +233,21 @@ requires_caps [allocate]
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
         if (kind == 5) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        // A resolved aggregate-field access is one canonical load instruction.
+        // Its field-name child is metadata rather than a runtime operand.
+        if (hir_is_field_access(hir) != 0) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        // Calls represented by the source-function record path (currently the
+        // checked arithmetic intrinsic in destructor bodies) each become one
+        // canonical instruction after their argument instructions.
+        if (hir_is_call(hir) != 0) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
@@ -502,6 +535,8 @@ pub fn lower_typed_statements_to_mir_events(
     borrow tokens: Vec<Token>,
     borrow statements: Vec<StatementRecord>,
     borrow operands: Vec<StatementOperand>,
+    initial_binding_start: i64,
+    initial_binding_length: i64,
     allocator: Allocator,
     borrow_mut events: Vec<MirLowerEvent>
 ) -> i32
@@ -510,6 +545,11 @@ requires_caps [allocate]
     if (vec_len<StatementRecord>(statements) == 0) { return 1; }
     var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
     var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    if (initial_binding_start >= 0) {
+        if (initial_binding_length <= 0) { return 2; }
+        vec_push<i64>(binding_starts, initial_binding_start);
+        vec_push<i64>(binding_lengths, initial_binding_length);
+    }
     let binding_status: i32 = lower_collect_bindings(
         statements, operands, binding_starts, binding_lengths
     );

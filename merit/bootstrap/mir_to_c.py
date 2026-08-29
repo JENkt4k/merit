@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 
-from merit.bootstrap.mir_contract import MirFunction, MirInstruction, MirModule, MirTerminator, MirType
+from merit.bootstrap.mir_contract import MirDestructor, MirFunction, MirInstruction, MirModule, MirTerminator, MirType
 
 
 class MirToCError(ValueError):
@@ -180,26 +180,36 @@ def _function_table(module: MirModule) -> dict[str, MirFunction]:
     return table
 
 
-def _drop_statements(expression: str, type_: MirType) -> list[str]:
+def _destructor_c_name(type_: MirType) -> str:
+    return f"merit_custom_destructor_{_identifier(_type(type_))}"
+
+
+def _drop_statements(
+    expression: str, type_: MirType, destructors: dict[MirType, MirDestructor]
+) -> list[str]:
     aggregate = _aggregate_struct_identity(type_)
     if aggregate is not None:
         _, fields, destructor_field = aggregate
         statements: list[str] = []
-        if destructor_field is not None:
+        if type_ in destructors:
+            statements.append(f"{_destructor_c_name(type_)}(&({expression}));")
+        elif destructor_field is not None:
             statements.append(
                 f'printf("%lld\\n", (long long){expression}.field_{destructor_field});'
             )
         for ordinal, field_type in enumerate(fields):
-            statements.extend(_drop_statements(f"{expression}.field_{ordinal}", field_type))
+            statements.extend(_drop_statements(f"{expression}.field_{ordinal}", field_type, destructors))
         return statements
     if _destructor_i64_struct_identity(type_) is not None:
+        if type_ in destructors:
+            return [f"{_destructor_c_name(type_)}(&({expression}));"]
         return [f'printf("%lld\\n", (long long){expression}.field_0);']
     owned_struct = _owned_field_struct_identity(type_)
     if owned_struct is not None:
-        return _drop_statements(f"{expression}.field_0", owned_struct[1])
+        return _drop_statements(f"{expression}.field_0", owned_struct[1], destructors)
     recursive_enum = _recursive_owned_payload_enum_identity(type_)
     if recursive_enum is not None:
-        return _drop_statements(f"{expression}.payload", recursive_enum[1])
+        return _drop_statements(f"{expression}.payload", recursive_enum[1], destructors)
     if _owned_payload_enum_identity(type_) is not None:
         return [f'printf("%lld\\n", (long long){expression}.payload.field_0);']
     if _i64_struct_identity(type_) is not None:
@@ -211,7 +221,9 @@ def _instruction(
     instruction: MirInstruction,
     functions: dict[str, MirFunction],
     local_types: dict[int, MirType] | None = None,
+    destructors: dict[MirType, MirDestructor] | None = None,
 ) -> list[str]:
+    destructors = destructors or {}
     result = _local(instruction.result) if instruction.result is not None else None
     operands = [_local(value) for value in instruction.operands]
     kind = instruction.kind
@@ -296,7 +308,15 @@ def _instruction(
             raise MirToCError("aggregate field store requires one value, a receiver result, and a field symbol")
         if local_types is None or instruction.result not in local_types:
             raise MirToCError("aggregate field store requires a resolved receiver type")
-        aggregate = _aggregate_struct_identity(local_types[instruction.result])
+        receiver_type = local_types[instruction.result]
+        if (
+            _i64_struct_identity(receiver_type) is not None
+            or _destructor_i64_struct_identity(receiver_type) is not None
+        ):
+            if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
+                raise MirToCError("single-i64 struct field store requires field_0")
+            return [f"{result}.field_0 = {operands[0]};"]
+        aggregate = _aggregate_struct_identity(receiver_type)
         if aggregate is None:
             raise MirToCError("field stores are only supported for represented aggregate structs")
         _, fields, _ = aggregate
@@ -354,17 +374,19 @@ def _instruction(
         if local_types is not None and instruction.operands[0] in local_types:
             operand_type = local_types[instruction.operands[0]]
             if _aggregate_struct_identity(operand_type) is not None:
-                return _drop_statements(operands[0], operand_type)
+                return _drop_statements(operands[0], operand_type, destructors)
             if _destructor_i64_struct_identity(operand_type) is not None:
+                if operand_type in destructors:
+                    return [f"{_destructor_c_name(operand_type)}(&{operands[0]});"]
                 return [f'printf("%lld\\n", (long long){operands[0]}.field_0);']
             if _owned_payload_enum_identity(operand_type) is not None:
                 return [f'printf("%lld\\n", (long long){operands[0]}.payload.field_0);']
             recursive_enum = _recursive_owned_payload_enum_identity(operand_type)
             if recursive_enum is not None:
-                return _drop_statements(f"{operands[0]}.payload", recursive_enum[1])
+                return _drop_statements(f"{operands[0]}.payload", recursive_enum[1], destructors)
             owned_struct = _owned_field_struct_identity(operand_type)
             if owned_struct is not None:
-                return _drop_statements(f"{operands[0]}.field_0", owned_struct[1])
+                return _drop_statements(f"{operands[0]}.field_0", owned_struct[1], destructors)
             if _i64_struct_identity(operand_type) is not None:
                 return [f"/* deterministic drop of non-copy aggregate {operands[0]} */"]
         return ["/* explicit no-op in scalar bootstrap C subset */"]
@@ -401,8 +423,13 @@ def _prototype(function: MirFunction) -> str:
     return f"{_type(function.return_type)} {_identifier(function.name)}(void);"
 
 
-def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | None = None) -> str:
+def emit_c_function(
+    function: MirFunction,
+    functions: dict[str, MirFunction] | None = None,
+    destructors: dict[MirType, MirDestructor] | None = None,
+) -> str:
     functions = functions or {function.name: function}
+    destructors = destructors or {}
     return_type = _type(function.return_type)
     lines = [f"{return_type} {_identifier(function.name)}(void) {{"]
     local_types = {local.local_id: local.type for local in function.locals}
@@ -424,10 +451,39 @@ def emit_c_function(function: MirFunction, functions: dict[str, MirFunction] | N
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _instruction(instruction, functions, local_types):
+            for statement in _instruction(instruction, functions, local_types, destructors):
                 lines.append(f"    {statement}")
         for statement in _terminator(block.terminator, return_type):
             lines.append(f"    {statement}")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _emit_c_destructor(
+    destructor: MirDestructor,
+    functions: dict[str, MirFunction],
+    destructors: dict[MirType, MirDestructor],
+) -> str:
+    local_types = {local.local_id: local.type for local in destructor.locals}
+    lines = [
+        f"static void {_destructor_c_name(destructor.target)}({_type(destructor.target)} *self) {{",
+        f"    {_type(destructor.target)} {_local(0)} = *self;",
+    ]
+    for local in destructor.locals[1:]:
+        lines.append(f"    {_type(local.type)} {_local(local.local_id)} = 0;")
+    lines.append(f"    goto b_destructor_{destructor.entry_block};")
+    for block in destructor.blocks:
+        lines.append(f"b_destructor_{block.block_id}:")
+        for instruction in block.instructions:
+            for statement in _instruction(instruction, functions, local_types, destructors):
+                lines.append(f"    {statement}")
+        if block.terminator.kind == "return":
+            if block.terminator.operands:
+                raise MirToCError("destructor return terminators cannot carry values")
+            lines.extend(["    *self = m0;", "    return;"])
+        else:
+            for statement in _terminator(block.terminator, "void"):
+                lines.append(f"    {statement.replace('goto b', 'goto b_destructor_')}")
     lines.append("}")
     return "\n".join(lines)
 
@@ -501,10 +557,16 @@ def _type_needs_print(type_: MirType) -> bool:
 
 def emit_c_module(module: MirModule) -> str:
     functions = _function_table(module)
+    destructors = {destructor.target: destructor for destructor in module.destructors}
     instructions = [
         instruction
         for function in module.functions
         for block in function.blocks
+        for instruction in block.instructions
+    ] + [
+        instruction
+        for destructor in module.destructors
+        for block in destructor.blocks
         for instruction in block.instructions
     ]
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
@@ -517,6 +579,11 @@ def emit_c_module(module: MirModule) -> str:
         for function in module.functions
         for local in function.locals
         for nested in _walk_types(local.type)
+    } | {
+        nested
+        for destructor in module.destructors
+        for type_ in (destructor.target, *(local.type for local in destructor.locals))
+        for nested in _walk_types(type_)
     }
     checked_operators = {
         instruction.symbol
@@ -667,7 +734,19 @@ def emit_c_module(module: MirModule) -> str:
     if runtime:
         prelude.extend([*runtime, ""])
     prototypes = [_prototype(function) for function in module.functions]
+    prototypes.extend(
+        f"static void {_destructor_c_name(destructor.target)}({_type(destructor.target)} *self);"
+        for destructor in module.destructors
+    )
     if prototypes:
         prelude.extend([*prototypes, ""])
-    emitted = "\n\n".join(emit_c_function(function, functions) for function in module.functions)
+    emitted_destructors = [
+        _emit_c_destructor(destructor, functions, destructors)
+        for destructor in module.destructors
+    ]
+    emitted_functions = [
+        emit_c_function(function, functions, destructors)
+        for function in module.functions
+    ]
+    emitted = "\n\n".join([*emitted_destructors, *emitted_functions])
     return "\n".join([*prelude, emitted, ""])

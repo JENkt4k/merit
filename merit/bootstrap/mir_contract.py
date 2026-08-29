@@ -245,10 +245,38 @@ class MirFunction:
 
 
 @dataclass(frozen=True, slots=True)
+class MirDestructor:
+    target: MirType
+    locals: tuple[MirLocal, ...]
+    blocks: tuple[MirBlock, ...]
+    entry_block: int
+
+    def __post_init__(self) -> None:
+        if self.entry_block < 0:
+            raise MirContractError("destructor entry block IDs must be non-negative")
+        if not self.locals or self.locals[0].name != "self":
+            raise MirContractError("destructors require self as local 0")
+        if self.locals[0].local_id != 0 or self.locals[0].type != self.target:
+            raise MirContractError("destructor self local must have its target type")
+        if self.locals[0].ownership != "mutable_borrow":
+            raise MirContractError("destructor self local must be a mutable borrow")
+        _validate_executable(self.locals, self.blocks, self.entry_block)
+
+    def to_data(self) -> dict[str, object]:
+        return {
+            "target": self.target.to_data(),
+            "locals": [local.to_data() for local in self.locals],
+            "blocks": [block.to_data() for block in self.blocks],
+            "entry_block": self.entry_block,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MirModule:
     name: str
     functions: tuple[MirFunction, ...]
     schema: str = MIR_SCHEMA
+    destructors: tuple[MirDestructor, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema != MIR_SCHEMA:
@@ -258,15 +286,31 @@ class MirModule:
         names = [function.name for function in self.functions]
         if len(set(names)) != len(names):
             raise MirContractError("duplicate MIR function name")
+        targets = [destructor.target for destructor in self.destructors]
+        if len(set(targets)) != len(targets):
+            raise MirContractError("duplicate MIR destructor target")
 
     def to_data(self) -> dict[str, object]:
-        return {"schema": self.schema, "name": self.name, "functions": [function.to_data() for function in self.functions]}
+        data: dict[str, object] = {
+            "schema": self.schema,
+            "name": self.name,
+            "functions": [function.to_data() for function in self.functions],
+        }
+        if self.destructors:
+            data["destructors"] = [destructor.to_data() for destructor in self.destructors]
+        return data
 
 
 def _validate_function(function: MirFunction) -> None:
-    local_ids = [local.local_id for local in function.locals]
-    block_ids = [block.block_id for block in function.blocks]
-    instruction_ids = [instruction.instruction_id for block in function.blocks for instruction in block.instructions]
+    _validate_executable(function.locals, function.blocks, function.entry_block)
+
+
+def _validate_executable(
+    locals_: tuple[MirLocal, ...], blocks: tuple[MirBlock, ...], entry_block: int
+) -> None:
+    local_ids = [local.local_id for local in locals_]
+    block_ids = [block.block_id for block in blocks]
+    instruction_ids = [instruction.instruction_id for block in blocks for instruction in block.instructions]
     if len(set(local_ids)) != len(local_ids):
         raise MirContractError("duplicate MIR local ID")
     if len(set(block_ids)) != len(block_ids):
@@ -275,9 +319,9 @@ def _validate_function(function: MirFunction) -> None:
         raise MirContractError("duplicate MIR instruction ID")
     local_set = set(local_ids)
     block_set = set(block_ids)
-    if function.entry_block not in block_set:
+    if entry_block not in block_set:
         raise MirContractError("entry block does not exist")
-    for block in function.blocks:
+    for block in blocks:
         previous = -1
         for instruction in block.instructions:
             if instruction.instruction_id <= previous:
@@ -313,13 +357,17 @@ def _validate_function(function: MirFunction) -> None:
         for target in block.terminator.targets:
             if target not in block_set:
                 raise MirContractError(f"terminator references unknown block {target}")
-    _validate_reachable(function)
+    _validate_reachable_blocks(blocks, entry_block)
 
 
 def _validate_reachable(function: MirFunction) -> None:
-    by_id = {block.block_id: block for block in function.blocks}
+    _validate_reachable_blocks(function.blocks, function.entry_block)
+
+
+def _validate_reachable_blocks(blocks: tuple[MirBlock, ...], entry_block: int) -> None:
+    by_id = {block.block_id: block for block in blocks}
     reachable: set[int] = set()
-    pending = [function.entry_block]
+    pending = [entry_block]
     while pending:
         block_id = pending.pop()
         if block_id in reachable:
@@ -355,6 +403,67 @@ def parse_mir_type(data: object) -> MirType:
     return MirType(name, tuple(parse_mir_type(argument) for argument in arguments))
 
 
+def _parse_executable(
+    raw_executable: Mapping[str, object], label: str
+) -> tuple[tuple[MirLocal, ...], tuple[MirBlock, ...], int]:
+    locals_data = raw_executable.get("locals")
+    blocks_data = raw_executable.get("blocks")
+    if not isinstance(locals_data, list) or not isinstance(blocks_data, list):
+        raise MirContractError(f"{label} locals and blocks must be lists")
+    locals_: list[MirLocal] = []
+    for raw in locals_data:
+        if not isinstance(raw, Mapping):
+            raise MirContractError("local entries must be objects")
+        source_binding = raw.get("source_binding_id")
+        locals_.append(MirLocal(
+            int(raw.get("id", -1)), str(raw.get("name", "")), parse_mir_type(raw.get("type")),
+            bool(raw.get("mutable", False)), str(raw.get("ownership", "value")),
+            None if source_binding is None else int(source_binding),
+        ))
+    blocks: list[MirBlock] = []
+    for raw_block in blocks_data:
+        if not isinstance(raw_block, Mapping):
+            raise MirContractError("block entries must be objects")
+        instructions_data = raw_block.get("instructions")
+        terminator_data = raw_block.get("terminator")
+        if not isinstance(instructions_data, list) or not isinstance(terminator_data, Mapping):
+            raise MirContractError("blocks require instruction lists and terminator objects")
+        instructions: list[MirInstruction] = []
+        for raw in instructions_data:
+            if not isinstance(raw, Mapping):
+                raise MirContractError("instruction entries must be objects")
+            operands = raw.get("operands", [])
+            caps = raw.get("capabilities", [])
+            specialization = raw.get("specialization", [])
+            if not isinstance(operands, list) or not all(isinstance(value, int) for value in operands):
+                raise MirContractError("instruction operands must be integer lists")
+            if not isinstance(caps, list) or not all(isinstance(value, str) for value in caps):
+                raise MirContractError("instruction capabilities must be string lists")
+            if not isinstance(specialization, list):
+                raise MirContractError("instruction specialization must be a type list")
+            result = raw.get("result")
+            instructions.append(MirInstruction(
+                int(raw.get("id", -1)), str(raw.get("kind", "")),
+                None if result is None else int(result), tuple(operands),
+                raw.get("symbol") if isinstance(raw.get("symbol"), str) else None,
+                raw.get("value"), _parse_span(raw.get("span")), str(raw.get("ownership", "none")),
+                str(raw.get("numeric_policy", "none")), str(raw.get("conversion_policy", "none")),
+                str(raw.get("contract_kind", "none")), tuple(caps),
+                tuple(parse_mir_type(argument) for argument in specialization),
+            ))
+        term_operands = terminator_data.get("operands", [])
+        targets = terminator_data.get("targets", [])
+        cases = terminator_data.get("cases", [])
+        if not all(isinstance(values, list) and all(isinstance(value, int) for value in values) for values in (term_operands, targets, cases)):
+            raise MirContractError("terminator operands, targets, and cases must be integer lists")
+        terminator = MirTerminator(
+            str(terminator_data.get("kind", "")), tuple(term_operands), tuple(targets), tuple(cases),
+            _parse_span(terminator_data.get("span")),
+        )
+        blocks.append(MirBlock(int(raw_block.get("id", -1)), tuple(instructions), terminator))
+    return tuple(locals_), tuple(blocks), int(raw_executable.get("entry_block", -1))
+
+
 def parse_mir(data: Mapping[str, object]) -> MirModule:
     if data.get("schema") != MIR_SCHEMA:
         raise MirContractError(f"expected MIR schema {MIR_SCHEMA!r}")
@@ -364,55 +473,30 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
         raise MirContractError("module name must be non-empty")
     if not isinstance(functions_data, list):
         raise MirContractError("functions must be a list")
+    destructors_data = data.get("destructors", [])
+    if not isinstance(destructors_data, list):
+        raise MirContractError("destructors must be a list")
     functions: list[MirFunction] = []
     for raw_function in functions_data:
         if not isinstance(raw_function, Mapping):
             raise MirContractError("function entries must be objects")
-        locals_data = raw_function.get("locals")
-        blocks_data = raw_function.get("blocks")
         capabilities = raw_function.get("capabilities", [])
-        if not isinstance(locals_data, list) or not isinstance(blocks_data, list):
-            raise MirContractError("function locals and blocks must be lists")
         if not isinstance(capabilities, list) or not all(isinstance(value, str) for value in capabilities):
             raise MirContractError("function capabilities must be strings")
-        locals_: list[MirLocal] = []
-        for raw in locals_data:
-            if not isinstance(raw, Mapping):
-                raise MirContractError("local entries must be objects")
-            source_binding = raw.get("source_binding_id")
-            locals_.append(MirLocal(int(raw.get("id", -1)), str(raw.get("name", "")), parse_mir_type(raw.get("type")), bool(raw.get("mutable", False)), str(raw.get("ownership", "value")), None if source_binding is None else int(source_binding)))
-        blocks: list[MirBlock] = []
-        for raw_block in blocks_data:
-            if not isinstance(raw_block, Mapping):
-                raise MirContractError("block entries must be objects")
-            instructions_data = raw_block.get("instructions")
-            terminator_data = raw_block.get("terminator")
-            if not isinstance(instructions_data, list) or not isinstance(terminator_data, Mapping):
-                raise MirContractError("blocks require instruction lists and terminator objects")
-            instructions: list[MirInstruction] = []
-            for raw in instructions_data:
-                if not isinstance(raw, Mapping):
-                    raise MirContractError("instruction entries must be objects")
-                operands = raw.get("operands", [])
-                caps = raw.get("capabilities", [])
-                specialization = raw.get("specialization", [])
-                if not isinstance(operands, list) or not all(isinstance(value, int) for value in operands):
-                    raise MirContractError("instruction operands must be integer lists")
-                if not isinstance(caps, list) or not all(isinstance(value, str) for value in caps):
-                    raise MirContractError("instruction capabilities must be string lists")
-                if not isinstance(specialization, list):
-                    raise MirContractError("instruction specialization must be a type list")
-                result = raw.get("result")
-                instructions.append(MirInstruction(int(raw.get("id", -1)), str(raw.get("kind", "")), None if result is None else int(result), tuple(operands), raw.get("symbol") if isinstance(raw.get("symbol"), str) else None, raw.get("value"), _parse_span(raw.get("span")), str(raw.get("ownership", "none")), str(raw.get("numeric_policy", "none")), str(raw.get("conversion_policy", "none")), str(raw.get("contract_kind", "none")), tuple(caps), tuple(parse_mir_type(argument) for argument in specialization)))
-            term_operands = terminator_data.get("operands", [])
-            targets = terminator_data.get("targets", [])
-            cases = terminator_data.get("cases", [])
-            if not all(isinstance(values, list) and all(isinstance(value, int) for value in values) for values in (term_operands, targets, cases)):
-                raise MirContractError("terminator operands, targets, and cases must be integer lists")
-            terminator = MirTerminator(str(terminator_data.get("kind", "")), tuple(term_operands), tuple(targets), tuple(cases), _parse_span(terminator_data.get("span")))
-            blocks.append(MirBlock(int(raw_block.get("id", -1)), tuple(instructions), terminator))
-        functions.append(MirFunction(str(raw_function.get("name", "")), parse_mir_type(raw_function.get("return_type")), tuple(locals_), tuple(blocks), int(raw_function.get("entry_block", -1)), tuple(capabilities)))
-    return MirModule(name, tuple(functions))
+        locals_, blocks, entry_block = _parse_executable(raw_function, "function")
+        functions.append(MirFunction(
+            str(raw_function.get("name", "")), parse_mir_type(raw_function.get("return_type")),
+            locals_, blocks, entry_block, tuple(capabilities),
+        ))
+    destructors: list[MirDestructor] = []
+    for raw_destructor in destructors_data:
+        if not isinstance(raw_destructor, Mapping):
+            raise MirContractError("destructor entries must be objects")
+        locals_, blocks, entry_block = _parse_executable(raw_destructor, "destructor")
+        destructors.append(MirDestructor(
+            parse_mir_type(raw_destructor.get("target")), locals_, blocks, entry_block,
+        ))
+    return MirModule(name, tuple(functions), destructors=tuple(destructors))
 
 
 def load_mir_json(text: str) -> MirModule:

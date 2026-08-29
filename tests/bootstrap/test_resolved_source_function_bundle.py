@@ -9,11 +9,15 @@ from merit.bootstrap.resolved_source_function_bundle import (
     decode_resolved_source_function_bundle,
     encode_resolved_source_function_bundle,
 )
-from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_MAGIC, SNAPSHOT_VERSION
+from merit.bootstrap.resolved_source_function_snapshot import (
+    SNAPSHOT_MAGIC,
+    SNAPSHOT_SECTION_COUNT,
+    SNAPSHOT_VERSION,
+)
 
 
 def _snapshot() -> tuple[int, ...]:
-    return (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * 10))
+    return (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
 
 
 def test_bundle_round_trips_multiple_nested_snapshots() -> None:
@@ -44,6 +48,6 @@ def test_bundle_rejects_trailing_data() -> None:
 
 
 def test_bundle_rejects_invalid_nested_snapshot() -> None:
-    invalid = (0, SNAPSHOT_VERSION, *([0] * 10))
+    invalid = (0, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
     with pytest.raises(ResolvedSourceFunctionBundleError, match="snapshot 0 is invalid"):
         encode_resolved_source_function_bundle((invalid,))

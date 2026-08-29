@@ -3,9 +3,47 @@ from __future__ import annotations
 import pytest
 
 from merit.bootstrap.resolved_source_function_snapshot import (
+    SNAPSHOT_MAGIC,
+    SNAPSHOT_VERSION,
     ResolvedSourceFunctionSnapshotError,
     _descriptor_type_names,
+    decode_resolved_source_function_snapshot,
 )
+
+
+def _v4_snapshot(
+    *,
+    destructors: tuple[tuple[int, ...], ...] = (),
+    body: tuple[tuple[int, ...], ...] = (),
+    cfg: tuple[tuple[int, ...], ...] = (),
+    placements: tuple[tuple[int, ...], ...] = (),
+) -> tuple[int, ...]:
+    sections = ((),) * 10 + (destructors, body, cfg, placements)
+    return (
+        SNAPSHOT_MAGIC,
+        SNAPSHOT_VERSION,
+        *(value for section in sections for value in (len(section), *(item for row in section for item in row))),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    (
+        (_v4_snapshot(destructors=((3_000, -1, 0, 0, 0, 0, 0),)), "invalid"),
+        (_v4_snapshot(destructors=((3_000, 1, 0, 0, 0, 0, 0),)), "noncanonical"),
+        (_v4_snapshot(destructors=((3_000, 0, 1, 0, 0, 0, 0),)), "exceeds"),
+        (
+            _v4_snapshot(
+                destructors=((3_000, 0, 0, 0, 0, 0, 0), (3_000, 0, 0, 0, 0, 0, 0))
+            ),
+            "duplicates target",
+        ),
+        (_v4_snapshot(body=((1,) * 16,)), "unreferenced"),
+    ),
+)
+def test_v4_destructor_sections_fail_closed(values: tuple[int, ...], message: str) -> None:
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match=message):
+        decode_resolved_source_function_snapshot(values)
 
 
 def test_native_type_descriptors_resolve_recursive_owned_aggregate_graph() -> None:

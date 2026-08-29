@@ -7,10 +7,10 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 
-// bootstrap-resolved-source-function-snapshot-v3.
+// bootstrap-resolved-source-function-snapshot-v4.
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
-// then ten count-prefixed fixed-width sections matching the canonical adapter.
+// then fourteen count-prefixed fixed-width sections matching the canonical adapter.
 pub fn print_resolved_source_function_snapshot(
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
@@ -21,11 +21,15 @@ pub fn print_resolved_source_function_snapshot(
     borrow cfg: Vec<MirCfgRecord>,
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
-    borrow type_descriptors: Vec<MirTypeDescriptor>
+    borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
+    borrow destructor_body: Vec<MirFunctionRecord>,
+    borrow destructor_cfg: Vec<MirCfgRecord>,
+    borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i32
 {
     print(1297240902); // MRSF
-    print(3);
+    print(4);
 
     print(vec_len<MirFunctionRecord>(body));
     var i: i64 = 0;
@@ -108,6 +112,43 @@ pub fn print_resolved_source_function_snapshot(
         print(function_mir_type_descriptor_code(r)); print(function_mir_type_descriptor_kind(r));
         print(function_mir_type_descriptor_identity(r)); print(function_mir_type_descriptor_child(r));
         print(function_mir_type_descriptor_destructor_policy(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirDestructorDescriptor>(destructor_descriptors)); i = 0;
+    while (i < vec_len<MirDestructorDescriptor>(destructor_descriptors)) {
+        let r: MirDestructorDescriptor = vec_get<MirDestructorDescriptor>(destructor_descriptors, i);
+        print(function_mir_destructor_type_code(r));
+        print(function_mir_destructor_body_start(r)); print(function_mir_destructor_body_count(r));
+        print(function_mir_destructor_cfg_start(r)); print(function_mir_destructor_cfg_count(r));
+        print(function_mir_destructor_placement_start(r)); print(function_mir_destructor_placement_count(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirFunctionRecord>(destructor_body)); i = 0;
+    while (i < vec_len<MirFunctionRecord>(destructor_body)) {
+        let r: MirFunctionRecord = vec_get<MirFunctionRecord>(destructor_body, i);
+        print(function_mir_kind(r)); print(function_mir_start(r)); print(function_mir_length(r));
+        print(function_mir_id(r)); print(function_mir_result(r)); print(function_mir_left(r));
+        print(function_mir_right(r)); print(function_mir_symbol_start(r)); print(function_mir_symbol_length(r));
+        print(function_mir_symbol_code(r)); print(function_mir_type_code(r)); print(function_mir_numeric_policy(r));
+        print(function_mir_binding_id(r)); print(function_mir_mutable(r)); print(function_mir_hir_node_id(r));
+        print(function_mir_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirCfgRecord>(destructor_cfg)); i = 0;
+    while (i < vec_len<MirCfgRecord>(destructor_cfg)) {
+        let r: MirCfgRecord = vec_get<MirCfgRecord>(destructor_cfg, i);
+        print(cfg_kind(r)); print(cfg_block_id(r)); print(cfg_operand(r)); print(cfg_target_a(r));
+        print(cfg_target_b(r)); print(cfg_case_value(r)); print(cfg_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirPlacementRecord>(destructor_placements)); i = 0;
+    while (i < vec_len<MirPlacementRecord>(destructor_placements)) {
+        let r: MirPlacementRecord = vec_get<MirPlacementRecord>(destructor_placements, i);
+        print(placement_block_id(r)); print(placement_instruction_id(r)); print(placement_ordinal(r));
         i = checked_add(i, 1);
     }
     return 0;

@@ -6,6 +6,7 @@ from merit.bootstrap.mir_contract import (
     MIR_SCHEMA,
     MirBlock,
     MirContractError,
+    MirDestructor,
     MirFunction,
     MirInstruction,
     MirLocal,
@@ -52,6 +53,33 @@ def test_sample_mir_is_canonical_and_round_trips():
     assert parse_mir(json.loads(encoded)) == module
     assert encoded == canonical_mir_json(module)
     assert json.loads(encoded)["schema"] == MIR_SCHEMA
+
+
+def test_executable_destructor_is_canonical_and_round_trips():
+    target = MirType("struct_i64_destructor_0")
+    destructor = MirDestructor(
+        target,
+        (
+            MirLocal(0, "self", target, mutable=True, ownership="mutable_borrow"),
+            MirLocal(1, "field", MirType("i64")),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "load_field", result=1, operands=(0,), symbol="field_0"),
+                    MirInstruction(1, "print", operands=(1,)),
+                ),
+                MirTerminator("return"),
+            ),
+        ),
+        0,
+    )
+    module = MirModule("destructor", (), destructors=(destructor,))
+    assert load_mir_json(canonical_mir_json(module)) == module
+
+    with pytest.raises(MirContractError, match="duplicate MIR destructor target"):
+        MirModule("duplicate", (), destructors=(destructor, destructor))
 
 
 def test_canonical_json_is_independent_of_mapping_order():

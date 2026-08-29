@@ -22,6 +22,11 @@ pub struct StatementOperand {
 pub fn statement_record_kind(borrow record: StatementRecord) -> i32 { return record.kind; }
 pub fn statement_record_let_kind() -> i32 { return 20; }
 pub fn statement_record_var_kind() -> i32 { return 21; }
+pub fn statement_record_print_kind() -> i32 { return 23; }
+pub fn statement_record_if_kind() -> i32 { return 25; }
+pub fn statement_record_while_kind() -> i32 { return 26; }
+pub fn statement_record_assign_kind() -> i32 { return 30; }
+pub fn statement_record_expression_kind() -> i32 { return 31; }
 pub fn statement_record_is_match(borrow record: StatementRecord) -> i32 { if (record.kind == 27) { return 1; } return 0; }
 pub fn statement_record_start(borrow record: StatementRecord) -> i64 { return record.start; }
 pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return record.length; }

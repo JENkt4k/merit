@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from merit.bootstrap.mir_contract import MirModule, MirType
+from merit.bootstrap.mir_contract import MirDestructor, MirModule, MirType
 from merit.bootstrap.mir_to_c import emit_c_module
 from merit.bootstrap.replacement_build import (
     ReplacementBuildArtifact,
@@ -73,6 +73,8 @@ def build_replacement_project_artifact(
 
     canonical_functions = []
     seen: set[str] = set()
+    canonical_destructors = []
+    destructors_by_target: dict[MirType, MirDestructor] = {}
     for function_input in resolved:
         snapshot = decode_resolved_source_function_snapshot(function_input.snapshot_values)
         partial = materialize_resolved_source_function_snapshot(
@@ -89,8 +91,21 @@ def build_replacement_project_artifact(
                 )
             seen.add(function.name)
             canonical_functions.append(function)
+        for destructor in partial.destructors:
+            previous = destructors_by_target.get(destructor.target)
+            if previous is not None and previous != destructor:
+                raise ReplacementBuildError(
+                    f"conflicting replacement destructor for {destructor.target.name!r}"
+                )
+            if previous is None:
+                destructors_by_target[destructor.target] = destructor
+                canonical_destructors.append(destructor)
 
-    module = MirModule(name=module_name, functions=tuple(canonical_functions))
+    module = MirModule(
+        name=module_name,
+        functions=tuple(canonical_functions),
+        destructors=tuple(canonical_destructors),
+    )
     return ReplacementBuildArtifact(module=module, c_source=emit_c_module(module))
 
 
