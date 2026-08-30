@@ -93,6 +93,21 @@ class MirLocal:
 
 
 @dataclass(frozen=True, slots=True)
+class MirParameter:
+    local_id: int
+    mode: str = "value"
+
+    def __post_init__(self) -> None:
+        if self.local_id < 0:
+            raise MirContractError("parameter local IDs must be non-negative")
+        if self.mode not in {"value", "borrowed", "mutable_borrow"}:
+            raise MirContractError(f"unknown parameter mode: {self.mode}")
+
+    def to_data(self) -> dict[str, object]:
+        return {"local": self.local_id, "mode": self.mode}
+
+
+@dataclass(frozen=True, slots=True)
 class MirInstruction:
     instruction_id: int
     kind: str
@@ -221,6 +236,9 @@ class MirFunction:
     blocks: tuple[MirBlock, ...]
     entry_block: int
     capabilities: tuple[str, ...] = ()
+    parameters: tuple[MirParameter, ...] = ()
+    return_mode: str = "value"
+    borrowed_origin: int | None = None
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -231,10 +249,33 @@ class MirFunction:
             raise MirContractError("function capability requirements must be unique")
         if any(not capability for capability in self.capabilities):
             raise MirContractError("function capability names must be non-empty")
+        if self.return_mode not in {"value", "borrowed", "mutable_borrow"}:
+            raise MirContractError(f"unknown function return mode: {self.return_mode}")
+        parameter_ids = [parameter.local_id for parameter in self.parameters]
+        if len(set(parameter_ids)) != len(parameter_ids):
+            raise MirContractError("function parameter locals must be unique")
+        locals_by_id = {local.local_id: local for local in self.locals}
+        for parameter in self.parameters:
+            local = locals_by_id.get(parameter.local_id)
+            if local is None:
+                raise MirContractError("function parameters must reference declared locals")
+            if parameter.mode != "value" and local.ownership != parameter.mode:
+                raise MirContractError("borrowed parameter mode must match local ownership")
+        if self.return_mode == "value":
+            if self.borrowed_origin is not None:
+                raise MirContractError("value returns cannot declare a borrowed origin")
+        else:
+            if self.borrowed_origin not in parameter_ids:
+                raise MirContractError("borrowed returns require a parameter origin")
+            origin = next(parameter for parameter in self.parameters if parameter.local_id == self.borrowed_origin)
+            if origin.mode == "value":
+                raise MirContractError("borrowed returns require a borrowed parameter origin")
+            if self.return_mode == "mutable_borrow" and origin.mode != "mutable_borrow":
+                raise MirContractError("mutable borrowed returns require a mutable-borrow origin")
         _validate_function(self)
 
     def to_data(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "name": self.name,
             "return_type": self.return_type.to_data(),
             "locals": [local.to_data() for local in self.locals],
@@ -242,6 +283,12 @@ class MirFunction:
             "entry_block": self.entry_block,
             "capabilities": list(self.capabilities),
         }
+        if self.parameters:
+            data["parameters"] = [parameter.to_data() for parameter in self.parameters]
+        if self.return_mode != "value":
+            data["return_mode"] = self.return_mode
+            data["borrowed_origin"] = self.borrowed_origin
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -484,9 +531,22 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
         if not isinstance(capabilities, list) or not all(isinstance(value, str) for value in capabilities):
             raise MirContractError("function capabilities must be strings")
         locals_, blocks, entry_block = _parse_executable(raw_function, "function")
+        parameters_data = raw_function.get("parameters", [])
+        if not isinstance(parameters_data, list):
+            raise MirContractError("function parameters must be a list")
+        parameters: list[MirParameter] = []
+        for raw_parameter in parameters_data:
+            if not isinstance(raw_parameter, Mapping):
+                raise MirContractError("function parameter entries must be objects")
+            parameters.append(MirParameter(
+                int(raw_parameter.get("local", -1)), str(raw_parameter.get("mode", "value"))
+            ))
+        raw_origin = raw_function.get("borrowed_origin")
         functions.append(MirFunction(
             str(raw_function.get("name", "")), parse_mir_type(raw_function.get("return_type")),
-            locals_, blocks, entry_block, tuple(capabilities),
+            locals_, blocks, entry_block, tuple(capabilities), tuple(parameters),
+            str(raw_function.get("return_mode", "value")),
+            None if raw_origin is None else int(raw_origin),
         ))
     destructors: list[MirDestructor] = []
     for raw_destructor in destructors_data:

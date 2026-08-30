@@ -542,13 +542,39 @@ pub fn lower_typed_statements_to_mir_events(
 ) -> i32
 requires_caps [allocate]
 {
-    if (vec_len<StatementRecord>(statements) == 0) { return 1; }
-    var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
-    var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    var initial_starts:Vec<i64>=vec_new<i64>(allocator,1);
+    var initial_lengths:Vec<i64>=vec_new<i64>(allocator,1);
     if (initial_binding_start >= 0) {
         if (initial_binding_length <= 0) { return 2; }
-        vec_push<i64>(binding_starts, initial_binding_start);
-        vec_push<i64>(binding_lengths, initial_binding_length);
+        vec_push<i64>(initial_starts,initial_binding_start);
+        vec_push<i64>(initial_lengths,initial_binding_length);
+    }
+    let status:i32=lower_typed_statements_with_bindings_to_mir_events(
+        source,tokens,statements,operands,initial_starts,initial_lengths,allocator,events
+    );
+    drop(initial_lengths);drop(initial_starts);
+    return status;
+}
+
+pub fn lower_typed_statements_with_bindings_to_mir_events(
+    borrow source:Buffer, borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>, borrow operands:Vec<StatementOperand>,
+    borrow initial_starts:Vec<i64>, borrow initial_lengths:Vec<i64>,
+    allocator:Allocator, borrow_mut events:Vec<MirLowerEvent>
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<StatementRecord>(statements)==0){return 1;}
+    if(vec_len<i64>(initial_starts)!=vec_len<i64>(initial_lengths)){return 2;}
+    var binding_starts:Vec<i64>=vec_new<i64>(allocator,checked_add(vec_len<i64>(initial_starts),8));
+    var binding_lengths:Vec<i64>=vec_new<i64>(allocator,checked_add(vec_len<i64>(initial_lengths),8));
+    var initial_index:i64=0;
+    while(initial_index<vec_len<i64>(initial_starts)){
+        if(vec_get<i64>(initial_starts,initial_index)<0){return 2;}
+        if(vec_get<i64>(initial_lengths,initial_index)<=0){return 2;}
+        vec_push<i64>(binding_starts,vec_get<i64>(initial_starts,initial_index));
+        vec_push<i64>(binding_lengths,vec_get<i64>(initial_lengths,initial_index));
+        initial_index=checked_add(initial_index,1);
     }
     let binding_status: i32 = lower_collect_bindings(
         statements, operands, binding_starts, binding_lengths

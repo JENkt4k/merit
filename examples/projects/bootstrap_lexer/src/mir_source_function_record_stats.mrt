@@ -3,6 +3,10 @@ import bootstrap_mir_functions;
 
 capability allocate;
 
+fn source_function_stats_local_order_status()->i32{return 10;}
+fn source_function_stats_instruction_order_status()->i32{return 12;}
+fn source_function_stats_unknown_instruction_status()->i32{return 13;}
+
 // stats: binding_count, body_local_count, body_instruction_count, return_count.
 pub fn source_function_record_stats(
     borrow records: Vec<MirFunctionRecord>,
@@ -26,6 +30,11 @@ requires_caps [allocate]
             bindings = checked_add(bindings, 1);
             locals = checked_add(locals, 1);
         } else {
+            if (kind == function_mir_kind_parameter()) {
+                if (function_mir_id(record) != locals) { return source_function_stats_local_order_status(); }
+                bindings = checked_add(bindings, 1);
+                locals = checked_add(locals, 1);
+            } else {
             if (kind == 3) {
                 if (function_mir_id(record) != locals) { return 11; }
                 locals = checked_add(locals, 1);
@@ -52,13 +61,21 @@ requires_caps [allocate]
                                         if (function_mir_is_struct_field_instruction(record) != 0) {
                                             if (function_mir_id(record) != instructions) { return 12; }
                                             instructions = checked_add(instructions, 1);
-                                        } else { return 13; }
+                                        } else {
+                                            if (kind == function_mir_kind_call()) {
+                                                if (function_mir_id(record) != instructions) { return source_function_stats_instruction_order_status(); }
+                                                instructions = checked_add(instructions, 1);
+                                            } else {
+                                                if (kind != function_mir_kind_call_argument()) { return source_function_stats_unknown_instruction_status(); }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 } else { return 14; }
+            }
             }
         }
         index = checked_add(index, 1);

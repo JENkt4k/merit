@@ -221,9 +221,11 @@ def _instruction(
     instruction: MirInstruction,
     functions: dict[str, MirFunction],
     local_types: dict[int, MirType] | None = None,
+    local_ownership: dict[int, str] | None = None,
     destructors: dict[MirType, MirDestructor] | None = None,
 ) -> list[str]:
     destructors = destructors or {}
+    local_ownership = local_ownership or {}
     result = _local(instruction.result) if instruction.result is not None else None
     operands = [_local(value) for value in instruction.operands]
     kind = instruction.kind
@@ -234,7 +236,10 @@ def _instruction(
     if kind in {"copy", "move", "borrow"}:
         if result is None or len(operands) != 1:
             raise MirToCError(f"{kind} instruction requires one operand and a result")
-        return [f"{result} = {operands[0]};"]
+        source = operands[0]
+        if kind == "borrow" and local_ownership.get(instruction.operands[0], "value") not in {"borrowed", "mutable_borrow"}:
+            source = f"&{source}"
+        return [f"{result} = {source};"]
     if kind == "construct":
         if result is None or len(operands) != 1 or not instruction.symbol:
             raise MirToCError("aggregate construction requires one value and a constructor symbol")
@@ -287,22 +292,26 @@ def _instruction(
             ordinal_text = instruction.symbol[len(_STRUCT_FIELD_PREFIX):]
             if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
                 raise MirToCError("aggregate field load is outside schema")
-            return [f"{result} = {operands[0]}.{instruction.symbol};"]
+            access = "->" if local_ownership.get(instruction.operands[0]) in {"borrowed", "mutable_borrow"} else "."
+            return [f"{result} = {operands[0]}{access}{instruction.symbol};"]
         if _i64_struct_identity(receiver_type) is not None or _destructor_i64_struct_identity(receiver_type) is not None:
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("single-i64 struct field load requires field_0")
-            return [f"{result} = {operands[0]}.field_0;"]
+            access = "->" if local_ownership.get(instruction.operands[0]) in {"borrowed", "mutable_borrow"} else "."
+            return [f"{result} = {operands[0]}{access}field_0;"]
         if _owned_field_struct_identity(receiver_type) is not None:
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("owned-field struct field load requires field_0")
-            return [f"{result} = {operands[0]}.field_0;"]
+            access = "->" if local_ownership.get(instruction.operands[0]) in {"borrowed", "mutable_borrow"} else "."
+            return [f"{result} = {operands[0]}{access}field_0;"]
         if (
             _copy_payload_enum_identity(receiver_type) is None
             and _owned_payload_enum_identity(receiver_type) is None
             and _recursive_owned_payload_enum_identity(receiver_type) is None
         ) or instruction.symbol not in {"tag", "payload"}:
             raise MirToCError("core C emission only supports represented aggregate fields")
-        return [f"{result} = {operands[0]}.{instruction.symbol};"]
+        access = "->" if local_ownership.get(instruction.operands[0]) in {"borrowed", "mutable_borrow"} else "."
+        return [f"{result} = {operands[0]}{access}{instruction.symbol};"]
     if kind == "store_field":
         if result is None or len(operands) != 1 or not instruction.symbol:
             raise MirToCError("aggregate field store requires one value, a receiver result, and a field symbol")
@@ -315,7 +324,8 @@ def _instruction(
         ):
             if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
                 raise MirToCError("single-i64 struct field store requires field_0")
-            return [f"{result}.field_0 = {operands[0]};"]
+            access = "->" if local_ownership.get(instruction.result) == "mutable_borrow" else "."
+            return [f"{result}{access}field_0 = {operands[0]};"]
         aggregate = _aggregate_struct_identity(receiver_type)
         if aggregate is None:
             raise MirToCError("field stores are only supported for represented aggregate structs")
@@ -325,7 +335,8 @@ def _instruction(
         ordinal_text = instruction.symbol[len(_STRUCT_FIELD_PREFIX):]
         if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
             raise MirToCError("aggregate field store is outside schema")
-        return [f"{result}.{instruction.symbol} = {operands[0]};"]
+        access = "->" if local_ownership.get(instruction.result) == "mutable_borrow" else "."
+        return [f"{result}{access}{instruction.symbol} = {operands[0]};"]
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
@@ -347,10 +358,23 @@ def _instruction(
         callee = functions.get(instruction.symbol)
         if callee is None:
             raise MirToCError(f"call references unknown MIR function: {instruction.symbol}")
-        if operands:
-            raise MirToCError("core C emitter currently supports only no-argument MIR calls")
+        if len(operands) != len(callee.parameters):
+            raise MirToCError("MIR call argument count disagrees with callee parameters")
+        arguments: list[str] = []
+        for operand_id, operand, parameter in zip(instruction.operands, operands, callee.parameters):
+            ownership = local_ownership.get(operand_id, "value")
+            if parameter.mode == "value":
+                if ownership in {"borrowed", "mutable_borrow"}:
+                    raise MirToCError("borrowed MIR values cannot satisfy value parameters")
+                arguments.append(operand)
+            elif parameter.mode == "borrowed":
+                arguments.append(operand if ownership in {"borrowed", "mutable_borrow"} else f"&{operand}")
+            else:
+                if ownership == "borrowed":
+                    raise MirToCError("shared borrowed MIR values cannot satisfy mutable-borrow parameters")
+                arguments.append(operand if ownership == "mutable_borrow" else f"&{operand}")
         callee_type = _type(callee.return_type)
-        call = f"{_identifier(callee.name)}()"
+        call = f"{_identifier(callee.name)}({', '.join(arguments)})"
         if callee_type == "void":
             if result is not None:
                 raise MirToCError("unit-returning MIR calls cannot produce a result local")
@@ -420,7 +444,32 @@ def _terminator(terminator: MirTerminator, return_type: str) -> list[str]:
 
 
 def _prototype(function: MirFunction) -> str:
-    return f"{_type(function.return_type)} {_identifier(function.name)}(void);"
+    return f"{_function_return_type(function)} {_identifier(function.name)}({_parameter_list(function)});"
+
+
+def _function_return_type(function: MirFunction) -> str:
+    base = _type(function.return_type)
+    if function.return_mode == "borrowed":
+        return f"const {base} *"
+    if function.return_mode == "mutable_borrow":
+        return f"{base} *"
+    return base
+
+
+def _parameter_list(function: MirFunction) -> str:
+    if not function.parameters:
+        return "void"
+    locals_by_id = {local.local_id: local for local in function.locals}
+    rendered: list[str] = []
+    for parameter in function.parameters:
+        local = locals_by_id[parameter.local_id]
+        type_name = _type(local.type)
+        if parameter.mode == "borrowed":
+            type_name = f"const {type_name} *"
+        elif parameter.mode == "mutable_borrow":
+            type_name = f"{type_name} *"
+        rendered.append(f"{type_name} {_local(parameter.local_id)}")
+    return ", ".join(rendered)
 
 
 def emit_c_function(
@@ -430,10 +479,14 @@ def emit_c_function(
 ) -> str:
     functions = functions or {function.name: function}
     destructors = destructors or {}
-    return_type = _type(function.return_type)
-    lines = [f"{return_type} {_identifier(function.name)}(void) {{"]
+    return_type = _function_return_type(function)
+    lines = [f"{return_type} {_identifier(function.name)}({_parameter_list(function)}) {{"]
     local_types = {local.local_id: local.type for local in function.locals}
+    local_ownership = {local.local_id: local.ownership for local in function.locals}
+    parameter_ids = {parameter.local_id for parameter in function.parameters}
     for local in function.locals:
+        if local.local_id in parameter_ids:
+            continue
         local_type = _type(local.type)
         if local_type == "void":
             raise MirToCError("MIR locals cannot have unit type in core C emission")
@@ -446,12 +499,17 @@ def emit_c_function(
             or _recursive_owned_payload_enum_identity(local.type) is not None
             or _aggregate_struct_identity(local.type) is not None
         ) else "0"
-        lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
+        if local.ownership == "borrowed":
+            lines.append(f"    const {local_type} *{_local(local.local_id)} = NULL;")
+        elif local.ownership == "mutable_borrow":
+            lines.append(f"    {local_type} *{_local(local.local_id)} = NULL;")
+        else:
+            lines.append(f"    {local_type} {_local(local.local_id)} = {initializer};")
     lines.append(f"    goto b{function.entry_block};")
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _instruction(instruction, functions, local_types, destructors):
+            for statement in _instruction(instruction, functions, local_types, local_ownership, destructors):
                 lines.append(f"    {statement}")
         for statement in _terminator(block.terminator, return_type):
             lines.append(f"    {statement}")
@@ -475,7 +533,7 @@ def _emit_c_destructor(
     for block in destructor.blocks:
         lines.append(f"b_destructor_{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _instruction(instruction, functions, local_types, destructors):
+            for statement in _instruction(instruction, functions, local_types, {}, destructors):
                 lines.append(f"    {statement}")
         if block.terminator.kind == "return":
             if block.terminator.operands:

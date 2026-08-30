@@ -5,6 +5,8 @@ import bootstrap_statements;
 import bootstrap_expression_spans;
 import bootstrap_hir;
 import bootstrap_mir_ownership_flow;
+import bootstrap_mir_source_function_records;
+import bootstrap_mir_functions;
 
 capability allocate;
 
@@ -239,16 +241,92 @@ requires_caps [allocate]
                 root_kind = hir_kind(root);
             }
             if (root_kind == 4) { root_binding = hir_binding_id(root); }
-            if (hir_is_call(root) != 0) {
-                if (hir_right(root) >= 0) {
-                    var payload: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(root));
-                    var payload_kind: i32 = hir_kind(payload);
-                    while (payload_kind == 3) {
-                        payload = vec_get<HirExpressionRecord>(hir_nodes, hir_left(payload));
-                        payload_kind = hir_kind(payload);
-                    }
-                    if (payload_kind == 4) { consumed_binding = hir_binding_id(payload); }
+            if(root_kind==7){
+                var receiver:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(root));
+                var receiver_kind:i32=hir_kind(receiver);
+                while(receiver_kind==3){
+                    receiver=vec_get<HirExpressionRecord>(hir_nodes,hir_left(receiver));
+                    receiver_kind=hir_kind(receiver);
                 }
+                if(receiver_kind==4){root_binding=hir_binding_id(receiver);}
+                if(hir_is_call(receiver)!=0){
+                    let receiver_callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(receiver));
+                    let receiver_origin:i64=resolve_source_call_borrowed_origin(
+                        source,hir_start(receiver_callee),hir_length(receiver_callee),allocator
+                    );
+                    if(receiver_origin>=0){
+                        var receiver_arguments:Vec<i64>=vec_new<i64>(allocator,4);
+                        var receiver_stack:Vec<i64>=vec_new<i64>(allocator,4);
+                        if(hir_right(receiver)>=0){vec_push<i64>(receiver_stack,hir_right(receiver));}
+                        while(vec_len<i64>(receiver_stack)>0){
+                            let receiver_argument_index:i64=vec_pop<i64>(receiver_stack);
+                            let receiver_argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,receiver_argument_index);
+                            if(hir_kind(receiver_argument)==8){
+                                vec_push<i64>(receiver_stack,hir_right(receiver_argument));
+                                vec_push<i64>(receiver_stack,hir_left(receiver_argument));
+                            } else {vec_push<i64>(receiver_arguments,receiver_argument_index);}
+                        }
+                        if(receiver_origin<vec_len<i64>(receiver_arguments)){
+                            var origin_argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,vec_get<i64>(receiver_arguments,receiver_origin));
+                            var origin_kind:i32=hir_kind(origin_argument);
+                            while(origin_kind==3){
+                                origin_argument=vec_get<HirExpressionRecord>(hir_nodes,hir_left(origin_argument));
+                                origin_kind=hir_kind(origin_argument);
+                            }
+                            if(origin_kind==4){root_binding=hir_binding_id(origin_argument);}
+                        }
+                        drop(receiver_stack);drop(receiver_arguments);
+                    }
+                }
+            }
+            if (hir_is_call(root) != 0) {
+                let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(root));
+                var call_arguments:Vec<i64>=vec_new<i64>(allocator,4);
+                var call_stack:Vec<i64>=vec_new<i64>(allocator,4);
+                if(hir_right(root)>=0){vec_push<i64>(call_stack,hir_right(root));}
+                while(vec_len<i64>(call_stack)>0){
+                    let argument_index:i64=vec_pop<i64>(call_stack);
+                    let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
+                    if(hir_kind(argument)==8){
+                        vec_push<i64>(call_stack,hir_right(argument));
+                        vec_push<i64>(call_stack,hir_left(argument));
+                    } else {vec_push<i64>(call_arguments,argument_index);}
+                }
+                var argument_ordinal:i64=0;
+                while(argument_ordinal<vec_len<i64>(call_arguments)){
+                    let mode:i32=resolve_source_call_parameter_mode(
+                        source,hir_start(callee),hir_length(callee),argument_ordinal,allocator
+                    );
+                    // User-call signatures distinguish borrowed arguments. Calls
+                    // outside that catalog are constructors/builtins and retain
+                    // the established value-argument ownership behavior.
+                    if(mode==function_mir_mode_value()){
+                        var payload:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,vec_get<i64>(call_arguments,argument_ordinal));
+                        var payload_kind:i32=hir_kind(payload);
+                        while(payload_kind==3){
+                            payload=vec_get<HirExpressionRecord>(hir_nodes,hir_left(payload));
+                            payload_kind=hir_kind(payload);
+                        }
+                        if(payload_kind==4){
+                            let value_binding:i64=hir_binding_id(payload);
+                            if(consumed_binding<0){consumed_binding=value_binding;}
+                            else {vec_push<i64>(direct_binding,value_binding);}
+                        }
+                    } else {
+                        if(mode<0){
+                            var payload:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,vec_get<i64>(call_arguments,argument_ordinal));
+                            var payload_kind:i32=hir_kind(payload);
+                            while(payload_kind==3){payload=vec_get<HirExpressionRecord>(hir_nodes,hir_left(payload));payload_kind=hir_kind(payload);}
+                            if(payload_kind==4){
+                                let value_binding:i64=hir_binding_id(payload);
+                                if(consumed_binding<0){consumed_binding=value_binding;}
+                                else {vec_push<i64>(direct_binding,value_binding);}
+                            }
+                        }
+                    }
+                    argument_ordinal=checked_add(argument_ordinal,1);
+                }
+                drop(call_stack);drop(call_arguments);
             }
             if (root_kind == 10) {
                 if (hir_right(root) >= 0) {

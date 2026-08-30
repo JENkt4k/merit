@@ -207,4 +207,7 @@ def lower_native_ownership_whole_function_assembly(
         tuple(blocks),
         function.entry_block,
         function.capabilities,
+        function.parameters,
+        function.return_mode,
+        function.borrowed_origin,
     ),))

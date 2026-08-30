@@ -258,7 +258,6 @@ requires_caps [allocate]
             if (target_index < 0) { return 91; }
             let target: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, target_index);
             if (target.mutable == 0) { return 92; }
-            if (target.owned != 0) { return 93; }
             if (event.b < 0) { return 94; }
             emit_place(output, next);
         }

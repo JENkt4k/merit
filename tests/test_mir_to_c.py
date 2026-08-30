@@ -10,6 +10,7 @@ from merit.bootstrap.mir_contract import (
     MirInstruction,
     MirLocal,
     MirModule,
+    MirParameter,
     MirTerminator,
     MirType,
 )
@@ -425,7 +426,7 @@ def test_unit_call_rejects_result_local():
         emit_c_module(MirModule("bad", (caller, callee)))
 
 
-def test_core_calls_reject_arguments_until_parameter_contract_exists():
+def test_core_calls_reject_arguments_that_disagree_with_parameter_contract():
     callee = constant_function("callee", 1)
     caller = MirFunction(
         "caller",
@@ -437,8 +438,67 @@ def test_core_calls_reject_arguments_until_parameter_contract_exists():
         ), MirTerminator("return", operands=(1,))),),
         0,
     )
-    with pytest.raises(MirToCError, match="only no-argument"):
+    with pytest.raises(MirToCError, match="argument count"):
         emit_c_module(MirModule("bad", (caller, callee)))
+
+
+def test_emits_owned_value_parameter_and_return(tmp_path):
+    wrapper = MirType("struct_i64_0")
+    consume = MirFunction(
+        "consume", wrapper,
+        (MirLocal(0, "value", wrapper, ownership="owned"),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+        parameters=(MirParameter(0),),
+    )
+    caller = MirFunction(
+        "caller", I64,
+        (MirLocal(0, "field", I64), MirLocal(1, "value", wrapper, ownership="owned"),
+         MirLocal(2, "returned", wrapper, ownership="owned"), MirLocal(3, "result", I64)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=17),
+            MirInstruction(1, "construct", result=1, operands=(0,), symbol="field_0", ownership="owned"),
+            MirInstruction(2, "call", result=2, operands=(1,), symbol="consume", ownership="owned"),
+            MirInstruction(3, "load_field", result=3, operands=(2,), symbol="field_0"),
+        ), MirTerminator("return", operands=(3,))),), 0,
+    )
+    module = MirModule("callable", (caller, consume))
+    generated = emit_c_module(module)
+    assert "merit_struct_i64_0 consume(merit_struct_i64_0 m0)" in generated
+    assert "m2 = consume(m1);" in generated
+    run = compile_and_run(tmp_path, module, "int main(void) { return caller() == 17 ? 0 : 1; }")
+    assert run.returncode == 0
+
+
+def test_emits_mutable_borrow_parameter_return_and_field_access(tmp_path):
+    wrapper = MirType("struct_i64_0")
+    expose = MirFunction(
+        "expose_mut", wrapper,
+        (MirLocal(0, "value", wrapper, mutable=True, ownership="mutable_borrow"),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+        parameters=(MirParameter(0, "mutable_borrow"),),
+        return_mode="mutable_borrow", borrowed_origin=0,
+    )
+    caller = MirFunction(
+        "caller", I64,
+        (MirLocal(0, "one", I64), MirLocal(1, "value", wrapper, mutable=True, ownership="owned"),
+         MirLocal(2, "borrowed", wrapper, mutable=True, ownership="mutable_borrow"),
+         MirLocal(3, "answer", I64)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=1),
+            MirInstruction(1, "construct", result=1, operands=(0,), symbol="field_0", ownership="owned"),
+            MirInstruction(2, "call", result=2, operands=(1,), symbol="expose_mut"),
+            MirInstruction(3, "const", result=3, value=23),
+            MirInstruction(4, "store_field", result=2, operands=(3,), symbol="field_0"),
+            MirInstruction(5, "load_field", result=3, operands=(2,), symbol="field_0"),
+        ), MirTerminator("return", operands=(3,))),), 0,
+    )
+    module = MirModule("borrow", (caller, expose))
+    generated = emit_c_module(module)
+    assert "merit_struct_i64_0 * expose_mut(merit_struct_i64_0 * m0)" in generated
+    assert "m2 = expose_mut(&m1);" in generated
+    assert "m2->field_0 = m3;" in generated
+    run = compile_and_run(tmp_path, module, "int main(void) { return caller() == 23 ? 0 : 1; }")
+    assert run.returncode == 0
 
 
 def test_out_of_range_i64_literal_is_rejected():

@@ -17,6 +17,7 @@ from merit.bootstrap.mir_contract import (
     MirInstruction,
     MirLocal,
     MirModule,
+    MirParameter,
     MirTerminator,
     MirType,
     SourceSpan,
@@ -37,9 +38,14 @@ _BODY_ENUM_PAYLOAD_LOAD = 11
 _BODY_STRUCT_CONSTRUCT = 12
 _BODY_STRUCT_FIELD_LOAD = 13
 _BODY_STRUCT_FIELD_STORE = 14
+_BODY_PARAMETER = 15
+_BODY_CALL = 16
+_BODY_CALL_ARGUMENT = 17
+_CALLABLE_MODES = {0: "value", 1: "borrowed", 2: "mutable_borrow"}
 BODY_INSTRUCTION_KINDS = frozenset({
     4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD, _BODY_ENUM_PAYLOAD_LOAD,
     _BODY_STRUCT_CONSTRUCT, _BODY_STRUCT_FIELD_LOAD, _BODY_STRUCT_FIELD_STORE,
+    _BODY_CALL,
 })
 BODY_INSTRUCTION_SOURCE_KIND = 2
 _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE = 1000
@@ -115,8 +121,17 @@ def lower_native_whole_function_assembly(
 
     header = body[0]
     _, start, length, record_id, result, left, right, symbol_start, symbol_length, symbol_code, type_code, policy, binding_id, mutable, hir_id, ordinal = header
-    if any((record_id, result + 1, left + 1, right + 1, symbol_code, policy, binding_id + 1, mutable, hir_id + 1, ordinal)):
+    if any((record_id, result + 1, right + 1, policy, binding_id + 1, mutable, hir_id + 1)):
         raise NativeWholeFunctionMirError("function header carries invalid operational fields")
+    if symbol_code not in _CALLABLE_MODES or ordinal < 0:
+        raise NativeWholeFunctionMirError("function header carries invalid callable metadata")
+    if symbol_code == 0 and left != -1:
+        raise NativeWholeFunctionMirError("value-returning function declares a borrowed origin")
+    if symbol_code != 0 and left < 0:
+        raise NativeWholeFunctionMirError("borrowed-returning function lacks an origin")
+    function_return_mode = _CALLABLE_MODES[symbol_code]
+    function_borrowed_origin = None if left < 0 else left
+    function_parameter_count = ordinal
     span(start, length, "function")
     name_span = span(symbol_start, symbol_length, "function symbol")
     function_name = source[name_span.start : name_span.start + name_span.length]
@@ -126,26 +141,53 @@ def lower_native_whole_function_assembly(
 
     locals_by_id: dict[int, MirLocal] = {}
     body_instructions: dict[int, MirInstruction] = {}
+    parameters: list[tuple[int, MirParameter]] = []
+    call_rows: dict[int, tuple[int, ...]] = {}
+    call_arguments: dict[int, list[tuple[int, int]]] = defaultdict(list)
     for index, row in enumerate(body[1:], start=1):
         kind, start, length, rid, result, left, right, symbol_start, symbol_length, symbol_code, type_code, policy, binding_id, mutable, hir_id, ordinal = row
-        if kind == 2:
+        if kind in {2, _BODY_PARAMETER}:
             local_span = span(start, length, f"body local {index}")
             if rid in locals_by_id or rid < 0 or binding_id < 0 or mutable not in {0, 1}:
                 raise NativeWholeFunctionMirError(f"body local {index} is invalid")
-            locals_by_id[rid] = MirLocal(rid, source[local_span.start:local_span.start + local_span.length], resolved_type(type_code, f"body local {index}"), mutable=bool(mutable), source_binding_id=binding_id)
+            mode = "value"
+            ownership = "value"
+            if kind == _BODY_PARAMETER:
+                try:
+                    mode = _CALLABLE_MODES[symbol_code]
+                except KeyError as error:
+                    raise NativeWholeFunctionMirError(f"body parameter {index} has invalid mode") from error
+                if ordinal < 0:
+                    raise NativeWholeFunctionMirError(f"body parameter {index} has invalid ordinal")
+                ownership = mode
+                parameters.append((ordinal, MirParameter(rid, mode)))
+            locals_by_id[rid] = MirLocal(rid, source[local_span.start:local_span.start + local_span.length], resolved_type(type_code, f"body local {index}"), mutable=bool(mutable), ownership=ownership, source_binding_id=binding_id)
         elif kind == 3:
             if rid in locals_by_id or rid < 0 or hir_id < 0:
                 raise NativeWholeFunctionMirError(f"body temporary {index} is invalid")
-            locals_by_id[rid] = MirLocal(rid, f"_t{hir_id}", resolved_type(type_code, f"body temporary {index}"))
+            try:
+                ownership = _CALLABLE_MODES[policy]
+            except KeyError as error:
+                raise NativeWholeFunctionMirError(f"body temporary {index} has invalid mode") from error
+            locals_by_id[rid] = MirLocal(
+                rid, f"_t{hir_id}", resolved_type(type_code, f"body temporary {index}"),
+                mutable=ownership == "mutable_borrow", ownership=ownership,
+            )
         elif kind in {
             4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD,
             _BODY_ENUM_PAYLOAD_LOAD, _BODY_STRUCT_CONSTRUCT, _BODY_STRUCT_FIELD_LOAD,
-            _BODY_STRUCT_FIELD_STORE,
+            _BODY_STRUCT_FIELD_STORE, _BODY_CALL,
         }:
-            if rid in body_instructions or rid < 0:
+            if rid in body_instructions or rid in call_rows or rid < 0:
                 raise NativeWholeFunctionMirError(f"body instruction {index} has duplicate/invalid ID")
             instruction_span = span(start, length, f"body instruction {index}")
-            if kind == 4:
+            if kind == _BODY_CALL:
+                if result < -1 or symbol_start < 0 or symbol_length <= 0 or type_code <= 0:
+                    raise NativeWholeFunctionMirError(f"body call {index} is invalid")
+                if policy not in _CALLABLE_MODES:
+                    raise NativeWholeFunctionMirError(f"body call {index} has invalid return mode")
+                call_rows[rid] = row
+            elif kind == 4:
                 body_instructions[rid] = MirInstruction(rid, "const", result=result, value=int(source[instruction_span.start:instruction_span.start + instruction_span.length]), span=instruction_span, ownership="value")
             elif kind == 5:
                 try:
@@ -200,11 +242,34 @@ def lower_native_whole_function_assembly(
                 body_instructions[rid] = MirInstruction(
                     rid, "load_field", result=result, operands=(left,), symbol=f"field_{symbol_code}", span=instruction_span,
                 )
+        elif kind == _BODY_CALL_ARGUMENT:
+            if rid < 0 or left < 0 or ordinal < 0 or symbol_code not in _CALLABLE_MODES:
+                raise NativeWholeFunctionMirError(f"body call argument {index} is invalid")
+            call_arguments[rid].append((ordinal, left))
         elif kind == 7:
             # CFG records own return placement/operands after structured assembly.
             continue
         else:
             raise NativeWholeFunctionMirError(f"unsupported body record kind {kind}")
+
+    for instruction_id, row in call_rows.items():
+        _, start, length, _, result, _, _, symbol_start, symbol_length, _, _, _, _, _, _, _ = row
+        arguments = sorted(call_arguments.pop(instruction_id, []))
+        if [ordinal for ordinal, _ in arguments] != list(range(len(arguments))):
+            raise NativeWholeFunctionMirError("body call argument ordinals must be dense")
+        call_span = span(start, length, "body call")
+        callee_span = span(symbol_start, symbol_length, "body call symbol")
+        body_instructions[instruction_id] = MirInstruction(
+            instruction_id, "call", result=None if result < 0 else result,
+            operands=tuple(local for _, local in arguments),
+            symbol=source[callee_span.start:callee_span.start + callee_span.length],
+            span=call_span,
+        )
+    if call_arguments:
+        raise NativeWholeFunctionMirError("body call argument references unknown call")
+    parameters.sort()
+    if [parameter_ordinal for parameter_ordinal, _ in parameters] != list(range(len(parameters))) or len(parameters) != function_parameter_count:
+        raise NativeWholeFunctionMirError("function parameter metadata is noncanonical")
 
     for local_id, source_local_id, local_type, contract_kind, clause_ordinal in contract_local_rows:
         if local_id in locals_by_id or local_id < 0 or source_local_id < 0 or contract_kind not in {1, 2} or clause_ordinal < 0:
@@ -368,5 +433,8 @@ def lower_native_whole_function_assembly(
         tuple(blocks),
         0,
         tuple(resolved_capabilities),
+        tuple(parameter for _, parameter in parameters),
+        function_return_mode,
+        function_borrowed_origin,
     )
     return MirModule(module_name, (function,))

@@ -11,6 +11,7 @@ from merit.bootstrap.mir_contract import (
     MirInstruction,
     MirLocal,
     MirModule,
+    MirParameter,
     MirTerminator,
     MirType,
     SourceSpan,
@@ -80,6 +81,40 @@ def test_executable_destructor_is_canonical_and_round_trips():
 
     with pytest.raises(MirContractError, match="duplicate MIR destructor target"):
         MirModule("duplicate", (), destructors=(destructor, destructor))
+
+
+def test_callable_ownership_signature_is_canonical_and_round_trips():
+    target = MirType("struct_i64_0")
+    function = MirFunction(
+        "expose",
+        target,
+        (MirLocal(0, "value", target, mutable=True, ownership="mutable_borrow"),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),),
+        0,
+        parameters=(MirParameter(0, "mutable_borrow"),),
+        return_mode="mutable_borrow",
+        borrowed_origin=0,
+    )
+    module = MirModule("callable", (function,))
+    encoded = canonical_mir_json(module)
+    assert load_mir_json(encoded) == module
+    assert json.loads(encoded)["functions"][0]["parameters"] == [
+        {"local": 0, "mode": "mutable_borrow"}
+    ]
+
+
+def test_borrowed_return_requires_compatible_parameter_origin():
+    target = MirType("struct_i64_0")
+    local = MirLocal(0, "value", target, ownership="borrowed")
+    block = MirBlock(0, (), MirTerminator("return", operands=(0,)))
+    with pytest.raises(MirContractError, match="parameter origin"):
+        MirFunction("expose", target, (local,), (block,), 0, return_mode="borrowed")
+    with pytest.raises(MirContractError, match="mutable-borrow origin"):
+        MirFunction(
+            "expose_mut", target, (local,), (block,), 0,
+            parameters=(MirParameter(0, "borrowed"),),
+            return_mode="mutable_borrow", borrowed_origin=0,
+        )
 
 
 def test_canonical_json_is_independent_of_mapping_order():
