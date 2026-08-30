@@ -48,6 +48,7 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | basic let/var bindings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | source ownership metadata | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | basic moves/drops | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
+| callable ownership and borrows | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | contracts | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | capability declarations | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | capability scopes/effects | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
@@ -283,6 +284,33 @@ M2 aggregate/expression surface. Callable ownership/borrow boundaries, general
 payload-enum schemas and `try` lifecycle, and the minimal resource carriers still
 keep M2 and the broad matrix rows `PARTIAL`/OPEN; imported destructor helpers
 remain M5 rather than expanding this slice.
+
+`test_concrete_native_driver_executes_owned_callable_transfer_lifecycle`,
+`test_concrete_native_driver_executes_relayed_borrowed_callable_lifecycle`, and
+`test_concrete_native_driver_executes_mutable_borrowed_callable_lifecycle` close
+the alpha.1 callable ownership boundary through the production replacement
+path. The native source catalog carries ordered parameter modes, return modes,
+and borrowed-result parameter origins into MRBF and canonical MIR. Owned
+arguments transfer into value parameters and owned returns transfer back to the
+caller without double destruction; shared and mutable borrows relay their
+caller origin without acquiring ownership; field reads and mutable field stores
+through returned borrows remain ephemeral. The mutable target case emits an
+observable effect from the borrow-returning call and proves that target is
+evaluated exactly once. Each accepted case compares reference and replacement
+executables and repeats native bundles for deterministic transport. The
+adjacent rejection matrix covers immutable mutable-borrow arguments,
+shared-to-mutable escalation, conflicting loans, moving an origin while loaned,
+storing or value-passing a borrowed return, inconsistent return origins, and
+dropping a borrowed parameter; native rejection is deterministic and publishes
+no replacement manifest. The exact remaining M2 blockers are heterogeneous
+user payload-enum schemas and owned `try` success/error propagation; the
+`FileReadResult` `ReadOk(Buffer)`/`ReadErr(i32)` and `FileWriteResult`
+`WriteOk(i64)`/`WriteErr(i32)` lifecycle shapes; and the minimum direct `Buffer`
+move/drop/replace cases plus `Buffer` as an owned struct or enum field. That
+last group includes owned-field replacement through a returned mutable borrow.
+Only the construction and operations needed to prove those ownership transfers
+belong to M2; the complete Buffer, String, decimal, bounded, and aggregate
+operation surfaces remain M3, while generic `Vec<T>` lifecycle remains M4.
 
 ### M3 — Exact numerics and aggregate closure
 

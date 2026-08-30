@@ -126,6 +126,57 @@ def test_canonical_assembled_mir_emits_and_executes_c(tmp_path: Path):
     assert completed.stdout.strip() == "7"
 
 
+def test_callable_parameter_and_borrowed_return_records_materialize():
+    source = "expose value"
+    body = (
+        # borrowed return, origin local zero, one parameter
+        (1, 0, 6, 0, -1, 0, -1, 0, 6, 1, MIR_TYPE_STRUCT_I64_0, 0, -1, 0, -1, 1),
+        # shared-borrow parameter local zero
+        (15, 7, 5, 0, -1, -1, -1, 7, 5, 1, MIR_TYPE_STRUCT_I64_0, 0, 0, 0, -1, 0),
+    )
+    module = lower_native_whole_function_assembly(
+        source=source,
+        module_name="demo",
+        body_records=body,
+        contract_records=(),
+        contract_locals=(),
+        instruction_sources=(),
+        cfg_records=((10, 0, -1, -1, -1, 0, 0), (15, 0, 0, -1, -1, 0, 0)),
+        placements=(),
+        capability_ids=(),
+        capability_names={},
+    )
+    function = module.functions[0]
+    assert function.parameters[0].local_id == 0
+    assert function.parameters[0].mode == "borrowed"
+    assert function.return_mode == "borrowed"
+    assert function.borrowed_origin == 0
+    generated = emit_c_module(module)
+    assert "const merit_struct_i64_0 * expose(const merit_struct_i64_0 * m0)" in generated
+
+
+def test_call_and_argument_records_materialize():
+    source = "caller callee argument"
+    body = (
+        (1, 0, 6, 0, -1, -1, -1, 0, 6, 0, 1, 0, -1, 0, -1, 0),
+        (2, 14, 8, 0, -1, -1, -1, 14, 8, 0, MIR_TYPE_STRUCT_I64_0, 0, 0, 1, -1, 0),
+        (3, 0, 0, 1, -1, -1, -1, -1, 0, 0, MIR_TYPE_STRUCT_I64_0, 0, -1, 0, 1, 1),
+        (16, 7, 6, 0, 1, -1, -1, 7, 6, 0, MIR_TYPE_STRUCT_I64_0, 0, -1, 0, 2, 0),
+        (17, 0, 0, 0, -1, 0, -1, -1, 0, 0, 0, 0, -1, 0, -1, 0),
+    )
+    module = lower_native_whole_function_assembly(
+        source=source,
+        module_name="demo",
+        body_records=body,
+        contract_records=(), contract_locals=(),
+        instruction_sources=((0, 2, 0, 0, -1, 1, 0, -1),),
+        cfg_records=((10, 0, -1, -1, -1, 0, 0), (15, 0, 1, -1, -1, 0, 0)),
+        placements=((0, 0, 0),), capability_ids=(), capability_names={},
+    )
+    instruction = module.functions[0].blocks[0].instructions[0]
+    assert (instruction.kind, instruction.symbol, instruction.operands) == ("call", "callee", (0,))
+
+
 def test_copy_payload_enum_records_materialize_and_execute(tmp_path: Path):
     cc = shutil.which("cc")
     if cc is None:

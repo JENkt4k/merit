@@ -22,6 +22,8 @@ import bootstrap_mir_cfg_placement;
 
 capability allocate;
 
+fn resolved_parameter_metadata_status(status:i32)->i32{return checked_add(80,status);}
+
 // Complete native source-function assembly boundary. Semantic lowering owns
 // source interpretation; this stage only derives namespace sizes, inserts
 // contract/lifecycle provenance, and lowers the resulting structured stream to
@@ -135,6 +137,10 @@ pub fn lower_resolved_source_function_assembly_from_source_types(
 ) -> i32
 requires_caps [allocate]
 {
+    let parameter_metadata_status:i32=derive_source_parameter_ownership(
+        source,tokens,enum_catalog,struct_catalog,allocator,ownership_metadata
+    );
+    if(parameter_metadata_status!=0){return resolved_parameter_metadata_status(parameter_metadata_status);}
     let metadata_status: i32 = derive_source_ownership_bindings(
         source, statements, statement_operands, type_ownership_catalog, ownership_metadata
     );

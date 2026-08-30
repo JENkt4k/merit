@@ -5,6 +5,7 @@ import bootstrap_statement_semantics;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_source_ownership_expression;
+import bootstrap_mir_source_function_records;
 
 capability allocate;
 
@@ -272,6 +273,19 @@ requires_caps [allocate]
     if (kind == 22) {
         let result: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (result < 0) { return 20; }
+        var return_consumed:i64=0;
+        while(return_consumed<vec_len<i64>(direct)){
+            let binding_id:i64=vec_get<i64>(direct,return_consumed);
+            if(binding_id>=0){
+                let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(metadata,binding_id);
+                if(ownership_binding_owned(binding)!=0){
+                    if(ownership_binding_local_id(binding)==result){
+                        vec_push<MirOwnershipEvent>(events,ownership_event_consume(binding_id));
+                    }
+                }
+            }
+            return_consumed=checked_add(return_consumed,1);
+        }
         vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); return 0;
     }
     if (kind == 23) {
@@ -363,17 +377,27 @@ requires_caps [allocate]
         if (target_index < 0) { return 33; }
         if (value_index < 0) { return 34; }
         let target_operand: StatementOperand = vec_get<StatementOperand>(operands, target_index);
+        let target_event_start:i64=vec_len<MirOwnershipEvent>(events);
+        var target_is_field:i32=0;
         let target_local: i64 = source_expression(
             source, tokens, starts, lengths,
             statement_operand_start(target_operand), statement_operand_length(target_operand),
             allocator, counters, direct, events
         );
         if (target_local < 0) { return 35; }
+        if(vec_len<MirOwnershipEvent>(events)>target_event_start){
+            target_is_field=1;
+            let target_event_count:i64=checked_sub(vec_len<MirOwnershipEvent>(events),target_event_start);
+            let omitted_target_load:MirOwnershipEvent=vec_pop<MirOwnershipEvent>(events);
+            if(target_event_count==1){
+                vec_set<i64>(counters,0,checked_sub(vec_get<i64>(counters,0),1));
+            }
+        }
         let target_binding: i64 = vec_get<i64>(direct, 0);
         if (target_binding < 0) { return 36; }
         let target_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, target_binding);
         if (ownership_binding_mutable(target_semantic) == 0) { return 37; }
-        if (ownership_binding_owned(target_semantic) != 0) { return 38; }
+        if (ownership_binding_owned(target_semantic) != 0) { if(target_is_field==0){return 38;} }
         let value_operand: StatementOperand = vec_get<StatementOperand>(operands, value_index);
         let value_local: i64 = source_expression(
             source, tokens, starts, lengths,
@@ -503,7 +527,10 @@ requires_caps [allocate]
 {
     if (vec_len<StatementRecord>(statements) == 0) { return 1; }
     var starts: Vec<i64> = vec_new<i64>(allocator, 8); var lengths: Vec<i64> = vec_new<i64>(allocator, 8);
-    let binding_status: i32 = source_collect_bindings(statements, operands, starts, lengths, metadata);
+    let parameter_status:i32=collect_source_parameter_spans(source,tokens,starts,lengths);
+    let parameter_count:i64=vec_len<i64>(starts);
+    var binding_status:i32=parameter_status;
+    if(binding_status==0){binding_status=source_collect_bindings(statements,operands,starts,lengths,metadata);}
     var arm_index: i64 = 0;
     while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
         let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
@@ -523,6 +550,11 @@ requires_caps [allocate]
     var counters: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(counters, vec_len<i64>(starts));
     var direct: Vec<i64> = vec_new<i64>(allocator, 2); vec_push<i64>(direct, -1); vec_push<i64>(direct, -1);
     var status: i32 = binding_status;
+    var parameter_index:i64=0;
+    while(parameter_index<parameter_count){
+        vec_push<MirOwnershipEvent>(events,ownership_event_activate(parameter_index));
+        parameter_index=checked_add(parameter_index,1);
+    }
     if (status == 0) { status = source_control_worker(source,tokens,statements,operands,metadata,arms,scopes,allocator,starts,lengths,frames,binding_scope_ends,counters,direct,events); }
     drop(direct); drop(counters); drop(binding_scope_ends); drop(frames); drop(lengths); drop(starts); return status;
 }

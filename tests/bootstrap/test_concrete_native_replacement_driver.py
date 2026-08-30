@@ -380,6 +380,92 @@ OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE = (
     "destructor Marker { let copy:i64=self.number; print(copy); }\n"
     "fn main()->i32 { return 0; }\n"
 )
+OWNED_CALLABLE_LIFECYCLE_SOURCE = (
+    "module main\n"
+    "struct Marker { number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "fn relay(value:Marker)->Marker { return value; }\n"
+    "fn main()->i64 { let marker:Marker=Marker { number:31 }; "
+    "let returned:Marker=relay(marker); drop(returned); return 0; }\n"
+)
+BORROWED_CALLABLE_LIFECYCLE_SOURCE = (
+    "module main\n"
+    "struct Value { number:i64; }\n"
+    "fn expose(borrow value:Value)->borrow Value { return value; }\n"
+    "fn relay(borrow value:Value)->borrow Value { return expose(value); }\n"
+    "fn read(borrow value:Value)->i64 { return value.number; }\n"
+    "fn main()->i64 { let value:Value=Value { number:23 }; "
+    "return read(relay(value)); }\n"
+)
+MUTABLE_BORROW_CALLABLE_SOURCE = (
+    "module main\n"
+    "struct Value { number:i64; }\n"
+    "fn expose_mut(borrow_mut value:Value)->borrow_mut Value { print(1); return value; }\n"
+    "fn update(borrow_mut value:Value)->i64 { value.number=23; return value.number; }\n"
+    "fn main()->i64 { var value:Value=Value { number:1 }; "
+    "expose_mut(value).number=23; return value.number; }\n"
+)
+INVALID_CALLABLE_OWNERSHIP_SOURCES = (
+    (
+        "immutable-mutable-borrow",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn update(borrow_mut value:Value)->i64 { return value.number; }\n"
+        "fn main()->i64 { let value:Value=Value { number:1 }; return update(value); }\n",
+        "not mutable",
+    ),
+    (
+        "shared-to-mutable-escalation",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn expose(borrow value:Value)->borrow Value { return value; }\n"
+        "fn update(borrow_mut value:Value)->i64 { return value.number; }\n"
+        "fn main()->i64 { var value:Value=Value { number:1 }; return update(expose(value)); }\n",
+        "shared borrowed return cannot satisfy borrow_mut",
+    ),
+    (
+        "conflicting-loans",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn collide(borrow_mut left:Value,borrow right:Value)->i64 { return left.number; }\n"
+        "fn main()->i64 { var value:Value=Value { number:1 }; return collide(value,value); }\n",
+        "conflicting loans",
+    ),
+    (
+        "move-while-loaned",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn expose(borrow value:Value)->borrow Value { return value; }\n"
+        "fn observe_and_consume(borrow view:Value,owned:Value)->i64 { return view.number; }\n"
+        "fn main()->i64 { let value:Value=Value { number:1 }; return observe_and_consume(expose(value),value); }\n",
+        "cannot move value while its borrowed result is live",
+    ),
+    (
+        "stored-borrowed-return",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn expose(borrow value:Value)->borrow Value { return value; }\n"
+        "fn main()->i64 { let value:Value=Value { number:1 }; let alias:Value=expose(value); return alias.number; }\n",
+        "borrowed return cannot be stored",
+    ),
+    (
+        "borrowed-return-by-value",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn expose(borrow value:Value)->borrow Value { return value; }\n"
+        "fn consume(value:Value)->i64 { return value.number; }\n"
+        "fn main()->i64 { let value:Value=Value { number:1 }; return consume(expose(value)); }\n",
+        "borrowed return cannot be passed by value",
+    ),
+    (
+        "inconsistent-return-origin",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn choose(borrow left:Value,borrow right:Value)->borrow Value { if left.number { return left; } else { return right; } }\n"
+        "fn main()->i64 { return 0; }\n",
+        "one consistent parameter origin",
+    ),
+    (
+        "drop-borrowed-parameter",
+        "module main\nstruct Value { number:i64; }\n"
+        "fn invalid(borrow value:Value)->i64 { drop(value); return 0; }\n"
+        "fn main()->i64 { return 0; }\n",
+        "cannot drop borrowed parameter",
+    ),
+)
 CONTROL_FLOW_SOURCES = (
     (
         "if-else",
@@ -1007,6 +1093,129 @@ def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tm
     replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
     assert (replacement.returncode, replacement.stdout) == (7, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_owned_callable_transfer_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=OWNED_CALLABLE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=OWNED_CALLABLE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 2
+    relay = materialize_resolved_source_function_snapshot(
+        source=OWNED_CALLABLE_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    ).functions[0]
+    assert [(parameter.local_id, parameter.mode) for parameter in relay.parameters] == [(0, "value")]
+    assert relay.return_type.name.startswith("struct_")
+
+    root = _project(tmp_path, OWNED_CALLABLE_LIFECYCLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-owned-callable")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 2
+    artifact = build_replacement_project(project, root / "build" / "replacement-owned-callable")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "31\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_relayed_borrowed_callable_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=BORROWED_CALLABLE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=BORROWED_CALLABLE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 4
+    expose = materialize_resolved_source_function_snapshot(
+        source=BORROWED_CALLABLE_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    ).functions[0]
+    assert expose.return_mode == "borrowed"
+    assert expose.borrowed_origin == 0
+    assert [(parameter.local_id, parameter.mode) for parameter in expose.parameters] == [(0, "borrowed")]
+    relay = materialize_resolved_source_function_snapshot(
+        source=BORROWED_CALLABLE_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[1], capability_names={},
+    ).functions[0]
+    assert (relay.return_mode, relay.borrowed_origin) == ("borrowed", 0)
+
+    root = _project(tmp_path, BORROWED_CALLABLE_LIFECYCLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-borrowed-callable")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 4
+    artifact = build_replacement_project(project, root / "build" / "replacement-borrowed-callable")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (23, "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_mutable_borrowed_callable_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=MUTABLE_BORROW_CALLABLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=MUTABLE_BORROW_CALLABLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    expose = materialize_resolved_source_function_snapshot(
+        source=MUTABLE_BORROW_CALLABLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    ).functions[0]
+    assert expose.return_mode == "mutable_borrow"
+    assert expose.parameters[0].mode == "mutable_borrow"
+
+    root = _project(tmp_path, MUTABLE_BORROW_CALLABLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-mutable-callable")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-mutable-callable")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (23, "1\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source,reference_error", INVALID_CALLABLE_OWNERSHIP_SOURCES)
+def test_concrete_native_driver_fails_closed_for_invalid_callable_ownership(
+    tmp_path: Path, case_name: str, source: str, reference_error: str,
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(CompileError, match=reference_error):
+        build(project, root / "build" / "reference-invalid-callable")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
