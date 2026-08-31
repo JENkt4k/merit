@@ -21,6 +21,7 @@ PROTOCOL = HERE / "benchmark_protocol_v1.json"
 MERIT_PROJECT = HERE / "merit" / "Merit.toml"
 JAVA_SOURCE = HERE / "java" / "ModernizationBenchmark.java"
 CSHARP_PROJECT = HERE / "csharp" / "ModernizationBenchmark.csproj"
+CSHARP_SOURCE = HERE / "csharp" / "ModernizationBenchmark.cs"
 EXPECTED_DIGEST = "bf898293d9f9ca33cd0f129ebe314736b5f1e60b7a81bbf55e98205d409b281d"
 
 
@@ -83,9 +84,14 @@ def _build_commands(work: Path) -> dict[str, list[str]]:
     java_dir.mkdir()
     subprocess.run([javac, "-d", str(java_dir), str(JAVA_SOURCE)], check=True, text=True, capture_output=True)
 
+    csharp_project_dir = work / "csharp-project"
+    csharp_project_dir.mkdir()
+    csharp_project = csharp_project_dir / CSHARP_PROJECT.name
+    shutil.copy2(CSHARP_PROJECT, csharp_project)
+    shutil.copy2(CSHARP_SOURCE, csharp_project_dir / CSHARP_SOURCE.name)
     csharp_dir = work / "csharp"
     subprocess.run(
-        [dotnet, "build", str(CSHARP_PROJECT), "-c", "Release", "-o", str(csharp_dir), "--nologo", "-v:q"],
+        [dotnet, "build", str(csharp_project), "-c", "Release", "-o", str(csharp_dir), "--nologo", "-v:q"],
         check=True,
         text=True,
         capture_output=True,
