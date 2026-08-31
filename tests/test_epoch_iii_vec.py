@@ -590,10 +590,11 @@ fn main()->i32 { with capability allocate { let portable:Allocator=portable_allo
 
 def test_file_read_buffer_retains_requested_allocator(tmp_path):
     payload=tmp_path/'payload.bin';payload.write_bytes(b'abc')
+    portable_payload = payload.as_posix()
     source=f'''module file_buffer_allocator
 capability allocate;
 capability file_read;
-fn main()->i32 {{ with capability allocate {{ let portable:Allocator=portable_allocator(); with capability file_read {{ let result:FileReadResult=file_read(portable,"{payload}"); match (result) {{ ReadOk(data)=>{{ print(allocator_compatible(buffer_allocator(data),portable)); print(buffer_len(data)); drop(data); }} ReadErr(error)=>{{ print(0); }} }} }} }} return 0; }}'''
+fn main()->i32 {{ with capability allocate {{ let portable:Allocator=portable_allocator(); with capability file_read {{ let result:FileReadResult=file_read(portable,"{portable_payload}"); match (result) {{ ReadOk(data)=>{{ print(allocator_compatible(buffer_allocator(data),portable)); print(buffer_len(data)); drop(data); }} ReadErr(error)=>{{ print(0); }} }} }} }} return 0; }}'''
     assert run_interpreter_and_native(source,tmp_path,'file_buffer_allocator') == '1\n3\n'
 
 

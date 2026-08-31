@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -36,12 +37,26 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
+def _python_driver(tmp_path: Path, name: str, body: str) -> Path:
+    script = tmp_path / f"{name}.py"
+    script.write_text(body, encoding="utf-8", newline="\n")
+    if sys.platform.startswith("win"):
+        launcher = tmp_path / f"{name}.cmd"
+        command = subprocess.list2cmdline([sys.executable, str(script)])
+        launcher.write_text(f"@echo off\r\n{command}\r\n", encoding="utf-8")
+        return launcher
+
+    script.write_text(
+        f"#!{sys.executable}\n{body}", encoding="utf-8", newline="\n"
+    )
+    script.chmod(script.stat().st_mode | 0o111)
+    return script
+
+
 def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> Path:
     snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
     values = encode_resolved_source_function_bundle(snapshot for _ in range(function_count))
-    path = tmp_path / "replacement-driver"
-    path.write_text(
-        f"#!{sys.executable}\n"
+    body = (
         "import os, sys\n"
         "source = sys.stdin.read()\n"
         f"assert os.environ['MERIT_REPLACEMENT_PROTOCOL'] == {DRIVER_PROTOCOL!r}\n"
@@ -49,11 +64,9 @@ def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> P
         "assert 'MERIT_REPLACEMENT_FUNCTION_INDEX' not in os.environ\n"
         "assert 'fn helper' in source and 'fn main' in source\n"
         + (f"sys.exit({exit_code})\n" if exit_code else "")
-        + f"print({repr(chr(10).join(str(value) for value in values))})\n",
-        encoding="utf-8",
+        + f"print({repr(chr(10).join(str(value) for value in values))})\n"
     )
-    path.chmod(path.stat().st_mode | 0o111)
-    return path
+    return _python_driver(tmp_path, "replacement-driver", body)
 
 
 def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_path: Path) -> None:
@@ -114,15 +127,13 @@ def test_prepare_replacement_rejects_missing_driver(tmp_path: Path) -> None:
 def test_prepare_replacement_rejects_unframed_single_snapshot(tmp_path: Path) -> None:
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
-    path = tmp_path / "legacy-driver"
     snapshot = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * SNAPSHOT_SECTION_COUNT
-    path.write_text(
-        f"#!{sys.executable}\n"
+    path = _python_driver(
+        tmp_path,
+        "legacy-driver",
         "import sys\nsys.stdin.read()\n"
         + f"print({repr(chr(10).join(str(value) for value in snapshot))})\n",
-        encoding="utf-8",
     )
-    path.chmod(path.stat().st_mode | 0o111)
     with pytest.raises(ReplacementProjectError, match="invalid bundle"):
         prepare_replacement_artifacts(project, NativeReplacementDriver(path))
 
