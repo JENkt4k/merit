@@ -96,11 +96,150 @@ OWNED_DESTRUCTOR_PAYLOAD_ENUM_PREFIX = (
     "destructor Marker { print(self.number); }\n"
     "enum Envelope { Full(Marker), Spare(Marker) }\n"
 )
-UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE = (
+MIXED_OWNED_PAYLOAD_ENUM_SOURCE = (
     "module main\nstruct Marker { number:i64; }\n"
     "destructor Marker { print(self.number); }\n"
     "enum Envelope { Full(Marker), Count(i64) }\n"
-    "fn main()->i32 { return 0; }\n"
+    "fn main()->i32 { let marker:Marker=Marker { number:61 }; let first:Envelope=Full(marker); "
+    "match (first) { Full(payload) => { drop(payload); } Count(value) => { print(value); } } "
+    "let second:Envelope=Count(67); match (second) { Full(payload) => { drop(payload); } "
+    "Count(value) => { print(value); } } return 0; }\n"
+)
+MINIMAL_BUFFER_LIFECYCLE_SOURCE = (
+    "module main\n"
+    "capability allocate;\n"
+    "fn main()->i32 { with capability allocate { "
+    "let allocator:Allocator=system_allocator(); "
+    "let value:Buffer=buffer_new(allocator,8); "
+    "print(buffer_len(value)); drop(value); } return 0; }\n"
+)
+BUFFER_REPLACE_LIFECYCLE_SOURCE = (
+    "module main\ncapability allocate;\n"
+    "fn main()->i32 { with capability allocate { "
+    "let allocator:Allocator=system_allocator(); "
+    "var target:Buffer=buffer_new(allocator,4); "
+    "let replacement:Buffer=buffer_new(allocator,8); "
+    "replace(target,replacement); print(buffer_len(target)); drop(target); } return 0; }\n"
+)
+BORROWED_BUFFER_FIELD_REPLACE_SOURCE = (
+    "module main\ncapability allocate;\n"
+    "struct Resource { data:Buffer; }\n"
+    "fn expose_mut(borrow_mut value:Resource)->borrow_mut Resource { print(1); return value; }\n"
+    "fn main()->i32 { with capability allocate { "
+    "let allocator:Allocator=system_allocator(); "
+    "let initial:Buffer=buffer_new(allocator,4); "
+    "var resource:Resource=Resource { data:initial }; "
+    "let replacement:Buffer=buffer_new(allocator,8); "
+    "replace(expose_mut(resource).data,replacement); "
+    "print(buffer_len(resource.data)); drop(resource); } return 0; }\n"
+)
+BUFFER_STRUCT_LIFECYCLE_SOURCE = (
+    "module main\n"
+    "capability allocate;\n"
+    "struct Resource { data:Buffer; }\n"
+    "fn main()->i32 { with capability allocate { "
+    "let allocator:Allocator=system_allocator(); "
+    "let data:Buffer=buffer_new(allocator,8); "
+    "let resource:Resource=Resource { data:data }; "
+    "print(buffer_len(resource.data)); drop(resource); } return 0; }\n"
+)
+FILESYSTEM_RESULT_LIFECYCLE_SOURCES = (
+    (
+        "read-ok-buffer",
+        "module main\ncapability allocate;\n"
+        "enum ReadLifecycleResult { LifecycleReadOk(Buffer), LifecycleReadErr(i32) }\n"
+        "fn main()->i32 { with capability allocate { "
+        "let allocator:Allocator=system_allocator(); "
+        "let data:Buffer=buffer_new(allocator,8); "
+        "let result:ReadLifecycleResult=LifecycleReadOk(data); "
+        "match (result) { LifecycleReadOk(payload)=>{ print(buffer_len(payload)); drop(payload); } "
+        "LifecycleReadErr(error)=>{ print(error); } } } return 0; }\n",
+        "0\n",
+    ),
+    (
+        "read-error-copy-payload",
+        "module main\nenum ReadLifecycleResult { LifecycleReadOk(Buffer), LifecycleReadErr(i32) }\n"
+        "fn main()->i32 { let result:ReadLifecycleResult=LifecycleReadErr(17); "
+        "match (result) { LifecycleReadOk(payload)=>{ drop(payload); } LifecycleReadErr(error)=>{ print(error); } } return 0; }\n",
+        "17\n",
+    ),
+    (
+        "write-result-copy-schema",
+        "module main\nenum WriteLifecycleResult { LifecycleWriteOk(i64), LifecycleWriteErr(i32) }\n"
+        "fn main()->i32 { let result:WriteLifecycleResult=LifecycleWriteOk(23); "
+        "match (result) { LifecycleWriteOk(count)=>{ print(count); } LifecycleWriteErr(error)=>{ print(error); } } return 0; }\n",
+        "23\n",
+    ),
+)
+PREDEFINED_FILESYSTEM_RESULT_SOURCES = (
+    (
+        "file-read-result-direct-drop",
+        "module main\ncapability allocate;\n"
+        "fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); "
+        "let data:Buffer=buffer_new(allocator,4); let result:FileReadResult=ReadOk(data); "
+        "drop(result); } return 0; }\n",
+        "",
+    ),
+    (
+        "file-read-result",
+        "module main\ncapability allocate;\n"
+        "fn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); "
+        "let data:Buffer=buffer_new(allocator,6); let result:FileReadResult=ReadOk(data); "
+        "match (result) { ReadOk(payload)=>{ print(buffer_len(payload)); drop(payload); } "
+        "ReadErr(error)=>{ } } } return 0; }\n",
+        "0\n",
+    ),
+    (
+        "file-write-result",
+        "module main\nfn main()->i32 { let result:FileWriteResult=WriteOk(23); "
+        "match (result) { WriteOk(count)=>{ print(count); } WriteErr(error)=>{ } } return 0; }\n",
+        "23\n",
+    ),
+)
+OWNED_TRY_PREFIX = (
+    "module main\nstruct Marker { number:i64; }\n"
+    "destructor Marker { print(self.number); }\n"
+    "enum Outcome { Ok(Marker), Err(i64) }\n"
+    "fn consume(value:Outcome)->Outcome { let marker:Marker=try relay(value); "
+    "drop(marker); return Err(7); }\n"
+    "fn relay(value:Outcome)->Outcome { return value; }\n"
+)
+OWNED_TRY_SOURCES = (
+    (
+        "success",
+        "fn main()->i32 { let marker:Marker=Marker { number:71 }; "
+        "let input:Outcome=Ok(marker); let result:Outcome=consume(input); "
+        "match (result) { Ok(payload) => { drop(payload); } Err(error) => { print(error); } } "
+        "return 0; }\n",
+        "71\n7\n",
+    ),
+    (
+        "error",
+        "fn main()->i32 { let input:Outcome=Err(11); let result:Outcome=consume(input); "
+        "match (result) { Ok(payload) => { drop(payload); } Err(error) => { print(error); } } "
+        "return 0; }\n",
+        "11\n",
+    ),
+)
+INVALID_OWNED_TRY_SOURCES = (
+    (
+        "reused-subject",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "enum Outcome { Ok(Marker), Err(i64) }\n"
+        "fn consume(value:Outcome)->Outcome { let marker:Marker=try value; "
+        "print(value); drop(marker); return Err(0); }\n"
+        "fn main()->i32 { return 0; }\n",
+    ),
+    (
+        "non-result-shape",
+        "module main\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "enum Choice { Left(Marker), Right(i64) }\n"
+        "fn consume(value:Choice)->Choice { let marker:Marker=try value; "
+        "drop(marker); return Right(0); }\n"
+        "fn main()->i32 { return 0; }\n",
+    ),
 )
 RECURSIVE_OWNED_AGGREGATE_PREFIX = (
     "module main\n"
@@ -772,7 +911,9 @@ def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: P
     )
     instructions = [instruction for block in module.functions[0].blocks for instruction in block.instructions]
     assert [instruction.kind for instruction in instructions].count("construct") == 1
-    assert [instruction.symbol for instruction in instructions if instruction.kind == "load_field"] == ["tag", "payload", "payload"]
+    assert [instruction.symbol for instruction in instructions if instruction.kind == "load_field"] == [
+        "tag", "payload_0", "payload_1"
+    ]
     root = _project(tmp_path, PAYLOAD_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
 
@@ -787,14 +928,27 @@ def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: P
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_owned_payload_enum_lifecycle(tmp_path: Path) -> None:
+def test_concrete_native_driver_represents_owned_buffer_payload_enum_catalog(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=OWNED_PAYLOAD_ENUM_SOURCE, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    )
+    assert len(bundle.functions[0].type_descriptors) == 1
+    assert module.functions[0].name == "main"
     root = _project(tmp_path, OWNED_PAYLOAD_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
-
-    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
-        prepare_replacement_artifacts(project, driver)
-    assert not (root / ".merit" / "replacement-build-v1.json").exists()
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 1
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
@@ -826,19 +980,269 @@ def test_concrete_native_driver_executes_owned_destructor_payload_enum_lifecycle
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_mixed_owned_payload_enum_shape(tmp_path: Path) -> None:
+def test_concrete_native_driver_executes_mixed_owned_payload_enum_lifecycle(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
-        [str(driver.executable)], input=UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
-        text=True, capture_output=True,
+        [str(driver.executable)], input=MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True, check=True,
     )
     second = subprocess.run(
-        [str(driver.executable)], input=UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
-        text=True, capture_output=True,
+        [str(driver.executable)], input=MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
+        text=True, capture_output=True, check=True,
     )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
+        module_name="main",
+        snapshot=bundle.functions[0],
+        capability_names={},
+    )
+    enum_type = next(
+        local.type
+        for local in module.functions[0].locals
+        if local.type.name.startswith("enum_owned_payload_") and local.type.arguments
+    )
+    assert [payload.name for payload in enum_type.arguments] == ["struct_i64_destructor_0", "i64"]
+    root = _project(tmp_path, MIXED_OWNED_PAYLOAD_ENUM_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-mixed-payload-enum")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-mixed-payload-enum")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "61\n67\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_minimal_buffer_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=MINIMAL_BUFFER_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=MINIMAL_BUFFER_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=MINIMAL_BUFFER_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={0: "allocate"},
+    )
+    assert any(local.type.name == "Buffer" for local in module.functions[0].locals)
+    root = _project(tmp_path, MINIMAL_BUFFER_LIFECYCLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-buffer")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-buffer")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "0\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_buffer_replace_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=BUFFER_REPLACE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=BUFFER_REPLACE_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    function = materialize_resolved_source_function_snapshot(
+        source=BUFFER_REPLACE_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={0: "allocate"},
+    ).functions[0]
+    instructions = [instruction for block in function.blocks for instruction in block.instructions]
+    target_local = next(local.local_id for local in function.locals if local.name == "target")
+    replacement_local = next(local.local_id for local in function.locals if local.name == "replacement")
+    replace_move = next(
+        index for index, instruction in enumerate(instructions)
+        if instruction.kind == "move"
+        and instruction.result == target_local
+        and instruction.operands == (replacement_local,)
+    )
+    assert any(
+        instruction.kind == "drop" and instruction.operands == (target_local,)
+        for instruction in instructions[:replace_move]
+    )
+    root = _project(tmp_path, BUFFER_REPLACE_LIFECYCLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-buffer-replace")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-buffer-replace")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "0\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_borrowed_buffer_field_replace_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=BORROWED_BUFFER_FIELD_REPLACE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=BORROWED_BUFFER_FIELD_REPLACE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 2
+    main = materialize_resolved_source_function_snapshot(
+        source=BORROWED_BUFFER_FIELD_REPLACE_SOURCE, module_name="main",
+        snapshot=bundle.functions[1], capability_names={0: "allocate"},
+    ).functions[0]
+    instructions = [instruction for block in main.blocks for instruction in block.instructions]
+    field_store = next(index for index, instruction in enumerate(instructions) if instruction.kind == "store_field")
+    assert sum(instruction.kind == "call" and instruction.symbol == "expose_mut" for instruction in instructions) == 1
+    assert instructions[field_store].ownership == "moved"
+    root = _project(tmp_path, BORROWED_BUFFER_FIELD_REPLACE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-borrowed-buffer-field")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-borrowed-buffer-field")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "1\n0\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_buffer_struct_lifecycle(tmp_path: Path) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run(
+        [str(driver.executable)], input=BUFFER_STRUCT_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=BUFFER_STRUCT_LIFECYCLE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=BUFFER_STRUCT_LIFECYCLE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={0: "allocate"},
+    )
+    resource_type = next(local.type for local in module.functions[0].locals if local.type.name.startswith("struct_owned_field_"))
+    assert resource_type.arguments == (next(local.type for local in module.functions[0].locals if local.type.name == "Buffer"),)
+    root = _project(tmp_path, BUFFER_STRUCT_LIFECYCLE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-buffer-struct")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-buffer-struct")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, "0\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source,expected_stdout", FILESYSTEM_RESULT_LIFECYCLE_SOURCES)
+def test_concrete_native_driver_executes_filesystem_result_lifecycle_shapes(
+    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0],
+        capability_names={0: "allocate"} if "capability allocate" in source else {},
+    )
+    assert any(local.type.name.startswith("enum_") for local in module.functions[0].locals)
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source,expected_stdout", PREDEFINED_FILESYSTEM_RESULT_SOURCES)
+def test_concrete_native_driver_executes_predefined_filesystem_result_lifecycle(
+    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+) -> None:
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0],
+        capability_names={0: "allocate"} if "capability allocate" in source else {},
+    )
+    assert any(local.type.name.startswith("enum_") for local in module.functions[0].locals)
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_stdout", OWNED_TRY_SOURCES)
+def test_concrete_native_driver_executes_owned_try_lifecycle(
+    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+) -> None:
+    source = OWNED_TRY_PREFIX + body
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    consume = materialize_resolved_source_function_snapshot(
+        source=source, module_name="main", snapshot=bundle.functions[0], capability_names={}
+    ).functions[0]
+    assert any(block.terminator.kind == "switch" for block in consume.blocks)
+    assert sum(block.terminator.kind == "return" for block in consume.blocks) == 2
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source", INVALID_OWNED_TRY_SOURCES)
+def test_concrete_native_driver_rejects_invalid_owned_try_lifecycle(
+    tmp_path: Path, case_name: str, source: str
+) -> None:
+    with pytest.raises(CompileError):
+        Checker(parse(source)).check()
+    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     assert first.returncode != 0
-    assert (first.returncode, first.stdout, first.stderr) == (second.returncode, second.stdout, second.stderr)
-    root = _project(tmp_path, UNSUPPORTED_MIXED_OWNED_PAYLOAD_ENUM_SOURCE)
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode, second.stdout, second.stderr
+    )
+    root = _project(tmp_path / case_name, source)
     project = load_project(root / "Merit.toml")
     with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
         prepare_replacement_artifacts(project, driver)

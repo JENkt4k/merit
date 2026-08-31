@@ -67,12 +67,12 @@ fn resolved_pipeline_derive_match_identities(
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow raw_arms: Vec<MatchArmRecord>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
     allocator: Allocator,
     borrow_mut identities: Vec<MatchEnumIdentity>
 ) -> i32
 requires_caps [allocate]
 {
-    var declaration_tokens: Vec<Token> = lex(source, allocator);
     var status: i32 = 0;
     var last_match_statement: i64 = -1;
     var arm_index: i64 = 0;
@@ -140,66 +140,20 @@ requires_caps [allocate]
                     if (type_length <= 0) { status = 2; }
                 }
 
-                var enum_ordinal: i64 = 0;
                 var matching_enum_count: i64 = 0;
                 var effective_enum_id: i64 = -1;
-                var declaration_scan: i64 = 0;
-                var declaration_depth: i64 = 0;
-                while (declaration_scan < vec_len<Token>(declaration_tokens)) {
-                    if (status == 0) {
-                        let declaration_token: Token = vec_get<Token>(declaration_tokens, declaration_scan);
-                        let declaration_kind: i32 = token_kind(declaration_token);
-                        let declaration_length: i64 = token_length(declaration_token);
-                        var is_enum: i32 = 0;
-                        if (declaration_depth == 0) {
-                            if (declaration_kind == 1) {
-                                if (declaration_length == 4) {
-                                    is_enum = 1;
-                                    let declaration_start: i64 = token_start(declaration_token);
-                                    if (buffer_get(source, declaration_start) != 101) { is_enum = 0; }
-                                    if (buffer_get(source, checked_add(declaration_start, 1)) != 110) { is_enum = 0; }
-                                    if (buffer_get(source, checked_add(declaration_start, 2)) != 117) { is_enum = 0; }
-                                    if (buffer_get(source, checked_add(declaration_start, 3)) != 109) { is_enum = 0; }
-                                }
-                            }
-                        }
-                        if (is_enum != 0) {
-                            let enum_name_index: i64 = checked_add(declaration_scan, 1);
-                            if (enum_name_index >= vec_len<Token>(declaration_tokens)) {
-                                status = 3;
-                            } else {
-                                let enum_name: Token = vec_get<Token>(declaration_tokens, enum_name_index);
-                                if (token_kind(enum_name) != 1) {
-                                    status = 3;
-                                } else {
-                                    if (resolved_pipeline_span_equal(
-                                        source,
-                                        token_start(enum_name), token_length(enum_name),
-                                        type_start, type_length
-                                    ) != 0) {
-                                        effective_enum_id = enum_ordinal;
-                                        matching_enum_count = checked_add(matching_enum_count, 1);
-                                    }
-                                }
-                            }
-                            enum_ordinal = checked_add(enum_ordinal, 1);
-                        }
-                        if (declaration_kind == 4) {
-                            if (declaration_length == 1) {
-                                let declaration_byte: i64 = buffer_get(source, token_start(declaration_token));
-                                if (declaration_byte == 123) {
-                                    declaration_depth = checked_add(declaration_depth, 1);
-                                } else {
-                                    if (declaration_byte == 125) {
-                                        if (declaration_depth > 0) {
-                                            declaration_depth = checked_sub(declaration_depth, 1);
-                                        }
-                                    }
-                                }
-                            }
+                var catalog_index:i64=0;
+                while(catalog_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,catalog_index);
+                    if(entry.ordinal==0){
+                        if(resolved_pipeline_span_equal(
+                            source,entry.enum_name_start,entry.enum_name_length,type_start,type_length
+                        )!=0){
+                            effective_enum_id=entry.enum_id;
+                            matching_enum_count=checked_add(matching_enum_count,1);
                         }
                     }
-                    declaration_scan = checked_add(declaration_scan, 1);
+                    catalog_index=checked_add(catalog_index,1);
                 }
                 if (status == 0) {
                     if (matching_enum_count != 1) {
@@ -216,7 +170,6 @@ requires_caps [allocate]
         arm_index = checked_add(arm_index, 1);
     }
 
-    drop(declaration_tokens);
     return status;
 }
 
@@ -286,7 +239,7 @@ requires_caps [allocate]
             );
             var derived_status: i32 = resolved_pipeline_derive_match_identities(
                 source, statements, statement_operands, raw_arms,
-                allocator, match_identities
+                enum_catalog, allocator, match_identities
             );
             if (derived_status == 0) {
                 derived_status = resolve_match_arms_by_identity(

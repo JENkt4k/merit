@@ -95,7 +95,10 @@ def lower_native_whole_function_assembly(
     if not module_name:
         raise NativeWholeFunctionMirError("module name must be non-empty")
 
-    types: dict[int, MirType] = {1: MirType("i64"), 2: MirType("bool")}
+    types: dict[int, MirType] = {
+        1: MirType("i64"), 2: MirType("bool"),
+        3: MirType("Allocator"), 4: MirType("Buffer"),
+    }
     if type_names:
         types.update(type_names)
 
@@ -217,10 +220,16 @@ def lower_native_whole_function_assembly(
                     rid, "load_field", result=result, operands=(left,), symbol="tag", span=instruction_span,
                 )
             elif kind == _BODY_ENUM_PAYLOAD_LOAD:
-                if result < 0 or left < 0:
+                if result < 0 or left < 0 or right < -1:
                     raise NativeWholeFunctionMirError(f"body enum payload load {index} is invalid")
+                receiver = locals_by_id.get(left)
+                if receiver is None:
+                    raise NativeWholeFunctionMirError(f"body enum payload load {index} has no receiver")
+                if receiver.type.name.startswith("enum_owned_payload_") and receiver.type.arguments and right < 0:
+                    raise NativeWholeFunctionMirError(f"body enum payload load {index} lacks a variant ordinal")
                 body_instructions[rid] = MirInstruction(
-                    rid, "load_field", result=result, operands=(left,), symbol="payload", span=instruction_span,
+                    rid, "load_field", result=result, operands=(left,),
+                    symbol=f"payload_{right}" if right >= 0 else "payload", span=instruction_span,
                 )
             elif kind == _BODY_STRUCT_CONSTRUCT:
                 if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
@@ -232,9 +241,11 @@ def lower_native_whole_function_assembly(
             elif kind == _BODY_STRUCT_FIELD_STORE:
                 if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
                     raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} is invalid")
+                if policy not in {0, 1}:
+                    raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} has invalid policy")
                 body_instructions[rid] = MirInstruction(
                     rid, "store_field", result=result, operands=(left,), symbol=f"field_{symbol_code}",
-                    span=instruction_span, ownership="owned",
+                    span=instruction_span, ownership="moved" if policy == 1 else "owned",
                 )
             else:
                 if result < 0 or left < 0 or symbol_code < 0:

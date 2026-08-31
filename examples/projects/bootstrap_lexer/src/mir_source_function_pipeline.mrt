@@ -46,7 +46,10 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < vec_len<MirFunctionRecord>(body_records)) {
         let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, index);
-        if (function_mir_kind(record) == 2) {
+        var named_binding: i32 = 0;
+        if (function_mir_kind(record) == 2) { named_binding = 1; }
+        if (function_mir_kind(record) == function_mir_kind_parameter()) { named_binding = 1; }
+        if (named_binding != 0) {
             let expected_binding: i64 = vec_len<i64>(binding_starts);
             if (function_mir_binding_id(record) != expected_binding) { return 201; }
             vec_push<i64>(binding_starts, function_mir_start(record));
