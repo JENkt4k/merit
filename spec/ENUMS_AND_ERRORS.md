@@ -45,6 +45,10 @@ enum FileWriteResult { WriteOk(i64), WriteErr(FsError) }
 
 `file_write` likewise requires `file_write` and `allocate`, covering the native path-storage allocation as a distinct audited hazard.
 
+Writing to an existing directory is normalized to `FsIoError` on every host;
+platform-specific `errno` values or exception subclasses do not change this
+semantic classification.
+
 ## Visibility
 
 Project declarations are private by default. Prefix exported declarations with `pub`:

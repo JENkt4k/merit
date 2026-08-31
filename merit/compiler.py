@@ -1856,7 +1856,10 @@ class Interpreter:
             if n=='file_write':
                 path=self.eval(args[0],env).value
                 data=self.eval(args[1],env).value
-                try:return TypedValue('FileWriteResult',{'variant':'WriteOk','payload':TypedValue('i64',Path(path).write_bytes(bytes(data)))})
+                target=Path(path)
+                try:
+                    if target.is_dir():return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsIoError','payload':None})})
+                    return TypedValue('FileWriteResult',{'variant':'WriteOk','payload':TypedValue('i64',target.write_bytes(bytes(data)))})
                 except FileNotFoundError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsNotFound','payload':None})})
                 except PermissionError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsPermissionDenied','payload':None})})
                 except OSError:return TypedValue('FileWriteResult',{'variant':'WriteErr','payload':TypedValue('FsError',{'variant':'FsIoError','payload':None})})
@@ -2020,7 +2023,7 @@ class CGenerator:
             o.append(f'{return_type} merit_{f.name}({params});')
         return '\n'.join(o)
     def generate(self):
-        o=['#if !defined(_WIN32)','#ifndef _POSIX_C_SOURCE','#define _POSIX_C_SOURCE 200809L','#endif','#endif','#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#if defined(_WIN32)','#include <windows.h>','#else','#include <time.h>','#endif','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
+        o=['#if !defined(_WIN32)','#ifndef _POSIX_C_SOURCE','#define _POSIX_C_SOURCE 200809L','#endif','#endif','#include <stdint.h>','#include <stddef.h>','#include <stdio.h>','#include <stdlib.h>','#include <string.h>','#include <errno.h>','#include <sys/stat.h>','#if defined(_WIN32)','#include <windows.h>','#else','#include <time.h>','#endif','#if defined(__GNUC__) || defined(__clang__)','#define MERIT_UNUSED __attribute__((unused))','#else','#define MERIT_UNUSED','#endif','']
         o.append(self.header(include_private=True).replace('#pragma once','').replace('#include <stdint.h>',''))
         o += [r'''static void merit_fail(const char *m,int c){fputs(m,stderr);fputc('\n',stderr);exit(c);}''',
               r'''static int64_t merit_monotonic_ns(void){
@@ -2062,8 +2065,9 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
               r'''static void merit_i64vec_drop(merit_I64Vec *v){merit_allocator_free(v->allocator,v->data);v->data=NULL;v->len=0;v->cap=0;}''',
               r'''static void merit_buffer_drop(merit_Buffer *b){merit_allocator_free(b->allocator,b->data);b->data=NULL;b->len=0;b->cap=0;}''',
               r'''static merit_FsError merit_fs_error(int e){if(e==ENOENT)return merit_make_FsError_FsNotFound();if(e==EACCES||e==EPERM)return merit_make_FsError_FsPermissionDenied();return merit_make_FsError_FsIoError();}''',
+              r'''static int merit_path_is_directory(const char *path){struct stat info;return stat(path,&info)==0&&S_ISDIR(info.st_mode);}''',
               r'''static merit_FileReadResult merit_file_read(merit_Allocator a,merit_String path){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"rb");int open_error=errno;free(z);if(!f)return merit_make_FileReadResult_ReadErr(merit_fs_error(open_error));if(fseek(f,0,SEEK_END)!=0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}long n=ftell(f);if(n<0){int e=errno;fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}rewind(f);merit_Buffer b=merit_buffer_new(a,n);if(n>0){size_t got=fread(b.data,1,(size_t)n,f);if(got!=(size_t)n){int e=errno;merit_buffer_drop(&b);fclose(f);return merit_make_FileReadResult_ReadErr(merit_fs_error(e));}b.len=got;}if(fclose(f)!=0){merit_buffer_drop(&b);return merit_make_FileReadResult_ReadErr(merit_fs_error(errno));}return merit_make_FileReadResult_ReadOk(b);}''',
-              r'''static merit_FileWriteResult merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;FILE *f=fopen(z,"wb");int open_error=errno;free(z);if(!f)return merit_make_FileWriteResult_WriteErr(merit_fs_error(open_error));size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len){int e=errno;fclose(f);return merit_make_FileWriteResult_WriteErr(merit_fs_error(e));}if(fclose(f)!=0)return merit_make_FileWriteResult_WriteErr(merit_fs_error(errno));return merit_make_FileWriteResult_WriteOk((int64_t)wrote);}''',
+              r'''static merit_FileWriteResult merit_file_write(merit_String path,const merit_Buffer *b){char *z=(char*)malloc(path.len+1);if(!z)merit_fail("allocation failed",80);memcpy(z,path.data,path.len);z[path.len]=0;if(merit_path_is_directory(z)){free(z);return merit_make_FileWriteResult_WriteErr(merit_make_FsError_FsIoError());}FILE *f=fopen(z,"wb");int open_error=errno;free(z);if(!f)return merit_make_FileWriteResult_WriteErr(merit_fs_error(open_error));size_t wrote=b->len?fwrite(b->data,1,b->len,f):0;if(wrote!=b->len){int e=errno;fclose(f);return merit_make_FileWriteResult_WriteErr(merit_fs_error(e));}if(fclose(f)!=0)return merit_make_FileWriteResult_WriteErr(merit_fs_error(errno));return merit_make_FileWriteResult_WriteOk((int64_t)wrote);}''',
               r'''static int64_t merit_add(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))merit_fail("Merit addition overflow",70);return r;}''',
               r'''static int64_t merit_sub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))merit_fail("Merit subtraction overflow",70);return r;}''',
               r'''static int64_t merit_div(int64_t a,int64_t b){if(!b)merit_fail("Merit division by zero",72);if(a==INT64_MIN&&b==-1)merit_fail("Merit division overflow",70);return a/b;}''',

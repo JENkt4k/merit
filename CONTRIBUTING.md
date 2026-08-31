@@ -7,6 +7,7 @@ Merit is in active bootstrap development. Contributions should advance one docum
 Read:
 
 - `AGENTS.md`
+- `docs/DEVELOPMENT_GATES.md`
 - `ROADMAP.md`
 - `STATUS.md`
 - `BOOTSTRAP_STATUS.md`
@@ -17,21 +18,28 @@ Do not broaden the language during the `v0.1.0-alpha.2` bootstrap milestone unle
 
 ## Setup
 
-```bash
-./scripts/bootstrap.sh
+Install the editable development package in Python 3.11 or newer and verify the environment:
+
+```text
+python -m pip install --no-build-isolation -e ".[dev]"
+python scripts/doctor.py
 ```
 
-The project requires Python 3.11 or newer and a working C compiler available as `cc`.
+A working C compiler is required. The complete full-gate environment also uses Java and .NET. Native Windows development is supported through `scripts/activate-windows-dev.ps1` with MSYS2 UCRT64 GCC.
 
 ## Validation
 
-Run focused tests while developing, then run the complete clean-environment gate before proposing a change:
+Run focused tests while developing, then use the canonical cross-platform gates:
 
-```bash
-bash scripts/ci.sh
+```text
+python scripts/gate.py fast
+python scripts/gate.py subsystem
+python scripts/gate.py full --durations 50
 ```
 
-This command reports the active toolchain and delegates to `scripts/test.sh`, which is the authoritative list of tests and interpreter/native acceptance projects.
+Linux/WSL may use `bash scripts/ci.sh`; native Windows may use `.\scripts\test-windows.ps1 -Gate full -Durations 50`. These are thin wrappers around the same Python orchestration.
+
+The full gate runs the complete pytest suite and all ten interpreter/native acceptance projects. GitHub Actions runs the same contract on Ubuntu and native Windows.
 
 ## Change discipline
 
@@ -57,4 +65,4 @@ Keep each pull request centered on one measurable gate. Describe:
 - how the change was verified
 - any deliberate limitations or follow-up work
 
-The GitHub Local Gate is intentionally a small clean-runner mirror of the local test command. It is not a broad platform matrix and should not become unrelated infrastructure work during bootstrap development.
+The GitHub Local Gate is a clean-runner implementation of the same canonical validation contract used locally. Platform-specific setup may differ, but Windows, Linux/WSL, humans, and agents must not maintain separate semantic test policies.

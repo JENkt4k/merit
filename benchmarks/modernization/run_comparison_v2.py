@@ -49,10 +49,15 @@ def run_csharp(data: dict, reference, work: Path) -> tuple[dict, dict]:
     if CSHARP_SOURCE.read_text(encoding="utf-8") != generator.generate(data):
         raise AssertionError("generated C# benchmark source is stale")
 
+    project_dir = work / "csharp-project"
+    project_dir.mkdir()
+    project = project_dir / CSHARP_PROJECT.name
+    shutil.copy2(CSHARP_PROJECT, project)
+    shutil.copy2(CSHARP_SOURCE, project_dir / CSHARP_SOURCE.name)
     out = work / "csharp"
     start = perf_counter_ns()
     subprocess.run(
-        [dotnet, "build", str(CSHARP_PROJECT), "-c", "Release", "-o", str(out), "--nologo", "-v:q"],
+        [dotnet, "build", str(project), "-c", "Release", "-o", str(out), "--nologo", "-v:q"],
         text=True, capture_output=True, check=True,
     )
     build_elapsed = perf_counter_ns() - start
