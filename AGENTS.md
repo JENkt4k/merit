@@ -20,12 +20,13 @@ Do not broaden the language during alpha.2 closure.
    for architecture/history. When those conflict with `ALPHA2_CLOSURE.md` or
    current `main`, current `main` and `ALPHA2_CLOSURE.md` win.
 3. Read `ARCHITECTURE.md`, `EPOCH-III.md`, and relevant files under `spec/`.
-4. Re-anchor on current `main`:
+4. Read `docs/DEVELOPMENT_GATES.md` before running broad validation.
+5. Re-anchor on current `main`:
    - verify the previous PR is actually merged;
    - verify its authoritative Local Gate;
    - inspect open PRs/branches for overlapping work;
    - never continue from an obsolete branch merely because it exists.
-5. Run focused baseline tests for the subsystem being changed before modifying it.
+6. Run focused baseline tests for the subsystem being changed before modifying it.
 
 ## Non-negotiable invariants
 
@@ -134,7 +135,7 @@ defined in that document.
 9. Run the full clean gate only when the candidate PR is believed complete,
    or when a failure may be cross-cutting.
 10. Open or repair exactly one PR.
-11. Treat GitHub Local Gate as authoritative.
+11. Treat the canonical GitHub full gates as authoritative.
 12. Diagnose the first/root failure before making changes. Do not react to the
     raw fan-out failure count as if each failed test were independent.
 13. Repair failures on that same PR until green.
@@ -143,7 +144,9 @@ defined in that document.
 
 ## Testing policy
 
-Use the narrowest test level that answers the current question.
+Use the narrowest test level that answers the current question. The canonical
+cross-platform orchestration is `scripts/gate.py`; shell and PowerShell scripts
+are wrappers only.
 
 ### During implementation
 
@@ -154,23 +157,56 @@ Examples:
 ```bash
 python -m pytest tests/project/test_relevant_gate.py -q
 python -m pytest tests/project/test_relevant_gate.py::test_specific_case -q
+python scripts/gate.py fast
 ```
 
 ### After a coherent subsystem change
 
-Run the affected subsystem/project tests.
+Run the affected subsystem/project tests, then use the canonical subsystem gate
+when broad bootstrap/project evidence is appropriate:
+
+```bash
+python scripts/gate.py subsystem
+```
 
 ### Before PR readiness
 
-Run:
+Run the complete gate from the platform being validated:
 
 ```bash
-bash scripts/ci.sh
+python scripts/doctor.py --full
+python scripts/gate.py full --durations 50
 ```
 
-The GitHub Ubuntu Local Gate remains authoritative.
+Linux/WSL convenience wrapper:
 
+```bash
+bash scripts/ci.sh --durations 50
+```
+
+Native Windows convenience wrapper:
+
+```powershell
+.\scripts\test-windows.ps1 -Gate full -Durations 50
+```
+
+The GitHub Ubuntu and native Windows full gates are clean-environment authorities.
 Do not repeatedly run the entire suite after every small source edit.
+
+### Long-running validation and model quota
+
+Do not poll long-running tests with repeated model turns. If a command is
+expected to take more than two minutes, either run it in an execution environment
+that can return the terminal result without repeated model polling, or give the
+human the exact command and stop for manual execution. Do not emit repeated
+"still running" or "still green" turns.
+
+A previously reported full-gate pass remains valid only while the working tree is
+unchanged. Do not rerun a full gate merely because control returned to the agent;
+if the tree changed after the gate, rerun it before claiming PR readiness.
+
+Each canonical gate writes `.merit/gates/<gate>/result.json` and prints a terminal
+`MERIT_GATE_RESULT=PASS` or `MERIT_GATE_RESULT=FAIL` marker for humans and agents.
 
 If a full run fails:
 
@@ -182,24 +218,38 @@ If a full run fails:
 
 ## Development environment
 
-Preferred local development environment:
+Supported development environments include:
 
-- WSL2 Ubuntu 24.04;
-- Python 3.11;
-- GCC;
-- repository stored in the WSL/Linux filesystem, not under `/mnt/c`, `/mnt/d`,
-  or another Windows-mounted filesystem when practical.
+- native Windows with Python 3.11+, MSYS2 UCRT64 GCC, Java, and .NET;
+- WSL2/Linux with Python 3.11+, GCC/Clang, Java, and .NET;
+- GitHub-hosted Windows and Ubuntu runners using the same canonical Python gate.
 
-Preferred repository location:
+Native Windows is a first-class validation environment, not merely a smoke target.
+Run `python scripts/doctor.py` for the core development toolchain and
+`python scripts/doctor.py --full` for the complete full-gate toolchain.
 
-```text
-~/src/merit-lang
-```
+On Windows, `scripts/activate-windows-dev.ps1` configures the virtual environment,
+MSYS2 UCRT64 GCC, and stable temporary paths. On Linux/WSL, no Bash-specific test
+policy should exist beyond thin wrappers around the Python gate.
 
-The hosted Ubuntu Local Gate is the clean-environment authority.
-The Windows native smoke gate remains an independent portability check.
+Repository placement on the native Linux filesystem is still preferred for WSL
+performance, but Windows checkouts must remain fully supported because remote
+Codex and local Jan/agent workflows may run outside WSL.
 
 ## Commands
+
+Cross-platform canonical commands:
+
+```text
+python scripts/doctor.py
+python scripts/gate.py smoke
+python scripts/gate.py fast
+python scripts/gate.py subsystem
+python scripts/gate.py acceptance
+python scripts/gate.py full --durations 50
+```
+
+Convenience wrappers:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -207,8 +257,15 @@ The Windows native smoke gate remains an independent portability check.
 bash scripts/ci.sh
 ```
 
+```powershell
+.\scripts\activate-windows-dev.ps1
+.\scripts\test-windows.ps1 -Gate fast
+.\scripts\test-windows.ps1 -Gate full
+.\scripts\ci.ps1 -Gate full
+```
+
 Use focused pytest invocations during implementation rather than automatically
-running all three commands after each edit.
+running the full gate after each edit.
 
 ## Current checkpoint
 
