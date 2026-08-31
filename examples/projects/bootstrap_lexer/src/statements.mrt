@@ -36,6 +36,57 @@ pub fn statement_operand_kind(borrow operand: StatementOperand) -> i32 { return 
 pub fn statement_operand_start(borrow operand: StatementOperand) -> i64 { return operand.start; }
 pub fn statement_operand_length(borrow operand: StatementOperand) -> i64 { return operand.length; }
 
+fn statement_ascii_t() -> i64 { return 116; }
+fn statement_ascii_r() -> i64 { return 114; }
+fn statement_ascii_y() -> i64 { return 121; }
+
+pub fn statement_operand_is_try(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow operand: StatementOperand
+) -> i32 {
+    if (statement_operand_kind(operand) != 3) { return 0; }
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (token_start(token) == statement_operand_start(operand)) {
+            if (token_kind(token) != 1) { return 0; }
+            if (token_length(token) != 3) { return 0; }
+            if (buffer_get(source, token_start(token)) != statement_ascii_t()) { return 0; }
+            if (buffer_get(source, checked_add(token_start(token), 1)) != statement_ascii_r()) { return 0; }
+            if (buffer_get(source, checked_add(token_start(token), 2)) != statement_ascii_y()) { return 0; }
+            return 1;
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+pub fn statement_try_value_start(
+    borrow tokens: Vec<Token>, borrow operand: StatementOperand
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, index);
+        if (token_start(token) == statement_operand_start(operand)) {
+            let value_index: i64 = checked_add(index, 1);
+            if (value_index >= vec_len<Token>(tokens)) { return -1; }
+            let value_token: Token = vec_get<Token>(tokens, value_index);
+            return token_start(value_token);
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+pub fn statement_try_value_length(
+    borrow tokens: Vec<Token>, borrow operand: StatementOperand
+) -> i64 {
+    let start: i64 = statement_try_value_start(tokens, operand);
+    if (start < 0) { return -1; }
+    return checked_sub(
+        checked_add(statement_operand_start(operand), statement_operand_length(operand)), start
+    );
+}
+
 fn stmt_token_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
     return buffer_get(source, checked_add(token_start(token), offset));
 }

@@ -205,7 +205,7 @@ requires_caps [allocate]
                         vec_push<i64>(stack, hir_left(hir));
                     }
                     if (hir_is_call(hir) != 0) {
-                        vec_push<i64>(stack, hir_right(hir));
+                        if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
                     }
                     if (hir_is_struct_constructor(hir) != 0) {
                         if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }

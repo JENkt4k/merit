@@ -166,7 +166,7 @@ requires_caps [allocate]
                                     let next_local: i64 = vec_get<i64>(counters, 0);
                                     vec_set<i64>(local_ids, current, next_local);
                                     vec_set<i64>(counters, 0, checked_add(next_local, 1));
-                                    vec_push<i64>(stack, hir_right(hir));
+                                    if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
                                 } else {
                                     if (kind == 8) {
                                         vec_push<i64>(stack, hir_right(hir));

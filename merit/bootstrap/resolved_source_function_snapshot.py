@@ -23,7 +23,7 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 4
+SNAPSHOT_VERSION = 5
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
@@ -39,6 +39,7 @@ _SECTION_WIDTHS_BY_VERSION = {
     2: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
     3: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
     4: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5, 7, 16, 7, 3),
+    5: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 7, 16, 7, 3),
 }
 SNAPSHOT_SECTION_COUNT = len(_SECTION_WIDTHS_BY_VERSION[SNAPSHOT_VERSION])
 
@@ -161,8 +162,13 @@ def _descriptor_type_names(
     raw: dict[int, tuple[int, int, int, int]] = {}
     aggregate_fields: dict[int, list[int]] = {}
     aggregate_policies: dict[int, int] = {}
+    enum_fields: dict[int, list[int]] = {}
     for index, row in enumerate(rows):
-        code, kind, identity, child_code, destructor_policy = row
+        if version >= 5:
+            code, kind, identity, child_code, destructor_policy, ordinal = row
+        else:
+            code, kind, identity, child_code, destructor_policy = row
+            ordinal = 0
         if code <= 0 or identity < 0 or child_code <= 0 or kind not in {
             _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT,
             _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM,
@@ -184,6 +190,10 @@ def _descriptor_type_names(
                     f"type descriptor {index} conflicts with another descriptor kind"
                 )
             fields = aggregate_fields.setdefault(code, [])
+            if version >= 5 and ordinal != len(fields):
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has noncanonical field ordinal"
+                )
             if code in aggregate_policies and destructor_policy:
                 raise ResolvedSourceFunctionSnapshotError(
                     f"type descriptor {index} has duplicate destructor policy"
@@ -191,6 +201,27 @@ def _descriptor_type_names(
             if destructor_policy:
                 aggregate_policies[code] = len(fields)
             fields.append(child_code)
+            continue
+        if kind == _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM and version >= 5:
+            if destructor_policy != 0:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has unsupported destructor policy"
+                )
+            expected_code = _OWNED_PAYLOAD_ENUM_TYPE_BASE + identity
+            if code != expected_code:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has noncanonical type code"
+                )
+            if code in raw or code in aggregate_fields:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} conflicts with another descriptor kind"
+                )
+            variants = enum_fields.setdefault(code, [])
+            if ordinal != len(variants):
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has noncanonical variant ordinal"
+                )
+            variants.append(child_code)
             continue
         if destructor_policy != 0:
             raise ResolvedSourceFunctionSnapshotError(
@@ -209,13 +240,15 @@ def _descriptor_type_names(
             )
         raw[code] = (kind, identity, child_code, destructor_policy)
 
-    for code in aggregate_fields:
+    for code in (*aggregate_fields, *enum_fields):
         if code in raw:
             raise ResolvedSourceFunctionSnapshotError(f"duplicate type descriptor code {code}")
 
     resolved: dict[int, MirType] = {
         1: MirType("i64"),
         2: MirType("bool"),
+        3: MirType("Allocator"),
+        4: MirType("Buffer"),
     }
 
     def resolve(code: int, active: frozenset[int]) -> MirType:
@@ -229,6 +262,17 @@ def _descriptor_type_names(
             return MirType(f"struct_i64_destructor_{code - _DESTRUCTOR_I64_STRUCT_TYPE_BASE}")
         descriptor = raw.get(code)
         aggregate = aggregate_fields.get(code)
+        enum_variants = enum_fields.get(code)
+        if enum_variants is not None:
+            if code in active:
+                raise ResolvedSourceFunctionSnapshotError("type descriptor graph is cyclic")
+            identity = code - _OWNED_PAYLOAD_ENUM_TYPE_BASE
+            children = tuple(resolve(child, active | {code}) for child in enum_variants)
+            if not children:
+                raise ResolvedSourceFunctionSnapshotError("enum type descriptor has no variants")
+            result = MirType(f"enum_owned_payload_{identity}", children)
+            resolved[code] = result
+            return result
         if aggregate is not None:
             if code in active:
                 raise ResolvedSourceFunctionSnapshotError("type descriptor graph is cyclic")
@@ -257,9 +301,9 @@ def _descriptor_type_names(
         resolved[code] = result
         return result
 
-    for code in (*raw, *aggregate_fields):
+    for code in (*raw, *aggregate_fields, *enum_fields):
         resolve(code, frozenset())
-    return {code: resolved[code] for code in (*raw, *aggregate_fields)}
+    return {code: resolved[code] for code in (*raw, *aggregate_fields, *enum_fields)}
 
 
 def materialize_resolved_source_function_snapshot(
