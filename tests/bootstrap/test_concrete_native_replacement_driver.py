@@ -14,7 +14,7 @@ from merit.compiler import Checker, CompileError, parse
 from merit.project.build import build
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import ReplacementProjectError, build_replacement_project
-from merit.project.replacement_prepare import prepare_replacement_artifacts
+from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 
 
 SOURCE = "module main\nfn main()->i32 { return 7; }\n"
@@ -663,8 +663,18 @@ def _project(tmp_path: Path, source: str = SOURCE) -> Path:
     return root
 
 
+@pytest.fixture(scope="session")
+def driver(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> NativeReplacementDriver:
+    """Build the immutable frontend driver once for isolated behavior tests."""
+
+    output_directory = tmp_path_factory.mktemp("concrete-native-replacement-driver")
+    return build_native_replacement_driver(output_directory / "merit-native-replacement-driver")
+
+
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_reaches_replacement_executable_without_python_semantic_lowering(tmp_path: Path) -> None:
+def test_build_concrete_native_driver_reaches_replacement_executable_without_python_semantic_lowering(tmp_path: Path) -> None:
     driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
 
     completed = subprocess.run(
@@ -691,8 +701,7 @@ def test_concrete_native_driver_reaches_replacement_executable_without_python_se
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_path: Path, driver: NativeReplacementDriver) -> None:
 
     completed = subprocess.run(
         [str(driver.executable)],
@@ -718,8 +727,7 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow(tmp_path: Path, driver: NativeReplacementDriver) -> None:
 
     for case_name, source, expected_status, expected_stdout in CONTROL_FLOW_SOURCES:
         root = _project(tmp_path / case_name, source)
@@ -753,11 +761,10 @@ def test_concrete_native_driver_closes_branch_loop_and_early_return_control_flow
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_rejects_malformed_control_flow_deterministically(tmp_path: Path) -> None:
+def test_concrete_native_driver_rejects_malformed_control_flow_deterministically(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     with pytest.raises(UnexpectedInput):
         parse(INVALID_CONTROL_FLOW_SOURCE)
 
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
         [str(driver.executable)], input=INVALID_CONTROL_FLOW_SOURCE, text=True, capture_output=True
     )
@@ -775,13 +782,12 @@ def test_concrete_native_driver_rejects_malformed_control_flow_deterministically
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_rejects_immutable_assignment_deterministically(tmp_path: Path) -> None:
+def test_concrete_native_driver_rejects_immutable_assignment_deterministically(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     root = _project(tmp_path, IMMUTABLE_ASSIGNMENT_SOURCE)
     project = load_project(root / "Merit.toml")
     with pytest.raises(CompileError, match="cannot assign to immutable"):
         build(project, root / "build" / "reference")
 
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
         [str(driver.executable)], input=IMMUTABLE_ASSIGNMENT_SOURCE, text=True, capture_output=True
     )
@@ -797,8 +803,7 @@ def test_concrete_native_driver_rejects_immutable_assignment_deterministically(t
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_derives_capability_catalog_from_source(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_derives_capability_catalog_from_source(tmp_path: Path, driver: NativeReplacementDriver) -> None:
 
     completed = subprocess.run(
         [str(driver.executable)],
@@ -823,8 +828,7 @@ def test_concrete_native_driver_derives_capability_catalog_from_source(tmp_path:
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_undeclared_capability(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_fails_closed_for_undeclared_capability(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     root = _project(tmp_path, UNKNOWN_CAPABILITY_SOURCE)
     project = load_project(root / "Merit.toml")
 
@@ -834,8 +838,7 @@ def test_concrete_native_driver_fails_closed_for_undeclared_capability(tmp_path:
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_derives_payload_free_enum_catalog_from_source(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_derives_payload_free_enum_catalog_from_source(tmp_path: Path, driver: NativeReplacementDriver) -> None:
 
     completed = subprocess.run(
         [str(driver.executable)],
@@ -860,8 +863,7 @@ def test_concrete_native_driver_derives_payload_free_enum_catalog_from_source(tm
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_derives_match_enum_identity_from_declared_subject_type(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_derives_match_enum_identity_from_declared_subject_type(tmp_path: Path, driver: NativeReplacementDriver) -> None:
 
     completed = subprocess.run(
         [str(driver.executable)],
@@ -886,8 +888,7 @@ def test_concrete_native_driver_derives_match_enum_identity_from_declared_subjec
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_when_match_subject_type_is_not_an_enum(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_fails_closed_when_match_subject_type_is_not_an_enum(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     root = _project(tmp_path, UNTYPED_MULTI_ENUM_SOURCE)
     project = load_project(root / "Merit.toml")
 
@@ -897,8 +898,7 @@ def test_concrete_native_driver_fails_closed_when_match_subject_type_is_not_an_e
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run([str(driver.executable)], input=PAYLOAD_ENUM_SOURCE, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=PAYLOAD_ENUM_SOURCE, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -928,8 +928,7 @@ def test_concrete_native_driver_executes_copy_payload_enum_lifecycle(tmp_path: P
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_represents_owned_buffer_payload_enum_catalog(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_represents_owned_buffer_payload_enum_catalog(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=OWNED_PAYLOAD_ENUM_SOURCE,
         text=True, capture_output=True, check=True,
@@ -954,10 +953,9 @@ def test_concrete_native_driver_represents_owned_buffer_payload_enum_catalog(tmp
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", OWNED_DESTRUCTOR_PAYLOAD_ENUM_SOURCES)
 def test_concrete_native_driver_executes_owned_destructor_payload_enum_lifecycle(
-    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str, expected_stdout: str
 ) -> None:
     source = OWNED_DESTRUCTOR_PAYLOAD_ENUM_PREFIX + body
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -980,8 +978,7 @@ def test_concrete_native_driver_executes_owned_destructor_payload_enum_lifecycle
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_mixed_owned_payload_enum_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_mixed_owned_payload_enum_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=MIXED_OWNED_PAYLOAD_ENUM_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1016,8 +1013,7 @@ def test_concrete_native_driver_executes_mixed_owned_payload_enum_lifecycle(tmp_
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_minimal_buffer_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_minimal_buffer_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=MINIMAL_BUFFER_LIFECYCLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1045,8 +1041,7 @@ def test_concrete_native_driver_executes_minimal_buffer_lifecycle(tmp_path: Path
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_buffer_replace_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_buffer_replace_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=BUFFER_REPLACE_LIFECYCLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1086,8 +1081,7 @@ def test_concrete_native_driver_executes_buffer_replace_lifecycle(tmp_path: Path
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_borrowed_buffer_field_replace_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_borrowed_buffer_field_replace_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=BORROWED_BUFFER_FIELD_REPLACE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1119,8 +1113,7 @@ def test_concrete_native_driver_executes_borrowed_buffer_field_replace_lifecycle
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_buffer_struct_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_buffer_struct_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=BUFFER_STRUCT_LIFECYCLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1151,9 +1144,8 @@ def test_concrete_native_driver_executes_buffer_struct_lifecycle(tmp_path: Path)
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,source,expected_stdout", FILESYSTEM_RESULT_LIFECYCLE_SOURCES)
 def test_concrete_native_driver_executes_filesystem_result_lifecycle_shapes(
-    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str, expected_stdout: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1177,9 +1169,8 @@ def test_concrete_native_driver_executes_filesystem_result_lifecycle_shapes(
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,source,expected_stdout", PREDEFINED_FILESYSTEM_RESULT_SOURCES)
 def test_concrete_native_driver_executes_predefined_filesystem_result_lifecycle(
-    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str, expected_stdout: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1203,10 +1194,9 @@ def test_concrete_native_driver_executes_predefined_filesystem_result_lifecycle(
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", OWNED_TRY_SOURCES)
 def test_concrete_native_driver_executes_owned_try_lifecycle(
-    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str, expected_stdout: str
 ) -> None:
     source = OWNED_TRY_PREFIX + body
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1231,11 +1221,10 @@ def test_concrete_native_driver_executes_owned_try_lifecycle(
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,source", INVALID_OWNED_TRY_SOURCES)
 def test_concrete_native_driver_rejects_invalid_owned_try_lifecycle(
-    tmp_path: Path, case_name: str, source: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str
 ) -> None:
     with pytest.raises(CompileError):
         Checker(parse(source)).check()
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     assert first.returncode != 0
@@ -1252,10 +1241,9 @@ def test_concrete_native_driver_rejects_invalid_owned_try_lifecycle(
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", RECURSIVE_OWNED_AGGREGATE_SOURCES)
 def test_concrete_native_driver_executes_recursive_owned_aggregate_lifecycle(
-    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str, expected_stdout: str
 ) -> None:
     source = RECURSIVE_OWNED_AGGREGATE_PREFIX + body
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1278,8 +1266,7 @@ def test_concrete_native_driver_executes_recursive_owned_aggregate_lifecycle(
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run([str(driver.executable)], input=RECURSIVE_OWNED_AGGREGATE_CYCLE, text=True, capture_output=True)
     second = subprocess.run([str(driver.executable)], input=RECURSIVE_OWNED_AGGREGATE_CYCLE, text=True, capture_output=True)
     assert first.returncode != 0
@@ -1294,10 +1281,9 @@ def test_concrete_native_driver_fails_closed_for_recursive_owned_aggregate_cycle
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", MULTI_FIELD_OWNED_AGGREGATE_SOURCES)
 def test_concrete_native_driver_executes_multi_field_owned_aggregate_lifecycle(
-    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str, expected_stdout: str
 ) -> None:
     source = MULTI_FIELD_OWNED_AGGREGATE_PREFIX + body
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1324,9 +1310,8 @@ def test_concrete_native_driver_executes_multi_field_owned_aggregate_lifecycle(
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_named_multi_field_scalar_aggregate(tmp_path: Path) -> None:
+def test_concrete_native_driver_executes_named_multi_field_scalar_aggregate(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     source = MULTI_FIELD_SCALAR_AGGREGATE_SOURCE
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1342,9 +1327,8 @@ def test_concrete_native_driver_executes_named_multi_field_scalar_aggregate(tmp_
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_one_field_wrapper_around_multi_field_aggregate(tmp_path: Path) -> None:
+def test_concrete_native_driver_executes_one_field_wrapper_around_multi_field_aggregate(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     source = NESTED_MULTI_FIELD_AGGREGATE_SOURCE
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1362,9 +1346,8 @@ def test_concrete_native_driver_executes_one_field_wrapper_around_multi_field_ag
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("source", INVALID_MULTI_FIELD_AGGREGATE_SOURCES)
 def test_concrete_native_driver_fails_closed_for_invalid_multi_field_aggregate(
-    tmp_path: Path, source: str
+    tmp_path: Path, driver: NativeReplacementDriver, source: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     assert first.returncode != 0
@@ -1383,10 +1366,9 @@ def test_concrete_native_driver_fails_closed_for_invalid_multi_field_aggregate(
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,body,expected_stdout", PATH_SENSITIVE_OWNED_SOURCES)
 def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_flow(
-    tmp_path: Path, case_name: str, body: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str, expected_stdout: str
 ) -> None:
     source = RECURSIVE_OWNED_AGGREGATE_PREFIX + body
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     root = _project(tmp_path / case_name, source)
     project = load_project(root / "Merit.toml")
 
@@ -1414,9 +1396,8 @@ def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("source,expected_stdout", PATH_SENSITIVE_CAPABILITY_OWNED_SOURCES)
 def test_concrete_native_driver_tracks_enclosing_owned_scope_through_capability_region(
-    tmp_path: Path, source: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, source: str, expected_stdout: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     root = _project(tmp_path, source)
     project = load_project(root / "Merit.toml")
 
@@ -1443,9 +1424,8 @@ def test_concrete_native_driver_tracks_enclosing_owned_scope_through_capability_
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("source,reference_error", PATH_SENSITIVE_OWNED_REJECTIONS)
 def test_concrete_native_driver_fails_closed_for_invalid_path_sensitive_ownership(
-    tmp_path: Path, source: str, reference_error: str
+    tmp_path: Path, driver: NativeReplacementDriver, source: str, reference_error: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
         [str(driver.executable)], input=source, text=True, capture_output=True
     )
@@ -1468,8 +1448,7 @@ def test_concrete_native_driver_fails_closed_for_invalid_path_sensitive_ownershi
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run([str(driver.executable)], input=SINGLE_I64_STRUCT_SOURCE, text=True, capture_output=True, check=True)
     second = subprocess.run([str(driver.executable)], input=SINGLE_I64_STRUCT_SOURCE, text=True, capture_output=True, check=True)
     assert first.stdout == second.stdout
@@ -1500,8 +1479,7 @@ def test_concrete_native_driver_executes_non_copy_single_i64_struct_lifecycle(tm
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_owned_callable_transfer_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_owned_callable_transfer_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=OWNED_CALLABLE_LIFECYCLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1533,8 +1511,7 @@ def test_concrete_native_driver_executes_owned_callable_transfer_lifecycle(tmp_p
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_relayed_borrowed_callable_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_relayed_borrowed_callable_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=BORROWED_CALLABLE_LIFECYCLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1572,8 +1549,7 @@ def test_concrete_native_driver_executes_relayed_borrowed_callable_lifecycle(tmp
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_mutable_borrowed_callable_lifecycle(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_mutable_borrowed_callable_lifecycle(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=MUTABLE_BORROW_CALLABLE_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1605,9 +1581,8 @@ def test_concrete_native_driver_executes_mutable_borrowed_callable_lifecycle(tmp
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,source,reference_error", INVALID_CALLABLE_OWNERSHIP_SOURCES)
 def test_concrete_native_driver_fails_closed_for_invalid_callable_ownership(
-    tmp_path: Path, case_name: str, source: str, reference_error: str,
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str, reference_error: str,
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     assert first.returncode != 0
@@ -1627,8 +1602,7 @@ def test_concrete_native_driver_fails_closed_for_invalid_callable_ownership(
     INVALID_SINGLE_I64_STRUCT_FIELD_SOURCE,
     INVALID_SINGLE_I64_STRUCT_REPLACE_SOURCE,
 ])
-def test_concrete_native_driver_fails_closed_for_unrepresented_struct_shapes(tmp_path: Path, source: str) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_fails_closed_for_unrepresented_struct_shapes(tmp_path: Path, driver: NativeReplacementDriver, source: str) -> None:
     first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
     assert first.returncode != 0
@@ -1645,8 +1619,7 @@ def test_concrete_native_driver_fails_closed_for_unrepresented_struct_shapes(tmp
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_single_i64_struct_drop_and_move(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_single_i64_struct_drop_and_move(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     for case_name, source in SINGLE_I64_STRUCT_LIFECYCLE_SOURCES:
         root = _project(tmp_path / case_name, source)
         project = load_project(root / "Merit.toml")
@@ -1667,9 +1640,8 @@ def test_concrete_native_driver_executes_single_i64_struct_drop_and_move(tmp_pat
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 @pytest.mark.parametrize("case_name,source,expected_stdout", DESTRUCTOR_I64_STRUCT_LIFECYCLE_SOURCES)
 def test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecycle(
-    tmp_path: Path, case_name: str, source: str, expected_stdout: str
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str, expected_stdout: str
 ) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     root = _project(tmp_path / case_name, source)
     project = load_project(root / "Merit.toml")
     _, _, reference_executable = build(project, root / "build" / "reference")
@@ -1693,8 +1665,7 @@ def test_concrete_native_driver_executes_observable_i64_struct_destructor_lifecy
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_concrete_native_driver_executes_constant_expression_destructor(tmp_path: Path) -> None:
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
+def test_concrete_native_driver_executes_constant_expression_destructor(tmp_path: Path, driver: NativeReplacementDriver) -> None:
     first = subprocess.run(
         [str(driver.executable)], input=CONSTANT_EXPRESSION_DESTRUCTOR_I64_STRUCT_SOURCE,
         text=True, capture_output=True, check=True,
@@ -1717,14 +1688,13 @@ def test_concrete_native_driver_executes_constant_expression_destructor(tmp_path
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 def test_concrete_native_driver_fails_closed_for_ownership_changing_destructor_body(
-    tmp_path: Path,
+    tmp_path: Path, driver: NativeReplacementDriver,
 ) -> None:
     root = _project(tmp_path, OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE)
     project = load_project(root / "Merit.toml")
     with pytest.raises(CompileError, match="M5502"):
         Checker(project.program).check()
 
-    driver = build_native_replacement_driver(tmp_path / "merit-native-replacement-driver")
     first = subprocess.run(
         [str(driver.executable)], input=OWNERSHIP_CHANGING_DESTRUCTOR_SOURCE,
         text=True, capture_output=True,
