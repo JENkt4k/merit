@@ -47,6 +47,12 @@ SUBSYSTEM_TESTS = (
     "tests/project",
 )
 
+# Keep each test module in one process so module/session fixtures and local
+# ordering assumptions retain their current boundary, while independent files
+# can compile their native probes concurrently on both Linux and Windows.
+PARALLEL_TEST_WORKERS = 2
+PARALLEL_TEST_DISTRIBUTION = "loadfile"
+
 
 class GateFailure(RuntimeError):
     pass
@@ -80,10 +86,15 @@ def pytest(
     *,
     durations: int | None = None,
     fail_fast: bool = False,
+    workers: int | None = None,
 ) -> None:
     command = [sys.executable, "-m", "pytest", "-q"]
     if fail_fast:
         command.append("-x")
+    if workers is not None:
+        command.extend(
+            ("-n", str(workers), "--dist", PARALLEL_TEST_DISTRIBUTION)
+        )
     command.extend(paths)
     if durations is not None:
         command.append(f"--durations={durations}")
@@ -130,12 +141,22 @@ def run_gate(
             pytest(FAST_TESTS, durations=durations, fail_fast=fail_fast)
     elif name == "subsystem":
         with group("pytest: bootstrap/project subsystem"):
-            pytest(SUBSYSTEM_TESTS, durations=durations, fail_fast=fail_fast)
+            pytest(
+                SUBSYSTEM_TESTS,
+                durations=durations,
+                fail_fast=fail_fast,
+                workers=PARALLEL_TEST_WORKERS,
+            )
     elif name == "acceptance":
         run_acceptance()
     elif name == "full":
         with group("pytest: full"):
-            pytest(["tests"], durations=durations, fail_fast=fail_fast)
+            pytest(
+                ["tests"],
+                durations=durations,
+                fail_fast=fail_fast,
+                workers=PARALLEL_TEST_WORKERS,
+            )
         run_acceptance()
     else:
         raise AssertionError(name)

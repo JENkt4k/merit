@@ -66,6 +66,13 @@ Measure slow tests without changing coverage:
 python scripts/gate.py full --durations 50
 ```
 
+The canonical `subsystem` and `full` gates use two pytest workers with
+file-based distribution. Every test is still collected and executed; grouping
+by file keeps module/session fixtures and each test module's local isolation
+boundary intact while independent native probe builds run concurrently. Direct
+focused pytest commands remain serial unless the developer explicitly selects
+parallel execution.
+
 Each gate writes a machine-readable terminal result to:
 
 ```text
