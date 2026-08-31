@@ -284,7 +284,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 } else {
                                     var variant_scan: i64 = checked_add(enum_open_index, 1);
                                     var variant_ordinal: i64 = 0;
-                                    var enum_payload_type_code: i32 = function_mir_unresolved_type_code();
                                     var enum_end_found: i32 = 0;
                                     while (variant_scan < vec_len<Token>(tokens)) {
                                         if (enum_end_found == 0) {
@@ -338,13 +337,21 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                 );
                                                                 if (copy_payload != 0) { variant_payload_type_code = function_mir_i64_type_code(); }
                                                                 if (copy_payload == 0) {
-                                                                    variant_payload_type_code = source_i64_struct_type_code(
-                                                                        source, structs, token_start(payload), token_length(payload)
+                                                                    variant_payload_type_code = sfr_builtin_type_code(
+                                                                        source, token_start(payload), token_length(payload)
                                                                     );
+                                                                    if (variant_payload_type_code == function_mir_buffer_type_code()) {
+                                                                        variant_payload_owned = 1;
+                                                                    }
+                                                                    if (variant_payload_type_code == function_mir_unresolved_type_code()) {
+                                                                        variant_payload_type_code = source_i64_struct_type_code(
+                                                                            source, structs, token_start(payload), token_length(payload)
+                                                                        );
+                                                                    }
                                                                     if (variant_payload_type_code >= function_mir_destructor_i64_struct_type_code(0)) {
                                                                         variant_payload_owned = 1;
-                                                                        copy_payload = 1;
                                                                     }
+                                                                    if (variant_payload_type_code != function_mir_unresolved_type_code()) { copy_payload = 1; }
                                                                 }
                                                                 if (token_kind(payload_close) != 4) { copy_payload = 0; }
                                                                 if (token_length(payload_close) != 1) { copy_payload = 0; }
@@ -364,15 +371,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                     }
                                                                     effective_separator_index = payload_separator_index;
                                                                     if (separator_kind == 0) { enum_status = 3; }
-                                                                }
-                                                            }
-                                                        }
-                                                        if (enum_status == 0) {
-                                                            if (variant_ordinal == 0) {
-                                                                enum_payload_type_code = variant_payload_type_code;
-                                                            } else {
-                                                                if (variant_payload_type_code != enum_payload_type_code) {
-                                                                    enum_status = 3;
                                                                 }
                                                             }
                                                         }
@@ -460,6 +458,9 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             }
                         }
                         enum_scan = checked_add(enum_scan, 1);
+                    }
+                    if(enum_status==0){
+                        enum_status=derive_predefined_filesystem_result_catalog(source,tokens,variants);
                     }
 
                     // A negative identity delegates match-subject -> declared-type

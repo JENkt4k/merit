@@ -175,6 +175,65 @@ requires_caps [allocate]
     return 0;
 }
 
+fn source_control_initialize_try_binding(
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow statement: StatementRecord,
+    borrow operands: Vec<StatementOperand>, borrow metadata: Vec<MirOwnershipBinding>,
+    borrow starts: Vec<i64>, borrow lengths: Vec<i64>, allocator: Allocator,
+    borrow_mut counters: Vec<i64>, borrow_mut direct: Vec<i64>,
+    borrow_mut events: Vec<MirOwnershipEvent>
+) -> i32
+requires_caps [allocate]
+{
+    let destination: i64 = source_binding_index(source, statement, operands, starts, lengths);
+    if (destination < 0) { return 70; }
+    let destination_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, destination);
+    if (ownership_binding_owned(destination_semantic) == 0) { return 71; }
+    let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
+    if (expression_index < 0) { return 72; }
+    let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+    let value_start: i64 = statement_try_value_start(tokens, expression);
+    let value_length: i64 = statement_try_value_length(tokens, expression);
+    if (value_start < 0) { return 73; }
+    if (value_length <= 0) { return 73; }
+    let subject_local: i64 = source_expression(
+        source, tokens, starts, lengths, value_start, value_length,
+        allocator, counters, direct, events
+    );
+    if (subject_local < 0) { return source_control_expression_failure_status(subject_local); }
+    let subject_binding: i64 = vec_get<i64>(direct, 0);
+    if (subject_binding >= 0) {
+        let subject_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, subject_binding);
+        if (ownership_binding_owned(subject_semantic) == 0) { return 75; }
+        vec_push<MirOwnershipEvent>(events, ownership_event_consume(subject_binding));
+    } else {
+        var consumed_index: i64 = 1;
+        while (consumed_index < vec_len<i64>(direct)) {
+            let consumed_binding: i64 = vec_get<i64>(direct, consumed_index);
+            if (consumed_binding >= 0) {
+                let consumed_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(
+                    metadata, consumed_binding
+                );
+                if (ownership_binding_owned(consumed_semantic) != 0) {
+                    vec_push<MirOwnershipEvent>(events, ownership_event_consume(consumed_binding));
+                }
+            }
+            consumed_index = checked_add(consumed_index, 1);
+        }
+    }
+
+    let tag_local: i64 = vec_get<i64>(counters, 0);
+    vec_set<i64>(counters, 0, checked_add(tag_local, 1));
+    vec_push<MirOwnershipEvent>(events, ownership_event_place(0));
+    vec_push<MirOwnershipEvent>(events, ownership_event_match(tag_local, 2));
+    vec_push<MirOwnershipEvent>(events, ownership_event_case(0, 0));
+    vec_push<MirOwnershipEvent>(events, ownership_event_place(0));
+    vec_push<MirOwnershipEvent>(events, ownership_event_activate(destination));
+    vec_push<MirOwnershipEvent>(events, ownership_event_case(1, 1));
+    vec_push<MirOwnershipEvent>(events, ownership_event_return(subject_local));
+    vec_push<MirOwnershipEvent>(events, ownership_event_end_match());
+    return 0;
+}
+
 fn source_control_match_count(borrow arms: Vec<ResolvedMatchArm>, statement_index: i64) -> i64 {
     var count: i64 = 0;
     var index: i64 = 0;
@@ -268,7 +327,18 @@ fn source_control_emit_statement(
 requires_caps [allocate]
 {
     let kind: i32 = statement_record_kind(statement);
-    if (kind == 20) { return source_control_initialize_binding(source,tokens,statement,operands,metadata,starts,lengths,allocator,0,counters,direct,events); }
+    if (kind == 20) {
+        let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
+        if (expression_index < 0) { return 12; }
+        let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+        if (statement_operand_is_try(source, tokens, expression) != 0) {
+            return source_control_initialize_try_binding(
+                source, tokens, statement, operands, metadata, starts, lengths,
+                allocator, counters, direct, events
+            );
+        }
+        return source_control_initialize_binding(source,tokens,statement,operands,metadata,starts,lengths,allocator,0,counters,direct,events);
+    }
     if (kind == 21) { return source_control_initialize_binding(source,tokens,statement,operands,metadata,starts,lengths,allocator,1,counters,direct,events); }
     if (kind == 22) {
         let result: i64 = source_control_expression_statement(source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
@@ -356,8 +426,18 @@ requires_caps [allocate]
         let replacement_index: i64 = source_ownership_operand(statement, operands, 3, 1);
         if (target_index < 0) { return 25; } if (replacement_index < 0) { return 26; }
         let target_operand: StatementOperand = vec_get<StatementOperand>(operands, target_index);
+        let target_event_start:i64=vec_len<MirOwnershipEvent>(events);
+        var target_is_field:i32=0;
         let target_local: i64 = source_expression(source,tokens,starts,lengths,statement_operand_start(target_operand),statement_operand_length(target_operand),allocator,counters,direct,events);
         if (target_local < 0) { return 27; }
+        if(vec_len<MirOwnershipEvent>(events)>target_event_start){
+            target_is_field=1;
+            let target_event_count:i64=checked_sub(vec_len<MirOwnershipEvent>(events),target_event_start);
+            let omitted_target_load:MirOwnershipEvent=vec_pop<MirOwnershipEvent>(events);
+            if(target_event_count==1){
+                vec_set<i64>(counters,0,checked_sub(vec_get<i64>(counters,0),1));
+            }
+        }
         let target_binding: i64 = vec_get<i64>(direct, 0); if (target_binding < 0) { return 28; }
         let replacement_operand: StatementOperand = vec_get<StatementOperand>(operands, replacement_index);
         let replacement_local: i64 = source_expression(source,tokens,starts,lengths,statement_operand_start(replacement_operand),statement_operand_length(replacement_operand),allocator,counters,direct,events);
@@ -367,7 +447,12 @@ requires_caps [allocate]
             if (replacement_binding >= vec_len<MirOwnershipBinding>(metadata)) { return 30; }
             let source_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, replacement_binding);
             if (ownership_binding_owned(source_semantic) == 0) { return 31; }
-            vec_push<MirOwnershipEvent>(events, ownership_event_replace_from_binding(target_binding, replacement_binding));
+            if(target_is_field!=0){
+                vec_push<MirOwnershipEvent>(events,ownership_event_consume(replacement_binding));
+                vec_push<MirOwnershipEvent>(events,ownership_event_place(replacement_local));
+            }else{
+                vec_push<MirOwnershipEvent>(events, ownership_event_replace_from_binding(target_binding, replacement_binding));
+            }
         } else { vec_push<MirOwnershipEvent>(events, ownership_event_replace(target_binding, replacement_local)); }
         return 0;
     }

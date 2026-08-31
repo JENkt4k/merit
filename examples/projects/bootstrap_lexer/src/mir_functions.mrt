@@ -30,7 +30,8 @@ pub struct MirFunctionRecord {
 // Kinds and numeric type-code bases are canonical bootstrap record encodings;
 // consumers must use these symbolic accessors rather than duplicate values.
 pub struct MirTypeDescriptor {
-    type_code: i32; kind: i32; identity: i32; child_type_code: i32; destructor_policy: i32;
+    type_code: i32; kind: i32; identity: i32; child_type_code: i32;
+    destructor_policy: i32; ordinal: i32;
 }
 pub struct MirDestructorDescriptor {
     type_code: i32;
@@ -62,11 +63,12 @@ pub fn function_mir_type_descriptor_owned_field_struct_kind() -> i32 { return 1;
 pub fn function_mir_type_descriptor_owned_payload_enum_kind() -> i32 { return 2; }
 pub fn function_mir_type_descriptor_aggregate_struct_kind() -> i32 { return 3; }
 pub fn function_mir_type_descriptor(
-    type_code: i32, kind: i32, identity: i32, child_type_code: i32, destructor_policy: i32
+    type_code: i32, kind: i32, identity: i32, child_type_code: i32,
+    destructor_policy: i32, ordinal: i32
 ) -> MirTypeDescriptor {
     return MirTypeDescriptor {
         type_code:type_code, kind:kind, identity:identity,
-        child_type_code:child_type_code, destructor_policy:destructor_policy
+        child_type_code:child_type_code, destructor_policy:destructor_policy, ordinal:ordinal
     };
 }
 pub fn function_mir_type_descriptor_code(borrow value: MirTypeDescriptor) -> i32 { return value.type_code; }
@@ -74,6 +76,7 @@ pub fn function_mir_type_descriptor_kind(borrow value: MirTypeDescriptor) -> i32
 pub fn function_mir_type_descriptor_identity(borrow value: MirTypeDescriptor) -> i32 { return value.identity; }
 pub fn function_mir_type_descriptor_child(borrow value: MirTypeDescriptor) -> i32 { return value.child_type_code; }
 pub fn function_mir_type_descriptor_destructor_policy(borrow value: MirTypeDescriptor) -> i32 { return value.destructor_policy; }
+pub fn function_mir_type_descriptor_ordinal(borrow value: MirTypeDescriptor) -> i32 { return value.ordinal; }
 
 pub fn function_mir_kind(borrow node: MirFunctionRecord) -> i32 { return node.kind; }
 pub fn function_mir_start(borrow node: MirFunctionRecord) -> i64 { return node.start; }
@@ -108,6 +111,8 @@ pub fn function_mir_invalid_call_argument_status() -> i32 { return 46; }
 pub fn function_mir_parameter_count_mismatch_status() -> i32 { return 47; }
 pub fn function_mir_binary_add_symbol() -> i32 { return 1; }
 pub fn function_mir_checked_numeric_policy() -> i32 { return 2; }
+pub fn function_mir_field_store_initialize_policy() -> i32 { return 0; }
+pub fn function_mir_field_store_replace_policy() -> i32 { return 1; }
 pub fn function_mir_destructor_header_error() -> i32 { return 991; }
 pub fn function_mir_destructor_type_error() -> i32 { return 992; }
 pub fn function_mir_destructor_unopened_body_error() -> i32 { return 993; }
@@ -138,6 +143,10 @@ pub fn function_mir_copy_payload_enum_type_code(enum_id: i32) -> i32 {
     return checked_add(1000, enum_id);
 }
 pub fn function_mir_i64_type_code() -> i32 { return 1; }
+// Canonical bootstrap-MIR builtin type identities. These explicit values are
+// part of the bootstrap-function-mir-v1 record ABI.
+pub fn function_mir_allocator_type_code() -> i32 { return 3; }
+pub fn function_mir_buffer_type_code() -> i32 { return 4; }
 pub fn function_mir_unresolved_type_code() -> i32 { return 0; }
 
 // Single-i64 non-copy struct identities occupy a disjoint record-ABI range.
@@ -188,6 +197,7 @@ pub fn function_mir_type_is_i64_struct(type_code: i32) -> i32 {
     return 0;
 }
 pub fn function_mir_type_uses_ownership_transfer(type_code: i32) -> i32 {
+    if (type_code == function_mir_buffer_type_code()) { return 1; }
     if (function_mir_type_is_i64_struct(type_code) != 0) { return 1; }
     if (type_code >= function_mir_owned_field_struct_type_code(0)) { return 1; }
     return function_mir_type_is_owned_payload_enum(type_code);
@@ -340,10 +350,13 @@ pub fn function_mir_enum_tag_load(start: i64, length: i64, instruction_id: i64, 
     };
 }
 
-pub fn function_mir_enum_payload_load(start: i64, length: i64, instruction_id: i64, result_local: i64, enum_local: i64, hir_node_id: i64) -> MirFunctionRecord {
+pub fn function_mir_enum_payload_load(
+    start: i64, length: i64, instruction_id: i64, result_local: i64,
+    enum_local: i64, variant_ordinal: i64, hir_node_id: i64
+) -> MirFunctionRecord {
     return MirFunctionRecord {
         kind: 11, start: start, length: length, id: instruction_id, result: result_local,
-        left: enum_local, right: -1, symbol_start: -1, symbol_length: 0,
+        left: enum_local, right: variant_ordinal, symbol_start: -1, symbol_length: 0,
         symbol_code: 0, type_code: 1, numeric_policy: 0, binding_id: -1,
         mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
     };
@@ -371,7 +384,16 @@ pub fn function_mir_struct_field_store(start: i64, length: i64, instruction_id: 
     return MirFunctionRecord {
         kind: function_mir_kind_struct_field_store(), start: start, length: length, id: instruction_id, result: result_local,
         left: field_local, right: -1, symbol_start: -1, symbol_length: 0,
-        symbol_code: field_ordinal, type_code: struct_type_code, numeric_policy: 0,
+        symbol_code: field_ordinal, type_code: struct_type_code, numeric_policy: function_mir_field_store_initialize_policy(),
+        binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
+    };
+}
+
+pub fn function_mir_struct_field_replace(start: i64, length: i64, instruction_id: i64, result_local: i64, field_local: i64, field_ordinal: i32, struct_type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
+    return MirFunctionRecord {
+        kind: function_mir_kind_struct_field_store(), start: start, length: length, id: instruction_id, result: result_local,
+        left: field_local, right: -1, symbol_start: -1, symbol_length: 0,
+        symbol_code: field_ordinal, type_code: struct_type_code, numeric_policy: function_mir_field_store_replace_policy(),
         binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
     };
 }

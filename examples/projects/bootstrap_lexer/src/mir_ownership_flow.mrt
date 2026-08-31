@@ -72,6 +72,20 @@ fn find_binding(borrow bindings: Vec<MirOwnershipBinding>, id: i64) -> i64 {
     return -1;
 }
 
+fn find_owned_binding_by_local(
+    borrow bindings: Vec<MirOwnershipBinding>, local_id: i64
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<MirOwnershipBinding>(bindings)) {
+        let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, index);
+        if (binding.local_id == local_id) {
+            if (binding.owned != 0) { return index; }
+        }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
 fn validate_bindings(borrow bindings: Vec<MirOwnershipBinding>) -> i32 {
     var i: i64 = 0;
     while (i < vec_len<MirOwnershipBinding>(bindings)) {
@@ -264,6 +278,10 @@ requires_caps [allocate]
         if (kind == 8) {
             handled = 1; if (terminated != 0) { return 95; }
             if (event.a < 0) { return 96; }
+            let binding_index: i64 = find_owned_binding_by_local(bindings, event.a);
+            if (binding_index >= 0) {
+                if (vec_get<i32>(states, binding_index) != 1) { return 101; }
+            }
             emit_place(output, next);
         }
         if (kind == ownership_event_kind_consume()) {

@@ -20,7 +20,10 @@ class MirToCError(ValueError):
     """Raised when MIR is outside the supported deterministic C subset."""
 
 
-_C_TYPES = {"i64": "int64_t", "bool": "bool", "unit": "void"}
+_C_TYPES = {
+    "i64": "int64_t", "bool": "bool", "unit": "void",
+    "Allocator": "merit_Allocator", "Buffer": "merit_Buffer",
+}
 _BINARY = {
     "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
@@ -89,13 +92,13 @@ def _owned_field_struct_identity(type_: MirType) -> tuple[str, MirType] | None:
     return identity, type_.arguments[0]
 
 
-def _recursive_owned_payload_enum_identity(type_: MirType) -> tuple[str, MirType] | None:
+def _recursive_owned_payload_enum_identity(type_: MirType) -> tuple[str, tuple[MirType, ...]] | None:
     if not type_.name.startswith(_OWNED_PAYLOAD_ENUM_PREFIX) or not type_.arguments:
         return None
     identity = type_.name[len(_OWNED_PAYLOAD_ENUM_PREFIX):]
-    if not identity or not identity.isdecimal() or len(type_.arguments) != 1:
+    if not identity or not identity.isdecimal() or not type_.arguments:
         raise MirToCError(f"invalid recursive owned-payload enum MIR type: {type_.name}")
-    return identity, type_.arguments[0]
+    return identity, type_.arguments
 
 
 def _aggregate_struct_identity(type_: MirType) -> tuple[str, tuple[MirType, ...], int | None] | None:
@@ -187,6 +190,8 @@ def _destructor_c_name(type_: MirType) -> str:
 def _drop_statements(
     expression: str, type_: MirType, destructors: dict[MirType, MirDestructor]
 ) -> list[str]:
+    if type_.name == "Buffer" and not type_.arguments:
+        return [f"merit_buffer_drop(&({expression}));"]
     aggregate = _aggregate_struct_identity(type_)
     if aggregate is not None:
         _, fields, destructor_field = aggregate
@@ -209,7 +214,16 @@ def _drop_statements(
         return _drop_statements(f"{expression}.field_0", owned_struct[1], destructors)
     recursive_enum = _recursive_owned_payload_enum_identity(type_)
     if recursive_enum is not None:
-        return _drop_statements(f"{expression}.payload", recursive_enum[1], destructors)
+        statements = [f"switch ({expression}.tag) {{"]
+        for ordinal, payload in enumerate(recursive_enum[1]):
+            cleanup = _drop_statements(
+                f"{expression}.payload.variant_{ordinal}", payload, destructors
+            )
+            statements.append(f"case INT64_C({ordinal}):")
+            statements.extend(f"    {line}" for line in cleanup)
+            statements.append("    break;")
+        statements.extend(["default: abort();", "}"])
+        return statements
     if _owned_payload_enum_identity(type_) is not None:
         return [f'printf("%lld\\n", (long long){expression}.payload.field_0);']
     if _i64_struct_identity(type_) is not None:
@@ -277,6 +291,14 @@ def _instruction(
         ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
         if not ordinal or not ordinal.isdecimal():
             raise MirToCError("Copy-payload enum construction has an invalid variant ordinal")
+        if (recursive := _recursive_owned_payload_enum_identity(result_type)) is not None:
+            ordinal_value = int(ordinal)
+            if ordinal_value >= len(recursive[1]):
+                raise MirToCError("owned-payload enum constructor is outside schema")
+            return [
+                f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
+                f".payload.variant_{ordinal} = {operands[0]} }};"
+            ]
         return [f"{result} = ({_type(local_types[instruction.result])}) {{ INT64_C({ordinal}), {operands[0]} }};"]
     if kind == "load_field":
         if result is None or len(operands) != 1 or not instruction.symbol:
@@ -308,9 +330,24 @@ def _instruction(
             _copy_payload_enum_identity(receiver_type) is None
             and _owned_payload_enum_identity(receiver_type) is None
             and _recursive_owned_payload_enum_identity(receiver_type) is None
-        ) or instruction.symbol not in {"tag", "payload"}:
+        ) or not (
+            instruction.symbol == "tag"
+            or instruction.symbol == "payload"
+            or instruction.symbol.startswith("payload_")
+        ):
             raise MirToCError("core C emission only supports represented aggregate fields")
         access = "->" if local_ownership.get(instruction.operands[0]) in {"borrowed", "mutable_borrow"} else "."
+        recursive = _recursive_owned_payload_enum_identity(receiver_type)
+        if recursive is not None and instruction.symbol.startswith("payload_"):
+            ordinal_text = instruction.symbol.removeprefix("payload_")
+            if not ordinal_text.isdecimal() or int(ordinal_text) >= len(recursive[1]):
+                raise MirToCError("enum payload variant is outside schema")
+            ordinal = int(ordinal_text)
+            if instruction.result not in local_types or local_types[instruction.result] != recursive[1][ordinal]:
+                raise MirToCError("enum payload result type disagrees with variant schema")
+            return [f"{result} = {operands[0]}{access}payload.variant_{ordinal};"]
+        if instruction.symbol.startswith("payload_"):
+            return [f"{result} = {operands[0]}{access}payload;"]
         return [f"{result} = {operands[0]}{access}{instruction.symbol};"]
     if kind == "store_field":
         if result is None or len(operands) != 1 or not instruction.symbol:
@@ -326,6 +363,15 @@ def _instruction(
                 raise MirToCError("single-i64 struct field store requires field_0")
             access = "->" if local_ownership.get(instruction.result) == "mutable_borrow" else "."
             return [f"{result}{access}field_0 = {operands[0]};"]
+        owned_struct = _owned_field_struct_identity(receiver_type)
+        if owned_struct is not None:
+            if instruction.symbol != f"{_STRUCT_FIELD_PREFIX}0":
+                raise MirToCError("owned-field struct field store requires field_0")
+            access = "->" if local_ownership.get(instruction.result) == "mutable_borrow" else "."
+            assignment = f"{result}{access}field_0 = {operands[0]};"
+            if instruction.ownership == "moved":
+                return [*_drop_statements(f"{result}{access}field_0", owned_struct[1], destructors), assignment]
+            return [assignment]
         aggregate = _aggregate_struct_identity(receiver_type)
         if aggregate is None:
             raise MirToCError("field stores are only supported for represented aggregate structs")
@@ -336,7 +382,11 @@ def _instruction(
         if not ordinal_text.isdecimal() or int(ordinal_text) >= len(fields):
             raise MirToCError("aggregate field store is outside schema")
         access = "->" if local_ownership.get(instruction.result) == "mutable_borrow" else "."
-        return [f"{result}{access}{instruction.symbol} = {operands[0]};"]
+        assignment = f"{result}{access}{instruction.symbol} = {operands[0]};"
+        if instruction.ownership == "moved":
+            field_type = fields[int(ordinal_text)][1]
+            return [*_drop_statements(f"{result}{access}{instruction.symbol}", field_type, destructors), assignment]
+        return [assignment]
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
@@ -355,6 +405,20 @@ def _instruction(
     if kind == "call":
         if not instruction.symbol:
             raise MirToCError("call instruction requires a resolved symbol")
+        if instruction.symbol == "system_allocator":
+            if operands or result is None:
+                raise MirToCError("system_allocator requires no arguments and one result")
+            return [f"{result} = merit_system_allocator();"]
+        if instruction.symbol == "buffer_new":
+            if len(operands) != 2 or result is None:
+                raise MirToCError("buffer_new requires allocator, capacity, and one result")
+            return [f"{result} = merit_buffer_new({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "buffer_len":
+            if len(operands) != 1 or result is None:
+                raise MirToCError("buffer_len requires one Buffer argument and one result")
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = operands[0] if ownership in {"borrowed", "mutable_borrow"} else f"&{operands[0]}"
+            return [f"{result} = merit_buffer_len({argument});"]
         callee = functions.get(instruction.symbol)
         if callee is None:
             raise MirToCError(f"call references unknown MIR function: {instruction.symbol}")
@@ -397,6 +461,8 @@ def _instruction(
             raise MirToCError("drop instruction requires one operand")
         if local_types is not None and instruction.operands[0] in local_types:
             operand_type = local_types[instruction.operands[0]]
+            if operand_type.name == "Buffer" and not operand_type.arguments:
+                return _drop_statements(operands[0], operand_type, destructors)
             if _aggregate_struct_identity(operand_type) is not None:
                 return _drop_statements(operands[0], operand_type, destructors)
             if _destructor_i64_struct_identity(operand_type) is not None:
@@ -407,7 +473,7 @@ def _instruction(
                 return [f'printf("%lld\\n", (long long){operands[0]}.payload.field_0);']
             recursive_enum = _recursive_owned_payload_enum_identity(operand_type)
             if recursive_enum is not None:
-                return _drop_statements(f"{operands[0]}.payload", recursive_enum[1], destructors)
+                return _drop_statements(operands[0], operand_type, destructors)
             owned_struct = _owned_field_struct_identity(operand_type)
             if owned_struct is not None:
                 return _drop_statements(f"{operands[0]}.field_0", owned_struct[1], destructors)
@@ -491,6 +557,8 @@ def emit_c_function(
         if local_type == "void":
             raise MirToCError("MIR locals cannot have unit type in core C emission")
         initializer = "{0}" if (
+            local.type.name in {"Allocator", "Buffer"}
+            or
             _copy_payload_enum_identity(local.type) is not None
             or _i64_struct_identity(local.type) is not None
             or _destructor_i64_struct_identity(local.type) is not None
@@ -650,13 +718,32 @@ def emit_c_module(module: MirModule) -> str:
         and instruction.numeric_policy == "checked"
         and instruction.symbol in _CHECKED_HELPERS
     }
+    needs_buffer_runtime = any(
+        type_.name in {"Allocator", "Buffer"} and not type_.arguments
+        for type_ in all_types
+    )
     prelude = [
         "/* generated from bootstrap-mir-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
+        *(["#include <stddef.h>"] if needs_buffer_runtime else []),
         "#include <stdint.h>",
         *(["#include <stdio.h>"] if needs_print else []),
         "#include <stdlib.h>",
         "",
+        *([
+            "typedef struct { int32_t identity; } merit_Allocator;",
+            "typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;",
+            "static inline merit_Allocator merit_system_allocator(void) { return (merit_Allocator){0}; }",
+            "static inline merit_Buffer merit_buffer_new(merit_Allocator allocator, int64_t capacity) {",
+            "    if (capacity < 0) abort();",
+            "    merit_Buffer result = {0}; result.allocator = allocator; result.capacity = (size_t)capacity;",
+            "    if (capacity > 0) { result.data = (uint8_t *)calloc((size_t)capacity, 1); if (!result.data) abort(); }",
+            "    return result;",
+            "}",
+            "static inline int64_t merit_buffer_len(const merit_Buffer *value) { return (int64_t)value->len; }",
+            "static inline void merit_buffer_drop(merit_Buffer *value) { free(value->data); value->data = NULL; value->len = 0; value->capacity = 0; }",
+            "",
+        ] if needs_buffer_runtime else []),
     ]
     enum_identities = sorted({
         identity
@@ -771,16 +858,21 @@ def emit_c_module(module: MirModule) -> str:
             "",
         ])
     recursive_owned_enums = {
-        identity: payload
+        identity: payloads
         for type_ in all_types
         if (owned := _recursive_owned_payload_enum_identity(type_)) is not None
-        for identity, payload in (owned,)
+        for identity, payloads in (owned,)
     }
     if recursive_owned_enums:
         prelude.extend([
             *[
-                f"typedef struct {{ int64_t tag; {_type(payload)} payload; }} merit_enum_owned_payload_{identity};"
-                for identity, payload in sorted(recursive_owned_enums.items(), key=lambda item: int(item[0]))
+                "typedef struct { int64_t tag; union { "
+                + " ".join(
+                    f"{_type(payload)} variant_{ordinal};"
+                    for ordinal, payload in enumerate(payloads)
+                )
+                + f" }} payload; }} merit_enum_owned_payload_{identity};"
+                for identity, payloads in sorted(recursive_owned_enums.items(), key=lambda item: int(item[0]))
             ],
             "",
         ])

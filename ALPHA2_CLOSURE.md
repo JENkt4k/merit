@@ -60,7 +60,7 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | canonical replacement MIR | ✓ | ✓ | ✓ | ✓ | ✓ | indirect | CLOSED |
 | deterministic C emission | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | replacement executable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
-| payload-bearing enums | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | — | OPEN |
+| payload-bearing enums | ✓ | ✓ | ✓ | ✓ | ✓ | — | CLOSED |
 | complete branching/control flow | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
 | loops | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
 | rich owned structs/aggregates | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
@@ -311,6 +311,38 @@ last group includes owned-field replacement through a returned mutable borrow.
 Only the construction and operations needed to prove those ownership transfers
 belong to M2; the complete Buffer, String, decimal, bounded, and aggregate
 operation surfaces remain M3, while generic `Vec<T>` lifecycle remains M4.
+
+`test_concrete_native_driver_executes_mixed_owned_payload_enum_lifecycle`, the
+owned-`try` success/error matrix, the direct and aggregate `Buffer` lifecycle
+cases, and the structural filesystem-result matrix close those audited gaps on
+the production replacement path. Snapshot v5 carries heterogeneous payload
+types by canonical variant ordinal; owned construction and `try` propagation
+consume their sources exactly once; match transfers owned payloads into the
+selected arm; and implicit cleanup, explicit `drop`, direct `replace`, and
+early-return cleanup preserve reference/replacement executable parity. Direct
+`Buffer` move/drop/replace, recursively owned struct and enum fields, and field
+replacement through a returned mutable borrow reach MRBF, canonical MIR, and
+deterministic C. The mutable-borrow case emits an observable call-side effect
+exactly once and drops only the prior field before storing the moved
+replacement.
+
+`test_concrete_native_driver_executes_predefined_filesystem_result_lifecycle`
+adds the exact predefined `FileReadResult` and `FileWriteResult` identities,
+including `ReadOk(Buffer)`, `ReadErr(i32)`, `WriteOk(i64)`, and
+`WriteErr(i32)`, to the native canonical enum catalog. Match identity now comes
+from that catalog rather than rescanning only textual enum declarations. The
+direct-drop case proves that a predefined result remains represented when an
+unused variant spelling is absent from the function source; the match cases
+exercise all canonical variant names, owned payload transfer, deterministic
+bundles, prepared artifacts, generated C, and reference/replacement parity.
+The adjacent malformed-schema, ownership, borrow, double-destruction, and
+fail-closed cases remain authoritative negative evidence.
+
+M2 is **CLOSED**. The payload-bearing-enum matrix row is closed for the
+documented alpha.1 surface. The broader rich-aggregate and complete
+String/Buffer rows intentionally remain `PARTIAL`/OPEN because their remaining
+operations belong to M3; generic `Vec<T>` lifecycle remains M4, imported helper
+resolution remains M5, and general acceptance-project migration remains M7.
 
 ### M3 — Exact numerics and aggregate closure
 

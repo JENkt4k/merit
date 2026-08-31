@@ -60,6 +60,40 @@ def test_native_type_descriptors_resolve_recursive_owned_aggregate_graph() -> No
     assert names[1_100_000].arguments[0] == names[1_000_002]
 
 
+def test_v5_native_type_descriptors_resolve_ordered_heterogeneous_enum() -> None:
+    names = _descriptor_type_names(
+        (
+            (1_100_000, 2, 0, 3_000, 0, 0),
+            (1_100_000, 2, 0, 1, 0, 1),
+        ),
+        version=5,
+    )
+
+    assert names[1_100_000].name == "enum_owned_payload_0"
+    assert [payload.name for payload in names[1_100_000].arguments] == [
+        "struct_i64_destructor_0", "i64"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    (
+        (((1_100_000, 2, 0, 3_000, 0, 1),), "variant ordinal"),
+        (
+            ((1_100_000, 2, 0, 3_000, 0, 0), (1_100_000, 2, 0, 1, 0, 0)),
+            "variant ordinal",
+        ),
+        (((1_100_001, 2, 0, 3_000, 0, 0),), "noncanonical"),
+        (((1_100_000, 2, 0, 3_000, 1, 0),), "destructor policy"),
+    ),
+)
+def test_v5_native_heterogeneous_enum_descriptors_fail_closed(
+    rows: tuple[tuple[int, ...], ...], message: str
+) -> None:
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match=message):
+        _descriptor_type_names(rows, version=5)
+
+
 def test_v3_native_type_descriptors_resolve_ordered_multi_field_aggregate() -> None:
     names = _descriptor_type_names(
         (
