@@ -174,6 +174,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
                 var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
                 var type_descriptors: Vec<MirTypeDescriptor> = vec_new<MirTypeDescriptor>(allocator, 8);
+                var numeric_type_descriptors: Vec<MirNumericTypeDescriptor> = vec_new<MirNumericTypeDescriptor>(allocator, 8);
                 var destructor_descriptors: Vec<MirDestructorDescriptor> = vec_new<MirDestructorDescriptor>(allocator, 4);
                 var destructor_body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 64);
                 var destructor_cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 32);
@@ -230,6 +231,12 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                     }
                     if (struct_status != 0) {
                         function_status = i64_struct_catalog_driver_status(struct_status);
+                    }
+                    if (function_status == 0) {
+                        let numeric_status:i32=derive_source_numeric_type_descriptors(
+                            source,tokens,numeric_type_descriptors
+                        );
+                        if(numeric_status!=0){function_status=checked_add(985,numeric_status);}
                     }
                     // Derive top-level payload-free enum declarations directly
                     // from the complete source unit. Enum identity is declaration
@@ -752,6 +759,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 let item_status: i32 = print_resolved_source_function_bundle_item(
                                     body, contracts, contract_locals, sources, ownership,
                                     ownership_records, cfg, placements, required, type_descriptors,
+                                    numeric_type_descriptors,
                                     destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
                                 );
                                 if (item_status != 0) {
@@ -790,6 +798,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 drop(destructor_cfg);
                 drop(destructor_body);
                 drop(destructor_descriptors);
+                drop(numeric_type_descriptors);
                 drop(type_descriptors);
                 drop(structs);
                 drop(variants);

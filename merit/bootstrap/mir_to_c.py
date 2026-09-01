@@ -23,6 +23,9 @@ class MirToCError(ValueError):
 _C_TYPES = {
     "i64": "int64_t", "bool": "bool", "unit": "void",
     "Allocator": "merit_Allocator", "Buffer": "merit_Buffer",
+    "i8": "int8_t", "i16": "int16_t", "i32": "int32_t",
+    "u8": "uint8_t", "u16": "uint16_t", "u32": "uint32_t", "u64": "uint64_t",
+    "String": "merit_String", "ByteSlice": "merit_ByteSlice",
 }
 _BINARY = {
     "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
@@ -36,6 +39,7 @@ _CHECKED_HELPERS = {
     "/": "merit_checked_div_i64",
     "%": "merit_checked_rem_i64",
 }
+_INTEGER_TYPES = frozenset({"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"})
 _COPY_PAYLOAD_ENUM_PREFIX = "enum_copy_payload_"
 _I64_STRUCT_PREFIX = "struct_i64_"
 _DESTRUCTOR_I64_STRUCT_PREFIX = "struct_i64_destructor_"
@@ -44,6 +48,38 @@ _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
 _AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
+
+
+def _decimal_type(type_: MirType) -> tuple[int, int, int, int] | None:
+    if type_.arguments:
+        return None
+    match = re.fullmatch(r"decimal_(\d+)_(\d+)_(\d+)_([0-4])", type_.name)
+    if match is None:
+        return None
+    identity, precision, scale, policy = map(int, match.groups())
+    if precision < 1 or scale > precision:
+        raise MirToCError(f"invalid decimal MIR type: {type_.name}")
+    return identity, precision, scale, policy
+
+
+def _bounded_type(type_: MirType) -> tuple[int, int, int, int, MirType] | None:
+    match = re.fullmatch(r"bounded_(\d+)_(\d+)_(-?\d+)_(-?\d+)", type_.name)
+    if match is None:
+        return None
+    if len(type_.arguments) != 1 or type_.arguments[0].name not in _INTEGER_TYPES:
+        raise MirToCError(f"invalid bounded MIR type: {type_.name}")
+    identity, base_code, minimum, maximum = map(int, match.groups())
+    if minimum > maximum:
+        raise MirToCError(f"invalid bounded MIR type: {type_.name}")
+    return identity, base_code, minimum, maximum, type_.arguments[0]
+
+
+def _int128_literal(value: int) -> str:
+    sign = "-" if value < 0 else ""
+    magnitude = abs(value)
+    high, low = divmod(magnitude, 1_000_000_000_000_000_000)
+    expression = f"((__int128){high} * INT64_C(1000000000000000000) + INT64_C({low}))"
+    return f"-{expression}" if sign else expression
 
 
 def _copy_payload_enum_identity(type_: MirType) -> str | None:
@@ -121,6 +157,12 @@ def _identifier(name: str) -> str:
 
 
 def _type(type_: MirType) -> str:
+    decimal = _decimal_type(type_)
+    if decimal is not None:
+        return "int64_t" if decimal[1] <= 18 else "__int128"
+    bounded = _bounded_type(type_)
+    if bounded is not None:
+        return _type(bounded[4])
     aggregate = _aggregate_struct_identity(type_)
     if aggregate is not None:
         return f"merit_struct_aggregate_{aggregate[0]}"
@@ -151,17 +193,45 @@ def _type(type_: MirType) -> str:
         raise MirToCError(f"unsupported MIR type for C emission: {type_.name}") from error
 
 
-def _literal(value: object) -> str:
+def _literal(value: object, type_: MirType) -> str:
     if value is True:
         return "true"
     if value is False:
         return "false"
+    if type_ == MirType("bool") and isinstance(value, int):
+        if value == 1:
+            return "true"
+        if value == 0:
+            return "false"
+        raise MirToCError(f"boolean integer constant must be 0 or 1, got {value}")
+    if isinstance(value,str) and type_==MirType("String"):
+        encoded=value.encode("utf-8")
+        bytes_literal="".join(f"\\x{byte:02x}" for byte in encoded)
+        return f'(merit_String){{ (const uint8_t *)"{bytes_literal}", {len(encoded)} }}'
     if isinstance(value, int):
-        if value == -(2**63):
-            return "INT64_MIN"
-        if not -(2**63) <= value <= 2**63 - 1:
-            raise MirToCError(f"i64 constant is out of range: {value}")
-        return f"INT64_C({value})"
+        decimal = _decimal_type(type_)
+        if decimal is not None:
+            limit = 10 ** decimal[1] - 1
+            if abs(value) > limit:
+                raise MirToCError(f"decimal constant is out of range: {value}")
+            return f"INT64_C({value})" if decimal[1] <= 18 else _int128_literal(value)
+        bounded = _bounded_type(type_)
+        if bounded is not None:
+            if not bounded[2] <= value <= bounded[3]:
+                raise MirToCError(f"bounded constant is out of range: {value}")
+            return _literal(value, bounded[4])
+        if type_.arguments or type_.name not in _INTEGER_TYPES:
+            raise MirToCError(f"integer constant has unsupported MIR type: {type_.name}")
+        signed = type_.name.startswith("i")
+        bits = int(type_.name[1:])
+        minimum = -(2 ** (bits - 1)) if signed else 0
+        maximum = 2 ** (bits - (1 if signed else 0)) - 1
+        if not minimum <= value <= maximum:
+            raise MirToCError(f"{type_.name} constant is out of range: {value}")
+        if signed and value == minimum:
+            return f"INT{bits}_MIN"
+        macro = f"INT{bits}_C" if signed else f"UINT{bits}_C"
+        return f"{macro}({value})"
     raise MirToCError(f"unsupported MIR constant for C emission: {value!r}")
 
 
@@ -246,7 +316,9 @@ def _instruction(
     if kind == "const":
         if result is None:
             raise MirToCError("const instruction requires a result")
-        return [f"{result} = {_literal(instruction.value)};"]
+        if local_types is None or instruction.result not in local_types:
+            raise MirToCError("const instruction requires a resolved result type")
+        return [f"{result} = {_literal(instruction.value, local_types[instruction.result])};"]
     if kind in {"copy", "move", "borrow"}:
         if result is None or len(operands) != 1:
             raise MirToCError(f"{kind} instruction requires one operand and a result")
@@ -390,8 +462,37 @@ def _instruction(
     if kind == "binary":
         if result is None or len(operands) != 2 or instruction.symbol not in _BINARY:
             raise MirToCError("binary instruction requires a supported operator, two operands, and a result")
+        operand_type = None
+        if local_types is not None and instruction.operands:
+            operand_type = local_types.get(instruction.operands[0])
+            if len(instruction.operands) > 1 and local_types.get(instruction.operands[1]) != operand_type:
+                raise MirToCError("binary operand types disagree")
+        decimal = _decimal_type(operand_type) if operand_type is not None else None
+        bounded = _bounded_type(operand_type) if operand_type is not None else None
+        if decimal is not None and instruction.symbol in _CHECKED_HELPERS:
+            identity, _, scale, policy = decimal
+            if instruction.symbol == "+":
+                expression = f"(__int128){operands[0]} + (__int128){operands[1]}"
+            elif instruction.symbol == "-":
+                expression = f"(__int128){operands[0]} - (__int128){operands[1]}"
+            elif instruction.symbol == "*":
+                expression = f"merit_round_decimal((__int128){operands[0]} * (__int128){operands[1]}, {10 ** scale}, {policy})"
+            elif instruction.symbol == "/":
+                expression = f"merit_round_decimal((__int128){operands[0]} * {10 ** scale}, (__int128){operands[1]}, {policy})"
+            else:
+                raise MirToCError("decimal remainder is outside the alpha.1 surface")
+            return [f"{result} = merit_check_decimal_{identity}({expression});"]
+        if bounded is not None and instruction.symbol in _CHECKED_HELPERS:
+            identity, _, _, _, base_type = bounded
+            helper = f"merit_checked_{_checked_operation_name(instruction.symbol)}_{base_type.name}"
+            return [f"{result} = merit_check_bounded_{identity}({helper}({operands[0]}, {operands[1]}));"]
         if instruction.numeric_policy == "checked" and instruction.symbol in _CHECKED_HELPERS:
-            helper = _CHECKED_HELPERS[instruction.symbol]
+            if local_types is None or instruction.result not in local_types:
+                raise MirToCError("checked binary instruction requires a resolved result type")
+            result_type = local_types[instruction.result]
+            if result_type.arguments or result_type.name not in _INTEGER_TYPES:
+                raise MirToCError(f"checked binary instruction has unsupported result type: {result_type.name}")
+            helper = f"merit_checked_{_checked_operation_name(instruction.symbol)}_{result_type.name}"
             return [f"{result} = {helper}({operands[0]}, {operands[1]});"]
         if instruction.numeric_policy not in {"exact", "floating"}:
             raise MirToCError(f"numeric policy not supported by core C emission: {instruction.numeric_policy}")
@@ -409,16 +510,58 @@ def _instruction(
             if operands or result is None:
                 raise MirToCError("system_allocator requires no arguments and one result")
             return [f"{result} = merit_system_allocator();"]
+        if instruction.symbol == "portable_allocator":
+            if operands or result is None:
+                raise MirToCError("portable_allocator requires no arguments and one result")
+            return [f"{result} = merit_portable_allocator();"]
+        if instruction.symbol == "allocator_compatible":
+            if len(operands) != 2 or result is None:
+                raise MirToCError("allocator_compatible requires two allocators and one result")
+            return [f"{result} = merit_allocator_compatible({operands[0]}, {operands[1]});"]
         if instruction.symbol == "buffer_new":
             if len(operands) != 2 or result is None:
                 raise MirToCError("buffer_new requires allocator, capacity, and one result")
             return [f"{result} = merit_buffer_new({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "buffer_from_string":
+            if len(operands) != 2 or result is None:
+                raise MirToCError("buffer_from_string requires allocator, String, and one result")
+            return [f"{result} = merit_buffer_from_string({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "buffer_push":
+            if len(operands) != 2 or result is not None:
+                raise MirToCError("buffer_push requires mutable Buffer, byte, and no result")
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = operands[0] if ownership == "mutable_borrow" else f"&{operands[0]}"
+            return [f"merit_buffer_push({argument}, {operands[1]});"]
         if instruction.symbol == "buffer_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("buffer_len requires one Buffer argument and one result")
             ownership = local_ownership.get(instruction.operands[0], "value")
             argument = operands[0] if ownership in {"borrowed", "mutable_borrow"} else f"&{operands[0]}"
             return [f"{result} = merit_buffer_len({argument});"]
+        if instruction.symbol in {"buffer_get", "buffer_slice", "buffer_allocator"}:
+            expected = {"buffer_get": 2, "buffer_slice": 3, "buffer_allocator": 1}[instruction.symbol]
+            if len(operands) != expected or result is None:
+                raise MirToCError(f"{instruction.symbol} has invalid operands/result")
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = operands[0] if ownership in {"borrowed", "mutable_borrow"} else f"&{operands[0]}"
+            arguments = ", ".join((argument, *operands[1:]))
+            return [f"{result} = merit_{instruction.symbol}({arguments});"]
+        if instruction.symbol == "string_len":
+            if len(operands) != 1 or result is None:
+                raise MirToCError("string_len requires one String argument and one result")
+            return [f"{result} = merit_string_len({operands[0]});"]
+        if instruction.symbol == "string_byte":
+            if len(operands) != 2 or result is None:
+                raise MirToCError("string_byte requires String, index, and one result")
+            return [f"{result} = merit_string_byte({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "slice_len":
+            if len(operands) != 1 or result is None:
+                raise MirToCError("slice_len requires one ByteSlice and one result")
+            return [f"{result} = merit_slice_len({operands[0]});"]
+        if instruction.symbol == "slice_get":
+            if len(operands) != 2 or result is None:
+                raise MirToCError("slice_get requires ByteSlice, index, and one result")
+            return [f"{result} = merit_slice_get({operands[0]}, {operands[1]});"]
         callee = functions.get(instruction.symbol)
         if callee is None:
             raise MirToCError(f"call references unknown MIR function: {instruction.symbol}")
@@ -455,6 +598,25 @@ def _instruction(
     if kind == "print":
         if result is not None or len(operands) != 1:
             raise MirToCError("print instruction requires one operand and no result")
+        if local_types is not None and instruction.operands[0] in local_types:
+            operand_type = local_types[instruction.operands[0]]
+            decimal = _decimal_type(operand_type)
+            if decimal is not None:
+                return [f"merit_print_decimal((__int128){operands[0]}, {decimal[2]});"]
+            bounded = _bounded_type(operand_type)
+            if bounded is not None and bounded[4].name.startswith("u"):
+                return [f'printf("%llu\\n", (unsigned long long){operands[0]});']
+            if operand_type.name in {"String", "Buffer"} and not operand_type.arguments:
+                access = "."
+                if operand_type.name == "Buffer" and local_ownership.get(instruction.operands[0]) in {
+                    "borrowed",
+                    "mutable_borrow",
+                }:
+                    access = "->"
+                return [
+                    f"fwrite({operands[0]}{access}data, 1, {operands[0]}{access}len, stdout);",
+                    "putchar('\\n');",
+                ]
         return [f'printf("%lld\\n", (long long){operands[0]});']
     if kind == "drop":
         if len(operands) != 1:
@@ -538,6 +700,21 @@ def _parameter_list(function: MirFunction) -> str:
     return ", ".join(rendered)
 
 
+def _local_initializer(type_: MirType) -> str:
+    if (
+        type_.name in {"Allocator", "Buffer", "String", "ByteSlice"}
+        or _copy_payload_enum_identity(type_) is not None
+        or _i64_struct_identity(type_) is not None
+        or _destructor_i64_struct_identity(type_) is not None
+        or _owned_payload_enum_identity(type_) is not None
+        or _owned_field_struct_identity(type_) is not None
+        or _recursive_owned_payload_enum_identity(type_) is not None
+        or _aggregate_struct_identity(type_) is not None
+    ):
+        return "{0}"
+    return "0"
+
+
 def emit_c_function(
     function: MirFunction,
     functions: dict[str, MirFunction] | None = None,
@@ -556,17 +733,7 @@ def emit_c_function(
         local_type = _type(local.type)
         if local_type == "void":
             raise MirToCError("MIR locals cannot have unit type in core C emission")
-        initializer = "{0}" if (
-            local.type.name in {"Allocator", "Buffer"}
-            or
-            _copy_payload_enum_identity(local.type) is not None
-            or _i64_struct_identity(local.type) is not None
-            or _destructor_i64_struct_identity(local.type) is not None
-            or _owned_payload_enum_identity(local.type) is not None
-            or _owned_field_struct_identity(local.type) is not None
-            or _recursive_owned_payload_enum_identity(local.type) is not None
-            or _aggregate_struct_identity(local.type) is not None
-        ) else "0"
+        initializer = _local_initializer(local.type)
         if local.ownership == "borrowed":
             lines.append(f"    const {local_type} *{_local(local.local_id)} = NULL;")
         elif local.ownership == "mutable_borrow":
@@ -596,7 +763,10 @@ def _emit_c_destructor(
         f"    {_type(destructor.target)} {_local(0)} = *self;",
     ]
     for local in destructor.locals[1:]:
-        lines.append(f"    {_type(local.type)} {_local(local.local_id)} = 0;")
+        lines.append(
+            f"    {_type(local.type)} {_local(local.local_id)} = "
+            f"{_local_initializer(local.type)};"
+        )
     lines.append(f"    goto b_destructor_{destructor.entry_block};")
     for block in destructor.blocks:
         lines.append(f"b_destructor_{block.block_id}:")
@@ -614,51 +784,100 @@ def _emit_c_destructor(
     return "\n".join(lines)
 
 
-def _checked_helpers(operators: set[str]) -> list[str]:
-    if not operators:
+def _checked_operation_name(symbol: str) -> str:
+    return {"+": "add", "-": "sub", "*": "mul", "/": "div", "%": "rem"}[symbol]
+
+
+def _checked_helpers(operations: set[tuple[str, str]]) -> list[str]:
+    if not operations:
         return []
     lines = [
-        "static void merit_numeric_failure(const char *operation) { (void)operation; abort(); }",
+        'static void merit_numeric_failure(const char *operation) { fprintf(stderr, "Merit %s\\n", operation); exit(70); }',
     ]
-    if "+" in operators:
+    if any(symbol in {"/", "%"} for _, symbol in operations):
+        lines.append('static void merit_division_by_zero(void) { fprintf(stderr, "Merit division by zero\\n"); exit(72); }')
+    for type_name, symbol in sorted(operations):
+        c_type = _C_TYPES[type_name]
+        operation = _checked_operation_name(symbol)
+        signed = type_name.startswith("i")
+        bits = int(type_name[1:])
+        minimum = f"INT{bits}_MIN"
+        maximum = f"INT{bits}_MAX" if signed else f"UINT{bits}_MAX"
+        helper = f"merit_checked_{operation}_{type_name}"
+        lines.append(f"static {c_type} {helper}({c_type} a, {c_type} b) {{")
+        if symbol == "+":
+            wide = "__int128" if signed else "unsigned __int128"
+            lines.append(f"    {wide} result = ({wide})a + ({wide})b;")
+            condition = f"result < {minimum} || result > {maximum}" if signed else f"result > {maximum}"
+            lines.append(f"    if ({condition}) merit_numeric_failure(\"{type_name} addition overflow\");")
+            lines.append(f"    return ({c_type})result;")
+        elif symbol == "-":
+            if signed:
+                lines.append("    __int128 result = (__int128)a - (__int128)b;")
+                lines.append(f"    if (result < {minimum} || result > {maximum}) merit_numeric_failure(\"{type_name} subtraction overflow\");")
+                lines.append(f"    return ({c_type})result;")
+            else:
+                lines.append(f"    if (a < b) merit_numeric_failure(\"{type_name} subtraction overflow\");")
+                lines.append(f"    return ({c_type})(a - b);")
+        elif symbol == "*":
+            wide = "__int128" if signed else "unsigned __int128"
+            lines.append(f"    {wide} result = ({wide})a * ({wide})b;")
+            condition = f"result < {minimum} || result > {maximum}" if signed else f"result > {maximum}"
+            lines.append(f"    if ({condition}) merit_numeric_failure(\"{type_name} multiplication overflow\");")
+            lines.append(f"    return ({c_type})result;")
+        else:
+            lines.append("    if (b == 0) merit_division_by_zero();")
+            if signed:
+                lines.append(f"    if (a == {minimum} && b == -1) merit_numeric_failure(\"division overflow\");")
+            lines.append(f"    return ({c_type})(a {symbol} b);")
+        lines.append("}")
+    return lines
+
+
+def _exact_numeric_helpers(types: set[MirType]) -> list[str]:
+    decimal_types = sorted(
+        ((type_, _decimal_type(type_)) for type_ in types if _decimal_type(type_) is not None),
+        key=lambda item: item[1][0],
+    )
+    bounded_types = sorted(
+        ((type_, _bounded_type(type_)) for type_ in types if _bounded_type(type_) is not None),
+        key=lambda item: item[1][0],
+    )
+    if not decimal_types and not bounded_types:
+        return []
+    lines = [
+        'static void merit_exact_numeric_failure(const char *message) { fprintf(stderr, "Merit %s\\n", message); exit(70); }',
+    ]
+    if decimal_types:
         lines.extend([
-            "static int64_t merit_checked_add_i64(int64_t a, int64_t b) {",
-            "    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) merit_numeric_failure(\"add\");",
-            "    return a + b;",
+            "static __int128 merit_round_decimal(__int128 numerator, __int128 denominator, int mode) {",
+            '    if (denominator == 0) { fprintf(stderr, "Merit division by zero\\n"); exit(72); }',
+            "    int negative = (numerator < 0) ^ (denominator < 0);",
+            "    if (numerator < 0) numerator = -numerator; if (denominator < 0) denominator = -denominator;",
+            "    __int128 quotient = numerator / denominator; __int128 remainder = numerator % denominator; int round_up = 0;",
+            "    if (mode == 0) { __int128 twice = remainder * 2; round_up = twice > denominator || (twice == denominator && (quotient & 1)); }",
+            "    else if (mode == 1) round_up = remainder * 2 >= denominator;",
+            "    else if (mode == 3) round_up = !negative && remainder != 0;",
+            "    else if (mode == 4) round_up = negative && remainder != 0;",
+            "    quotient += round_up; return negative ? -quotient : quotient;",
             "}",
         ])
-    if "-" in operators:
+    for type_, descriptor in decimal_types:
+        identity, precision, _, _ = descriptor
+        maximum = 10 ** precision - 1
+        limit = f"(__int128)INT64_C({maximum})" if precision <= 18 else _int128_literal(maximum)
         lines.extend([
-            "static int64_t merit_checked_sub_i64(int64_t a, int64_t b) {",
-            "    if ((b > 0 && a < INT64_MIN + b) || (b < 0 && a > INT64_MAX + b)) merit_numeric_failure(\"sub\");",
-            "    return a - b;",
+            f"static {_type(type_)} merit_check_decimal_{identity}(__int128 value) {{",
+            f'    if (value < -({limit}) || value > ({limit})) merit_exact_numeric_failure("decimal range violation");',
+            f"    return ({_type(type_)})value;",
             "}",
         ])
-    if "*" in operators:
+    for type_, descriptor in bounded_types:
+        identity, _, minimum, maximum, _ = descriptor
         lines.extend([
-            "static int64_t merit_checked_mul_i64(int64_t a, int64_t b) {",
-            "    if (a == 0 || b == 0) return 0;",
-            "    if ((a == INT64_MIN && b == -1) || (b == INT64_MIN && a == -1)) merit_numeric_failure(\"mul\");",
-            "    if (a > 0) {",
-            "        if ((b > 0 && a > INT64_MAX / b) || (b < 0 && b < INT64_MIN / a)) merit_numeric_failure(\"mul\");",
-            "    } else {",
-            "        if ((b > 0 && a < INT64_MIN / b) || (b < 0 && a < INT64_MAX / b)) merit_numeric_failure(\"mul\");",
-            "    }",
-            "    return a * b;",
-            "}",
-        ])
-    if "/" in operators:
-        lines.extend([
-            "static int64_t merit_checked_div_i64(int64_t a, int64_t b) {",
-            "    if (b == 0 || (a == INT64_MIN && b == -1)) merit_numeric_failure(\"div\");",
-            "    return a / b;",
-            "}",
-        ])
-    if "%" in operators:
-        lines.extend([
-            "static int64_t merit_checked_rem_i64(int64_t a, int64_t b) {",
-            "    if (b == 0 || (a == INT64_MIN && b == -1)) merit_numeric_failure(\"rem\");",
-            "    return a % b;",
+            f"static {_type(type_)} merit_check_bounded_{identity}(__int128 value) {{",
+            f'    if (value < {_int128_literal(minimum)} || value > {_int128_literal(maximum)}) merit_exact_numeric_failure("bounded range violation");',
+            f"    return ({_type(type_)})value;",
             "}",
         ])
     return lines
@@ -711,39 +930,116 @@ def emit_c_module(module: MirModule) -> str:
         for type_ in (destructor.target, *(local.type for local in destructor.locals))
         for nested in _walk_types(type_)
     }
-    checked_operators = {
-        instruction.symbol
-        for instruction in instructions
-        if instruction.kind == "binary"
-        and instruction.numeric_policy == "checked"
-        and instruction.symbol in _CHECKED_HELPERS
-    }
+    checked_operations: set[tuple[str, str]] = set()
+    for executable in (*module.functions, *module.destructors):
+        executable_types = {local.local_id: local.type for local in executable.locals}
+        for block in executable.blocks:
+            for instruction in block.instructions:
+                if (
+                    instruction.kind == "binary"
+                    and instruction.numeric_policy == "checked"
+                    and instruction.symbol in _CHECKED_HELPERS
+                    and instruction.result is not None
+                    and executable_types[instruction.result].name in _INTEGER_TYPES
+                ):
+                    checked_operations.add(
+                        (executable_types[instruction.result].name, instruction.symbol)
+                    )
+                if (
+                    instruction.kind == "binary"
+                    and instruction.symbol in _CHECKED_HELPERS
+                    and instruction.operands
+                    and (bounded := _bounded_type(executable_types[instruction.operands[0]])) is not None
+                ):
+                    checked_operations.add((bounded[4].name, instruction.symbol))
     needs_buffer_runtime = any(
         type_.name in {"Allocator", "Buffer"} and not type_.arguments
         for type_ in all_types
     )
+    needs_text_runtime=any(type_.name in {"String","ByteSlice"} and not type_.arguments for type_ in all_types)
+    needs_decimal_runtime = any(_decimal_type(type_) is not None for type_ in all_types)
     prelude = [
         "/* generated from bootstrap-mir-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
-        *(["#include <stddef.h>"] if needs_buffer_runtime else []),
+        *(["#include <stddef.h>"] if needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operations or needs_decimal_runtime or needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdlib.h>",
+        *(["#include <string.h>"] if needs_buffer_runtime else []),
         "",
+        *([
+            "typedef struct { const uint8_t *data; size_t len; } merit_String;",
+            "typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;",
+            "static inline int64_t merit_string_len(merit_String value) { return (int64_t)value.len; }",
+            "static inline uint8_t merit_string_byte(merit_String value, int64_t index) {",
+            "    if (index < 0 || (size_t)index >= value.len) return 0;",
+            "    return value.data[index];",
+            "}",
+            "",
+        ] if needs_text_runtime or needs_buffer_runtime else []),
         *([
             "typedef struct { int32_t identity; } merit_Allocator;",
             "typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;",
             "static inline merit_Allocator merit_system_allocator(void) { return (merit_Allocator){0}; }",
+            "static inline merit_Allocator merit_portable_allocator(void) { return (merit_Allocator){1}; }",
+            "static inline int32_t merit_allocator_compatible(merit_Allocator left, merit_Allocator right) { return left.identity == right.identity; }",
+            "static inline void merit_buffer_reserve(merit_Buffer *value, size_t needed) {",
+            "    if (needed <= value->capacity) return;",
+            "    size_t capacity = value->capacity ? value->capacity : 8;",
+            "    while (capacity < needed) capacity *= 2;",
+            "    void *data = realloc(value->data, capacity);",
+            '    if (!data) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
+            "    value->data = (uint8_t *)data; value->capacity = capacity;",
+            "}",
             "static inline merit_Buffer merit_buffer_new(merit_Allocator allocator, int64_t capacity) {",
-            "    if (capacity < 0) abort();",
-            "    merit_Buffer result = {0}; result.allocator = allocator; result.capacity = (size_t)capacity;",
-            "    if (capacity > 0) { result.data = (uint8_t *)calloc((size_t)capacity, 1); if (!result.data) abort(); }",
+            '    if (capacity < 0) { fprintf(stderr, "Merit negative capacity\\n"); exit(81); }',
+            "    merit_Buffer result = {0}; result.allocator = allocator; merit_buffer_reserve(&result, (size_t)capacity);",
             "    return result;",
             "}",
+            "static inline merit_Buffer merit_buffer_from_string(merit_Allocator allocator, merit_String value) {",
+            "    merit_Buffer result = merit_buffer_new(allocator, (int64_t)value.len);",
+            "    if (value.len) { memcpy(result.data, value.data, value.len); result.len = value.len; } return result;",
+            "}",
+            "static inline void merit_buffer_push(merit_Buffer *value, uint8_t byte) { merit_buffer_reserve(value, value->len + 1); value->data[value->len++] = byte; }",
             "static inline int64_t merit_buffer_len(const merit_Buffer *value) { return (int64_t)value->len; }",
+            "static inline int64_t merit_buffer_get(const merit_Buffer *value, int64_t index) {",
+            '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit buffer index out of bounds\\n"); exit(82); }',
+            "    return (int64_t)value->data[index];",
+            "}",
+            "static inline merit_ByteSlice merit_buffer_slice(const merit_Buffer *value, int64_t start, int64_t length) {",
+            '    if (start < 0 || length < 0 || (size_t)start > value->len || (size_t)length > value->len - (size_t)start) { fprintf(stderr, "Merit slice out of bounds\\n"); exit(85); }',
+            "    return (merit_ByteSlice){value->data + (size_t)start, (size_t)length};",
+            "}",
+            "static inline merit_Allocator merit_buffer_allocator(const merit_Buffer *value) { return value->allocator; }",
+            "static inline int64_t merit_slice_len(merit_ByteSlice value) { return (int64_t)value.len; }",
+            "static inline int64_t merit_slice_get(merit_ByteSlice value, int64_t index) {",
+            '    if (index < 0 || (size_t)index >= value.len) { fprintf(stderr, "Merit slice index out of bounds\\n"); exit(85); }',
+            "    return (int64_t)value.data[index];",
+            "}",
             "static inline void merit_buffer_drop(merit_Buffer *value) { free(value->data); value->data = NULL; value->len = 0; value->capacity = 0; }",
             "",
         ] if needs_buffer_runtime else []),
+        *([
+            "static void merit_print_u128(unsigned __int128 value) {",
+            "    char digits[40]; int count = 0;",
+            "    do { digits[count++] = (char)('0' + value % 10); value /= 10; } while (value != 0);",
+            "    while (count > 0) putchar(digits[--count]);",
+            "}",
+            "static void merit_print_decimal(__int128 value, int scale) {",
+            "    unsigned __int128 magnitude;",
+            "    if (value < 0) { putchar('-'); magnitude = (unsigned __int128)(-(value + 1)) + 1; }",
+            "    else { magnitude = (unsigned __int128)value; }",
+            "    unsigned __int128 factor = 1; for (int i = 0; i < scale; ++i) factor *= 10;",
+            "    merit_print_u128(magnitude / factor);",
+            "    if (scale > 0) {",
+            "        putchar('.'); unsigned __int128 fraction = magnitude % factor;",
+            "        unsigned __int128 place = factor / 10;",
+            "        while (place > 0) { putchar((int)('0' + (fraction / place) % 10)); place /= 10; }",
+            "    }",
+            "    putchar('\\n');",
+            "}",
+            "",
+        ] if needs_decimal_runtime else []),
     ]
     enum_identities = sorted({
         identity
@@ -876,7 +1172,7 @@ def emit_c_module(module: MirModule) -> str:
             ],
             "",
         ])
-    runtime = _checked_helpers(checked_operators)
+    runtime = [*_checked_helpers(checked_operations), *_exact_numeric_helpers(all_types)]
     if needs_contract:
         runtime.append("static void merit_contract_failure(const char *kind) { (void)kind; abort(); }")
     if needs_capability:

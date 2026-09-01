@@ -2340,6 +2340,8 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             elif t in self.p.decimals:
                 sc=10**self.p.decimals[t].scale;digits=self.p.decimals[t].scale
                 lines.append(f'{p}printf("%s%lld.%0{digits}lld\\n",{temp}<0?"-":"",(long long)(llabs({temp})/{sc}),(long long)(llabs({temp})%{sc}));')
+            elif t in self.p.bounded and self.p.bounded[t].base.startswith('u'):
+                lines.append(f'{p}printf("%llu\\n",(unsigned long long)({temp}));')
             else:
                 lines.append(f'{p}printf("%lld\\n",(long long)({temp}));')
             return lines

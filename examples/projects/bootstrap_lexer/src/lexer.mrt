@@ -718,6 +718,22 @@ requires_caps [allocate]
     }
     let token: Token = vec_get<Token>(tokens, cursor.index);
     if token.kind == 4 {
+        if buffer_get(source, token.start) == 45 {
+            let value_index: i64 = checked_add(cursor.index, 1);
+            if value_index < vec_len<Token>(tokens) {
+                let value: Token = vec_get<Token>(tokens, value_index);
+                if value.kind == 2 {
+                    cursor.index = checked_add(value_index, 1);
+                    let end: i64 = checked_add(value.start, value.length);
+                    let negative: ExpressionNode = ExpressionNode {
+                        kind: 31, start: token.start, length: end - token.start,
+                        left: -1, right: -1
+                    };
+                    let primary: i64 = push_expression(nodes, negative);
+                    return parse_postfix_expression(source, tokens, cursor, nodes, primary);
+                }
+            }
+        }
         if buffer_get(source, token.start) == 40 {
             cursor.index = checked_add(cursor.index, 1);
             let child: i64 = parse_comparison_expression(source, tokens, cursor, nodes);

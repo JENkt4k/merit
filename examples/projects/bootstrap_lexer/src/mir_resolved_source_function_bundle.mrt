@@ -24,12 +24,13 @@ pub fn resolved_source_function_snapshot_value_count(
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
     borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow numeric_type_descriptors: Vec<MirNumericTypeDescriptor>,
     borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
     borrow destructor_body: Vec<MirFunctionRecord>,
     borrow destructor_cfg: Vec<MirCfgRecord>,
     borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i64 {
-    var count: i64 = 16; // magic + version + fourteen section counts
+    var count: i64 = 17; // magic + version + fifteen section counts
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(body), 16));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractRecord>(contracts), 12));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractLocal>(contract_locals), 5));
@@ -40,6 +41,7 @@ pub fn resolved_source_function_snapshot_value_count(
     count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(placements), 3));
     count = checked_add(count, vec_len<i64>(capabilities));
     count = checked_add(count, checked_mul(vec_len<MirTypeDescriptor>(type_descriptors), 6));
+    count = checked_add(count, checked_mul(vec_len<MirNumericTypeDescriptor>(numeric_type_descriptors), 11));
     count = checked_add(count, checked_mul(vec_len<MirDestructorDescriptor>(destructor_descriptors), 7));
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(destructor_body), 16));
     count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(destructor_cfg), 7));
@@ -66,6 +68,7 @@ pub fn print_resolved_source_function_bundle_item(
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
     borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow numeric_type_descriptors: Vec<MirNumericTypeDescriptor>,
     borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
     borrow destructor_body: Vec<MirFunctionRecord>,
     borrow destructor_cfg: Vec<MirCfgRecord>,
@@ -74,13 +77,15 @@ pub fn print_resolved_source_function_bundle_item(
     let value_count: i64 = resolved_source_function_snapshot_value_count(
         body, contracts, contract_locals, sources, ownership_bindings,
         ownership_records, cfg, placements, capabilities, type_descriptors,
+        numeric_type_descriptors,
         destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
     );
-    if (value_count < 16) { return 1; }
+    if (value_count < 17) { return 1; }
     print(value_count);
     return print_resolved_source_function_snapshot(
         body, contracts, contract_locals, sources, ownership_bindings,
         ownership_records, cfg, placements, capabilities, type_descriptors,
+        numeric_type_descriptors,
         destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
     );
 }

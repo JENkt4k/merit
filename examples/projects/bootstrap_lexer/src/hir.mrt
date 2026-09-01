@@ -1,4 +1,6 @@
 module bootstrap_hir
+import bootstrap_syntax;
+import bootstrap_mir_functions;
 
 pub struct HirExpressionRecord {
     kind: i32;
@@ -27,6 +29,17 @@ pub fn hir_is_pair(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 8
 pub fn hir_is_struct_constructor(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 10) { return 1; } return 0; }
 pub fn hir_is_field_initializer(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 11) { return 1; } return 0; }
 pub fn hir_is_symbol_reference(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 9) { return 1; } return 0; }
+pub fn hir_string_literal_kind() -> i32 { return 12; }
+pub fn hir_is_string_literal(borrow node:HirExpressionRecord)->i32{
+    if(node.kind==hir_string_literal_kind()){return 1;}
+    return 0;
+}
+pub fn hir_with_type(borrow node:HirExpressionRecord,type_code:i32)->HirExpressionRecord{
+    return HirExpressionRecord{
+        kind:node.kind,start:node.start,length:node.length,left:node.left,right:node.right,
+        symbol:node.symbol,type_code:type_code,numeric_policy:node.numeric_policy,binding_id:node.binding_id
+    };
+}
 
 fn hir_binary_symbol(kind: i32) -> i32 {
     if (kind == 50) { return 1; }
@@ -113,6 +126,12 @@ pub fn lower_resolved_hir_record(
             type_code: resolved_type_code,
             numeric_policy: 1,
             binding_id: -1
+        };
+    }
+    if(ast_kind_code==ast_string_literal_kind()){
+        return HirExpressionRecord{
+            kind:hir_string_literal_kind(),start:ast_start_value,length:ast_length_value,left:-1,right:-1,
+            symbol:0,type_code:resolved_type_code,numeric_policy:0,binding_id:-1
         };
     }
     if (ast_kind_code == 30) {
@@ -386,7 +405,16 @@ pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) ->
                                                     if (node.symbol != 0) { return 13; }
                                                     if (node.binding_id != -1) { return 13; }
                                                     if (node.numeric_policy != 0) { return 13; }
-                                                } else { return 2; }
+                                                } else {
+                                                    if (hir_is_string_literal(node) != 0) {
+                                                        if (node.type_code != function_mir_string_type_code()) { return 2; }
+                                                        if (node.left != -1) { return 4; }
+                                                        if (node.right != -1) { return 4; }
+                                                        if (node.symbol != 0) { return 4; }
+                                                        if (node.binding_id != -1) { return 4; }
+                                                        if (node.numeric_policy != 0) { return 6; }
+                                                    } else { return 2; }
+                                                }
                                             }
                                         }
                                     }

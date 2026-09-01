@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from decimal import Decimal, InvalidOperation
+import json
+import re
 
 from merit.bootstrap.mir_contract import (
     MirBlock,
@@ -41,6 +44,39 @@ _BODY_STRUCT_FIELD_STORE = 14
 _BODY_PARAMETER = 15
 _BODY_CALL = 16
 _BODY_CALL_ARGUMENT = 17
+
+
+def _materialize_literal(text: str, type_: MirType) -> int | str:
+    if type_ == MirType("String"):
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise NativeWholeFunctionMirError("string constant has invalid source spelling") from error
+        if not isinstance(value, str):
+            raise NativeWholeFunctionMirError("string constant does not decode to text")
+        return value
+    decimal_match = re.fullmatch(r"decimal_\d+_(\d+)_(\d+)_[0-4]", type_.name)
+    if decimal_match is not None and not type_.arguments:
+        precision, scale = map(int, decimal_match.groups())
+        try:
+            value = Decimal(text)
+        except InvalidOperation as error:
+            raise NativeWholeFunctionMirError("decimal constant has invalid source spelling") from error
+        scaled = value * (10 ** scale)
+        if scaled != scaled.to_integral_value():
+            raise NativeWholeFunctionMirError("decimal constant exceeds its resolved scale")
+        result = int(scaled)
+        if abs(result) > 10 ** precision - 1:
+            raise NativeWholeFunctionMirError("decimal constant exceeds its resolved precision")
+        return result
+    bounded_match = re.fullmatch(r"bounded_\d+_\d+_(-?\d+)_(-?\d+)", type_.name)
+    if bounded_match is not None and len(type_.arguments) == 1:
+        result = int(text)
+        minimum, maximum = map(int, bounded_match.groups())
+        if not minimum <= result <= maximum:
+            raise NativeWholeFunctionMirError("bounded constant is outside its resolved domain")
+        return result
+    return int(text)
 _CALLABLE_MODES = {0: "value", 1: "borrowed", 2: "mutable_borrow"}
 BODY_INSTRUCTION_KINDS = frozenset({
     4, 5, 6, 8, _BODY_CONSTRUCT, _BODY_ENUM_TAG_LOAD, _BODY_ENUM_PAYLOAD_LOAD,
@@ -98,9 +134,14 @@ def lower_native_whole_function_assembly(
     types: dict[int, MirType] = {
         1: MirType("i64"), 2: MirType("bool"),
         3: MirType("Allocator"), 4: MirType("Buffer"),
+        5: MirType("i8"), 6: MirType("i16"), 7: MirType("i32"),
+        8: MirType("u8"), 9: MirType("u16"), 10: MirType("u32"),
+        11: MirType("u64"), 12: MirType("String"), 13: MirType("ByteSlice"),
+        14: MirType("unit"),
     }
     if type_names:
         types.update(type_names)
+    source_bytes = source.encode("utf-8")
 
     def resolved_type(code: int, label: str) -> MirType:
         if code in types:
@@ -118,9 +159,19 @@ def lower_native_whole_function_assembly(
         raise NativeWholeFunctionMirError(f"{label} has unresolved type code {code}")
 
     def span(start: int, length: int, label: str) -> SourceSpan:
-        if start < 0 or length < 0 or start + length > len(source):
+        if start < 0 or length < 0 or start + length > len(source_bytes):
             raise NativeWholeFunctionMirError(f"{label} span is outside source")
         return SourceSpan(start, length)
+
+    def source_text(value_span: SourceSpan, label: str) -> str:
+        try:
+            return source_bytes[
+                value_span.start : value_span.start + value_span.length
+            ].decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise NativeWholeFunctionMirError(
+                f"{label} span does not align to UTF-8 source boundaries"
+            ) from error
 
     header = body[0]
     _, start, length, record_id, result, left, right, symbol_start, symbol_length, symbol_code, type_code, policy, binding_id, mutable, hir_id, ordinal = header
@@ -137,7 +188,7 @@ def lower_native_whole_function_assembly(
     function_parameter_count = ordinal
     span(start, length, "function")
     name_span = span(symbol_start, symbol_length, "function symbol")
-    function_name = source[name_span.start : name_span.start + name_span.length]
+    function_name = source_text(name_span, "function symbol")
     if not function_name:
         raise NativeWholeFunctionMirError("function name is empty")
     return_type = resolved_type(type_code, "function")
@@ -164,7 +215,7 @@ def lower_native_whole_function_assembly(
                     raise NativeWholeFunctionMirError(f"body parameter {index} has invalid ordinal")
                 ownership = mode
                 parameters.append((ordinal, MirParameter(rid, mode)))
-            locals_by_id[rid] = MirLocal(rid, source[local_span.start:local_span.start + local_span.length], resolved_type(type_code, f"body local {index}"), mutable=bool(mutable), ownership=ownership, source_binding_id=binding_id)
+            locals_by_id[rid] = MirLocal(rid, source_text(local_span, f"body local {index}"), resolved_type(type_code, f"body local {index}"), mutable=bool(mutable), ownership=ownership, source_binding_id=binding_id)
         elif kind == 3:
             if rid in locals_by_id or rid < 0 or hir_id < 0:
                 raise NativeWholeFunctionMirError(f"body temporary {index} is invalid")
@@ -191,7 +242,16 @@ def lower_native_whole_function_assembly(
                     raise NativeWholeFunctionMirError(f"body call {index} has invalid return mode")
                 call_rows[rid] = row
             elif kind == 4:
-                body_instructions[rid] = MirInstruction(rid, "const", result=result, value=int(source[instruction_span.start:instruction_span.start + instruction_span.length]), span=instruction_span, ownership="value")
+                if result not in locals_by_id:
+                    raise NativeWholeFunctionMirError(f"body constant {index} has no result local")
+                body_instructions[rid] = MirInstruction(
+                    rid, "const", result=result,
+                    value=_materialize_literal(
+                        source_text(instruction_span, f"body constant {index}"),
+                        locals_by_id[result].type,
+                    ),
+                    span=instruction_span, ownership="value",
+                )
             elif kind == 5:
                 try:
                     symbol = _SYMBOLS[symbol_code]
@@ -273,7 +333,7 @@ def lower_native_whole_function_assembly(
         body_instructions[instruction_id] = MirInstruction(
             instruction_id, "call", result=None if result < 0 else result,
             operands=tuple(local for _, local in arguments),
-            symbol=source[callee_span.start:callee_span.start + callee_span.length],
+            symbol=source_text(callee_span, "body call symbol"),
             span=call_span,
         )
     if call_arguments:
@@ -325,7 +385,7 @@ def lower_native_whole_function_assembly(
             instruction_span = span(start, length, "contract instruction")
             contract_name = "precondition" if contract_kind == 1 else "postcondition"
             if kind == 2:
-                literal = source[instruction_span.start:instruction_span.start + instruction_span.length]
+                literal = source_text(instruction_span, "contract constant")
                 if type_code == 2:
                     value: object = literal == "true"
                     if literal not in {"true", "false"}:

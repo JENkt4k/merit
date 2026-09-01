@@ -9,10 +9,11 @@ parameter is bound to its declared MIR local at function entry.
 from __future__ import annotations
 
 from merit.bootstrap.mir_abi import MirAbiModule, MirFunctionSignature
-from merit.bootstrap.mir_contract import MirFunction, MirInstruction
+from merit.bootstrap.mir_contract import MirFunction, MirInstruction, MirType
 from merit.bootstrap.mir_to_c import (
     MirToCError,
     _CHECKED_HELPERS,
+    _INTEGER_TYPES,
     _checked_helpers,
     _function_table,
     _identifier,
@@ -56,9 +57,11 @@ def _abi_instruction(
     instruction: MirInstruction,
     functions: dict[str, MirFunction],
     signatures: dict[str, MirFunctionSignature],
+    local_types: dict[int, MirType],
+    local_ownership: dict[int, str],
 ) -> list[str]:
     if instruction.kind != "call":
-        return _instruction(instruction, functions)
+        return _instruction(instruction, functions, local_types, local_ownership)
     if not instruction.symbol:
         raise MirAbiToCError("call instruction requires a resolved symbol")
     callee = functions.get(instruction.symbol)
@@ -70,6 +73,14 @@ def _abi_instruction(
             f"call to {instruction.symbol} expects {len(signature.parameters)} arguments, "
             f"got {len(instruction.operands)}"
         )
+    for index, (operand_id, parameter) in enumerate(
+        zip(instruction.operands, signature.parameters)
+    ):
+        if local_types[operand_id] != parameter.type:
+            raise MirAbiToCError(
+                f"call to {instruction.symbol} argument {index} type does not match "
+                f"parameter {parameter.name}"
+            )
     arguments = ", ".join(_local(local_id) for local_id in instruction.operands)
     call = f"{_c_name(signature)}({arguments})"
     result = _local(instruction.result) if instruction.result is not None else None
@@ -97,6 +108,8 @@ def emit_c_abi_function(
     signatures: dict[str, MirFunctionSignature],
 ) -> str:
     return_type = _type(function.return_type)
+    local_types = {local.local_id: local.type for local in function.locals}
+    local_ownership = {local.local_id: local.ownership for local in function.locals}
     lines = [
         f"{return_type} {_c_name(signature)}"
         f"({_signature_parameter_list(signature)}) {{"
@@ -119,7 +132,9 @@ def emit_c_abi_function(
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _abi_instruction(instruction, functions, signatures):
+            for statement in _abi_instruction(
+                instruction, functions, signatures, local_types, local_ownership
+            ):
                 lines.append(f"    {statement}")
         for statement in _terminator(block.terminator, return_type):
             lines.append(f"    {statement}")
@@ -141,18 +156,26 @@ def emit_c_abi_module(abi: MirAbiModule) -> str:
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
     needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
     needs_print = any(instruction.kind == "print" for instruction in instructions)
-    checked_operators = {
-        instruction.symbol
-        for instruction in instructions
-        if instruction.kind == "binary"
-        and instruction.numeric_policy == "checked"
-        and instruction.symbol in _CHECKED_HELPERS
-    }
+    checked_operators: set[tuple[str, str]] = set()
+    for function in module.functions:
+        local_types = {local.local_id: local.type for local in function.locals}
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if (
+                    instruction.kind == "binary"
+                    and instruction.numeric_policy == "checked"
+                    and instruction.symbol in _CHECKED_HELPERS
+                    and instruction.result is not None
+                    and local_types[instruction.result].name in _INTEGER_TYPES
+                ):
+                    checked_operators.add(
+                        (local_types[instruction.result].name, instruction.symbol)
+                    )
     prelude = [
         "/* generated from bootstrap-mir-abi-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operators else []),
         "#include <stdlib.h>",
         "",
     ]

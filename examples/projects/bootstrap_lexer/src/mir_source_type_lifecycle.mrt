@@ -141,9 +141,10 @@ fn stl_builtin_ownership(borrow source: Buffer, start: i64, length: i64) -> i32 
         if (stl_byte(source,start,0,83)!=0) { if (stl_byte(source,start,1,116)!=0) { if (stl_byte(source,start,2,114)!=0) { if (stl_byte(source,start,3,105)!=0) { if (stl_byte(source,start,4,110)!=0) { if (stl_byte(source,start,5,103)!=0) { return 0; } } } } } }
     }
     if (length == 9) {
-        // Allocator is a Copy runtime handle; the spelling check is the
-        // canonical bootstrap source-encoding boundary.
+        // Allocator and ByteSlice are Copy runtime handles; these spelling
+        // checks are the canonical bootstrap source-encoding boundary.
         if (stl_byte(source,start,0,65)!=0) { if (stl_byte(source,start,1,108)!=0) { if (stl_byte(source,start,2,108)!=0) { if (stl_byte(source,start,3,111)!=0) { if (stl_byte(source,start,4,99)!=0) { if (stl_byte(source,start,5,97)!=0) { if (stl_byte(source,start,6,116)!=0) { if (stl_byte(source,start,7,111)!=0) { if (stl_byte(source,start,8,114)!=0) { return 0; } } } } } } } } }
+        if (stl_byte(source,start,0,66)!=0) { if (stl_byte(source,start,1,121)!=0) { if (stl_byte(source,start,2,116)!=0) { if (stl_byte(source,start,3,101)!=0) { if (stl_byte(source,start,4,83)!=0) { if (stl_byte(source,start,5,108)!=0) { if (stl_byte(source,start,6,105)!=0) { if (stl_byte(source,start,7,99)!=0) { if (stl_byte(source,start,8,101)!=0) { return 0; } } } } } } } } }
     }
     return -1;
 }
