@@ -67,6 +67,7 @@ pub struct I64StructCatalogEntry {
     field_length: i64;
     field_type_start: i64;
     field_type_length: i64;
+    resolved_field_type_code: i32;
     destructor_policy: i32;
 }
 
@@ -78,6 +79,7 @@ pub fn i64_struct_catalog_field_start(borrow value: I64StructCatalogEntry) -> i6
 pub fn i64_struct_catalog_field_length(borrow value: I64StructCatalogEntry) -> i64 { return value.field_length; }
 pub fn i64_struct_catalog_field_type_start(borrow value: I64StructCatalogEntry) -> i64 { return value.field_type_start; }
 pub fn i64_struct_catalog_field_type_length(borrow value: I64StructCatalogEntry) -> i64 { return value.field_type_length; }
+pub fn i64_struct_catalog_resolved_field_type(borrow value:I64StructCatalogEntry)->i32{return value.resolved_field_type_code;}
 pub fn i64_struct_catalog_destructor_policy(borrow value: I64StructCatalogEntry) -> i32 { return value.destructor_policy; }
 pub fn i64_struct_catalog_invalid_status() -> i32 { return 1; }
 pub fn i64_struct_catalog_replace_unsupported_status() -> i32 { return 2; }
@@ -199,6 +201,34 @@ fn sfr_is_struct(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
+fn sfr_is_decimal_declaration(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != token_identifier_kind()) { return 0; }
+    if (token_length(token) != 7) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != 100) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != 101) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != 99) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != 105) { return 0; }
+    if (buffer_get(source, checked_add(start, 4)) != 109) { return 0; }
+    if (buffer_get(source, checked_add(start, 5)) != 97) { return 0; }
+    if (buffer_get(source, checked_add(start, 6)) != 108) { return 0; }
+    return 1;
+}
+
+fn sfr_is_bounded_declaration(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != token_identifier_kind()) { return 0; }
+    if (token_length(token) != 7) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != 98) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != 111) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != 117) { return 0; }
+    if (buffer_get(source, checked_add(start, 3)) != 110) { return 0; }
+    if (buffer_get(source, checked_add(start, 4)) != 100) { return 0; }
+    if (buffer_get(source, checked_add(start, 5)) != 101) { return 0; }
+    if (buffer_get(source, checked_add(start, 6)) != 100) { return 0; }
+    return 1;
+}
+
 fn sfr_token_byte_is(borrow source: Buffer, borrow token: Token, expected: i64) -> i32 {
     if (token_kind(token) != 4) { return 0; }
     if (token_length(token) != 1) { return 0; }
@@ -216,6 +246,7 @@ fn sfr_ascii_c() -> i64 { return 99; }
 fn sfr_ascii_d() -> i64 { return 100; }
 fn sfr_ascii_e() -> i64 { return 101; }
 fn sfr_ascii_f() -> i64 { return 102; }
+fn sfr_ascii_g() -> i64 { return 103; }
 fn sfr_ascii_h() -> i64 { return 104; }
 fn sfr_ascii_i() -> i64 { return 105; }
 fn sfr_ascii_k() -> i64 { return 107; }
@@ -228,6 +259,7 @@ fn sfr_ascii_upper_f() -> i64 { return 70; }
 fn sfr_ascii_upper_l() -> i64 { return 76; }
 fn sfr_ascii_upper_o() -> i64 { return 79; }
 fn sfr_ascii_upper_r() -> i64 { return 82; }
+fn sfr_ascii_upper_s() -> i64 { return 83; }
 fn sfr_ascii_upper_t() -> i64 { return 84; }
 fn sfr_ascii_upper_w() -> i64 { return 87; }
 fn sfr_ascii_p() -> i64 { return 112; }
@@ -249,6 +281,73 @@ fn sfr_ascii_semicolon() -> i64 { return 59; }
 fn sfr_ascii_underscore() -> i64 { return 95; }
 fn sfr_ascii_open_brace() -> i64 { return 123; }
 fn sfr_ascii_close_brace() -> i64 { return 125; }
+
+pub struct SfrNumericMagnitude { high: i64; low: i64; }
+fn sfr_numeric_limb_base() -> i64 { return 1000000000; }
+fn sfr_invalid_numeric_magnitude() -> SfrNumericMagnitude { return SfrNumericMagnitude { high:-1, low:-1 }; }
+fn sfr_parse_numeric_magnitude(borrow source: Buffer, borrow token: Token) -> SfrNumericMagnitude {
+    if (token_kind(token) != token_number_kind()) { return sfr_invalid_numeric_magnitude(); }
+    if (token_length(token) <= 0) { return sfr_invalid_numeric_magnitude(); }
+    var high: i64 = 0;
+    var low: i64 = 0;
+    var offset: i64 = 0;
+    while (offset < token_length(token)) {
+        let byte: i64 = buffer_get(source, checked_add(token_start(token), offset));
+        if (byte < 48) { return sfr_invalid_numeric_magnitude(); }
+        if (byte > 57) { return sfr_invalid_numeric_magnitude(); }
+        let expanded_low: i64 = checked_add(checked_mul(low, 10), checked_sub(byte, 48));
+        let carry: i64 = expanded_low / sfr_numeric_limb_base();
+        low = expanded_low - checked_mul(carry, sfr_numeric_limb_base());
+        high = checked_add(checked_mul(high, 10), carry);
+        if (high > 18446744073) { return sfr_invalid_numeric_magnitude(); }
+        offset = checked_add(offset, 1);
+    }
+    return SfrNumericMagnitude { high:high, low:low };
+}
+fn sfr_magnitude_is_zero(borrow value: SfrNumericMagnitude) -> i32 {
+    if (value.high == 0) { if (value.low == 0) { return 1; } }
+    return 0;
+}
+fn sfr_magnitude_at_most(borrow value: SfrNumericMagnitude, high: i64, low: i64) -> i32 {
+    if (value.high < high) { return 1; }
+    if (value.high > high) { return 0; }
+    if (value.low <= low) { return 1; }
+    return 0;
+}
+fn sfr_signed_magnitude_compare(
+    left_sign:i32, borrow left:SfrNumericMagnitude,
+    right_sign:i32, borrow right:SfrNumericMagnitude
+) -> i32 {
+    if (left_sign < right_sign) { return -1; }
+    if (left_sign > right_sign) { return 1; }
+    if (left_sign == 0) { return 0; }
+    var magnitude:i32=0;
+    if (left.high < right.high) { magnitude=-1; }
+    if (left.high > right.high) { magnitude=1; }
+    if (left.high == right.high) {
+        if (left.low < right.low) { magnitude=-1; }
+        if (left.low > right.low) { magnitude=1; }
+    }
+    if (left_sign < 0) { return 0-magnitude; }
+    return magnitude;
+}
+fn sfr_numeric_sign(sign:i32, borrow value:SfrNumericMagnitude)->i32 {
+    if (sfr_magnitude_is_zero(value) != 0) { return 0; }
+    return sign;
+}
+fn sfr_decimal_policy(borrow source:Buffer,borrow token:Token)->i32{
+    let start:i64=token_start(token);let length:i64=token_length(token);
+    if(length==9){
+        if(buffer_get(source,start)==104){if(buffer_get(source,checked_add(start,1))==97){if(buffer_get(source,checked_add(start,2))==108){if(buffer_get(source,checked_add(start,3))==102){if(buffer_get(source,checked_add(start,4))==95){if(buffer_get(source,checked_add(start,5))==101){if(buffer_get(source,checked_add(start,6))==118){if(buffer_get(source,checked_add(start,7))==101){if(buffer_get(source,checked_add(start,8))==110){return 0;}}}}}}}}}
+    }
+    if(length==7){
+        if(buffer_get(source,start)==104){if(buffer_get(source,checked_add(start,1))==97){if(buffer_get(source,checked_add(start,2))==108){if(buffer_get(source,checked_add(start,3))==102){if(buffer_get(source,checked_add(start,4))==95){if(buffer_get(source,checked_add(start,5))==117){if(buffer_get(source,checked_add(start,6))==112){return 1;}}}}}}}
+        if(buffer_get(source,start)==99){if(buffer_get(source,checked_add(start,1))==101){if(buffer_get(source,checked_add(start,2))==105){if(buffer_get(source,checked_add(start,3))==108){if(buffer_get(source,checked_add(start,4))==105){if(buffer_get(source,checked_add(start,5))==110){if(buffer_get(source,checked_add(start,6))==103){return 3;}}}}}}}
+    }
+    if(length==4){if(buffer_get(source,start)==100){if(buffer_get(source,checked_add(start,1))==111){if(buffer_get(source,checked_add(start,2))==119){if(buffer_get(source,checked_add(start,3))==110){return 2;}}}}}
+    if(length==5){if(buffer_get(source,start)==102){if(buffer_get(source,checked_add(start,1))==108){if(buffer_get(source,checked_add(start,2))==111){if(buffer_get(source,checked_add(start,3))==111){if(buffer_get(source,checked_add(start,4))==114){return 4;}}}}}}
+    return -1;
+}
 
 fn sfr_is_file_read_result_name(borrow source:Buffer,borrow token:Token)->i32{
     if(token_kind(token)!=token_identifier_kind()){return 0;}
@@ -406,9 +505,33 @@ requires_caps [allocate]
     return 0;
 }
 
-fn sfr_is_checked_add(borrow source: Buffer, borrow token: HirExpressionRecord) -> i32 {
+fn sfr_checked_numeric_symbol(borrow source: Buffer, borrow token: HirExpressionRecord) -> i32 {
     if (hir_length(token) != 11) { return 0; }
     let start: i64 = hir_start(token);
+    if (buffer_get(source, start) == sfr_ascii_d()) {
+        if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_e()) {
+            if (buffer_get(source, checked_add(start, 2)) == sfr_ascii_c()) {
+                if (buffer_get(source, checked_add(start, 3)) == sfr_ascii_i()) {
+                    if (buffer_get(source, checked_add(start, 4)) == sfr_ascii_m()) {
+                        if (buffer_get(source, checked_add(start, 5)) == sfr_ascii_a()) {
+                            if (buffer_get(source, checked_add(start, 6)) == sfr_ascii_l()) {
+                                if (buffer_get(source, checked_add(start, 7)) == sfr_ascii_underscore()) {
+                                    if (buffer_get(source, checked_add(start, 8)) == sfr_ascii_d()) {
+                                        if (buffer_get(source, checked_add(start, 9)) == sfr_ascii_i()) {
+                                            if (buffer_get(source, checked_add(start, 10)) == sfr_ascii_v()) {
+                                                return function_mir_binary_divide_symbol();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return 0;
+    }
     if (buffer_get(source, start) != sfr_ascii_c()) { return 0; }
     if (buffer_get(source, checked_add(start, 1)) != sfr_ascii_h()) { return 0; }
     if (buffer_get(source, checked_add(start, 2)) != sfr_ascii_e()) { return 0; }
@@ -417,15 +540,219 @@ fn sfr_is_checked_add(borrow source: Buffer, borrow token: HirExpressionRecord) 
     if (buffer_get(source, checked_add(start, 5)) != sfr_ascii_e()) { return 0; }
     if (buffer_get(source, checked_add(start, 6)) != sfr_ascii_d()) { return 0; }
     if (buffer_get(source, checked_add(start, 7)) != sfr_ascii_underscore()) { return 0; }
-    if (buffer_get(source, checked_add(start, 8)) != sfr_ascii_a()) { return 0; }
-    if (buffer_get(source, checked_add(start, 9)) != sfr_ascii_d()) { return 0; }
-    if (buffer_get(source, checked_add(start, 10)) != sfr_ascii_d()) { return 0; }
-    return 1;
+    let suffix_first: i64 = buffer_get(source, checked_add(start, 8));
+    let suffix_second: i64 = buffer_get(source, checked_add(start, 9));
+    let suffix_third: i64 = buffer_get(source, checked_add(start, 10));
+    if (suffix_first == sfr_ascii_a()) {
+        if (suffix_second == sfr_ascii_d()) {
+            if (suffix_third == sfr_ascii_d()) { return function_mir_binary_add_symbol(); }
+        }
+    }
+    if (suffix_first == sfr_ascii_s()) {
+        if (suffix_second == sfr_ascii_u()) {
+            if (suffix_third == sfr_ascii_b()) { return function_mir_binary_subtract_symbol(); }
+        }
+    }
+    if (suffix_first == sfr_ascii_m()) {
+        if (suffix_second == sfr_ascii_u()) {
+            if (suffix_third == sfr_ascii_l()) { return function_mir_binary_multiply_symbol(); }
+        }
+    }
+    return 0;
 }
 
-fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 {
+fn sfr_builtin_system_allocator_kind()->i32{return 1;}
+fn sfr_builtin_buffer_new_kind()->i32{return 2;}
+fn sfr_builtin_buffer_len_kind()->i32{return 3;}
+fn sfr_builtin_portable_allocator_kind()->i32{return 4;}
+fn sfr_builtin_allocator_compatible_kind()->i32{return 5;}
+fn sfr_builtin_string_len_kind()->i32{return 6;}
+fn sfr_builtin_string_byte_kind()->i32{return 7;}
+fn sfr_builtin_buffer_from_string_kind()->i32{return 8;}
+fn sfr_builtin_buffer_push_kind()->i32{return 9;}
+fn sfr_builtin_buffer_get_kind()->i32{return 10;}
+fn sfr_builtin_buffer_slice_kind()->i32{return 11;}
+fn sfr_builtin_buffer_allocator_kind()->i32{return 12;}
+fn sfr_builtin_slice_len_kind()->i32{return 13;}
+fn sfr_builtin_slice_get_kind()->i32{return 14;}
+pub fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 {
     var matches:i32=1;
+    if(length==18){
+        matches=1;
+        if(buffer_get(source,start)!=112){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,12))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,13))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,14))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,15))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,16))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,17))!=114){matches=0;}
+        if(matches!=0){return sfr_builtin_portable_allocator_kind();}
+    }
+    if(length==20){
+        matches=1;
+        if(buffer_get(source,start)!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,12))!=109){matches=0;}
+        if(buffer_get(source,checked_add(start,13))!=112){matches=0;}
+        if(buffer_get(source,checked_add(start,14))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,15))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,16))!=105){matches=0;}
+        if(buffer_get(source,checked_add(start,17))!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,18))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,19))!=101){matches=0;}
+        if(matches!=0){return sfr_builtin_allocator_compatible_kind();}
+    }
+    if(length==18){
+        matches=1;
+        if(buffer_get(source,start)!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=109){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,12))!=115){matches=0;}
+        if(buffer_get(source,checked_add(start,13))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,14))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,15))!=105){matches=0;}
+        if(buffer_get(source,checked_add(start,16))!=110){matches=0;}
+        if(buffer_get(source,checked_add(start,17))!=103){matches=0;}
+        if(matches!=0){return sfr_builtin_buffer_from_string_kind();}
+    }
+    if(length==11){
+        matches=1;
+        if(buffer_get(source,start)!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=112){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=115){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=104){matches=0;}
+        if(matches!=0){return sfr_builtin_buffer_push_kind();}
+    }
+    if(length==10){
+        matches=1;
+        if(buffer_get(source,start)!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=103){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=116){matches=0;}
+        if(matches!=0){return sfr_builtin_buffer_get_kind();}
+    }
+    if(length==12){
+        matches=1;
+        if(buffer_get(source,start)!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=115){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=105){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=101){matches=0;}
+        if(matches!=0){return sfr_builtin_buffer_slice_kind();}
+    }
+    if(length==16){
+        matches=1;
+        if(buffer_get(source,start)!=98){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=117){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=102){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=114){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,12))!=97){matches=0;}
+        if(buffer_get(source,checked_add(start,13))!=116){matches=0;}
+        if(buffer_get(source,checked_add(start,14))!=111){matches=0;}
+        if(buffer_get(source,checked_add(start,15))!=114){matches=0;}
+        if(matches!=0){return sfr_builtin_buffer_allocator_kind();}
+    }
+    if(length==9){
+        matches=1;
+        if(buffer_get(source,start)!=115){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=105){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=110){matches=0;}
+        if(matches!=0){return sfr_builtin_slice_len_kind();}
+    }
+    if(length==9){
+        matches=1;
+        if(buffer_get(source,start)!=115){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=108){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=105){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=99){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=95){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=103){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=101){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=116){matches=0;}
+        if(matches!=0){return sfr_builtin_slice_get_kind();}
+    }
+    if(length==11){
+        matches=1;
+        if(buffer_get(source,start)!=sfr_ascii_s()){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=sfr_ascii_t()){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=sfr_ascii_r()){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=sfr_ascii_i()){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=sfr_ascii_n()){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=sfr_ascii_g()){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=sfr_ascii_underscore()){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=sfr_ascii_b()){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=sfr_ascii_y()){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=sfr_ascii_t()){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=sfr_ascii_e()){matches=0;}
+        if(matches!=0){return sfr_builtin_string_byte_kind();}
+    }
     if (length == 16) {
+        matches=1;
         if(buffer_get(source,start)!=sfr_ascii_s()){matches=0;}
         if(buffer_get(source,checked_add(start,1))!=sfr_ascii_y()){matches=0;}
         if(buffer_get(source,checked_add(start,2))!=sfr_ascii_s()){matches=0;}
@@ -442,7 +769,7 @@ fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 
         if(buffer_get(source,checked_add(start,13))!=sfr_ascii_t()){matches=0;}
         if(buffer_get(source,checked_add(start,14))!=sfr_ascii_o()){matches=0;}
         if(buffer_get(source,checked_add(start,15))!=sfr_ascii_r()){matches=0;}
-        if(matches!=0){return 1;}
+        if(matches!=0){return sfr_builtin_system_allocator_kind();}
     }
     if (length == 10) {
         matches=1;
@@ -456,7 +783,7 @@ fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 
         if(buffer_get(source,checked_add(start,7))!=sfr_ascii_n()){matches=0;}
         if(buffer_get(source,checked_add(start,8))!=sfr_ascii_e()){matches=0;}
         if(buffer_get(source,checked_add(start,9))!=sfr_ascii_w()){matches=0;}
-        if(matches!=0){return 2;}
+        if(matches!=0){return sfr_builtin_buffer_new_kind();}
         matches=1;
         if(buffer_get(source,start)!=sfr_ascii_b()){matches=0;}
         if(buffer_get(source,checked_add(start,1))!=sfr_ascii_u()){matches=0;}
@@ -468,28 +795,91 @@ fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 
         if(buffer_get(source,checked_add(start,7))!=sfr_ascii_l()){matches=0;}
         if(buffer_get(source,checked_add(start,8))!=sfr_ascii_e()){matches=0;}
         if(buffer_get(source,checked_add(start,9))!=sfr_ascii_n()){matches=0;}
-        if(matches!=0){return 3;}
+        if(matches!=0){return sfr_builtin_buffer_len_kind();}
+        matches=1;
+        if(buffer_get(source,start)!=sfr_ascii_s()){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=sfr_ascii_t()){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=sfr_ascii_r()){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=sfr_ascii_i()){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=sfr_ascii_n()){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=sfr_ascii_g()){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=sfr_ascii_underscore()){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=sfr_ascii_l()){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=sfr_ascii_e()){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=sfr_ascii_n()){matches=0;}
+        if(matches!=0){return sfr_builtin_string_len_kind();}
     }
     return 0;
 }
 
-fn sfr_builtin_call_return_type(kind: i32) -> i32 {
-    if (kind == 1) { return function_mir_allocator_type_code(); }
-    if (kind == 2) { return function_mir_buffer_type_code(); }
-    if (kind == 3) { return function_mir_i64_type_code(); }
+pub fn sfr_builtin_call_return_type(kind: i32) -> i32 {
+    if (kind == sfr_builtin_system_allocator_kind()) { return function_mir_allocator_type_code(); }
+    if (kind == sfr_builtin_portable_allocator_kind()) { return function_mir_allocator_type_code(); }
+    if (kind == sfr_builtin_allocator_compatible_kind()) { return function_mir_i32_type_code(); }
+    if (kind == sfr_builtin_buffer_new_kind()) { return function_mir_buffer_type_code(); }
+    if (kind == sfr_builtin_buffer_from_string_kind()) { return function_mir_buffer_type_code(); }
+    if (kind == sfr_builtin_buffer_push_kind()) { return function_mir_unit_type_code(); }
+    if (kind == sfr_builtin_buffer_len_kind()) { return function_mir_i64_type_code(); }
+    if (kind == sfr_builtin_buffer_get_kind()) { return function_mir_i64_type_code(); }
+    if (kind == sfr_builtin_buffer_slice_kind()) { return function_mir_byte_slice_type_code(); }
+    if (kind == sfr_builtin_buffer_allocator_kind()) { return function_mir_allocator_type_code(); }
+    if (kind == sfr_builtin_string_len_kind()) { return function_mir_i64_type_code(); }
+    if (kind == sfr_builtin_string_byte_kind()) { return function_mir_u8_type_code(); }
+    if (kind == sfr_builtin_slice_len_kind()) { return function_mir_i64_type_code(); }
+    if (kind == sfr_builtin_slice_get_kind()) { return function_mir_i64_type_code(); }
     return function_mir_unresolved_type_code();
 }
 
+pub fn sfr_builtin_requires_allocate(kind:i32)->i32{
+    if(kind==sfr_builtin_buffer_new_kind()){return 1;}
+    if(kind==sfr_builtin_buffer_from_string_kind()){return 1;}
+    if(kind==sfr_builtin_buffer_push_kind()){return 1;}
+    return 0;
+}
+
+pub fn sfr_unit_expression_result()->i64{return -39;}
+
 fn sfr_builtin_call_parameter_count(kind: i32) -> i64 {
-    if (kind == 1) { return 0; }
-    if (kind == 2) { return 2; }
-    if (kind == 3) { return 1; }
+    if (kind == sfr_builtin_system_allocator_kind()) { return 0; }
+    if (kind == sfr_builtin_portable_allocator_kind()) { return 0; }
+    if (kind == sfr_builtin_allocator_compatible_kind()) { return 2; }
+    if (kind == sfr_builtin_buffer_new_kind()) { return 2; }
+    if (kind == sfr_builtin_buffer_from_string_kind()) { return 2; }
+    if (kind == sfr_builtin_buffer_push_kind()) { return 2; }
+    if (kind == sfr_builtin_buffer_len_kind()) { return 1; }
+    if (kind == sfr_builtin_buffer_get_kind()) { return 2; }
+    if (kind == sfr_builtin_buffer_slice_kind()) { return 3; }
+    if (kind == sfr_builtin_buffer_allocator_kind()) { return 1; }
+    if (kind == sfr_builtin_string_len_kind()) { return 1; }
+    if (kind == sfr_builtin_string_byte_kind()) { return 2; }
+    if (kind == sfr_builtin_slice_len_kind()) { return 1; }
+    if (kind == sfr_builtin_slice_get_kind()) { return 2; }
     return -1;
 }
 
 fn sfr_builtin_call_parameter_mode(kind: i32, ordinal: i64) -> i32 {
-    if (kind == 3) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_buffer_len_kind()) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_buffer_get_kind()) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_buffer_slice_kind()) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_buffer_allocator_kind()) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_buffer_push_kind()) { if (ordinal == 0) { return function_mir_mode_mutable_borrow(); } }
     return function_mir_mode_value();
+}
+
+fn sfr_builtin_call_parameter_type(kind:i32,ordinal:i64)->i32{
+    if(kind==sfr_builtin_allocator_compatible_kind()){return function_mir_allocator_type_code();}
+    if(kind==sfr_builtin_buffer_new_kind()){if(ordinal==0){return function_mir_allocator_type_code();}return function_mir_i64_type_code();}
+    if(kind==sfr_builtin_buffer_from_string_kind()){if(ordinal==0){return function_mir_allocator_type_code();}return function_mir_string_type_code();}
+    if(kind==sfr_builtin_buffer_push_kind()){if(ordinal==0){return function_mir_buffer_type_code();}return function_mir_u8_type_code();}
+    if(kind==sfr_builtin_buffer_len_kind()){return function_mir_buffer_type_code();}
+    if(kind==sfr_builtin_buffer_get_kind()){if(ordinal==0){return function_mir_buffer_type_code();}return function_mir_i64_type_code();}
+    if(kind==sfr_builtin_buffer_slice_kind()){if(ordinal==0){return function_mir_buffer_type_code();}return function_mir_i64_type_code();}
+    if(kind==sfr_builtin_buffer_allocator_kind()){return function_mir_buffer_type_code();}
+    if(kind==sfr_builtin_string_len_kind()){return function_mir_string_type_code();}
+    if(kind==sfr_builtin_string_byte_kind()){if(ordinal==0){return function_mir_string_type_code();}return function_mir_i64_type_code();}
+    if(kind==sfr_builtin_slice_len_kind()){return function_mir_byte_slice_type_code();}
+    if(kind==sfr_builtin_slice_get_kind()){if(ordinal==0){return function_mir_byte_slice_type_code();}return function_mir_i64_type_code();}
+    return function_mir_unresolved_type_code();
 }
 
 fn sfr_is_destructor(borrow source: Buffer, borrow token: Token) -> i32 {
@@ -534,6 +924,9 @@ fn sfr_i64_struct_destructor_count(
 
 // Canonical source spellings at the native type-recognition boundary.
 fn sfr_integer_type_letter_i() -> i64 { return 105; }
+fn sfr_integer_type_letter_u() -> i64 { return 117; }
+fn sfr_integer_type_digit_8() -> i64 { return 56; }
+fn sfr_integer_type_digit_1() -> i64 { return 49; }
 fn sfr_integer_type_digit_6() -> i64 { return 54; }
 fn sfr_integer_type_digit_4() -> i64 { return 52; }
 fn sfr_integer_type_digit_3() -> i64 { return 51; }
@@ -541,19 +934,50 @@ fn sfr_integer_type_digit_2() -> i64 { return 50; }
 fn sfr_declared_struct_depth_limit() -> i64 { return 32; }
 
 fn sfr_is_scalar_integer_type(borrow source: Buffer, start: i64, length: i64) -> i32 {
-    if (length != 3) { return 0; }
-    if (buffer_get(source, start) != sfr_integer_type_letter_i()) { return 0; }
-    if (buffer_get(source, checked_add(start, 1)) == sfr_integer_type_digit_6()) {
-        if (buffer_get(source, checked_add(start, 2)) == sfr_integer_type_digit_4()) { return 1; }
+    if (sfr_integer_type_code(source, start, length) == function_mir_unresolved_type_code()) { return 0; }
+    return 1;
+}
+
+fn sfr_integer_type_code(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    if (length == 2) {
+        let letter: i64 = buffer_get(source, start);
+        if (buffer_get(source, checked_add(start, 1)) != sfr_integer_type_digit_8()) { return function_mir_unresolved_type_code(); }
+        if (letter == sfr_integer_type_letter_i()) { return function_mir_i8_type_code(); }
+        if (letter == sfr_integer_type_letter_u()) { return function_mir_u8_type_code(); }
+        return function_mir_unresolved_type_code();
     }
-    if (buffer_get(source, checked_add(start, 1)) == sfr_integer_type_digit_3()) {
-        if (buffer_get(source, checked_add(start, 2)) == sfr_integer_type_digit_2()) { return 1; }
+    if (length != 3) { return function_mir_unresolved_type_code(); }
+    let letter: i64 = buffer_get(source, start);
+    let tens: i64 = buffer_get(source, checked_add(start, 1));
+    let ones: i64 = buffer_get(source, checked_add(start, 2));
+    if (letter == sfr_integer_type_letter_i()) {
+        if (tens == sfr_integer_type_digit_1()) { if (ones == sfr_integer_type_digit_6()) { return function_mir_i16_type_code(); } }
+        if (tens == sfr_integer_type_digit_3()) { if (ones == sfr_integer_type_digit_2()) { return function_mir_i32_type_code(); } }
+        if (tens == sfr_integer_type_digit_6()) { if (ones == sfr_integer_type_digit_4()) { return function_mir_i64_type_code(); } }
     }
-    return 0;
+    if (letter == sfr_integer_type_letter_u()) {
+        if (tens == sfr_integer_type_digit_1()) { if (ones == sfr_integer_type_digit_6()) { return function_mir_u16_type_code(); } }
+        if (tens == sfr_integer_type_digit_3()) { if (ones == sfr_integer_type_digit_2()) { return function_mir_u32_type_code(); } }
+        if (tens == sfr_integer_type_digit_6()) { if (ones == sfr_integer_type_digit_4()) { return function_mir_u64_type_code(); } }
+    }
+    return function_mir_unresolved_type_code();
 }
 
 pub fn sfr_builtin_type_code(borrow source: Buffer, start: i64, length: i64) -> i32 {
+    let integer_type_code: i32 = sfr_integer_type_code(source, start, length);
+    if (integer_type_code != function_mir_unresolved_type_code()) { return integer_type_code; }
     if (length == 6) {
+        if (buffer_get(source, start) == sfr_ascii_upper_s()) {
+            if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_t()) {
+                if (buffer_get(source, checked_add(start, 2)) == sfr_ascii_r()) {
+                    if (buffer_get(source, checked_add(start, 3)) == sfr_ascii_i()) {
+                        if (buffer_get(source, checked_add(start, 4)) == sfr_ascii_n()) {
+                            if (buffer_get(source, checked_add(start, 5)) == sfr_ascii_g()) { return function_mir_string_type_code(); }
+                        }
+                    }
+                }
+            }
+        }
         if (buffer_get(source, start) == sfr_ascii_upper_b()) {
             if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_u()) {
                 if (buffer_get(source, checked_add(start, 2)) == sfr_ascii_f()) {
@@ -567,6 +991,23 @@ pub fn sfr_builtin_type_code(borrow source: Buffer, start: i64, length: i64) -> 
         }
     }
     if (length == 9) {
+        if (buffer_get(source, start) == sfr_ascii_upper_b()) {
+            if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_y()) {
+                if (buffer_get(source, checked_add(start, 2)) == sfr_ascii_t()) {
+                    if (buffer_get(source, checked_add(start, 3)) == sfr_ascii_e()) {
+                        if (buffer_get(source, checked_add(start, 4)) == sfr_ascii_upper_s()) {
+                            if (buffer_get(source, checked_add(start, 5)) == sfr_ascii_l()) {
+                                if (buffer_get(source, checked_add(start, 6)) == sfr_ascii_i()) {
+                                    if (buffer_get(source, checked_add(start, 7)) == sfr_ascii_c()) {
+                                        if (buffer_get(source, checked_add(start, 8)) == sfr_ascii_e()) { return function_mir_byte_slice_type_code(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (buffer_get(source, start) == sfr_ascii_upper_a()) {
             if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_l()) {
                 if (buffer_get(source, checked_add(start, 2)) == sfr_ascii_l()) {
@@ -591,6 +1032,114 @@ pub fn sfr_builtin_type_code(borrow source: Buffer, start: i64, length: i64) -> 
 // Derive canonical ordered field rows for declared structs. Each field is one
 // row so v3 descriptors can represent arbitrary finite aggregate arity without
 // embedding a variable-width schema in an implementation-language handoff.
+fn sfr_numeric_bound_fits(
+    base_type:i32, sign:i32, borrow magnitude:SfrNumericMagnitude
+)->i32{
+    if(base_type==function_mir_i8_type_code()){
+        if(sign<0){return sfr_magnitude_at_most(magnitude,0,128);}
+        return sfr_magnitude_at_most(magnitude,0,127);
+    }
+    if(base_type==function_mir_i16_type_code()){
+        if(sign<0){return sfr_magnitude_at_most(magnitude,0,32768);}
+        return sfr_magnitude_at_most(magnitude,0,32767);
+    }
+    if(base_type==function_mir_i32_type_code()){
+        if(sign<0){return sfr_magnitude_at_most(magnitude,2,147483648);}
+        return sfr_magnitude_at_most(magnitude,2,147483647);
+    }
+    if(base_type==function_mir_i64_type_code()){
+        if(sign<0){return sfr_magnitude_at_most(magnitude,9223372036,854775808);}
+        return sfr_magnitude_at_most(magnitude,9223372036,854775807);
+    }
+    if(sign<0){return 0;}
+    if(base_type==function_mir_u8_type_code()){return sfr_magnitude_at_most(magnitude,0,255);}
+    if(base_type==function_mir_u16_type_code()){return sfr_magnitude_at_most(magnitude,0,65535);}
+    if(base_type==function_mir_u32_type_code()){return sfr_magnitude_at_most(magnitude,4,294967295);}
+    if(base_type==function_mir_u64_type_code()){return sfr_magnitude_at_most(magnitude,18446744073,709551615);}
+    return 0;
+}
+
+pub fn derive_source_numeric_type_descriptors(
+    borrow source:Buffer,borrow tokens:Vec<Token>,borrow_mut output:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    var decimal_identity:i32=0;var bounded_identity:i32=0;var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let keyword:Token=vec_get<Token>(tokens,index);
+        if(sfr_is_decimal_declaration(source,keyword)!=0){
+            let end:i64=checked_add(index,8);if(end>=vec_len<Token>(tokens)){return 1;}
+            let name:Token=vec_get<Token>(tokens,checked_add(index,1));
+            let open:Token=vec_get<Token>(tokens,checked_add(index,2));
+            let precision_token:Token=vec_get<Token>(tokens,checked_add(index,3));
+            let first_comma:Token=vec_get<Token>(tokens,checked_add(index,4));
+            let scale_token:Token=vec_get<Token>(tokens,checked_add(index,5));
+            let second_comma:Token=vec_get<Token>(tokens,checked_add(index,6));
+            let policy_token:Token=vec_get<Token>(tokens,checked_add(index,7));
+            let close:Token=vec_get<Token>(tokens,end);
+            let semicolon_index:i64=checked_add(end,1);if(semicolon_index>=vec_len<Token>(tokens)){return 1;}
+            let semicolon:Token=vec_get<Token>(tokens,semicolon_index);
+            if(token_kind(name)!=token_identifier_kind()){return 1;}
+            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return 1;}
+            if(sfr_token_byte_is(source,first_comma,sfr_ascii_comma())==0){return 1;}
+            if(sfr_token_byte_is(source,second_comma,sfr_ascii_comma())==0){return 1;}
+            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return 1;}
+            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return 1;}
+            let precision:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,precision_token);
+            let scale:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,scale_token);
+            let policy:i32=sfr_decimal_policy(source,policy_token);
+            if(precision.high!=0){return 1;}if(scale.high!=0){return 1;}
+            if(precision.low<1){return 1;}if(scale.low>precision.low){return 1;}if(policy<0){return 1;}
+            vec_push<MirNumericTypeDescriptor>(output,function_mir_numeric_descriptor(
+                function_mir_decimal_type_code(decimal_identity),function_mir_numeric_descriptor_decimal_kind(),
+                decimal_identity,0,0,precision.low,scale.low,0,0,0,policy
+            ));
+            decimal_identity=checked_add(decimal_identity,1);index=checked_add(semicolon_index,1);
+        }else{
+        if(sfr_is_bounded_declaration(source,keyword)!=0){
+            let name_index:i64=checked_add(index,1);let open_index:i64=checked_add(index,2);
+            let base_index:i64=checked_add(index,3);let comma_one_index:i64=checked_add(index,4);
+            if(comma_one_index>=vec_len<Token>(tokens)){return 1;}
+            let name:Token=vec_get<Token>(tokens,name_index);let open:Token=vec_get<Token>(tokens,open_index);
+            let base:Token=vec_get<Token>(tokens,base_index);let comma_one:Token=vec_get<Token>(tokens,comma_one_index);
+            if(token_kind(name)!=token_identifier_kind()){return 1;}
+            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return 1;}
+            if(sfr_token_byte_is(source,comma_one,sfr_ascii_comma())==0){return 1;}
+            let base_type:i32=sfr_builtin_type_code(source,token_start(base),token_length(base));
+            var cursor:i64=checked_add(comma_one_index,1);var lower_sign:i32=1;
+            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let lower_first:Token=vec_get<Token>(tokens,cursor);
+            if(sfr_token_byte_is(source,lower_first,sfr_ascii_hyphen())!=0){lower_sign=-1;cursor=checked_add(cursor,1);}
+            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let lower_token:Token=vec_get<Token>(tokens,cursor);let lower:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,lower_token);
+            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let comma_two:Token=vec_get<Token>(tokens,cursor);if(sfr_token_byte_is(source,comma_two,sfr_ascii_comma())==0){return 1;}
+            cursor=checked_add(cursor,1);var upper_sign:i32=1;if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let upper_first:Token=vec_get<Token>(tokens,cursor);
+            if(sfr_token_byte_is(source,upper_first,sfr_ascii_hyphen())!=0){upper_sign=-1;cursor=checked_add(cursor,1);}
+            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let upper_token:Token=vec_get<Token>(tokens,cursor);let upper:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,upper_token);
+            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let close:Token=vec_get<Token>(tokens,cursor);cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
+            let semicolon:Token=vec_get<Token>(tokens,cursor);
+            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return 1;}
+            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return 1;}
+            if(lower.high<0){return 1;}if(upper.high<0){return 1;}
+            lower_sign=sfr_numeric_sign(lower_sign,lower);upper_sign=sfr_numeric_sign(upper_sign,upper);
+            if(sfr_numeric_bound_fits(base_type,lower_sign,lower)==0){return 1;}
+            if(sfr_numeric_bound_fits(base_type,upper_sign,upper)==0){return 1;}
+            if(sfr_signed_magnitude_compare(lower_sign,lower,upper_sign,upper)>0){return 1;}
+            vec_push<MirNumericTypeDescriptor>(output,function_mir_numeric_descriptor(
+                function_mir_bounded_type_code(bounded_identity),function_mir_numeric_descriptor_bounded_kind(),
+                bounded_identity,base_type,lower_sign,lower.high,lower.low,upper_sign,upper.high,upper.low,0
+            ));
+            bounded_identity=checked_add(bounded_identity,1);index=checked_add(cursor,1);
+        }else{index=checked_add(index,1);}
+        }
+    }
+    return 0;
+}
+
 pub fn derive_i64_struct_catalog(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow_mut output: Vec<I64StructCatalogEntry>
 ) -> i32
@@ -639,12 +1188,24 @@ requires_caps [allocate]
                     if (field_ordinal == 0) { destructor_policy = 1; }
                 }
                 if (destructor_policy != 0) { selected_destructor_policy = checked_add(selected_destructor_policy, 1); }
+                var resolved_field_type:i32=sfr_builtin_type_code(
+                    source,token_start(field_type),token_length(field_type)
+                );
+                if(sfr_is_scalar_integer_type(source,token_start(field_type),token_length(field_type))!=0){
+                    resolved_field_type=function_mir_i64_type_code();
+                }
+                if(resolved_field_type==function_mir_unresolved_type_code()){
+                    resolved_field_type=sfr_declared_numeric_type_code(
+                        source,tokens,token_start(field_type),token_length(field_type)
+                    );
+                }
                 vec_push<I64StructCatalogEntry>(output, I64StructCatalogEntry {
                     struct_id: struct_id,
                     field_ordinal: field_ordinal,
                     name_start: token_start(name), name_length: token_length(name),
                     field_start: token_start(field), field_length: token_length(field),
                     field_type_start: token_start(field_type), field_type_length: token_length(field_type),
+                    resolved_field_type_code:resolved_field_type,
                     destructor_policy: destructor_policy
                 });
                 field_ordinal = checked_add(field_ordinal, 1);
@@ -684,18 +1245,12 @@ fn source_i64_struct_type_code_depth(
             while (field_index < vec_len<I64StructCatalogEntry>(catalog)) {
                 let field_entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, field_index);
                 if (field_entry.struct_id == entry.struct_id) {
-                    var child: i32 = sfr_builtin_type_code(
-                        source, field_entry.field_type_start, field_entry.field_type_length
-                    );
-                    if (sfr_is_scalar_integer_type(source, field_entry.field_type_start, field_entry.field_type_length) == 0) {
-                        if (child == function_mir_unresolved_type_code()) {
-                            child = source_i64_struct_type_code_depth(
-                                source, catalog, field_entry.field_type_start, field_entry.field_type_length,
-                                checked_add(depth, 1)
-                            );
-                        }
-                    } else {
-                        child = function_mir_i64_type_code();
+                    var child:i32=field_entry.resolved_field_type_code;
+                    if(child==function_mir_unresolved_type_code()){
+                        child = source_i64_struct_type_code_depth(
+                            source, catalog, field_entry.field_type_start, field_entry.field_type_length,
+                            checked_add(depth, 1)
+                        );
                     }
                     if (child == function_mir_unresolved_type_code()) { return child; }
                     single_child = child;
@@ -740,17 +1295,11 @@ requires_caps [allocate]
             source, structs, entry.name_start, entry.name_length
         );
         if (type_code >= function_mir_aggregate_struct_type_code(0)) {
-            var child_type_code: i32 = sfr_builtin_type_code(
-                source, entry.field_type_start, entry.field_type_length
-            );
-            if (sfr_is_scalar_integer_type(source, entry.field_type_start, entry.field_type_length) == 0) {
-                if (child_type_code == function_mir_unresolved_type_code()) {
-                    child_type_code = source_i64_struct_type_code(
-                        source, structs, entry.field_type_start, entry.field_type_length
-                    );
-                }
-            } else {
-                child_type_code = function_mir_i64_type_code();
+            var child_type_code:i32=entry.resolved_field_type_code;
+            if(child_type_code==function_mir_unresolved_type_code()){
+                child_type_code = source_i64_struct_type_code(
+                    source, structs, entry.field_type_start, entry.field_type_length
+                );
             }
             if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
             vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
@@ -760,9 +1309,7 @@ requires_caps [allocate]
         } else {
             if (type_code >= function_mir_owned_field_struct_type_code(0)) {
                 if (entry.field_ordinal == 0) {
-                    var child_type_code: i32 = sfr_builtin_type_code(
-                        source, entry.field_type_start, entry.field_type_length
-                    );
+                    var child_type_code:i32=entry.resolved_field_type_code;
                     if (child_type_code == function_mir_unresolved_type_code()) {
                         child_type_code = source_i64_struct_type_code(
                             source, structs, entry.field_type_start, entry.field_type_length
@@ -899,13 +1446,9 @@ fn sfr_i64_struct_field_type_code(
         let entry: I64StructCatalogEntry = vec_get<I64StructCatalogEntry>(catalog, index);
         if (entry.struct_id == struct_id) {
             if (entry.field_ordinal == ordinal) {
-                if (sfr_is_scalar_integer_type(source, entry.field_type_start, entry.field_type_length) != 0) {
-                    return function_mir_i64_type_code();
+                if(entry.resolved_field_type_code!=function_mir_unresolved_type_code()){
+                    return entry.resolved_field_type_code;
                 }
-                let builtin_type_code:i32=sfr_builtin_type_code(
-                    source,entry.field_type_start,entry.field_type_length
-                );
-                if(builtin_type_code!=function_mir_unresolved_type_code()){return builtin_type_code;}
                 return source_i64_struct_type_code(
                     source, catalog, entry.field_type_start, entry.field_type_length
                 );
@@ -962,6 +1505,35 @@ fn sfr_is_payload_match_subject(
     return 0;
 }
 
+fn sfr_declared_numeric_type_code(
+    borrow source:Buffer,borrow tokens:Vec<Token>,start:i64,length:i64
+)->i32{
+    var decimal_identity:i32=0;var bounded_identity:i32=0;var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(sfr_is_decimal_declaration(source,token)!=0){
+            let name_index:i64=checked_add(index,1);
+            if(name_index>=vec_len<Token>(tokens)){return function_mir_unresolved_type_code();}
+            let name:Token=vec_get<Token>(tokens,name_index);
+            if(sfr_span_equal(source,start,length,token_start(name),token_length(name))!=0){
+                return function_mir_decimal_type_code(decimal_identity);
+            }
+            decimal_identity=checked_add(decimal_identity,1);
+        }
+        if(sfr_is_bounded_declaration(source,token)!=0){
+            let name_index:i64=checked_add(index,1);
+            if(name_index>=vec_len<Token>(tokens)){return function_mir_unresolved_type_code();}
+            let name:Token=vec_get<Token>(tokens,name_index);
+            if(sfr_span_equal(source,start,length,token_start(name),token_length(name))!=0){
+                return function_mir_bounded_type_code(bounded_identity);
+            }
+            bounded_identity=checked_add(bounded_identity,1);
+        }
+        index=checked_add(index,1);
+    }
+    return function_mir_unresolved_type_code();
+}
+
 fn sfr_declared_type_code(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow catalog: Vec<EnumVariantCatalogEntry>,
     borrow struct_catalog: Vec<I64StructCatalogEntry>,
@@ -969,6 +1541,8 @@ fn sfr_declared_type_code(
 ) -> i32 {
     let builtin_type_code: i32 = sfr_builtin_type_code(source, start, length);
     if (builtin_type_code != function_mir_unresolved_type_code()) { return builtin_type_code; }
+    let numeric_type_code:i32=sfr_declared_numeric_type_code(source,tokens,start,length);
+    if(numeric_type_code!=function_mir_unresolved_type_code()){return numeric_type_code;}
     let struct_type_code: i32 = source_i64_struct_type_code(source, struct_catalog, start, length);
     if (struct_type_code != 0) { return struct_type_code; }
     var catalog_group: i32 = -1;
@@ -1563,6 +2137,11 @@ fn sfr_local_mutable(borrow records:Vec<MirFunctionRecord>,local_id:i64)->i32 {
     return 0;
 }
 
+fn sfr_hir_type_at(borrow nodes: Vec<HirExpressionRecord>, index: i64) -> i32 {
+    let node: HirExpressionRecord = vec_get<HirExpressionRecord>(nodes, index);
+    return hir_type_code(node);
+}
+
 fn sfr_hir_borrow_root(
     borrow source:Buffer, borrow hir_nodes:Vec<HirExpressionRecord>,
     borrow signatures:Vec<SourceFunctionSignature>, node_index:i64, allocator:Allocator
@@ -1745,12 +2324,141 @@ requires_caps [allocate]
                 }
             }
         }
+        // Numeric literals and arithmetic results inherit the destination's
+        // already-resolved nominal type. This is the native equivalent of the
+        // alpha.1 destination-typing rule and prevents narrow/unsigned values
+        // from silently falling back to the legacy i64 bootstrap identity.
+        if (ast_kind(ast) == 31) {
+            if (ast_index == checked_sub(count, 1)) { resolved_type = expected_type_code; }
+        }
+        if(ast_kind(ast)==ast_string_literal_kind()){resolved_type=function_mir_string_type_code();}
+        if (ast_kind(ast) == 50) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == 51) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == 60) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == 61) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == 50) {
+            let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
+            let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
+            if (left_type == right_type) { resolved_type = left_type; }
+        }
+        if (ast_kind(ast) == 51) {
+            let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
+            let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
+            if (left_type == right_type) { resolved_type = left_type; }
+        }
+        if (ast_kind(ast) == 60) {
+            let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
+            let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
+            if (left_type == right_type) { resolved_type = left_type; }
+        }
+        if (ast_kind(ast) == 61) {
+            let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
+            let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
+            if (left_type == right_type) { resolved_type = left_type; }
+        }
         if (ast_kind(ast) == 70) { resolved_type = expected_type_code; }
         vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
             ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
             ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, resolved_type
         ));
         ast_index = checked_add(ast_index, 1);
+    }
+
+    // Struct initializer expressions inherit their canonical field types. Walk
+    // each initializer subtree independently so heterogeneous aggregate fields
+    // never collapse into one numeric domain.
+    if(expected_type_code>=function_mir_i64_struct_type_code(0)){
+        var initializer_index:i64=0;
+        while(initializer_index<vec_len<HirExpressionRecord>(hir_nodes)){
+            let initializer:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,initializer_index);
+            if(hir_kind(initializer)==11){
+                let label:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(initializer));
+                let field_ordinal:i32=sfr_i64_struct_field_ordinal(
+                    source,struct_catalog,expected_type_code,hir_start(label),hir_length(label)
+                );
+                if(field_ordinal<0){return sfr_invalid_struct_initializer_error();}
+                let field_type:i32=sfr_i64_struct_field_type_code(
+                    source,struct_catalog,expected_type_code,field_ordinal
+                );
+                if(field_type==function_mir_unresolved_type_code()){return sfr_unresolved_struct_type_error();}
+                var field_stack:Vec<i64>=vec_new<i64>(allocator,8);
+                vec_push<i64>(field_stack,hir_right(initializer));
+                while(vec_len<i64>(field_stack)>0){
+                    let field_node_index:i64=vec_pop<i64>(field_stack);
+                    let field_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,field_node_index);
+                    let field_kind:i32=hir_kind(field_node);
+                    var propagate_field_type:i32=0;
+                    if(field_kind==1){propagate_field_type=1;}
+                    if(field_kind==2){propagate_field_type=1;}
+                    if(hir_is_call(field_node)!=0){propagate_field_type=1;}
+                    if(propagate_field_type!=0){
+                        vec_set<HirExpressionRecord>(hir_nodes,field_node_index,hir_with_type(field_node,field_type));
+                    }
+                    if(field_kind==2){
+                        vec_push<i64>(field_stack,hir_right(field_node));vec_push<i64>(field_stack,hir_left(field_node));
+                    }
+                    if(field_kind==3){vec_push<i64>(field_stack,hir_left(field_node));}
+                    if(hir_is_call(field_node)!=0){if(hir_right(field_node)>=0){vec_push<i64>(field_stack,hir_right(field_node));}}
+                    if(field_kind==8){
+                        vec_push<i64>(field_stack,hir_right(field_node));vec_push<i64>(field_stack,hir_left(field_node));
+                    }
+                    if(field_kind==11){vec_push<i64>(field_stack,hir_right(field_node));}
+                    if(field_kind==7){vec_push<i64>(field_stack,hir_left(field_node));}
+                }
+                drop(field_stack);
+            }
+            initializer_index=checked_add(initializer_index,1);
+        }
+    }
+
+    // A print/expression context has no nominal destination type. Infer the
+    // single declared numeric domain from resolved identifiers and propagate it
+    // to literals, arithmetic results, and numeric builtin calls. Distinct
+    // nominal domains never unify implicitly.
+    var inferred_numeric_type:i32=function_mir_unresolved_type_code();
+    var infer_expression_domain:i32=1;
+    let root_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,checked_sub(count,1));
+    if(hir_is_struct_constructor(root_hir)!=0){infer_expression_domain=0;}
+    // Declared decimal/bounded destinations are nominal and therefore
+    // authoritative. Primitive i64 is also the context-free expression
+    // default, so primitive domains are instead inferred from bindings/calls.
+    if(function_mir_type_is_declared_numeric(expected_type_code)!=0){
+        inferred_numeric_type=expected_type_code;
+    }
+    var inference_index:i64=0;
+    while(inference_index<vec_len<HirExpressionRecord>(hir_nodes)){
+        let inference_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,inference_index);
+        let candidate_type:i32=hir_type_code(inference_node);
+        var authoritative_candidate:i32=0;
+        if(hir_kind(inference_node)==4){authoritative_candidate=1;}
+        if(infer_expression_domain!=0){if(authoritative_candidate!=0){if(function_mir_type_is_numeric(candidate_type)!=0){
+            if(inferred_numeric_type==function_mir_unresolved_type_code()){
+                inferred_numeric_type=candidate_type;
+            }else{
+                if(inferred_numeric_type!=candidate_type){
+                    return -38;
+                }
+            }
+        }}}
+        inference_index=checked_add(inference_index,1);
+    }
+    if(inferred_numeric_type!=function_mir_unresolved_type_code()){
+        inference_index=0;
+        while(inference_index<vec_len<HirExpressionRecord>(hir_nodes)){
+            let inference_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,inference_index);
+            let inference_kind:i32=hir_kind(inference_node);
+            var propagate:i32=0;
+            if(inference_kind==1){propagate=1;}
+            if(inference_kind==2){propagate=1;}
+            if(hir_is_call(inference_node)!=0){
+                let inference_callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(inference_node));
+                if(sfr_checked_numeric_symbol(source,inference_callee)!=0){propagate=1;}
+            }
+            if(propagate!=0){
+                vec_set<HirExpressionRecord>(hir_nodes,inference_index,hir_with_type(inference_node,inferred_numeric_type));
+            }
+            inference_index=checked_add(inference_index,1);
+        }
     }
 
     var canonical_ids: Vec<i64> = vec_new<i64>(allocator, count);
@@ -1806,6 +2514,9 @@ requires_caps [allocate]
                     vec_push<i64>(stack, hir_right(hir));
                 } else {
                 if (vec_get<i64>(local_ids, current_index) < 0) {
+                    var unit_call:i32=0;
+                    if(hir_is_call(hir)!=0){if(hir_type_code(hir)==function_mir_unit_type_code()){unit_call=1;}}
+                    if(unit_call==0){
                     let next_local: i64 = vec_get<i64>(counters, 0);
                     vec_set<i64>(local_ids, current_index, next_local);
                     var local_mode:i32=function_mir_mode_value();
@@ -1821,6 +2532,7 @@ requires_caps [allocate]
                         next_local,hir_type_code(hir),vec_get<i64>(canonical_ids,current_index),local_mode
                     ));
                     vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                    }
                 }
                 if (kind == 2) {
                     vec_push<i64>(stack, hir_right(hir));
@@ -1864,6 +2576,15 @@ requires_caps [allocate]
             ));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
+        if(hir_is_string_literal(hir)!=0){
+            let instruction_id:i64=vec_get<i64>(counters,1);
+            vec_push<MirFunctionRecord>(output,function_mir_const(
+                hir_start(hir),hir_length(hir),instruction_id,
+                vec_get<i64>(local_ids,hir_index),hir_type_code(hir),
+                vec_get<i64>(canonical_ids,hir_index)
+            ));
+            vec_set<i64>(counters,1,checked_add(instruction_id,1));
+        }
         if (kind == 2) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(output, function_mir_binary(
@@ -1890,14 +2611,15 @@ requires_caps [allocate]
             let callee: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(hir));
             if (hir_is_symbol_reference(callee) == 0) { return -20; }
             let instruction_id: i64 = vec_get<i64>(counters, 1);
-            if (sfr_is_checked_add(source, callee) != 0) {
+            let checked_symbol: i32 = sfr_checked_numeric_symbol(source, callee);
+            if (checked_symbol != 0) {
                 let arguments: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_right(hir));
                 if (hir_is_pair(arguments) == 0) { return -21; }
                 vec_push<MirFunctionRecord>(output, function_mir_binary(
                     hir_start(hir), hir_length(hir), instruction_id,
                     vec_get<i64>(local_ids, hir_index),
                     vec_get<i64>(local_ids, hir_left(arguments)), vec_get<i64>(local_ids, hir_right(arguments)),
-                    function_mir_binary_add_symbol(), function_mir_i64_type_code(),
+                    checked_symbol, hir_type_code(hir),
                     function_mir_checked_numeric_policy(), vec_get<i64>(canonical_ids, hir_index)
                 ));
             } else {
@@ -1906,9 +2628,11 @@ requires_caps [allocate]
                 );
                 if(signature_index>=0){
                     let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(function_signatures,signature_index);
+                    var call_result:i64=vec_get<i64>(local_ids,hir_index);
+                    if(hir_type_code(hir)==function_mir_unit_type_code()){call_result=-1;}
                     vec_push<MirFunctionRecord>(output,function_mir_call(
                         hir_start(hir),hir_length(hir),instruction_id,
-                        vec_get<i64>(local_ids,hir_index),hir_start(callee),hir_length(callee),
+                        call_result,hir_start(callee),hir_length(callee),
                         source_function_signature_return_type(signature),source_function_signature_return_mode(signature),
                         vec_get<i64>(canonical_ids,hir_index)
                     ));
@@ -1984,9 +2708,11 @@ requires_caps [allocate]
                 } else {
                 let builtin_kind:i32=sfr_builtin_call_kind(source,hir_start(callee),hir_length(callee));
                 if(builtin_kind!=0){
+                    var builtin_result:i64=vec_get<i64>(local_ids,hir_index);
+                    if(sfr_builtin_call_return_type(builtin_kind)==function_mir_unit_type_code()){builtin_result=-1;}
                     vec_push<MirFunctionRecord>(output,function_mir_call(
                         hir_start(hir),hir_length(hir),instruction_id,
-                        vec_get<i64>(local_ids,hir_index),hir_start(callee),hir_length(callee),
+                        builtin_result,hir_start(callee),hir_length(callee),
                         sfr_builtin_call_return_type(builtin_kind),function_mir_mode_value(),
                         vec_get<i64>(canonical_ids,hir_index)
                     ));
@@ -2007,9 +2733,7 @@ requires_caps [allocate]
                         let argument_node:i64=vec_get<i64>(builtin_arguments,builtin_ordinal);
                         let argument_local:i64=vec_get<i64>(local_ids,argument_node);
                         if(argument_local<0){return sfr_call_argument_expression_error();}
-                        var expected_argument_type:i32=function_mir_i64_type_code();
-                        if(builtin_kind==2){if(builtin_ordinal==0){expected_argument_type=function_mir_allocator_type_code();}}
-                        if(builtin_kind==3){expected_argument_type=function_mir_buffer_type_code();}
+                        let expected_argument_type:i32=sfr_builtin_call_parameter_type(builtin_kind,builtin_ordinal);
                         if(sfr_local_type_code(output,argument_local)!=expected_argument_type){return sfr_call_argument_type_error();}
                         vec_push<MirFunctionRecord>(output,function_mir_call_argument(
                             instruction_id,argument_local,sfr_builtin_call_parameter_mode(builtin_kind,builtin_ordinal),builtin_ordinal
@@ -2122,7 +2846,9 @@ requires_caps [allocate]
         hir_index = checked_add(hir_index, 1);
     }
 
-    let result_local: i64 = vec_get<i64>(local_ids, checked_sub(count, 1));
+    var result_local: i64 = vec_get<i64>(local_ids, checked_sub(count, 1));
+    let result_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,checked_sub(count,1));
+    if(hir_is_call(result_hir)!=0){if(hir_type_code(result_hir)==function_mir_unit_type_code()){result_local=sfr_unit_expression_result();}}
     drop(stack); drop(local_ids); drop(canonical_ids); drop(hir_nodes); drop(ast_nodes); drop(expressions);
     return result_local;
 }
@@ -2236,7 +2962,7 @@ requires_caps [allocate]
                 source, tokens, statements, operands, resolved_arms,
                 statement_operand_start(binding), statement_operand_length(binding)
             );
-            let type_code: i32 = sfr_declared_type_code(source, tokens, enum_catalog, struct_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
+            let type_code: i32 = sfr_declared_type_code(source, source_tokens, enum_catalog, struct_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
             vec_push<MirFunctionRecord>(records, function_mir_source_local(
                 statement_operand_start(binding), statement_operand_length(binding), binding_id, type_code, binding_id, 0
             ));
@@ -2255,7 +2981,7 @@ requires_caps [allocate]
                 source, tokens, statements, operands, resolved_arms,
                 statement_operand_start(binding), statement_operand_length(binding)
             );
-            let type_code: i32 = sfr_declared_type_code(source, tokens, enum_catalog, struct_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
+            let type_code: i32 = sfr_declared_type_code(source, source_tokens, enum_catalog, struct_catalog, resolved_arms, statement_operand_start(declared), statement_operand_length(declared), payload_subject);
             vec_push<MirFunctionRecord>(records, function_mir_source_local(
                 statement_operand_start(binding), statement_operand_length(binding), binding_id, type_code, binding_id, 1
             ));
@@ -2567,11 +3293,12 @@ requires_caps [allocate]
                                     let expression_index: i64 = sfr_operand(statement, operands, 3);
                                     if (expression_index < 0) { return 23; }
                                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
-                                    if (sfr_emit_expression(
+                                    let expression_result:i64=sfr_emit_expression(
                                         source, tokens, binding_starts, binding_lengths,
                                         statement_operand_start(expression), statement_operand_length(expression),
                                         1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters
-                                    ) < 0) { return 24; }
+                                    );
+                                    if(expression_result<0){if(expression_result!=sfr_unit_expression_result()){return 24;}}
                                 } else {
                                     if (kind == 27) {
                                         let expression_index: i64 = sfr_operand(statement, operands, 3);

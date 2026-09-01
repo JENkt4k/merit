@@ -17,9 +17,10 @@ from merit.bootstrap.mir_abi_to_c import (
 )
 from merit.bootstrap.mir_cleanup_materialize import materialize_cleanup_mir
 from merit.bootstrap.mir_cleanup_to_c import CleanupCPolicy
-from merit.bootstrap.mir_contract import MirFunction, MirInstruction
+from merit.bootstrap.mir_contract import MirFunction, MirInstruction, MirType
 from merit.bootstrap.mir_to_c import (
     _CHECKED_HELPERS,
+    _INTEGER_TYPES,
     _checked_helpers,
     _function_table,
     _identifier,
@@ -37,6 +38,8 @@ def _instruction(
     instruction: MirInstruction,
     functions: dict[str, MirFunction],
     signatures: dict[str, MirFunctionSignature],
+    local_types: dict[int, MirType],
+    local_ownership: dict[int, str],
 ) -> list[str]:
     if instruction.kind in {"drop", "deallocate"}:
         if len(instruction.operands) != 1 or not instruction.symbol:
@@ -47,11 +50,15 @@ def _instruction(
         if symbol != instruction.symbol:
             raise MirMaterializedToCError("destructor symbols must be valid C identifiers")
         return [f"{symbol}({_local(instruction.operands[0])});"]
-    return _abi_instruction(instruction, functions, signatures)
+    return _abi_instruction(
+        instruction, functions, signatures, local_types, local_ownership
+    )
 
 
 def _emit_function(function, signature, functions, signatures) -> str:
     return_type = _type(function.return_type)
+    local_types = {local.local_id: local.type for local in function.locals}
+    local_ownership = {local.local_id: local.ownership for local in function.locals}
     lines = [f"{return_type} {_c_name(signature)}({_signature_parameter_list(signature)}) {{"]
     parameter_locals = {parameter.local_id for parameter in signature.parameters}
     for local in function.locals:
@@ -68,7 +75,13 @@ def _emit_function(function, signature, functions, signatures) -> str:
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _instruction(instruction, functions, signatures):
+            for statement in _instruction(
+                instruction,
+                functions,
+                signatures,
+                local_types,
+                local_ownership,
+            ):
                 lines.append(f"    {statement}")
         for statement in _terminator(block.terminator, return_type):
             lines.append(f"    {statement}")
@@ -90,18 +103,26 @@ def emit_c_materialized_cleanup(abi: MirAbiModule, policy: CleanupCPolicy) -> st
         for instruction in block.instructions
     ]
     needs_print = any(instruction.kind == "print" for instruction in instructions)
-    checked_operators = {
-        instruction.symbol
-        for instruction in instructions
-        if instruction.kind == "binary"
-        and instruction.numeric_policy == "checked"
-        and instruction.symbol in _CHECKED_HELPERS
-    }
+    checked_operators: set[tuple[str, str]] = set()
+    for function in materialized.module.functions:
+        local_types = {local.local_id: local.type for local in function.locals}
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if (
+                    instruction.kind == "binary"
+                    and instruction.numeric_policy == "checked"
+                    and instruction.symbol in _CHECKED_HELPERS
+                    and instruction.result is not None
+                    and local_types[instruction.result].name in _INTEGER_TYPES
+                ):
+                    checked_operators.add(
+                        (local_types[instruction.result].name, instruction.symbol)
+                    )
     prelude = [
         "/* generated from bootstrap-mir-cleanup-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operators else []),
         "#include <stdlib.h>",
         "",
     ]

@@ -63,10 +63,10 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | payload-bearing enums | ✓ | ✓ | ✓ | ✓ | ✓ | — | CLOSED |
 | complete branching/control flow | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
 | loops | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
-| rich owned structs/aggregates | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
-| strings/buffers complete alpha surface | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
-| exact decimal complete surface | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
-| bounded integers complete surface | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
+| rich owned structs/aggregates | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
+| strings/buffers complete alpha surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
+| exact decimal complete surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
+| bounded integers complete surface | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | generic functions/types | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
 | generic collections | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
 | coherent traits | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
@@ -347,6 +347,54 @@ resolution remains M5, and general acceptance-project migration remains M7.
 ### M3 — Exact numerics and aggregate closure
 
 **Goal:** Move the complete alpha.1 decimal/bounded/string/buffer/aggregate surface through replacement compilation.
+
+`test_concrete_native_driver_resolves_exact_numeric_declaration_descriptors`,
+`test_concrete_native_driver_executes_exact_numeric_literals`, and
+`test_concrete_native_driver_executes_exact_numeric_arithmetic_and_rounding`
+carry native-resolved decimal precision, scale, and all five rounding policies,
+plus signed and full-width unsigned bounded domains, through snapshot v6, MRBF,
+prepared replacement artifacts, canonical MIR, deterministic C, and executable
+reference/replacement parity. Decimal and bounded addition, subtraction,
+multiplication, division, comparisons, negative rounding, and formatted output
+use the declared nominal domain rather than a Python-inferred compatibility
+type. The primitive integer companion case covers `i8`/`i16`/`i32`/`i64` and
+`u8`/`u16`/`u32`/`u64` checked arithmetic and comparisons through the same
+path. Repeated native bundles are byte-identical.
+
+`test_concrete_native_driver_preserves_exact_numeric_runtime_failures` and the
+snapshot/C-emitter validation suites preserve deterministic overflow,
+out-of-domain, division-by-zero, malformed descriptor, and noncanonical range
+failure behavior. Oversized unsigned bounds are transported as canonical
+sign/high/low magnitudes, so the Python handoff validates already-resolved
+numeric schemas rather than becoming their semantic authority.
+
+`test_concrete_native_driver_executes_exact_numeric_aggregate_fields` composes
+decimal and bounded fields with the arbitrary-arity aggregate schema already
+closed by M2. Named initializer order, field ordinals, nominal field types,
+field access, arithmetic on loaded fields, cleanup, generated C, and executable
+output all agree with the reference path. This supplies the remaining M3
+aggregate evidence without reopening the ownership/lifecycle work closed in
+M2.
+
+`test_concrete_native_driver_executes_utf8_string_surface` preserves UTF-8 byte
+spans and covers String printing, byte length, byte indexing, and the documented
+out-of-range zero result. `test_concrete_native_driver_executes_buffer_and_slice_surface`
+covers system and portable allocator identity, compatibility, `buffer_new`,
+`buffer_from_string`, growth via `buffer_push`, direct Buffer printing,
+`buffer_len`, `buffer_get`, `buffer_allocator`, `buffer_slice`, `slice_len`, and
+`slice_get`, while retaining independent per-test project/output directories.
+The adjacent runtime-failure matrix preserves negative-capacity and Buffer/
+ByteSlice bounds failures; the direct native-driver capability matrix rejects
+allocating Buffer operations outside an authorized `allocate` scope. Existing
+M2 cases remain the lifecycle authority for Buffer move/drop/replace, aggregate
+fields, and payload enums.
+
+M3 is **CLOSED**. The rich aggregate, complete String/Buffer, exact decimal,
+and bounded-integer matrix rows are closed for the documented alpha.1 surface.
+Generic `Vec<T>` operations remain M4, module/visibility/stable-export behavior
+remains M5, complete corpus convergence remains M6, and replacement-mode
+migration of the exact-decimal ledger and the other acceptance applications
+remains M7.
 
 ### M4 — Generics and traits closure
 

@@ -498,7 +498,7 @@ requires_caps [allocate]
             source, tokens, statement, operands, starts, lengths,
             allocator, counters, direct, events
         );
-        if (result < 0) { return 43; }
+        if(result<0){if(result!=sfr_unit_expression_result()){return 43;}}
         return 0;
     }
     return checked_add(100, kind);

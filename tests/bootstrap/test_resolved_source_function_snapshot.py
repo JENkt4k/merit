@@ -4,11 +4,42 @@ import pytest
 
 from merit.bootstrap.resolved_source_function_snapshot import (
     SNAPSHOT_MAGIC,
-    SNAPSHOT_VERSION,
     ResolvedSourceFunctionSnapshotError,
     _descriptor_type_names,
+    _numeric_descriptor_type_names,
     decode_resolved_source_function_snapshot,
 )
+
+
+LEGACY_DESTRUCTOR_SNAPSHOT_VERSION = 4
+
+
+def test_v6_numeric_descriptors_preserve_decimal_and_full_u64_bounded_domains() -> None:
+    names = _numeric_descriptor_type_names(
+        (
+            (1_300_000, 1, 0, 0, 0, 18, 2, 0, 0, 0, 0),
+            (1_400_000, 2, 0, 11, 1, 0, 1, 1, 9_999_999_999, 999_999_999, 0),
+        )
+    )
+
+    assert names[1_300_000].name == "decimal_0_18_2_0"
+    assert names[1_400_000].name == "bounded_0_11_1_9999999999999999999"
+    assert names[1_400_000].arguments == (names[1_400_000].arguments[0],)
+    assert names[1_400_000].arguments[0].name == "u64"
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    (
+        ((1_300_000, 1, 0, 0, 0, 18, 2, 1, 0, 0, 0), "noncanonical"),
+        ((1_400_000, 2, 0, 11, 1, 0, 0, 0, 0, 0, 0), "invalid range"),
+        ((1_400_000, 2, 0, 11, 1, 0, 1_000_000_000, 1, 0, 2, 0), "invalid range"),
+        ((1_400_000, 2, 0, 11, 1, 0, 3, 1, 0, 2, 0), "invalid range"),
+    ),
+)
+def test_v6_numeric_descriptors_fail_closed(row: tuple[int, ...], message: str) -> None:
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match=message):
+        _numeric_descriptor_type_names((row,))
 
 
 def _v4_snapshot(
@@ -21,7 +52,7 @@ def _v4_snapshot(
     sections = ((),) * 10 + (destructors, body, cfg, placements)
     return (
         SNAPSHOT_MAGIC,
-        SNAPSHOT_VERSION,
+        LEGACY_DESTRUCTOR_SNAPSHOT_VERSION,
         *(value for section in sections for value in (len(section), *(item for row in section for item in row))),
     )
 

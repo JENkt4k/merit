@@ -58,6 +58,81 @@ fn resolved_pipeline_span_equal(
     return 1;
 }
 
+fn resolved_pipeline_is_allocate_name(borrow source:Buffer,start:i64,length:i64)->i32{
+    if(length!=8){return 0;}
+    if(buffer_get(source,start)!=97){return 0;}
+    if(buffer_get(source,checked_add(start,1))!=108){return 0;}
+    if(buffer_get(source,checked_add(start,2))!=108){return 0;}
+    if(buffer_get(source,checked_add(start,3))!=111){return 0;}
+    if(buffer_get(source,checked_add(start,4))!=99){return 0;}
+    if(buffer_get(source,checked_add(start,5))!=97){return 0;}
+    if(buffer_get(source,checked_add(start,6))!=116){return 0;}
+    if(buffer_get(source,checked_add(start,7))!=101){return 0;}
+    return 1;
+}
+
+fn resolved_pipeline_validate_allocation_capability(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow capability_catalog:Vec<CapabilityCatalogEntry>,
+    borrow scopes:Vec<ResolvedCapabilityScope>,
+    borrow clause_metadata:Vec<MirFunctionClauseMetadata>
+)->i32{
+    var allocate_id:i64=-1;
+    var catalog_index:i64=0;
+    while(catalog_index<vec_len<CapabilityCatalogEntry>(capability_catalog)){
+        let entry:CapabilityCatalogEntry=vec_get<CapabilityCatalogEntry>(capability_catalog,catalog_index);
+        if(resolved_pipeline_is_allocate_name(source,entry.name_start,entry.name_length)!=0){
+            if(allocate_id>=0){return 1;}
+            allocate_id=entry.capability_id;
+        }
+        catalog_index=checked_add(catalog_index,1);
+    }
+    var function_authorized:i32=0;
+    if(allocate_id>=0){
+        var metadata_index:i64=0;
+        while(metadata_index<vec_len<MirFunctionClauseMetadata>(clause_metadata)){
+            let metadata:MirFunctionClauseMetadata=vec_get<MirFunctionClauseMetadata>(clause_metadata,metadata_index);
+            if(clause_metadata_kind(metadata)==2){
+                if(clause_metadata_semantic_id(metadata)==allocate_id){function_authorized=1;}
+            }
+            metadata_index=checked_add(metadata_index,1);
+        }
+    }
+    var token_index:i64=0;
+    while(token_index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,token_index);
+        let builtin_kind:i32=sfr_builtin_call_kind(source,token_start(token),token_length(token));
+        if(sfr_builtin_requires_allocate(builtin_kind)!=0){
+            var is_call:i32=0;
+            let open_index:i64=checked_add(token_index,1);
+            if(open_index<vec_len<Token>(tokens)){
+                let open:Token=vec_get<Token>(tokens,open_index);
+                if(token_kind(open)==token_punctuation_kind()){
+                    if(token_length(open)==1){if(buffer_get(source,token_start(open))==40){is_call=1;}}
+                }
+            }
+            if(is_call!=0){
+                var authorized:i32=function_authorized;
+                if(allocate_id>=0){
+                    var scope_index:i64=0;
+                    while(scope_index<vec_len<ResolvedCapabilityScope>(scopes)){
+                        let scope:ResolvedCapabilityScope=vec_get<ResolvedCapabilityScope>(scopes,scope_index);
+                        if(resolved_capability_id(scope)==allocate_id){
+                            let body_start:i64=resolved_capability_body_start(scope);
+                            let body_end:i64=checked_add(body_start,resolved_capability_body_length(scope));
+                            if(token_start(token)>=body_start){if(token_start(token)<body_end){authorized=1;}}
+                        }
+                        scope_index=checked_add(scope_index,1);
+                    }
+                }
+                if(authorized==0){return 2;}
+            }
+        }
+        token_index=checked_add(token_index,1);
+    }
+    return 0;
+}
+
 // Build one semantic enum identity for each distinct match statement. The
 // structured statement stage already preserves the subject span on every arm,
 // so this stage only has to bind a simple local subject to its preceding
@@ -281,6 +356,11 @@ requires_caps [allocate]
         source, raw_scopes, capability_catalog, resolved_scopes
     );
     if (resolve_scopes_status != 0) { return checked_add(600, resolve_scopes_status); }
+
+    let allocation_capability_status:i32=resolved_pipeline_validate_allocation_capability(
+        source,tokens,capability_catalog,resolved_scopes,clause_metadata
+    );
+    if(allocation_capability_status!=0){return checked_add(650,allocation_capability_status);}
 
     let ownership_source_status: i32 = lower_resolved_source_ownership_events(
         source, tokens, statements, statement_operands, ownership_metadata,

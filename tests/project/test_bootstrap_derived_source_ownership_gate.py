@@ -73,6 +73,7 @@ fn main()->i32 {{
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,64);
   var structs:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
   var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var numeric_type_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
   var destructor_descriptors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
   var destructor_body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
   var destructor_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,0);
@@ -90,13 +91,13 @@ fn main()->i32 {{
   print(ownership_binding_owned(first)); print(ownership_binding_mutable(first));
   print(ownership_binding_id(second)); print(ownership_binding_local_id(second));
   print(ownership_binding_owned(second)); print(ownership_binding_mutable(second));
-  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors,destructor_descriptors,destructor_body,destructor_cfg,destructor_placements);
+  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors,numeric_type_descriptors,destructor_descriptors,destructor_body,destructor_cfg,destructor_placements);
 
   drop(destructor_placements); drop(destructor_cfg); drop(destructor_body); drop(destructor_descriptors);
   drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);
   drop(ownership_records); drop(effects); drop(ownership_events); drop(scopes); drop(arms);
   drop(contracts); drop(metadata); drop(body); drop(bindings);
-  drop(type_descriptors); drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
+  drop(numeric_type_descriptors); drop(type_descriptors); drop(capabilities); drop(variants); drop(operands); drop(statements); drop(tokens); drop(source);
  }}
  return 0;
 }}

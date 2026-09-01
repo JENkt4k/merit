@@ -25,6 +25,7 @@ from merit.bootstrap.mir_contract import MirFunction, MirType
 from merit.bootstrap.mir_ownership import OwnershipPlan, analyze_ownership
 from merit.bootstrap.mir_to_c import (
     _CHECKED_HELPERS,
+    _INTEGER_TYPES,
     _checked_helpers,
     _function_table,
     _identifier,
@@ -154,6 +155,8 @@ def _emit_cleanup_function(
     destructors: Mapping[MirType, str],
 ) -> str:
     return_type = _type(function.return_type)
+    local_types = {local.local_id: local.type for local in function.locals}
+    local_ownership = {local.local_id: local.ownership for local in function.locals}
     lines = [
         f"{return_type} {_c_name(signature)}"
         f"({_signature_parameter_list(signature)}) {{"
@@ -180,7 +183,13 @@ def _emit_cleanup_function(
     for block in function.blocks:
         lines.append(f"b{block.block_id}:")
         for instruction in block.instructions:
-            for statement in _abi_instruction(instruction, functions, signatures):
+            for statement in _abi_instruction(
+                instruction,
+                functions,
+                signatures,
+                local_types,
+                local_ownership,
+            ):
                 lines.append(f"    {statement}")
         if block.terminator.kind == "return":
             actions = sorted(cleanup_by_block.get(block.block_id, ()), key=lambda item: item.order)
@@ -224,19 +233,27 @@ def emit_c_abi_module_with_cleanup(
     needs_contract = any(instruction.kind == "contract_check" for instruction in instructions)
     needs_capability = any(instruction.kind == "capability_check" for instruction in instructions)
     needs_print = any(instruction.kind == "print" for instruction in instructions)
-    checked_operators = {
-        instruction.symbol
-        for instruction in instructions
-        if instruction.kind == "binary"
-        and instruction.numeric_policy == "checked"
-        and instruction.symbol in _CHECKED_HELPERS
-    }
+    checked_operators: set[tuple[str, str]] = set()
+    for function in module.functions:
+        local_types = {local.local_id: local.type for local in function.locals}
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if (
+                    instruction.kind == "binary"
+                    and instruction.numeric_policy == "checked"
+                    and instruction.symbol in _CHECKED_HELPERS
+                    and instruction.result is not None
+                    and local_types[instruction.result].name in _INTEGER_TYPES
+                ):
+                    checked_operators.add(
+                        (local_types[instruction.result].name, instruction.symbol)
+                    )
 
     prelude = [
         "/* generated from bootstrap-cleanup-c-v1; deterministic, do not edit */",
         "#include <stdbool.h>",
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operators else []),
         "#include <stdlib.h>",
         "",
     ]

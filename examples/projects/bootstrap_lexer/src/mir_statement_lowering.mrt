@@ -127,6 +127,7 @@ fn lower_expression_to_events(
     borrow binding_lengths: Vec<i64>,
     expression_start: i64,
     expression_length: i64,
+    discard_result: i32,
     allocator: Allocator,
     borrow_mut counters: Vec<i64>,
     borrow_mut events: Vec<MirLowerEvent>
@@ -189,9 +190,13 @@ requires_caps [allocate]
                         vec_push<i64>(stack, hir_right(hir));
                     } else {
                     if (vec_get<i64>(local_ids, current_index) < 0) {
+                        var discarded_root:i32=0;
+                        if(discard_result!=0){if(current_index==checked_sub(count,1)){discarded_root=1;}}
+                        if(discarded_root==0){
                         let next_local: i64 = vec_get<i64>(counters, 0);
                         vec_set<i64>(local_ids, current_index, next_local);
                         vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                        }
                     }
                     if (kind == 2) {
                         vec_push<i64>(stack, hir_right(hir));
@@ -223,6 +228,11 @@ requires_caps [allocate]
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
         let kind: i32 = hir_kind(hir);
         if (kind == 1) {
+            let instruction_id: i64 = vec_get<i64>(counters, 1);
+            vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
+            vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
+        }
+        if (hir_is_string_literal(hir) != 0) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirLowerEvent>(events, mir_event_place(instruction_id));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
@@ -336,7 +346,7 @@ requires_caps [allocate]
                     let result_local: i64 = lower_expression_to_events(
                         source, tokens, binding_starts, binding_lengths,
                         statement_operand_start(expression), statement_operand_length(expression),
-                        allocator, counters, events
+                        0, allocator, counters, events
                     );
                     if (result_local < 0) { return 11; }
                     // Binding initialization is a real MIR copy instruction after
@@ -352,7 +362,7 @@ requires_caps [allocate]
                         let result_local: i64 = lower_expression_to_events(
                             source, tokens, binding_starts, binding_lengths,
                             statement_operand_start(expression), statement_operand_length(expression),
-                            allocator, counters, events
+                            0, allocator, counters, events
                         );
                         if (result_local < 0) { return 13; }
                         let copy_instruction: i64 = vec_get<i64>(counters, 1);
@@ -366,7 +376,7 @@ requires_caps [allocate]
                             let result_local: i64 = lower_expression_to_events(
                                 source, tokens, binding_starts, binding_lengths,
                                 statement_operand_start(expression), statement_operand_length(expression),
-                                allocator, counters, events
+                                0, allocator, counters, events
                             );
                             if (result_local < 0) { return 15; }
                             vec_push<MirLowerEvent>(events, mir_event_return(result_local));
@@ -378,7 +388,7 @@ requires_caps [allocate]
                                 let result_local: i64 = lower_expression_to_events(
                                     source, tokens, binding_starts, binding_lengths,
                                     statement_operand_start(expression), statement_operand_length(expression),
-                                    allocator, counters, events
+                                    0, allocator, counters, events
                                 );
                                 if (result_local < 0) { return 25; }
                                 let print_instruction: i64 = vec_get<i64>(counters, 1);
@@ -392,7 +402,7 @@ requires_caps [allocate]
                                 let condition_local: i64 = lower_expression_to_events(
                                     source, tokens, binding_starts, binding_lengths,
                                     statement_operand_start(expression), statement_operand_length(expression),
-                                    allocator, counters, events
+                                    0, allocator, counters, events
                                 );
                                 if (condition_local < 0) { return 17; }
                                 vec_push<MirLowerEvent>(events, mir_event_if(condition_local));
@@ -411,7 +421,7 @@ requires_caps [allocate]
                                     let condition_local: i64 = lower_expression_to_events(
                                         source, tokens, binding_starts, binding_lengths,
                                         statement_operand_start(expression), statement_operand_length(expression),
-                                        allocator, counters, events
+                                        0, allocator, counters, events
                                     );
                                     if (condition_local < 0) { return 19; }
                                     vec_push<MirLowerEvent>(events, mir_event_while(condition_local));
@@ -431,7 +441,7 @@ requires_caps [allocate]
                                         let value_local: i64 = lower_expression_to_events(
                                             source, tokens, binding_starts, binding_lengths,
                                             statement_operand_start(value), statement_operand_length(value),
-                                            allocator, counters, events
+                                            0, allocator, counters, events
                                         );
                                         if (value_local < 0) { return 21; }
                                         let assignment_instruction: i64 = vec_get<i64>(counters, 1);
@@ -442,11 +452,12 @@ requires_caps [allocate]
                                             let expression_index: i64 = lower_expression_operand(statement, operands);
                                             if (expression_index < 0) { return 22; }
                                             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
-                                            if (lower_expression_to_events(
+                                            let expression_result:i64=lower_expression_to_events(
                                                 source, tokens, binding_starts, binding_lengths,
                                                 statement_operand_start(expression), statement_operand_length(expression),
-                                                allocator, counters, events
-                                            ) < 0) { return 23; }
+                                                1, allocator, counters, events
+                                            );
+                                            if(expression_result>=0){return 23;}
                                         } else {
                                             return checked_add(100, kind);
                                         }

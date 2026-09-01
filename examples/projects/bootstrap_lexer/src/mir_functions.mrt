@@ -33,6 +33,58 @@ pub struct MirTypeDescriptor {
     type_code: i32; kind: i32; identity: i32; child_type_code: i32;
     destructor_policy: i32; ordinal: i32;
 }
+// Native-resolved declared numeric schema. Values are already parsed and
+// validated by the Merit frontend; Python only validates this fixed-width
+// transport and materializes canonical MIR types.
+pub struct MirNumericTypeDescriptor {
+    type_code: i32; kind: i32; identity: i32; base_type_code: i32;
+    lower_sign: i32; lower_high_or_precision: i64; lower_low_or_scale: i64;
+    upper_sign: i32; upper_high: i64; upper_low: i64; policy: i32;
+}
+pub fn function_mir_numeric_descriptor(
+    type_code: i32, kind: i32, identity: i32, base_type_code: i32,
+    lower_sign: i32, lower_high_or_precision: i64, lower_low_or_scale: i64,
+    upper_sign: i32, upper_high: i64, upper_low: i64, policy: i32
+) -> MirNumericTypeDescriptor {
+    return MirNumericTypeDescriptor {
+        type_code:type_code, kind:kind, identity:identity, base_type_code:base_type_code,
+        lower_sign:lower_sign, lower_high_or_precision:lower_high_or_precision,
+        lower_low_or_scale:lower_low_or_scale, upper_sign:upper_sign,
+        upper_high:upper_high, upper_low:upper_low, policy:policy
+    };
+}
+pub fn function_mir_numeric_descriptor_code(borrow value: MirNumericTypeDescriptor) -> i32 { return value.type_code; }
+pub fn function_mir_numeric_descriptor_kind(borrow value: MirNumericTypeDescriptor) -> i32 { return value.kind; }
+pub fn function_mir_numeric_descriptor_identity(borrow value: MirNumericTypeDescriptor) -> i32 { return value.identity; }
+pub fn function_mir_numeric_descriptor_base(borrow value: MirNumericTypeDescriptor) -> i32 { return value.base_type_code; }
+pub fn function_mir_numeric_descriptor_lower_sign(borrow value: MirNumericTypeDescriptor) -> i32 { return value.lower_sign; }
+pub fn function_mir_numeric_descriptor_lower_high_or_precision(borrow value: MirNumericTypeDescriptor) -> i64 { return value.lower_high_or_precision; }
+pub fn function_mir_numeric_descriptor_lower_low_or_scale(borrow value: MirNumericTypeDescriptor) -> i64 { return value.lower_low_or_scale; }
+pub fn function_mir_numeric_descriptor_upper_sign(borrow value: MirNumericTypeDescriptor) -> i32 { return value.upper_sign; }
+pub fn function_mir_numeric_descriptor_upper_high(borrow value: MirNumericTypeDescriptor) -> i64 { return value.upper_high; }
+pub fn function_mir_numeric_descriptor_upper_low(borrow value: MirNumericTypeDescriptor) -> i64 { return value.upper_low; }
+pub fn function_mir_numeric_descriptor_policy(borrow value: MirNumericTypeDescriptor) -> i32 { return value.policy; }
+pub fn function_mir_numeric_descriptor_decimal_kind() -> i32 { return 1; }
+pub fn function_mir_numeric_descriptor_bounded_kind() -> i32 { return 2; }
+pub fn function_mir_decimal_type_code(identity: i32) -> i32 { return checked_add(1300000, identity); }
+pub fn function_mir_bounded_type_code(identity: i32) -> i32 { return checked_add(1400000, identity); }
+pub fn function_mir_type_is_declared_numeric(type_code:i32)->i32{
+    if(type_code>=function_mir_decimal_type_code(0)){
+        if(type_code<function_mir_bounded_type_code(100000)){return 1;}
+    }
+    return 0;
+}
+pub fn function_mir_type_is_integer(type_code:i32)->i32{
+    if(type_code==function_mir_i64_type_code()){return 1;}
+    if(type_code>=function_mir_i8_type_code()){
+        if(type_code<=function_mir_u64_type_code()){return 1;}
+    }
+    return 0;
+}
+pub fn function_mir_type_is_numeric(type_code:i32)->i32{
+    if(function_mir_type_is_integer(type_code)!=0){return 1;}
+    return function_mir_type_is_declared_numeric(type_code);
+}
 pub struct MirDestructorDescriptor {
     type_code: i32;
     body_start: i64;
@@ -110,6 +162,9 @@ pub fn function_mir_invalid_call_status() -> i32 { return 45; }
 pub fn function_mir_invalid_call_argument_status() -> i32 { return 46; }
 pub fn function_mir_parameter_count_mismatch_status() -> i32 { return 47; }
 pub fn function_mir_binary_add_symbol() -> i32 { return 1; }
+pub fn function_mir_binary_subtract_symbol() -> i32 { return 2; }
+pub fn function_mir_binary_multiply_symbol() -> i32 { return 3; }
+pub fn function_mir_binary_divide_symbol() -> i32 { return 4; }
 pub fn function_mir_checked_numeric_policy() -> i32 { return 2; }
 pub fn function_mir_field_store_initialize_policy() -> i32 { return 0; }
 pub fn function_mir_field_store_replace_policy() -> i32 { return 1; }
@@ -147,6 +202,16 @@ pub fn function_mir_i64_type_code() -> i32 { return 1; }
 // part of the bootstrap-function-mir-v1 record ABI.
 pub fn function_mir_allocator_type_code() -> i32 { return 3; }
 pub fn function_mir_buffer_type_code() -> i32 { return 4; }
+pub fn function_mir_i8_type_code() -> i32 { return 5; }
+pub fn function_mir_i16_type_code() -> i32 { return 6; }
+pub fn function_mir_i32_type_code() -> i32 { return 7; }
+pub fn function_mir_u8_type_code() -> i32 { return 8; }
+pub fn function_mir_u16_type_code() -> i32 { return 9; }
+pub fn function_mir_u32_type_code() -> i32 { return 10; }
+pub fn function_mir_u64_type_code() -> i32 { return 11; }
+pub fn function_mir_string_type_code() -> i32 { return 12; }
+pub fn function_mir_byte_slice_type_code() -> i32 { return 13; }
+pub fn function_mir_unit_type_code() -> i32 { return 14; }
 pub fn function_mir_unresolved_type_code() -> i32 { return 0; }
 
 // Single-i64 non-copy struct identities occupy a disjoint record-ABI range.

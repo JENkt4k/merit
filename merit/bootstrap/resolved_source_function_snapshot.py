@@ -23,13 +23,18 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 5
+SNAPSHOT_VERSION = 6
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
 _OWNED_FIELD_STRUCT_TYPE_BASE = 1_000_000
 _OWNED_PAYLOAD_ENUM_TYPE_BASE = 1_100_000
 _AGGREGATE_STRUCT_TYPE_BASE = 1_200_000
+_DECIMAL_TYPE_BASE = 1_300_000
+_BOUNDED_TYPE_BASE = 1_400_000
+_NUMERIC_DESCRIPTOR_DECIMAL = 1
+_NUMERIC_DESCRIPTOR_BOUNDED = 2
+_NUMERIC_DESCRIPTOR_LIMB_BASE = 1_000_000_000
 _COPY_PAYLOAD_ENUM_TYPE_BASE = 1_000
 _I64_STRUCT_TYPE_BASE = 2_000
 _DESTRUCTOR_I64_STRUCT_TYPE_BASE = 3_000
@@ -40,6 +45,7 @@ _SECTION_WIDTHS_BY_VERSION = {
     3: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5),
     4: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5, 7, 16, 7, 3),
     5: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 7, 16, 7, 3),
+    6: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3),
 }
 SNAPSHOT_SECTION_COUNT = len(_SECTION_WIDTHS_BY_VERSION[SNAPSHOT_VERSION])
 
@@ -68,6 +74,7 @@ class ResolvedSourceFunctionSnapshot:
     placements: tuple[tuple[int, ...], ...]
     capability_ids: tuple[int, ...]
     type_descriptors: tuple[tuple[int, ...], ...] = ()
+    numeric_type_descriptors: tuple[tuple[int, ...], ...] = ()
     destructors: tuple[ResolvedSourceDestructorSnapshot, ...] = ()
     version: int = SNAPSHOT_VERSION
 
@@ -112,10 +119,14 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
 
     capabilities = tuple(row[0] for row in sections[8])
     destructor_snapshots: list[ResolvedSourceDestructorSnapshot] = []
-    if len(sections) > 10:
+    destructor_section = 11 if data[1] >= 6 else 10
+    destructor_body_section = destructor_section + 1
+    destructor_cfg_section = destructor_section + 2
+    destructor_placement_section = destructor_section + 3
+    if len(sections) > destructor_section:
         body_cursor = cfg_cursor = placement_cursor = 0
         destructor_types: set[int] = set()
-        for index, row in enumerate(sections[10]):
+        for index, row in enumerate(sections[destructor_section]):
             type_code, body_start, body_count, cfg_start, cfg_count, placement_start, placement_count = row
             if type_code <= 0 or min(body_start, body_count, cfg_start, cfg_count, placement_start, placement_count) < 0:
                 raise ResolvedSourceFunctionSnapshotError(f"destructor descriptor {index} is invalid")
@@ -129,15 +140,19 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
             body_cursor += body_count
             cfg_cursor += cfg_count
             placement_cursor += placement_count
-            if body_cursor > len(sections[11]) or cfg_cursor > len(sections[12]) or placement_cursor > len(sections[13]):
+            if body_cursor > len(sections[destructor_body_section]) or cfg_cursor > len(sections[destructor_cfg_section]) or placement_cursor > len(sections[destructor_placement_section]):
                 raise ResolvedSourceFunctionSnapshotError(f"destructor descriptor {index} exceeds its record sections")
             destructor_snapshots.append(ResolvedSourceDestructorSnapshot(
                 type_code,
-                sections[11][body_start:body_cursor],
-                sections[12][cfg_start:cfg_cursor],
-                sections[13][placement_start:placement_cursor],
+                sections[destructor_body_section][body_start:body_cursor],
+                sections[destructor_cfg_section][cfg_start:cfg_cursor],
+                sections[destructor_placement_section][placement_start:placement_cursor],
             ))
-        if (body_cursor, cfg_cursor, placement_cursor) != (len(sections[11]), len(sections[12]), len(sections[13])):
+        if (body_cursor, cfg_cursor, placement_cursor) != (
+            len(sections[destructor_body_section]),
+            len(sections[destructor_cfg_section]),
+            len(sections[destructor_placement_section]),
+        ):
             raise ResolvedSourceFunctionSnapshotError("destructor record sections contain unreferenced rows")
 
     return ResolvedSourceFunctionSnapshot(
@@ -151,13 +166,15 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         placements=sections[7],
         capability_ids=capabilities,
         type_descriptors=sections[9] if len(sections) > 9 else (),
+        numeric_type_descriptors=sections[10] if data[1] >= 6 else (),
         destructors=tuple(destructor_snapshots),
         version=data[1],
     )
 
 
 def _descriptor_type_names(
-    rows: tuple[tuple[int, ...], ...], *, version: int = 2
+    rows: tuple[tuple[int, ...], ...], *, version: int = 2,
+    known_types: Mapping[int, MirType] | None = None,
 ) -> dict[int, MirType]:
     raw: dict[int, tuple[int, int, int, int]] = {}
     aggregate_fields: dict[int, list[int]] = {}
@@ -249,7 +266,24 @@ def _descriptor_type_names(
         2: MirType("bool"),
         3: MirType("Allocator"),
         4: MirType("Buffer"),
+        5: MirType("i8"),
+        6: MirType("i16"),
+        7: MirType("i32"),
+        8: MirType("u8"),
+        9: MirType("u16"),
+        10: MirType("u32"),
+        11: MirType("u64"),
+        12: MirType("String"),
+        13: MirType("ByteSlice"),
+        14: MirType("unit"),
     }
+    if known_types:
+        for code, type_ in known_types.items():
+            if code in resolved and resolved[code] != type_:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"known type code {code} conflicts with a builtin type"
+                )
+            resolved[code] = type_
 
     def resolve(code: int, active: frozenset[int]) -> MirType:
         if code in resolved:
@@ -306,6 +340,54 @@ def _descriptor_type_names(
     return {code: resolved[code] for code in (*raw, *aggregate_fields, *enum_fields)}
 
 
+def _numeric_descriptor_type_names(rows: tuple[tuple[int, ...], ...]) -> dict[int, MirType]:
+    result: dict[int, MirType] = {}
+    identities: set[tuple[int, int]] = set()
+    for index, row in enumerate(rows):
+        (
+            code, kind, identity, base_code,
+            lower_sign, lower_high, lower_low,
+            upper_sign, upper_high, upper_low, policy,
+        ) = row
+        if identity < 0 or (kind, identity) in identities or code in result:
+            raise ResolvedSourceFunctionSnapshotError(f"numeric type descriptor {index} is duplicate or invalid")
+        identities.add((kind, identity))
+        if kind == _NUMERIC_DESCRIPTOR_DECIMAL:
+            if (
+                code != _DECIMAL_TYPE_BASE + identity or base_code != 0
+                or lower_sign != 0 or upper_sign != 0 or upper_high != 0 or upper_low != 0
+            ):
+                raise ResolvedSourceFunctionSnapshotError(f"decimal type descriptor {index} is noncanonical")
+            if lower_high < 1 or lower_low < 0 or lower_low > lower_high or policy not in range(5):
+                raise ResolvedSourceFunctionSnapshotError(f"decimal type descriptor {index} has invalid policy")
+            result[code] = MirType(f"decimal_{identity}_{lower_high}_{lower_low}_{policy}")
+        elif kind == _NUMERIC_DESCRIPTOR_BOUNDED:
+            if code != _BOUNDED_TYPE_BASE + identity or base_code not in {5, 6, 7, 1, 8, 9, 10, 11}:
+                raise ResolvedSourceFunctionSnapshotError(f"bounded type descriptor {index} is noncanonical")
+            limbs = (lower_high, lower_low, upper_high, upper_low)
+            if (
+                lower_sign not in {-1, 0, 1} or upper_sign not in {-1, 0, 1}
+                or any(value < 0 for value in limbs)
+                or lower_low >= _NUMERIC_DESCRIPTOR_LIMB_BASE
+                or upper_low >= _NUMERIC_DESCRIPTOR_LIMB_BASE
+                or (lower_sign == 0) != (lower_high == 0 and lower_low == 0)
+                or (upper_sign == 0) != (upper_high == 0 and upper_low == 0)
+                or policy != 0
+            ):
+                raise ResolvedSourceFunctionSnapshotError(f"bounded type descriptor {index} has invalid range")
+            lower = lower_sign * (lower_high * _NUMERIC_DESCRIPTOR_LIMB_BASE + lower_low)
+            upper = upper_sign * (upper_high * _NUMERIC_DESCRIPTOR_LIMB_BASE + upper_low)
+            if lower > upper:
+                raise ResolvedSourceFunctionSnapshotError(f"bounded type descriptor {index} has invalid range")
+            result[code] = MirType(
+                f"bounded_{identity}_{base_code}_{lower}_{upper}",
+                (MirType({5: "i8", 6: "i16", 7: "i32", 1: "i64", 8: "u8", 9: "u16", 10: "u32", 11: "u64"}[base_code]),),
+            )
+        else:
+            raise ResolvedSourceFunctionSnapshotError(f"numeric type descriptor {index} has unknown kind")
+    return result
+
+
 def materialize_resolved_source_function_snapshot(
     *,
     source: str,
@@ -316,7 +398,13 @@ def materialize_resolved_source_function_snapshot(
 ) -> MirModule:
     """Materialize a decoded native snapshot as canonical bootstrap-mir-v1."""
 
-    descriptor_names = _descriptor_type_names(snapshot.type_descriptors, version=snapshot.version)
+    numeric_names = _numeric_descriptor_type_names(snapshot.numeric_type_descriptors)
+    descriptor_names = _descriptor_type_names(
+        snapshot.type_descriptors, version=snapshot.version, known_types=numeric_names,
+    )
+    if descriptor_names.keys() & numeric_names.keys():
+        raise ResolvedSourceFunctionSnapshotError("numeric and aggregate type descriptors conflict")
+    descriptor_names.update(numeric_names)
     if type_names:
         for code, type_ in type_names.items():
             if code in descriptor_names and descriptor_names[code] != type_:

@@ -23,6 +23,169 @@ MULTI_FUNCTION_SOURCE = (
     "fn helper()->i32 { return 6; }\n"
     "fn main()->i32 { return 7; }\n"
 )
+PRIMITIVE_INTEGER_SURFACE_SOURCE = (
+    "module main\n"
+    "fn main()->i32 { "
+    "let i8_left:i8=120; let i8_right:i8=7; print(i8_left+i8_right); "
+    "let i16_left:i16=30000; let i16_right:i16=123; print(i16_left-i16_right); "
+    "let i32_left:i32=50000; let i32_right:i32=40; print(i32_left*i32_right); "
+    "let i64_left:i64=7; let i64_right:i64=3; print(i64_left/i64_right); "
+    "let u8_left:u8=250; let u8_right:u8=5; print(u8_left+u8_right); "
+    "let u16_left:u16=60000; let u16_right:u16=1000; print(u16_left+u16_right); "
+    "let u32_left:u32=4000000000; let u32_right:u32=2; print(u32_left/u32_right); "
+    "let u64_left:u64=9000000000000000000; let u64_right:u64=3; print(u64_left/u64_right); "
+    "return 0; }\n"
+)
+PRIMITIVE_INTEGER_FAILURE_SOURCES = (
+    ("i8-add", "i8", "127", "+", "1", "i8 addition overflow"),
+    ("u8-sub", "u8", "0", "-", "1", "u8 subtraction overflow"),
+    ("i32-mul", "i32", "50000", "*", "50000", "i32 multiplication overflow"),
+    ("u64-add", "u64", "18446744073709551615", "+", "1", "u64 addition overflow"),
+    ("i64-div-zero", "i64", "7", "/", "0", "division by zero"),
+    ("i64-div-overflow", "i64", "-9223372036854775808", "/", "-1", "division overflow"),
+)
+SIGNED_DIVISION_SOURCE = (
+    "module main\nfn main()->i32 { "
+    "let negative:i64=-7; let positive:i64=7; let divisor:i64=3; "
+    "print(negative/divisor); print(positive/-3); print(negative/-3); "
+    "return 0; }\n"
+)
+CHECKED_PRIMITIVE_BUILTIN_SOURCE = (
+    "module main\nfn main()->i32 { "
+    "let left:i16=300; let right:i16=7; "
+    "let added:i16=checked_add(left,right); "
+    "let subtracted:i16=checked_sub(left,right); "
+    "let multiplied:i16=checked_mul(left,right); "
+    "print(added); print(subtracted); print(multiplied); return 0; }\n"
+)
+PRIMITIVE_COMPARISON_SOURCE = (
+    "module main\nfn main()->i32 { "
+    "let signed_left:i8=-3; let signed_right:i8=2; "
+    "print(signed_left<signed_right); print(signed_left<=signed_right); "
+    "print(signed_left>signed_right); print(signed_left>=signed_right); "
+    "print(signed_left==signed_right); print(signed_left!=signed_right); "
+    "let unsigned_left:u64=18446744073709551615; let unsigned_right:u64=1; "
+    "print(unsigned_left>unsigned_right); print(unsigned_left<unsigned_right); "
+    "return 0; }\n"
+)
+NUMERIC_DESCRIPTOR_SOURCE = (
+    "module main\n"
+    "decimal USD(18,2,half_even);\n"
+    "bounded Sequence(u64,0,9999999999999999999);\n"
+    "bounded Offset(i64,-9223372036854775808,9223372036854775807);\n"
+    "fn main()->i32 { return 0; }\n"
+)
+EXACT_NUMERIC_LITERAL_SOURCE = (
+    "module main\n"
+    "decimal USD(18,2,half_even);\n"
+    "bounded Sequence(u64,0,9999999999999999999);\n"
+    "fn main()->i32 { let amount:USD=1.25; let sequence:Sequence=9999999999999999999; "
+    "print(amount); print(sequence); return 0; }\n"
+)
+EXACT_NUMERIC_ARITHMETIC_SOURCE = """module main
+decimal HalfEven(12,2,half_even);
+decimal HalfUp(12,2,half_up);
+decimal Down(12,2,down);
+decimal Ceiling(12,2,ceiling);
+decimal Floor(12,2,floor);
+bounded Window(i32,-600,600);
+fn main()->i32 {
+    let even_left:HalfEven=1.00; let even_right:HalfEven=8.00; print(even_left/even_right);
+    let up_left:HalfUp=1.00; let up_right:HalfUp=8.00; print(up_left/up_right);
+    let down_left:Down=1.00; let down_right:Down=8.00; print(down_left/down_right);
+    let ceiling_left:Ceiling=1.00; let ceiling_right:Ceiling=8.00; print(ceiling_left/ceiling_right);
+    let floor_left:Floor=1.00; let floor_right:Floor=8.00; print(floor_left/floor_right);
+    let negative_ceiling:Ceiling=-1.00; print(negative_ceiling/ceiling_right);
+    let negative_floor:Floor=-1.00; print(negative_floor/floor_right);
+    let decimal_left:HalfEven=1.25; let decimal_right:HalfEven=2.00;
+    print(checked_add(decimal_left,decimal_right)); print(checked_sub(decimal_left,decimal_right));
+    print(checked_mul(decimal_left,decimal_right)); print(decimal_div(even_left,even_right));
+    let bounded_left:Window=299; let bounded_one:Window=1; let bounded_negative:Window=-13;
+    print(bounded_left+bounded_one); print(-299-bounded_one); print(12*bounded_negative);
+    print(-299/2); print(bounded_left>bounded_one); print(bounded_left==bounded_one);
+    return 0;
+}
+"""
+EXACT_NUMERIC_FAILURE_SOURCES = (
+    (
+        "decimal-overflow",
+        "decimal Small(5,2,half_even);",
+        "let left:Small=999.99; let right:Small=0.01; print(left+right);",
+        70,
+        "decimal range violation",
+    ),
+    (
+        "bounded-overflow",
+        "bounded Window(i32,-300,300);",
+        "let left:Window=300; let right:Window=1; print(left+right);",
+        70,
+        "bounded range violation",
+    ),
+    (
+        "decimal-division-zero",
+        "decimal Money(12,2,half_even);",
+        "let left:Money=1.00; let right:Money=0.00; print(left/right);",
+        72,
+        "division by zero",
+    ),
+    (
+        "bounded-division-zero",
+        "bounded Window(i32,-300,300);",
+        "let left:Window=1; let right:Window=0; print(left/right);",
+        72,
+        "division by zero",
+    ),
+)
+EXACT_NUMERIC_AGGREGATE_SOURCE = """module main
+decimal Money(18,2,half_even);
+bounded Sequence(u64,1,9999999999999999999);
+struct Invoice { amount:Money; sequence:Sequence; }
+fn main()->i32 {
+    let invoice:Invoice=Invoice { sequence:9999999999999999999, amount:12.50 };
+    print(invoice.amount); print(invoice.sequence);
+    let increment:Money=0.25; print(invoice.amount+increment);
+    drop(invoice); return 0;
+}
+"""
+STRING_SURFACE_SOURCE = """module main
+fn main()->i32 {
+    let text:String="Aé";
+    print(text); print(string_len(text)); print(string_byte(text,0)); print(string_byte(text,1)); print(string_byte(text,2)); print(string_byte(text,3));
+    return 0;
+}
+"""
+BUFFER_SURFACE_SOURCE = """module main
+capability allocate;
+fn main()->i32 {
+    with capability allocate {
+        let system:Allocator=system_allocator();
+        let same:Allocator=system_allocator();
+        let portable:Allocator=portable_allocator();
+        print(allocator_compatible(system,same));
+        print(allocator_compatible(system,portable));
+        var data:Buffer=buffer_from_string(portable,"abc");
+        let bang:u8=33; buffer_push(data,bang);
+        print(allocator_compatible(buffer_allocator(data),portable));
+        print(buffer_len(data)); print(buffer_get(data,1)); print(data);
+        let view:ByteSlice=buffer_slice(data,1,2);
+        print(slice_len(view)); print(slice_get(view,0)); print(slice_get(view,1));
+        let empty:Buffer=buffer_new(system,4); print(buffer_len(empty));
+        drop(empty); drop(data);
+    }
+    return 0;
+}
+"""
+TEXT_BUFFER_FAILURE_SOURCES = (
+    ("negative-capacity", "capability allocate; fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); let b:Buffer=buffer_new(a,-1); drop(b); } return 0; }", 81, "negative capacity"),
+    ("buffer-index", 'capability allocate; fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); let b:Buffer=buffer_from_string(a,"a"); print(buffer_get(b,1)); drop(b); } return 0; }', 82, "buffer index out of bounds"),
+    ("slice-range", 'capability allocate; fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); let b:Buffer=buffer_from_string(a,"a"); let s:ByteSlice=buffer_slice(b,1,1); print(slice_len(s)); drop(b); } return 0; }', 85, "slice out of bounds"),
+    ("slice-index", 'capability allocate; fn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); let b:Buffer=buffer_from_string(a,"a"); let s:ByteSlice=buffer_slice(b,0,1); print(slice_get(s,1)); drop(b); } return 0; }', 85, "slice index out of bounds"),
+)
+BUFFER_CAPABILITY_FAILURE_SOURCES = (
+    ("buffer-new", "let data:Buffer=buffer_new(allocator,1); drop(data);"),
+    ("buffer-from-string", 'let data:Buffer=buffer_from_string(allocator,"x"); drop(data);'),
+    ("buffer-push", "var data:Buffer=buffer_new(allocator,1); let byte:u8=1; buffer_push(data,byte); drop(data);"),
+)
 CAPABILITY_SOURCE = (
     "module main\n"
     "capability clock;\n"
@@ -724,6 +887,327 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_complete_primitive_integer_success_surface(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=PRIMITIVE_INTEGER_SURFACE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=PRIMITIVE_INTEGER_SURFACE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=PRIMITIVE_INTEGER_SURFACE_SOURCE,
+        module_name="main",
+        snapshot=bundle.functions[0],
+        capability_names={},
+    )
+    represented = {local.type.name for local in module.functions[0].locals}
+    assert {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"} <= represented
+
+    root = _project(tmp_path, PRIMITIVE_INTEGER_SURFACE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-primitive-integers")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-primitive-integers")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == "127\n29877\n2000000\n2\n255\n61000\n2000000000\n3000000000000000000\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_resolves_exact_numeric_declaration_descriptors(
+    driver: NativeReplacementDriver,
+) -> None:
+    Checker(parse(NUMERIC_DESCRIPTOR_SOURCE)).check()
+    first = subprocess.run(
+        [str(driver.executable)], input=NUMERIC_DESCRIPTOR_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=NUMERIC_DESCRIPTOR_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert bundle.functions[0].numeric_type_descriptors == (
+        (1_300_000, 1, 0, 0, 0, 18, 2, 0, 0, 0, 0),
+        (1_400_000, 2, 0, 11, 0, 0, 0, 1, 9_999_999_999, 999_999_999, 0),
+        (1_400_001, 2, 1, 1, -1, 9_223_372_036, 854_775_808, 1, 9_223_372_036, 854_775_807, 0),
+    )
+    materialize_resolved_source_function_snapshot(
+        source=NUMERIC_DESCRIPTOR_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_exact_numeric_literals(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_LITERAL_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_LITERAL_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=EXACT_NUMERIC_LITERAL_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    )
+    assert {local.type.name for local in module.functions[0].locals} >= {
+        "decimal_0_18_2_0", "bounded_0_11_0_9999999999999999999",
+    }
+
+    root = _project(tmp_path, EXACT_NUMERIC_LITERAL_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == "1.25\n9999999999999999999\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_exact_numeric_arithmetic_and_rounding(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_ARITHMETIC_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_ARITHMETIC_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    materialize_resolved_source_function_snapshot(
+        source=EXACT_NUMERIC_ARITHMETIC_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    )
+
+    root = _project(tmp_path, EXACT_NUMERIC_ARITHMETIC_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == (
+        "0.12\n0.13\n0.12\n0.13\n0.12\n-0.12\n-0.13\n"
+        "3.25\n-0.75\n2.50\n0.12\n300\n-300\n-156\n-149\n1\n0\n"
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,declaration,body,expected_status,message", EXACT_NUMERIC_FAILURE_SOURCES)
+def test_concrete_native_driver_preserves_exact_numeric_runtime_failures(
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str,
+    declaration: str, body: str, expected_status: int, message: str,
+) -> None:
+    source = f"module main\n{declaration}\nfn main()->i32 {{ {body} return 0; }}\n"
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert replacement.returncode == reference.returncode == expected_status
+    assert replacement.stdout == reference.stdout == ""
+    assert message in replacement.stderr
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_exact_numeric_aggregate_fields(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_AGGREGATE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=EXACT_NUMERIC_AGGREGATE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=EXACT_NUMERIC_AGGREGATE_SOURCE, module_name="main",
+        snapshot=bundle.functions[0], capability_names={},
+    )
+    invoice_type = next(local.type for local in module.functions[0].locals if local.name == "invoice")
+    assert [field.name for field in invoice_type.arguments] == [
+        "decimal_0_18_2_0", "bounded_0_11_1_9999999999999999999",
+    ]
+
+    root = _project(tmp_path, EXACT_NUMERIC_AGGREGATE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == "12.50\n9999999999999999999\n12.75\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_utf8_string_surface(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run([str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=STRING_SURFACE_SOURCE, module_name="main", snapshot=bundle.functions[0], capability_names={},
+    )
+    assert "String" in {local.type.name for local in module.functions[0].locals}
+
+    root = _project(tmp_path, STRING_SURFACE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == "Aé\n3\n65\n195\n169\n0\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_buffer_and_slice_surface(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run([str(driver.executable)], input=BUFFER_SURFACE_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=BUFFER_SURFACE_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    module = materialize_resolved_source_function_snapshot(
+        source=BUFFER_SURFACE_SOURCE, module_name="main", snapshot=bundle.functions[0], capability_names={0: "allocate"},
+    )
+    assert {"Allocator", "Buffer", "ByteSlice"} <= {local.type.name for local in module.functions[0].locals}
+
+    root = _project(tmp_path, BUFFER_SURFACE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == "1\n0\n1\n4\n98\nabc!\n2\n98\n99\n0\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,body,expected_status,message", TEXT_BUFFER_FAILURE_SOURCES)
+def test_concrete_native_driver_preserves_text_buffer_runtime_failures(
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, body: str,
+    expected_status: int, message: str,
+) -> None:
+    source = f"module main\n{body}\n"
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert replacement.returncode == reference.returncode == expected_status
+    assert replacement.stdout == reference.stdout == ""
+    assert message in replacement.stderr
+
+
+@pytest.mark.parametrize("case_name,operation", BUFFER_CAPABILITY_FAILURE_SOURCES)
+def test_concrete_native_driver_rejects_buffer_allocation_without_lexical_capability(
+    driver: NativeReplacementDriver, case_name: str, operation: str,
+) -> None:
+    source = (
+        "module main\ncapability allocate;\nfn main()->i32 { "
+        f"let allocator:Allocator=system_allocator(); {operation} return 0; }}\n"
+    )
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (second.returncode, second.stdout, second.stderr) == (first.returncode, first.stdout, first.stderr)
+    assert "replacement driver status" in first.stderr
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize(
+    "case_name,source,expected",
+    [
+        ("signed-division", SIGNED_DIVISION_SOURCE, "-2\n-2\n2\n"),
+        ("checked-primitive-builtins", CHECKED_PRIMITIVE_BUILTIN_SOURCE, "307\n293\n2100\n"),
+        ("primitive-comparisons", PRIMITIVE_COMPARISON_SOURCE, "1\n1\n0\n0\n0\n1\n1\n0\n"),
+    ],
+)
+def test_concrete_native_driver_executes_remaining_primitive_operations(
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str, expected: str,
+) -> None:
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert replacement.stdout == expected
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,type_name,left,operator,right,message", PRIMITIVE_INTEGER_FAILURE_SOURCES)
+def test_concrete_native_driver_preserves_primitive_integer_failure_policy(
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, type_name: str,
+    left: str, operator: str, right: str, message: str,
+) -> None:
+    source = (
+        "module main\nfn main()->i32 { "
+        f"let left:{type_name}={left}; let right:{type_name}={right}; "
+        f"print(left{operator}right); return 0; }}\n"
+    )
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+
+    root = _project(tmp_path / case_name, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
+    assert f"Merit {message}" in replacement.stderr
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

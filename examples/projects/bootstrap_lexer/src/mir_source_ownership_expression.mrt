@@ -114,9 +114,17 @@ requires_caps [allocate]
             );
             if (binding_id < 0) { binding_id = -2; }
         }
+        var resolved_type:i32=function_mir_i64_type_code();
+        if(ast_is_call(ast)!=0){
+            if(ast_left(ast)>=0){
+                let callee:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,ast_left(ast));
+                let builtin_kind:i32=sfr_builtin_call_kind(source,ast_start(callee),ast_length(callee));
+                if(builtin_kind!=0){resolved_type=sfr_builtin_call_return_type(builtin_kind);}
+            }
+        }
         vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
             ast_kind(ast), ast_start(ast), ast_length(ast), ast_left(ast), ast_right(ast),
-            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, 1
+            ast_group_start(ast), ast_group_length(ast), ast_group_parent(ast), binding_id, resolved_type
         ));
         index = checked_add(index, 1);
     }
@@ -148,6 +156,11 @@ requires_caps [allocate]
                         vec_set<i64>(local_ids, current, next_local);
                         vec_set<i64>(counters, 0, checked_add(next_local, 1));
                     } else {
+                        if (hir_is_string_literal(hir) != 0) {
+                            let next_local: i64 = vec_get<i64>(counters, 0);
+                            vec_set<i64>(local_ids, current, next_local);
+                            vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                        } else {
                         if (kind == 2) {
                             let next_local: i64 = vec_get<i64>(counters, 0);
                             vec_set<i64>(local_ids, current, next_local);
@@ -163,9 +176,11 @@ requires_caps [allocate]
                                 vec_push<i64>(stack, hir_left(hir));
                             } else {
                                 if (hir_is_call(hir) != 0) {
-                                    let next_local: i64 = vec_get<i64>(counters, 0);
-                                    vec_set<i64>(local_ids, current, next_local);
-                                    vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                                    if(hir_type_code(hir)!=function_mir_unit_type_code()){
+                                        let next_local: i64 = vec_get<i64>(counters, 0);
+                                        vec_set<i64>(local_ids, current, next_local);
+                                        vec_set<i64>(counters, 0, checked_add(next_local, 1));
+                                    }
                                     if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
                                 } else {
                                     if (kind == 8) {
@@ -193,6 +208,7 @@ requires_caps [allocate]
                                 }
                             }
                         }
+                        }
                     }
                     }
                 }
@@ -215,6 +231,7 @@ requires_caps [allocate]
             let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, index);
             let kind: i32 = hir_kind(hir);
             if (kind == 1) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
+            if (hir_is_string_literal(hir) != 0) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             if (kind == 2) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             if (kind == 5) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
             if (hir_is_call(hir) != 0) { vec_push<MirOwnershipEvent>(events, ownership_event_place(index)); }
@@ -235,6 +252,7 @@ requires_caps [allocate]
             let root_index: i64 = checked_sub(count, 1);
             result = vec_get<i64>(local_ids, root_index);
             var root: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, root_index);
+            if(hir_is_call(root)!=0){if(hir_type_code(root)==function_mir_unit_type_code()){result=sfr_unit_expression_result();}}
             var root_kind: i32 = hir_kind(root);
             while (root_kind == 3) {
                 root = vec_get<HirExpressionRecord>(hir_nodes, hir_left(root));

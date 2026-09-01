@@ -67,6 +67,21 @@ def binary_function(name, left, right, operator, policy="checked"):
     )
 
 
+def typed_binary_function(name, type_name, left, right, operator):
+    type_ = MirType(type_name)
+    return MirFunction(
+        name,
+        type_,
+        (MirLocal(0, "left", type_), MirLocal(1, "right", type_), MirLocal(2, "result", type_)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=left),
+            MirInstruction(1, "const", result=1, value=right),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol=operator, numeric_policy="checked"),
+        ), MirTerminator("return", operands=(2,))),),
+        0,
+    )
+
+
 def test_emits_and_runs_ordered_arithmetic(tmp_path):
     function = binary_function("answer", 20, 22, "+", policy="exact")
     generated = emit_c_module(scalar_module(function))
@@ -137,6 +152,40 @@ def test_emits_print_in_instruction_order(tmp_path):
     run = compile_and_run(tmp_path, module, "int main(void) { return show() == 42 ? 0 : 1; }")
     assert run.returncode == 0
     assert run.stdout == "42\n"
+
+
+def test_emits_borrowed_buffer_print_through_pointer(tmp_path):
+    buffer = MirType("Buffer")
+    function = MirFunction(
+        "show_buffer",
+        I64,
+        (
+            MirLocal(0, "value", buffer, ownership="borrowed"),
+            MirLocal(1, "result", I64),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "print", operands=(0,)),
+                    MirInstruction(1, "const", result=1, value=0),
+                ),
+                MirTerminator("return", operands=(1,)),
+            ),
+        ),
+        0,
+        parameters=(MirParameter(0, "borrowed"),),
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "fwrite(m0->data, 1, m0->len, stdout);" in generated
+    run = compile_and_run(
+        tmp_path,
+        module,
+        'int main(void) { merit_Buffer value = {(uint8_t *)"abc", 3, 3, {0}}; return show_buffer(&value); }',
+    )
+    assert run.returncode == 0
+    assert run.stdout == "abc\n"
 
 
 def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
@@ -373,6 +422,26 @@ def test_checked_i64_failures_abort_deterministically(tmp_path, operator, left, 
     function = binary_function("overflow", left, right, operator)
     run = compile_and_run(tmp_path, scalar_module(function), "int main(void) { (void)overflow(); return 0; }")
     assert run.returncode != 0
+
+
+@pytest.mark.parametrize(
+    "type_name,operator,left,right,message",
+    [
+        ("i8", "+", 127, 1, "Merit i8 addition overflow"),
+        ("u8", "-", 0, 1, "Merit u8 subtraction overflow"),
+        ("i32", "*", 50_000, 50_000, "Merit i32 multiplication overflow"),
+        ("u64", "+", 2**64 - 1, 1, "Merit u64 addition overflow"),
+    ],
+)
+def test_checked_primitive_failures_use_result_type_policy(
+    tmp_path, type_name, operator, left, right, message,
+):
+    function = typed_binary_function("overflow", type_name, left, right, operator)
+    generated = emit_c_module(scalar_module(function))
+    assert f"merit_checked_{ {'+': 'add', '-': 'sub', '*': 'mul'}[operator] }_{type_name}" in generated
+    run = compile_and_run(tmp_path, scalar_module(function), "int main(void) { (void)overflow(); return 0; }")
+    assert run.returncode == 70
+    assert message in run.stderr
 
 
 def test_checked_helpers_are_emitted_only_when_used():

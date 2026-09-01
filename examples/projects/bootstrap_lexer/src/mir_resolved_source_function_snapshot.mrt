@@ -7,10 +7,10 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 
-// bootstrap-resolved-source-function-snapshot-v5.
+// bootstrap-resolved-source-function-snapshot-v6.
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
-// then fourteen count-prefixed fixed-width sections matching the canonical adapter.
+// then fifteen count-prefixed fixed-width sections matching the canonical adapter.
 pub fn print_resolved_source_function_snapshot(
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
@@ -22,6 +22,7 @@ pub fn print_resolved_source_function_snapshot(
     borrow placements: Vec<MirPlacementRecord>,
     borrow capabilities: Vec<i64>,
     borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow numeric_type_descriptors: Vec<MirNumericTypeDescriptor>,
     borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
     borrow destructor_body: Vec<MirFunctionRecord>,
     borrow destructor_cfg: Vec<MirCfgRecord>,
@@ -29,7 +30,7 @@ pub fn print_resolved_source_function_snapshot(
 ) -> i32
 {
     print(1297240902); // MRSF
-    print(5);
+    print(6);
 
     print(vec_len<MirFunctionRecord>(body));
     var i: i64 = 0;
@@ -113,6 +114,21 @@ pub fn print_resolved_source_function_snapshot(
         print(function_mir_type_descriptor_identity(r)); print(function_mir_type_descriptor_child(r));
         print(function_mir_type_descriptor_destructor_policy(r));
         print(function_mir_type_descriptor_ordinal(r));
+        i = checked_add(i, 1);
+    }
+
+    print(vec_len<MirNumericTypeDescriptor>(numeric_type_descriptors)); i = 0;
+    while (i < vec_len<MirNumericTypeDescriptor>(numeric_type_descriptors)) {
+        let r: MirNumericTypeDescriptor = vec_get<MirNumericTypeDescriptor>(numeric_type_descriptors, i);
+        print(function_mir_numeric_descriptor_code(r)); print(function_mir_numeric_descriptor_kind(r));
+        print(function_mir_numeric_descriptor_identity(r)); print(function_mir_numeric_descriptor_base(r));
+        print(function_mir_numeric_descriptor_lower_sign(r));
+        print(function_mir_numeric_descriptor_lower_high_or_precision(r));
+        print(function_mir_numeric_descriptor_lower_low_or_scale(r));
+        print(function_mir_numeric_descriptor_upper_sign(r));
+        print(function_mir_numeric_descriptor_upper_high(r));
+        print(function_mir_numeric_descriptor_upper_low(r));
+        print(function_mir_numeric_descriptor_policy(r));
         i = checked_add(i, 1);
     }
 
