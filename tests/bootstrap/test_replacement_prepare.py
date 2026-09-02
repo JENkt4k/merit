@@ -69,6 +69,18 @@ def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> P
     return _python_driver(tmp_path, "replacement-driver", body)
 
 
+def _utf8_driver(tmp_path: Path) -> Path:
+    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
+    values = encode_resolved_source_function_bundle((snapshot, snapshot))
+    body = (
+        "import sys\n"
+        "source = sys.stdin.buffer.read()\n"
+        "assert b'A\\xc3\\xa9' in source, source\n"
+        + f"print({repr(chr(10).join(str(value) for value in values))})\n"
+    )
+    return _python_driver(tmp_path, "utf8-replacement-driver", body)
+
+
 def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_path: Path) -> None:
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
@@ -87,6 +99,23 @@ def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_pa
     assert len(inputs) == 2
     assert [item.module_name for item in inputs] == ["main", "main"]
     assert all(item.snapshot_values[:2] == (SNAPSHOT_MAGIC, SNAPSHOT_VERSION) for item in inputs)
+
+
+def test_prepare_replacement_sends_source_to_native_driver_as_utf8(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    source_path = root / "src" / "main.mrt"
+    source_path.write_text(
+        'module main\nfn helper()->i64 { return 6; }\n'
+        'fn main()->i32 { let text:String="Aé"; print(text); return 7; }\n',
+        encoding="utf-8",
+    )
+    project = load_project(root / "Merit.toml")
+
+    prepared = prepare_replacement_artifacts(
+        project, NativeReplacementDriver(_utf8_driver(tmp_path))
+    )
+
+    assert len(prepared.snapshot_paths) == 2
 
 
 def test_prepared_artifacts_are_rejected_after_source_changes(tmp_path: Path) -> None:

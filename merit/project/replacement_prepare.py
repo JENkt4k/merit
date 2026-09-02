@@ -78,6 +78,8 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
             [str(executable)],
             input=unit.parser_source,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             capture_output=True,
             env=_driver_environment(unit),
         )

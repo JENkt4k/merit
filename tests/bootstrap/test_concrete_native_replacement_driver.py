@@ -1406,8 +1406,14 @@ def test_concrete_native_driver_executes_exact_numeric_aggregate_fields(
 def test_concrete_native_driver_executes_utf8_string_surface(
     tmp_path: Path, driver: NativeReplacementDriver,
 ) -> None:
-    first = subprocess.run([str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True, capture_output=True, check=True)
-    second = subprocess.run([str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True, capture_output=True, check=True)
+    first = subprocess.run(
+        [str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True,
+        encoding="utf-8", errors="strict", capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=STRING_SURFACE_SOURCE, text=True,
+        encoding="utf-8", errors="strict", capture_output=True, check=True,
+    )
     assert first.stdout == second.stdout
     bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
     module = materialize_resolved_source_function_snapshot(
