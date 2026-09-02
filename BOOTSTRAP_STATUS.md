@@ -1,6 +1,6 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-08-18
+Checkpoint date: 2026-09-02
 
 Scope: `v0.1.0-alpha.2` replacement-compiler development after the stable alpha reference compiler. Python remains the independent oracle; the Merit-native replacement compiler is not yet trusted or self-hosted.
 
@@ -12,13 +12,13 @@ The native replacement path now represents resolved functions with versioned rec
 
 Prepared replacement projects consume those native-resolved snapshots, validate them against the current source digest, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables. Replacement project mode fails closed instead of falling back to Python semantics.
 
-PR #75 completed multi-function bundle framing. PR #76 established a first-class `NativeReplacementDriver` executable boundary for `prepare-replacement`, replacing the former arbitrary command-vector producer interface. Python remains responsible only for process orchestration, bundle validation, source identity, and atomic artifact publication at this seam.
+The concrete `NativeReplacementDriver` and multi-function bundle boundary are established. M1-M4 are closed and PR #109 is merged; detailed evidence remains centralized in `ALPHA2_CLOSURE.md`. Python remains responsible for orchestration at current seams and remains the independent oracle.
 
 ## Required quality dimensions
 
 | Metric | Current status |
 |---|---|
-| Total tests passing | 882 passed, 1 skipped on the first post-document-sync Local Gate attempt before these documentation-contract repairs; rerun required |
+| Total tests passing | Exact counts are gate-run evidence and intentionally not frozen in this status document |
 | Compile-pass tests | Positive semantic/project/native coverage remains part of the full suite; whole-suite count is not separately instrumented |
 | Compile-fail tests | Negative semantic, ownership, capability, visibility, malformed-input, stale-artifact, and replacement-boundary cases remain covered; whole-suite count is not separately instrumented |
 | Acceptance projects | Stable alpha acceptance projects remain part of `scripts/test.sh`; replacement migration is still incremental |
@@ -28,9 +28,9 @@ PR #75 completed multi-function bundle framing. PR #76 established a first-class
 | HIR differential cases | Proven for measured expression/bootstrap boundaries; not a whole-language percentage |
 | Bootstrap/reference parity | Exact for explicitly covered replacement boundaries; not yet whole-language replacement parity |
 | Reference compiler source | Python alpha compiler remains the independent semantic/diagnostic oracle |
-| Merit-native compiler source | Native lexer/parser/bootstrap and source-backed function-resolution pipeline are active; concrete production driver attachment is next |
+| Merit-native compiler source | Concrete native driver carries the closed M1-M4 surfaces through replacement compilation |
 | Generated C size | Evidence only; not remeasured for this checkpoint and not an optimization target |
-| Known semantic blockers | Concrete native source-unit driver not yet attached; complete accepted-alpha replacement coverage, normal Python-free compilation, trust, and stage equivalence remain open |
+| Known semantic blockers | M5-M10 remain open: project closure, corpus convergence, acceptance migration, production cutover, reproducibility/trust, and release audit |
 
 ## Replacement architecture evidence
 
@@ -46,34 +46,16 @@ PR #75 completed multi-function bundle framing. PR #76 established a first-class
 | Project replacement mode | Exists and refuses reference-compiler fallback |
 | Prepared-artifact freshness | Source SHA-256 checked; stale artifacts rejected |
 | Production frontend interface | `NativeReplacementDriver` executable boundary complete |
-| Concrete Merit-native driver attached | Next milestone |
+| Concrete Merit-native driver attached | Complete |
 | Complete accepted-alpha replacement corpus | Not yet |
 | Normal Python-free production compilation | Not yet |
 | Trusted/self-hosted replacement | Not yet |
 
-The authoritative GitHub Local Gate runs the full clean Ubuntu/Python 3.11/system-C gate plus a focused Windows/MSYS2 UCRT64 GCC native smoke. PR #76 passed Local Gate run 177 before merge.
+The canonical GitHub gates run the full clean suite on Ubuntu and native Windows.
 
-## Immediate milestone
+## Current milestone
 
-Build or attach the concrete Merit-native source-unit frontend executable behind `NativeReplacementDriver` and prove this complete path without Python semantic lowering:
-
-```text
-source unit
- -> native frontend driver
- -> resolved multi-function bundle
- -> prepared project artifacts
- -> canonical replacement MIR
- -> deterministic C
- -> native executable
-```
-
-The driver must be a real compiler boundary, not a fixture protocol adapter. Unsupported source must fail deterministically rather than silently falling back to the reference compiler.
-
-## Strategy after the driver is attached
-
-Expand vertically through the documented alpha language: statements and control flow, ownership/resource operations, contracts and capabilities, exact numerics, aggregates and payload enums, generics/traits, and module/project interactions. For each promoted surface, keep positive and negative/fail-closed tests plus reference/interpreter/native differential evidence as applicable.
-
-Move acceptance applications onto the replacement path incrementally. Only after the accepted/rejected alpha corpus and acceptance behavior agree should normal production compilation default to the replacement compiler. Stage equivalence and self-hosting follow trust; they do not substitute for it.
+M5 project/module/import/export/visibility closure is active. M6 corpus convergence, M7 acceptance migration, M8 production cutover, M9 reproducibility/trust, and M10 release audit follow in that order. Unsupported source must continue to fail deterministically rather than silently falling back to the reference compiler.
 
 ## Deliberate non-blocking future work
 

@@ -176,7 +176,10 @@ def _recursive_owned_payload_enum_identity(type_: MirType) -> tuple[str, tuple[M
 def _aggregate_struct_identity(type_: MirType) -> tuple[str, tuple[MirType, ...], int | None] | None:
     if not type_.name.startswith(_AGGREGATE_STRUCT_PREFIX):
         return None
-    match = re.fullmatch(r"struct_aggregate_(\d+)_destructor_(-1|\d+)", type_.name)
+    match = re.fullmatch(
+        r"struct_aggregate_(\d+)_destructor_(-1|\d+)(?:__abi_[0-3]_[0-9a-f_]+)?",
+        type_.name,
+    )
     if match is None or not type_.arguments:
         raise MirToCError(f"invalid aggregate struct MIR type: {type_.name}")
     policy = int(match.group(2))
@@ -185,11 +188,33 @@ def _aggregate_struct_identity(type_: MirType) -> tuple[str, tuple[MirType, ...]
     return match.group(1), type_.arguments, None if policy < 0 else policy
 
 
+def _aggregate_struct_abi(type_: MirType) -> tuple[int, str, tuple[str, ...]] | None:
+    marker = "__abi_"
+    if marker not in type_.name:
+        return None
+    encoded = type_.name.split(marker, 1)[1].split("_")
+    if len(encoded) != len(type_.arguments) + 2:
+        raise MirToCError(f"aggregate ABI metadata does not match fields: {type_.name}")
+    try:
+        flags = int(encoded[0])
+        names = tuple(bytes.fromhex(value).decode("utf-8") for value in encoded[1:])
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise MirToCError(f"aggregate ABI metadata is invalid: {type_.name}") from exc
+    if flags not in {0, 1, 2, 3} or any(not value.isidentifier() for value in names):
+        raise MirToCError(f"aggregate ABI metadata is invalid: {type_.name}")
+    return flags, names[0], names[1:]
+
+
 def _identifier(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", name)
     if not cleaned or cleaned[0].isdigit():
         cleaned = "merit_" + cleaned
     return cleaned
+
+
+def _function_identifier(function: MirFunction) -> str:
+    name = _identifier(function.name)
+    return f"merit_{name}" if function.exported else name
 
 
 def _type(type_: MirType) -> str:
@@ -281,7 +306,7 @@ def _function_table(module: MirModule) -> dict[str, MirFunction]:
     table = {function.name: function for function in module.functions}
     c_names: dict[str, str] = {}
     for function in module.functions:
-        c_name = _identifier(function.name)
+        c_name = _function_identifier(function)
         previous = c_names.get(c_name)
         if previous is not None and previous != function.name:
             raise MirToCError(
@@ -736,7 +761,7 @@ def _instruction(
                     raise MirToCError("shared borrowed MIR values cannot satisfy mutable-borrow parameters")
                 arguments.append(operand if ownership == "mutable_borrow" else f"&{operand}")
         callee_type = _type(callee.return_type)
-        call = f"{_identifier(callee.name)}({', '.join(arguments)})"
+        call = f"{_function_identifier(callee)}({', '.join(arguments)})"
         if callee_type == "void":
             if result is not None:
                 raise MirToCError("unit-returning MIR calls cannot produce a result local")
@@ -829,7 +854,154 @@ def _terminator(terminator: MirTerminator, return_type: str) -> list[str]:
 
 
 def _prototype(function: MirFunction) -> str:
-    return f"{_function_return_type(function)} {_identifier(function.name)}({_parameter_list(function)});"
+    return f"{_function_return_type(function)} {_function_identifier(function)}({_parameter_list(function)});"
+
+
+def emit_c_header(module: MirModule) -> str:
+    """Emit the represented public C ABI from native-resolved MIR metadata."""
+
+    exported = tuple(function for function in module.functions if function.exported)
+    primitive_c_types = {
+        "void", "bool", "int8_t", "int16_t", "int32_t", "int64_t",
+        "uint8_t", "uint16_t", "uint32_t", "uint64_t", "__int128",
+    }
+    represented: list[MirType] = []
+    for function in exported:
+        represented.append(function.return_type)
+        locals_by_id = {local.local_id: local for local in function.locals}
+        represented.extend(locals_by_id[parameter.local_id].type for parameter in function.parameters)
+
+    def header_type(type_: MirType) -> str:
+        abi = _aggregate_struct_abi(type_)
+        if abi is not None:
+            flags, name, _ = abi
+            if flags != 3:
+                raise MirToCError(
+                    f"replacement public ABI type {name!r} must be public and stable"
+                )
+            return f"merit_{_identifier(name)}"
+        rendered = _type(type_)
+        if rendered not in primitive_c_types:
+            raise MirToCError(
+                f"replacement public ABI type {type_.name!r} requires native layout metadata"
+            )
+        return rendered
+
+    layouts: dict[str, MirType] = {}
+    def collect(type_: MirType) -> None:
+        abi = _aggregate_struct_abi(type_)
+        if abi is None:
+            return
+        _, name, _ = abi
+        previous = layouts.get(name)
+        if previous is not None and previous != type_:
+            raise MirToCError(f"conflicting replacement public ABI layout for {name!r}")
+        layouts[name] = type_
+        for field in type_.arguments:
+            collect(field)
+
+    for type_ in represented:
+        collect(type_)
+        header_type(type_)
+
+    lines = [
+        "#pragma once", "#include <stdbool.h>", "#include <stddef.h>",
+        "#include <stdint.h>", "",
+    ]
+    emitted: set[str] = set()
+    pending = dict(layouts)
+    layout_metrics: dict[str, tuple[int, int, tuple[int, ...]]] = {}
+
+    def size_and_alignment(type_: MirType) -> tuple[int, int]:
+        abi = _aggregate_struct_abi(type_)
+        if abi is not None:
+            _, name, _ = abi
+            metrics = layout_metrics.get(name)
+            if metrics is None:
+                raise MirToCError(f"replacement public ABI dependency {name!r} is not ordered")
+            return metrics[0], metrics[1]
+        sizes = {
+            "bool": (1, 1), "int8_t": (1, 1), "uint8_t": (1, 1),
+            "int16_t": (2, 2), "uint16_t": (2, 2),
+            "int32_t": (4, 4), "uint32_t": (4, 4),
+            "int64_t": (8, 8), "uint64_t": (8, 8), "__int128": (16, 16),
+        }
+        rendered = _type(type_)
+        if rendered not in sizes:
+            raise MirToCError(f"replacement stable ABI field {type_.name!r} has no layout contract")
+        return sizes[rendered]
+
+    while pending:
+        progressed = False
+        for name, type_ in sorted(pending.items()):
+            abi = _aggregate_struct_abi(type_)
+            assert abi is not None
+            _, _, member_names = abi
+            dependencies = {
+                child_abi[1]
+                for field in type_.arguments
+                if (child_abi := _aggregate_struct_abi(field)) is not None
+            }
+            if not dependencies <= emitted:
+                continue
+            fields = " ".join(
+                f"{header_type(field)} {_identifier(member)};"
+                for field, member in zip(type_.arguments, member_names)
+            )
+            lines.append(f"typedef struct {{ {fields} }} merit_{_identifier(name)};")
+            offset = 0
+            alignment = 1
+            offsets: list[int] = []
+            for field in type_.arguments:
+                field_size, field_alignment = size_and_alignment(field)
+                offset = ((offset + field_alignment - 1) // field_alignment) * field_alignment
+                offsets.append(offset)
+                offset += field_size
+                alignment = max(alignment, field_alignment)
+            size = ((offset + alignment - 1) // alignment) * alignment
+            layout_metrics[name] = (size, alignment, tuple(offsets))
+            lines.append(
+                f'_Static_assert(sizeof(merit_{_identifier(name)}) == {size}, '
+                f'"Merit stable layout size for {name}");'
+            )
+            for member, member_offset in zip(member_names, offsets):
+                lines.append(
+                    f'_Static_assert(offsetof(merit_{_identifier(name)}, {_identifier(member)}) == '
+                    f'{member_offset}, "Merit stable layout offset for {name}.{member}");'
+                )
+            emitted.add(name)
+            del pending[name]
+            progressed = True
+            break
+        if not progressed:
+            raise MirToCError("replacement public ABI layout graph is cyclic")
+    if layouts:
+        lines.append("")
+
+    def parameter_list(function: MirFunction) -> str:
+        if not function.parameters:
+            return "void"
+        locals_by_id = {local.local_id: local for local in function.locals}
+        rendered = []
+        for ordinal, parameter in enumerate(function.parameters):
+            base = header_type(locals_by_id[parameter.local_id].type)
+            if parameter.mode == "borrowed":
+                base = f"const {base} *"
+            elif parameter.mode == "mutable_borrow":
+                base = f"{base} *"
+            rendered.append(f"{base} m{ordinal}")
+        return ", ".join(rendered)
+
+    for function in exported:
+        return_type = header_type(function.return_type)
+        if function.return_mode == "borrowed":
+            return_type = f"const {return_type} *"
+        elif function.return_mode == "mutable_borrow":
+            return_type = f"{return_type} *"
+        lines.append(
+            f"{return_type} {_function_identifier(function)}({parameter_list(function)});"
+        )
+    return "\n".join([*lines, ""])
 
 
 def _function_return_type(function: MirFunction) -> str:
@@ -881,7 +1053,7 @@ def emit_c_function(
     functions = functions or {function.name: function}
     destructors = destructors or {}
     return_type = _function_return_type(function)
-    lines = [f"{return_type} {_identifier(function.name)}({_parameter_list(function)}) {{"]
+    lines = [f"{return_type} {_function_identifier(function)}({_parameter_list(function)}) {{"]
     local_types = {local.local_id: local.type for local in function.locals}
     local_ownership = {local.local_id: local.ownership for local in function.locals}
     parameter_ids = {parameter.local_id for parameter in function.parameters}

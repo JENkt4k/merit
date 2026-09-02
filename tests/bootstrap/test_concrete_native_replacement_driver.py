@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,11 +10,19 @@ from lark.exceptions import UnexpectedInput
 
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
-from merit.bootstrap.resolved_source_function_snapshot import materialize_resolved_source_function_snapshot
+from merit.bootstrap.resolved_source_function_snapshot import (
+    decode_resolved_source_function_snapshot,
+    materialize_resolved_source_function_snapshot,
+)
 from merit.compiler import Checker, CompileError, parse
 from merit.project.build import build
 from merit.project.loader import ProjectError, load_project
-from merit.project.replacement import ReplacementProjectError, build_replacement_project
+from merit.project.replacement import (
+    ReplacementProjectError,
+    build_replacement_project,
+    build_replacement_shared,
+    load_replacement_inputs,
+)
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 
 
@@ -953,6 +962,66 @@ def _project(tmp_path: Path, source: str = SOURCE) -> Path:
     return root
 
 
+def _multimodule_project(tmp_path: Path) -> Path:
+    root = tmp_path / "native_driver_multimodule_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname = "native_driver_multimodule_project"\n'
+        'entry = "src/main.mrt"\nsources = ["src/**/*.mrt"]\n\n'
+        '[build]\nc_flags = ["-O2"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "types.mrt").write_text(
+        'module types\nimport lifecycle;\npub stable("record-v1") struct Record { number:i32; }\n'
+        "pub struct Marker { number:i32; }\n"
+        "pub trait Scored { fn score(value:Self)->i32; }\n"
+        "impl Scored for Record { fn score(value:Record)->i32 { return value.number+4; } }\n"
+        "destructor Marker { print(lifecycle.announce(self.number)); }\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "lifecycle.mrt").write_text(
+        "module lifecycle\npub fn announce(value:i32)->i32 { return value; }\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "operations.mrt").write_text(
+        "module operations\nimport types;\n"
+        "pub fn generic_score<T:Scored>(value:T)->i32 { return score(value); }\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "main.mrt").write_text(
+        "module main\nimport types;\nimport operations;\n"
+        "fn main()->i32 { let marker:types.Marker=types.Marker{number:19}; "
+        "let value:types.Record=types.Record{number:7}; "
+        "print(operations.generic_score<types.Record>(value)); return 0; }\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def _shared_multimodule_project(tmp_path: Path) -> Path:
+    root = tmp_path / "native_driver_shared_multimodule_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname = "native_driver_shared_multimodule_project"\n'
+        'entry = "src/main.mrt"\nsources = ["src/**/*.mrt"]\n\n'
+        '[build]\nc_flags = ["-O2"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "api.mrt").write_text(
+        'module api\npub stable("point-v1") struct Point { x:i32; y:i32; }\n'
+        "pub fn identity(value:i32)->i32 { return value; }\n"
+        "pub fn point_sum(point:Point)->i32 { return point.x+point.y; }\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "main.mrt").write_text(
+        "module main\nimport api;\nfn main()->i32 { let input:i32=6; "
+        "let point:api.Point=api.Point{x:4,y:6}; "
+        "print(api.identity(input)); print(api.point_sum(point)); return 0; }\n",
+        encoding="utf-8",
+    )
+    return root
+
+
 @pytest.fixture(scope="session")
 def driver(
     tmp_path_factory: pytest.TempPathFactory,
@@ -988,6 +1057,72 @@ def test_build_concrete_native_driver_reaches_replacement_executable_without_pyt
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_compiles_qualified_multimodule_project_as_one_bundle(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    root = _multimodule_project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run(
+        [str(reference_executable)], text=True, capture_output=True, check=True,
+    )
+
+    prepared = prepare_replacement_artifacts(project, driver)
+    assert len(prepared.snapshot_paths) == 4
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run(
+        [str(artifact.executable)], text=True, capture_output=True, check=True,
+    )
+
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    ) == (0, "11\n19\n", "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_builds_public_scalar_shared_library_from_project_bundle(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    root = _shared_multimodule_project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    prepare_replacement_artifacts(project, driver)
+
+    inputs = load_replacement_inputs(project)
+    functions = [
+        materialize_resolved_source_function_snapshot(
+            source=item.source,
+            module_name=item.module_name,
+            snapshot=decode_resolved_source_function_snapshot(item.snapshot_values),
+            capability_names=item.capability_names,
+            type_names=item.type_names,
+        ).functions[0]
+        for item in inputs
+    ]
+    exported = [function.name for function in functions if function.exported]
+    assert exported == ["identity", "point_sum"]
+
+    artifact = build_replacement_shared(project, root / "build" / "libshared")
+    header = artifact.header_path.read_text(encoding="utf-8")
+    assert "int32_t merit_identity(int32_t m0);" in header
+    assert "typedef struct { int32_t x; int32_t y; } merit_Point;" in header
+    assert "sizeof(merit_Point) == 8" in header
+    assert "offsetof(merit_Point, y) == 4" in header
+    assert "int32_t merit_point_sum(merit_Point m0);" in header
+    assert "main" not in header
+    library = ctypes.CDLL(str(artifact.library))
+    library.merit_identity.argtypes = [ctypes.c_int32]
+    library.merit_identity.restype = ctypes.c_int32
+    assert library.merit_identity(41) == 41
+
+    class Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_int32), ("y", ctypes.c_int32)]
+
+    library.merit_point_sum.argtypes = [Point]
+    library.merit_point_sum.restype = ctypes.c_int32
+    assert library.merit_point_sum(Point(19, 23)) == 42
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

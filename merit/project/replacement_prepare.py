@@ -23,6 +23,7 @@ from merit.bootstrap.resolved_source_function_bundle import (
 )
 from merit.project.loader import LoadedProject, SourceUnit
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
+from merit.project.replacement_source import canonical_replacement_project_source
 
 DRIVER_PROTOCOL = "resolved-source-function-bundle-v1"
 
@@ -135,7 +136,27 @@ def prepare_replacement_artifacts(
     manifest_functions: list[dict[str, object]] = []
     snapshot_paths: list[Path] = []
 
-    for unit in project.units:
+    if len(project.units) == 1:
+        driver_units = project.units
+        project_source = None
+    else:
+        project_source = canonical_replacement_project_source(project)
+        entry_unit = next(
+            unit for unit in project.units
+            if unit.path.resolve() == project.manifest.entry_path.resolve()
+        )
+        driver_units = (
+            SourceUnit(
+                path=project.manifest.entry_path,
+                module=project.manifest.name,
+                imports=(),
+                parser_source=project_source,
+                program=entry_unit.program,
+                exports=frozenset().union(*(unit.exports for unit in project.units)),
+            ),
+        )
+
+    for unit in driver_units:
         snapshots = _run_driver(driver, unit)
         digest = _source_digest(unit.parser_source)
         for function_index, values in enumerate(snapshots):
@@ -149,8 +170,12 @@ def prepare_replacement_artifacts(
                     "function_index": function_index,
                     "snapshot": filename,
                     "source_sha256": digest,
+                    **({"project_source": "replacement-project.source"} if project_source is not None else {}),
                 }
             )
+
+    if project_source is not None:
+        staged.append((artifact_dir / "replacement-project.source", project_source))
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,

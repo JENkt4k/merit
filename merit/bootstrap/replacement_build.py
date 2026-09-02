@@ -18,10 +18,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from typing import Iterable, Mapping
 
 from merit.bootstrap.mir_contract import MirModule, MirType
-from merit.bootstrap.mir_to_c import emit_c_module
+from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 from merit.bootstrap.resolved_source_function_snapshot import (
     decode_resolved_source_function_snapshot,
     materialize_resolved_source_function_snapshot,
@@ -106,3 +107,48 @@ def compile_replacement_artifact(
         detail = completed.stderr.strip() or completed.stdout.strip() or "unknown compiler failure"
         raise ReplacementBuildError(f"replacement C compilation failed: {detail}")
     return c_path, executable
+
+
+def compile_replacement_shared_artifact(
+    artifact: ReplacementBuildArtifact,
+    output: Path,
+    *,
+    cc: str | None = None,
+    c_flags: tuple[str, ...] = ("-O2",),
+) -> tuple[Path, Path, Path]:
+    """Compile native-resolved MIR as a shared library and public C header."""
+
+    compiler = cc or next(
+        (candidate for candidate in ("cc", "gcc", "clang") if shutil.which(candidate)),
+        None,
+    )
+    if compiler is None:
+        raise ReplacementBuildError(
+            "no C compiler found for replacement shared build; install GCC/Clang or pass cc="
+        )
+    if sys.platform == "darwin":
+        suffix, link_flags, pic_flags = ".dylib", ("-dynamiclib",), ("-fPIC",)
+    elif os.name == "nt":
+        suffix, link_flags, pic_flags = ".dll", ("-shared",), ()
+    else:
+        suffix, link_flags, pic_flags = ".so", ("-shared",), ("-fPIC",)
+
+    output = Path(output).resolve()
+    library = output if output.suffix == suffix else output.with_suffix(suffix)
+    library.parent.mkdir(parents=True, exist_ok=True)
+    c_path = library.with_suffix(".c")
+    header_path = library.with_suffix(".h")
+    c_path.write_text(artifact.c_source, encoding="utf-8", newline="\n")
+    header_path.write_text(emit_c_header(artifact.module), encoding="utf-8", newline="\n")
+    command = [
+        compiler, "-std=c11", "-Wall", "-Wextra", *pic_flags, *c_flags,
+        str(c_path), *link_flags, "-o", str(library),
+    ]
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True)
+    except OSError as exc:
+        raise ReplacementBuildError(f"replacement shared C compiler could not start: {exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown compiler failure"
+        raise ReplacementBuildError(f"replacement shared compilation failed: {detail}")
+    return c_path, header_path, library

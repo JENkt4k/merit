@@ -40,15 +40,9 @@ Early bootstrap work established deterministic native lexer/parser records and c
 
 ### Immediate critical path
 
-1. Derive enum-variant catalogs natively from the source unit consumed by the concrete replacement driver.
-2. Derive capability catalogs natively from the same source unit and feed stable capability identities into the existing match/capability pipeline.
-3. Prove enum- and capability-bearing source units through concrete driver -> multi-function MRBF -> prepared artifacts -> canonical replacement MIR -> deterministic C -> executable, while rejecting unsupported lifecycle/effect combinations fail-closed.
-4. Expand that vertical path across remaining accepted-alpha statements, control flow, ownership/resources, contracts, exact numerics, aggregates, generics/traits, and module interactions.
-5. Maintain accepted/rejected differential corpus parity and fail closed whenever the replacement compiler cannot represent a construct faithfully.
-6. Move the acceptance applications through the replacement path until the documented alpha surface compiles without Python semantic lowering.
-7. Make replacement compilation the normal production path only after its semantic coverage and parity gates justify the transition.
-8. Establish stage-0/stage-1 equivalence and reproducibility.
-9. Begin self-hosting only after the replacement compiler qualifies as trusted.
+`ALPHA2_CLOSURE.md` is the authoritative detailed work queue. M1 statement/control-flow, M2 resource/payload-enum lifecycle, M3 exact-numeric/aggregate, and M4 generic/trait closure are complete; PR #109 is merged.
+
+The current frontier is M5 project/module/import/export/visibility closure. It is followed, in order, by M6 complete accepted/rejected corpus convergence, M7 acceptance-project migration, M8 normal production-path cutover, M9 stage reproducibility and trust, and M10 the Alpha.2 release audit. Alpha.2 is not complete or trusted, and self-hosting begins only after the trust gate.
 
 ### Documentation path
 

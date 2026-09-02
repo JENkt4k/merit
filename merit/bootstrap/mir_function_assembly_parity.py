@@ -175,8 +175,10 @@ def lower_native_whole_function_assembly(
 
     header = body[0]
     _, start, length, record_id, result, left, right, symbol_start, symbol_length, symbol_code, type_code, policy, binding_id, mutable, hir_id, ordinal = header
-    if any((record_id, result + 1, right + 1, policy, binding_id + 1, mutable, hir_id + 1)):
+    if any((record_id, result + 1, right + 1, policy, binding_id + 1, hir_id + 1)):
         raise NativeWholeFunctionMirError("function header carries invalid operational fields")
+    if mutable not in {0, 1}:
+        raise NativeWholeFunctionMirError("function header carries invalid export metadata")
     if symbol_code not in _CALLABLE_MODES or ordinal < 0:
         raise NativeWholeFunctionMirError("function header carries invalid callable metadata")
     if symbol_code == 0 and left != -1:
@@ -507,5 +509,6 @@ def lower_native_whole_function_assembly(
         tuple(parameter for _, parameter in parameters),
         function_return_mode,
         function_borrowed_origin,
+        mutable == 1,
     )
     return MirModule(module_name, (function,))

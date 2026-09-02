@@ -15,9 +15,14 @@ from pathlib import Path
 from typing import Mapping
 
 from merit.bootstrap.mir_contract import MirType
-from merit.bootstrap.replacement_build import ReplacementBuildError, compile_replacement_artifact
+from merit.bootstrap.replacement_build import (
+    ReplacementBuildError,
+    compile_replacement_artifact,
+    compile_replacement_shared_artifact,
+)
 from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
 from merit.project.loader import LoadedProject
+from merit.project.replacement_source import canonical_replacement_project_source
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
@@ -32,6 +37,13 @@ class ReplacementProjectError(ReplacementBuildError):
 class ReplacementProjectArtifact:
     c_path: Path
     executable: Path
+
+
+@dataclass(frozen=True)
+class ReplacementSharedProjectArtifact:
+    c_path: Path
+    header_path: Path
+    library: Path
 
 
 def _type_names(raw: object) -> Mapping[int, MirType] | None:
@@ -114,13 +126,14 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
         _validate_bundle_indices(functions)
 
     unit_by_module = {unit.module: unit for unit in project.units}
+    canonical_project_source: str | None = None
     resolved: list[ReplacementFunctionInput] = []
     for index, item in enumerate(functions):
         if not isinstance(item, dict):
             raise ReplacementProjectError(f"replacement function {index} must be an object")
         module_name = item.get("module")
         snapshot_name = item.get("snapshot")
-        if not isinstance(module_name, str) or module_name not in unit_by_module:
+        if not isinstance(module_name, str):
             raise ReplacementProjectError(f"replacement function {index} references unknown module {module_name!r}")
         if not isinstance(snapshot_name, str) or not snapshot_name:
             raise ReplacementProjectError(f"replacement function {index} has no snapshot path")
@@ -137,14 +150,42 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
             )
         except (OSError, ValueError) as exc:
             raise ReplacementProjectError(f"invalid replacement snapshot: {snapshot_path}") from exc
-        unit = unit_by_module[module_name]
+        project_source_name = item.get("project_source")
+        if project_source_name is None:
+            unit = unit_by_module.get(module_name)
+            if unit is None:
+                raise ReplacementProjectError(
+                    f"replacement function {index} references unknown module {module_name!r}"
+                )
+            source = unit.parser_source
+        else:
+            if module_name != project.manifest.name or project_source_name != "replacement-project.source":
+                raise ReplacementProjectError(
+                    f"replacement function {index} has invalid canonical project source identity"
+                )
+            if canonical_project_source is None:
+                canonical_project_source = canonical_replacement_project_source(project)
+            source = canonical_project_source
+            source_path = (manifest_path.parent / project_source_name).resolve()
+            try:
+                source_path.relative_to(manifest_path.parent.resolve())
+                published_source = source_path.read_text(encoding="utf-8")
+            except (ValueError, OSError) as exc:
+                raise ReplacementProjectError(
+                    f"invalid replacement project source: {source_path}"
+                ) from exc
+            if published_source != source:
+                raise ReplacementProjectError(
+                    "replacement project source is stale after source changes; "
+                    "run prepare-replacement again"
+                )
         expected_digest = item.get("source_sha256")
         if expected_digest is not None:
             if not isinstance(expected_digest, str) or len(expected_digest) != 64:
                 raise ReplacementProjectError(
                     f"replacement function {index} has invalid source_sha256"
                 )
-            actual_digest = _source_digest(unit.parser_source)
+            actual_digest = _source_digest(source)
             if actual_digest != expected_digest:
                 raise ReplacementProjectError(
                     f"replacement artifacts for module {module_name!r} are stale after source changes; "
@@ -152,7 +193,7 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
                 )
         resolved.append(
             ReplacementFunctionInput.from_values(
-                source=unit.parser_source,
+                source=source,
                 module_name=module_name,
                 snapshot_values=snapshot_values,
                 capability_names=_capability_names(item.get("capability_names")),
@@ -185,3 +226,16 @@ def build_replacement_project(project: LoadedProject, output: Path) -> Replaceme
         c_flags=project.manifest.c_flags,
     )
     return ReplacementProjectArtifact(c_path=c_path, executable=executable)
+
+
+def build_replacement_shared(
+    project: LoadedProject, output: Path,
+) -> ReplacementSharedProjectArtifact:
+    """Build a shared library solely from native-resolved replacement artifacts."""
+
+    inputs = load_replacement_inputs(project)
+    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    c_path, header_path, library = compile_replacement_shared_artifact(
+        artifact, output, c_flags=project.manifest.c_flags,
+    )
+    return ReplacementSharedProjectArtifact(c_path, header_path, library)

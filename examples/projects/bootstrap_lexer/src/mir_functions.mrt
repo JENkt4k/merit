@@ -32,6 +32,8 @@ pub struct MirFunctionRecord {
 pub struct MirTypeDescriptor {
     type_code: i32; kind: i32; identity: i32; child_type_code: i32;
     destructor_policy: i32; ordinal: i32;
+    name_start:i64; name_length:i64; member_start:i64; member_length:i64;
+    abi_flags:i32;
 }
 // Native-resolved declared numeric schema. Values are already parsed and
 // validated by the Merit frontend; Python only validates this fixed-width
@@ -117,11 +119,14 @@ pub fn function_mir_type_descriptor_aggregate_struct_kind() -> i32 { return 3; }
 pub fn function_mir_type_descriptor_vector_kind() -> i32 { return 4; }
 pub fn function_mir_type_descriptor(
     type_code: i32, kind: i32, identity: i32, child_type_code: i32,
-    destructor_policy: i32, ordinal: i32
+    destructor_policy: i32, ordinal: i32,
+    name_start:i64,name_length:i64,member_start:i64,member_length:i64,abi_flags:i32
 ) -> MirTypeDescriptor {
     return MirTypeDescriptor {
         type_code:type_code, kind:kind, identity:identity,
-        child_type_code:child_type_code, destructor_policy:destructor_policy, ordinal:ordinal
+        child_type_code:child_type_code, destructor_policy:destructor_policy, ordinal:ordinal,
+        name_start:name_start,name_length:name_length,
+        member_start:member_start,member_length:member_length,abi_flags:abi_flags
     };
 }
 pub fn function_mir_type_descriptor_code(borrow value: MirTypeDescriptor) -> i32 { return value.type_code; }
@@ -130,6 +135,11 @@ pub fn function_mir_type_descriptor_identity(borrow value: MirTypeDescriptor) ->
 pub fn function_mir_type_descriptor_child(borrow value: MirTypeDescriptor) -> i32 { return value.child_type_code; }
 pub fn function_mir_type_descriptor_destructor_policy(borrow value: MirTypeDescriptor) -> i32 { return value.destructor_policy; }
 pub fn function_mir_type_descriptor_ordinal(borrow value: MirTypeDescriptor) -> i32 { return value.ordinal; }
+pub fn function_mir_type_descriptor_name_start(borrow value:MirTypeDescriptor)->i64{return value.name_start;}
+pub fn function_mir_type_descriptor_name_length(borrow value:MirTypeDescriptor)->i64{return value.name_length;}
+pub fn function_mir_type_descriptor_member_start(borrow value:MirTypeDescriptor)->i64{return value.member_start;}
+pub fn function_mir_type_descriptor_member_length(borrow value:MirTypeDescriptor)->i64{return value.member_length;}
+pub fn function_mir_type_descriptor_abi_flags(borrow value:MirTypeDescriptor)->i32{return value.abi_flags;}
 
 pub fn function_mir_kind(borrow node: MirFunctionRecord) -> i32 { return node.kind; }
 pub fn function_mir_start(borrow node: MirFunctionRecord) -> i64 { return node.start; }
@@ -286,13 +296,14 @@ pub fn function_mir_header(start: i64, length: i64, symbol_start: i64, symbol_le
 
 pub fn function_mir_callable_header(
     start: i64, length: i64, symbol_start: i64, symbol_length: i64,
-    result_type_code: i32, return_mode: i32, borrowed_origin: i64, parameter_count: i64
+    result_type_code: i32, return_mode: i32, borrowed_origin: i64, parameter_count: i64,
+    exported: i32
 ) -> MirFunctionRecord {
     return MirFunctionRecord {
         kind: 1, start:start, length:length, id:0, result:-1,
         left:borrowed_origin, right:-1, symbol_start:symbol_start,
         symbol_length:symbol_length, symbol_code:return_mode,
-        type_code:result_type_code, numeric_policy:0, binding_id:-1, mutable:0,
+        type_code:result_type_code, numeric_policy:0, binding_id:-1, mutable:exported,
         hir_node_id:-1, ordinal:parameter_count
     };
 }

@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-08-19
+Status date: 2026-09-02
 
 ## Release target
 
@@ -8,7 +8,7 @@ The `v0.1.0-alpha.1` local release gate is complete. Package metadata uses the P
 
 Development is on `v0.1.0-alpha.2`: remove Python from the normal compiler path without broadening the language. Python remains an independent semantic/diagnostic oracle until the replacement compiler qualifies as trusted.
 
-The authoritative GitHub Local Gate covers a full clean Ubuntu/Python 3.11/system-C run plus a focused Windows/Python 3.11/MSYS2 UCRT64 GCC native smoke run. PR #79 completed the current multi-function concrete-driver milestone before merge.
+The canonical GitHub gates run the full clean suite on Ubuntu and native Windows. PR #109 is merged. `ALPHA2_CLOSURE.md` is the authoritative source for detailed replacement-coverage and milestone state.
 
 ## Proven alpha foundation
 
@@ -27,7 +27,7 @@ The replacement effort has progressed beyond the early isolated lexer/parser/AST
 
 Those native-resolved artifacts feed the production replacement build boundary. Replacement builds consume prepared snapshots, reconstruct canonical replacement MIR, emit deterministic C, compile it, and refuse to fall back to the Python reference compiler. Project artifacts are source-digest checked so stale snapshots fail closed.
 
-PR #75 established multi-function source-unit bundles. PR #76 established the first-class `NativeReplacementDriver` executable boundary. PR #78 attached the first concrete Merit-native driver for a deliberately narrow single-function/no-enum/no-capability source subset. PR #79 removed the single-function restriction: the concrete native driver now discovers top-level functions from lexed source, slices complete balanced function token views while preserving original source offsets, lowers each independently through the existing resolved-function pipeline, and emits one MRBF item per function.
+The concrete Merit-native driver now carries the Alpha.1 statement/control-flow, resource/payload-enum lifecycle, exact-numeric/aggregate, and generic/trait surfaces through the established replacement pipeline. Those four closure milestones (M1-M4) are closed with the evidence recorded in `ALPHA2_CLOSURE.md`.
 
 The complete proven vertical shape is now:
 
@@ -46,11 +46,7 @@ Python remains orchestration/transport at this boundary and the independent orac
 
 ## Current frontier
 
-The immediate production frontier is **native source derivation of enum-variant and capability catalogs** for the concrete driver. PR #79 intentionally kept the existing no-enum/no-capability restriction rather than inventing incomplete catalog semantics.
-
-The next coherent implementation milestone should derive those catalogs from the same source/tokens consumed by the native driver, feed them into the existing resolved match/capability pipeline, prove enum/capability source units through driver -> MRBF -> prepared replacement -> canonical MIR -> deterministic native execution, and continue to fail closed for constructs whose semantics are not yet represented.
-
-After that, expand the same vertical path toward the complete accepted alpha corpus: remaining statements/control flow, ownership/resources, contracts, exact numerics, aggregates, generics/traits, and module interactions. Normal project compilation can move to the replacement path only when semantic coverage and accepted/rejected corpus parity justify it.
+M5 project/module/import/export/visibility closure is the current frontier. M6 corpus convergence, M7 acceptance migration, M8 production-path cutover, M9 reproducibility/trust, and M10 release audit remain later milestones. Alpha.2 is therefore neither complete nor trusted.
 
 ## Documentation
 

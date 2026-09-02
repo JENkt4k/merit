@@ -141,6 +141,21 @@ def test_v3_native_type_descriptors_resolve_ordered_multi_field_aggregate() -> N
     assert names[1_200_001].arguments[0] == names[1_200_000]
 
 
+def test_v9_native_type_descriptors_preserve_public_stable_abi_names() -> None:
+    source = 'pub stable("point-v1") struct Point { x:i32; y:i32; }'
+    names = _descriptor_type_names(
+        (
+            (1_200_000, 3, 0, 7, 0, 0, source.index("Point"), 5, source.index("x:"), 1, 3),
+            (1_200_000, 3, 0, 7, 0, 1, source.index("Point"), 5, source.index("y:"), 1, 3),
+        ),
+        version=9,
+        source=source,
+    )
+
+    assert names[1_200_000].name.endswith("__abi_3_506f696e74_78_79")
+    assert [field.name for field in names[1_200_000].arguments] == ["i32", "i32"]
+
+
 @pytest.mark.parametrize(
     ("rows", "message"),
     (

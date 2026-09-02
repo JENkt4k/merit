@@ -28,6 +28,16 @@ fn sfr_shared_to_mutable_borrow_error() -> i64 { return -34; }
 fn sfr_immutable_mutable_borrow_error() -> i64 { return -35; }
 fn sfr_borrow_of_moved_value_error() -> i64 { return -36; }
 fn sfr_conflicting_loan_error() -> i64 { return -37; }
+fn sfr_expression_call_argument_count_status() -> i32 { return 90; }
+fn sfr_expression_call_argument_expression_status() -> i32 { return 91; }
+fn sfr_expression_call_argument_type_status() -> i32 { return 92; }
+fn sfr_expression_borrowed_argument_by_value_status() -> i32 { return 93; }
+fn sfr_expression_move_while_loaned_status() -> i32 { return 94; }
+fn sfr_expression_unresolved_borrow_root_status() -> i32 { return 95; }
+fn sfr_expression_shared_to_mutable_borrow_status() -> i32 { return 96; }
+fn sfr_expression_immutable_mutable_borrow_status() -> i32 { return 97; }
+fn sfr_expression_borrow_of_moved_value_status() -> i32 { return 98; }
+fn sfr_expression_conflicting_loan_status() -> i32 { return 99; }
 fn sfr_signature_missing_header_status() -> i32 { return 1; }
 fn sfr_signature_invalid_name_status() -> i32 { return 2; }
 fn sfr_signature_missing_parameter_list_status() -> i32 { return 3; }
@@ -55,6 +65,16 @@ fn sfr_expression_failure_status(status: i64) -> i32 {
     if (status == sfr_invalid_struct_initializer_error()) { return 65; }
     if (status == sfr_invalid_struct_receiver_error()) { return 66; }
     if (status == sfr_unresolved_struct_receiver_error()) { return 67; }
+    if (status == sfr_call_argument_count_error()) { return sfr_expression_call_argument_count_status(); }
+    if (status == sfr_call_argument_expression_error()) { return sfr_expression_call_argument_expression_status(); }
+    if (status == sfr_call_argument_type_error()) { return sfr_expression_call_argument_type_status(); }
+    if (status == sfr_borrowed_argument_passed_by_value_error()) { return sfr_expression_borrowed_argument_by_value_status(); }
+    if (status == sfr_move_while_loaned_error()) { return sfr_expression_move_while_loaned_status(); }
+    if (status == sfr_unresolved_borrow_root_error()) { return sfr_expression_unresolved_borrow_root_status(); }
+    if (status == sfr_shared_to_mutable_borrow_error()) { return sfr_expression_shared_to_mutable_borrow_status(); }
+    if (status == sfr_immutable_mutable_borrow_error()) { return sfr_expression_immutable_mutable_borrow_status(); }
+    if (status == sfr_borrow_of_moved_value_error()) { return sfr_expression_borrow_of_moved_value_status(); }
+    if (status == sfr_conflicting_loan_error()) { return sfr_expression_conflicting_loan_status(); }
     return 68;
 }
 
@@ -69,6 +89,7 @@ pub struct I64StructCatalogEntry {
     field_type_length: i64;
     resolved_field_type_code: i32;
     destructor_policy: i32;
+    abi_flags:i32;
 }
 
 pub fn i64_struct_catalog_id(borrow value: I64StructCatalogEntry) -> i32 { return value.struct_id; }
@@ -81,6 +102,7 @@ pub fn i64_struct_catalog_field_type_start(borrow value: I64StructCatalogEntry) 
 pub fn i64_struct_catalog_field_type_length(borrow value: I64StructCatalogEntry) -> i64 { return value.field_type_length; }
 pub fn i64_struct_catalog_resolved_field_type(borrow value:I64StructCatalogEntry)->i32{return value.resolved_field_type_code;}
 pub fn i64_struct_catalog_destructor_policy(borrow value: I64StructCatalogEntry) -> i32 { return value.destructor_policy; }
+pub fn i64_struct_catalog_abi_flags(borrow value:I64StructCatalogEntry)->i32{return value.abi_flags;}
 pub fn i64_struct_catalog_invalid_status() -> i32 { return 1; }
 pub fn i64_struct_catalog_replace_unsupported_status() -> i32 { return 2; }
 pub fn i64_struct_catalog_driver_status(status: i32) -> i32 { return checked_add(970, status); }
@@ -252,6 +274,28 @@ fn sfr_is_struct(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
+fn sfr_is_pub(borrow source:Buffer,borrow token:Token)->i32{
+    if(token_kind(token)!=token_identifier_kind()){return 0;}
+    if(token_length(token)!=3){return 0;}
+    if(sfr_byte(source,token,0)!=sfr_ascii_p()){return 0;}
+    if(sfr_byte(source,token,1)!=sfr_ascii_u()){return 0;}
+    if(sfr_byte(source,token,2)!=sfr_ascii_b()){return 0;}
+    return 1;
+}
+fn sfr_is_stable(borrow source:Buffer,borrow token:Token)->i32{
+    if(token_kind(token)!=token_identifier_kind()){return 0;}
+    if(token_length(token)!=6){return 0;}
+    if(sfr_byte(source,token,0)!=sfr_ascii_s()){return 0;}
+    if(sfr_byte(source,token,1)!=sfr_ascii_t()){return 0;}
+    if(sfr_byte(source,token,2)!=sfr_ascii_a()){return 0;}
+    if(sfr_byte(source,token,3)!=sfr_ascii_b()){return 0;}
+    if(sfr_byte(source,token,4)!=sfr_ascii_l()){return 0;}
+    if(sfr_byte(source,token,5)!=sfr_ascii_e()){return 0;}
+    return 1;
+}
+fn sfr_struct_abi_public_flag()->i32{return 1;}
+fn sfr_struct_abi_stable_flag()->i32{return 2;}
+
 fn sfr_is_decimal_declaration(borrow source: Buffer, borrow token: Token) -> i32 {
     if (token_kind(token) != token_identifier_kind()) { return 0; }
     if (token_length(token) != 7) { return 0; }
@@ -323,6 +367,16 @@ fn sfr_ascii_w() -> i64 { return 119; }
 fn sfr_ascii_y() -> i64 { return 121; }
 fn sfr_ascii_comma() -> i64 { return 44; }
 fn sfr_ascii_hyphen() -> i64 { return 45; }
+
+fn sfr_token_is_pub(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_kind(token) != token_identifier_kind()) { return 0; }
+    if (token_length(token) != 3) { return 0; }
+    let start: i64 = token_start(token);
+    if (buffer_get(source, start) != sfr_ascii_p()) { return 0; }
+    if (buffer_get(source, checked_add(start, 1)) != sfr_ascii_u()) { return 0; }
+    if (buffer_get(source, checked_add(start, 2)) != sfr_ascii_b()) { return 0; }
+    return 1;
+}
 fn sfr_ascii_greater() -> i64 { return 62; }
 fn sfr_ascii_left_paren() -> i64 { return 40; }
 fn sfr_ascii_right_paren() -> i64 { return 41; }
@@ -1259,6 +1313,10 @@ requires_caps [allocate]
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
         if (sfr_is_struct(source, token) != 0) {
+            var abi_flags:i32=0;
+            if(index>0){let prior:Token=vec_get<Token>(tokens,checked_sub(index,1));if(sfr_is_pub(source,prior)!=0){abi_flags=sfr_struct_abi_public_flag();}}
+            if(index>=4){let stable_token:Token=vec_get<Token>(tokens,checked_sub(index,4));if(sfr_is_stable(source,stable_token)!=0){abi_flags=checked_add(abi_flags,sfr_struct_abi_stable_flag());}}
+            if(index>=5){let public_token:Token=vec_get<Token>(tokens,checked_sub(index,5));if(sfr_is_pub(source,public_token)!=0){if(abi_flags!=checked_add(sfr_struct_abi_public_flag(),sfr_struct_abi_stable_flag())){abi_flags=checked_add(abi_flags,sfr_struct_abi_public_flag());}}}
             let name_index: i64 = checked_add(index, 1);
             if (name_index >= vec_len<Token>(tokens)) { return i64_struct_catalog_invalid_status(); }
             let name: Token = vec_get<Token>(tokens, name_index);
@@ -1300,9 +1358,6 @@ requires_caps [allocate]
                 var resolved_field_type:i32=sfr_builtin_type_code(
                     source,token_start(field_type),token_length(field_type)
                 );
-                if(sfr_is_scalar_integer_type(source,token_start(field_type),token_length(field_type))!=0){
-                    resolved_field_type=function_mir_i64_type_code();
-                }
                 if(resolved_field_type==function_mir_unresolved_type_code()){
                     resolved_field_type=sfr_declared_numeric_type_code(
                         source,tokens,token_start(field_type),token_length(field_type)
@@ -1315,7 +1370,7 @@ requires_caps [allocate]
                     field_start: token_start(field), field_length: token_length(field),
                     field_type_start: token_start(field_type), field_type_length: token_length(field_type),
                     resolved_field_type_code:resolved_field_type,
-                    destructor_policy: destructor_policy
+                    destructor_policy: destructor_policy,abi_flags:abi_flags
                 });
                 field_ordinal = checked_add(field_ordinal, 1);
                 cursor = checked_add(cursor, 4);
@@ -1367,13 +1422,18 @@ fn source_i64_struct_type_code_depth(
                 }
                 field_index = checked_add(field_index, 1);
             }
+            if (entry.abi_flags != 0) {
+                return function_mir_aggregate_struct_type_code(entry.struct_id);
+            }
             if (field_count == 1) {
                 if (single_child == function_mir_i64_type_code()) {
                     if (entry.destructor_policy == 1) { return function_mir_destructor_i64_struct_type_code(entry.struct_id); }
                     return function_mir_i64_struct_type_code(entry.struct_id);
                 }
-                if (entry.destructor_policy != 0) { return function_mir_unresolved_type_code(); }
                 if (single_child >= function_mir_aggregate_struct_type_code(0)) {
+                    return function_mir_aggregate_struct_type_code(entry.struct_id);
+                }
+                if (entry.destructor_policy != 0) {
                     return function_mir_aggregate_struct_type_code(entry.struct_id);
                 }
                 return function_mir_owned_field_struct_type_code(entry.struct_id);
@@ -1425,7 +1485,8 @@ requires_caps [allocate]
                     if(child_type_code==function_mir_unresolved_type_code()){return 2;}
                     vec_push<MirTypeDescriptor>(output,function_mir_type_descriptor(
                         type_code,function_mir_type_descriptor_vector_kind(),
-                        checked_sub(type_code,function_mir_vector_type_code(0)),child_type_code,0,0
+                        checked_sub(type_code,function_mir_vector_type_code(0)),child_type_code,0,0,
+                        0,0,0,0,0
                     ));
                 }
                 vector_start=checked_add(vector_start,5);vector_length=checked_sub(vector_length,5);
@@ -1449,7 +1510,8 @@ requires_caps [allocate]
             if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
             vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
                 type_code, function_mir_type_descriptor_aggregate_struct_kind(),
-                entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal
+                entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal,
+                entry.name_start,entry.name_length,entry.field_start,entry.field_length,entry.abi_flags
             ));
         } else {
             if (type_code >= function_mir_owned_field_struct_type_code(0)) {
@@ -1463,7 +1525,8 @@ requires_caps [allocate]
                     if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
                     vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
                         type_code, function_mir_type_descriptor_owned_field_struct_kind(),
-                        entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal
+                        entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal,
+                        entry.name_start,entry.name_length,entry.field_start,entry.field_length,entry.abi_flags
                     ));
                 }
             }
@@ -1484,7 +1547,8 @@ requires_caps [allocate]
                         vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
                             function_mir_recursive_owned_payload_enum_type_code(enum_identity),
                             function_mir_type_descriptor_owned_payload_enum_kind(),
-                            enum_identity, variant.payload_type_code, 0, descriptor_ordinal
+                            enum_identity, variant.payload_type_code, 0, descriptor_ordinal,
+                            0,0,0,0,0
                         ));
                         descriptor_ordinal = checked_add(descriptor_ordinal, 1);
                     }
@@ -2727,6 +2791,7 @@ requires_caps [allocate]
         let candidate_type:i32=hir_type_code(inference_node);
         var authoritative_candidate:i32=0;
         if(hir_kind(inference_node)==4){authoritative_candidate=1;}
+        if(hir_is_field_access(inference_node)!=0){authoritative_candidate=1;}
         if(infer_expression_domain!=0){if(authoritative_candidate!=0){if(function_mir_type_is_numeric(candidate_type)!=0){
             if(inferred_numeric_type==function_mir_unresolved_type_code()){
                 inferred_numeric_type=candidate_type;
@@ -3176,16 +3241,16 @@ requires_caps [allocate]
     var function_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
     var source_tokens:Vec<Token>=lex(source,allocator);
     var current_signature:i64=-1;
+    let signature_status:i32=derive_source_function_signatures(
+        source,source_tokens,enum_catalog,struct_catalog,allocator,function_signatures,function_parameters
+    );
+    if(signature_status!=0){return sfr_function_signature_status(signature_status);}
     if (destructor_body != 0) {
         result_type_code = source_i64_struct_type_code(
             source, struct_catalog, token_start(name_token), token_length(name_token)
         );
         if (result_type_code < function_mir_i64_struct_type_code(0)) { return 1; }
     } else {
-        let signature_status:i32=derive_source_function_signatures(
-            source,source_tokens,enum_catalog,struct_catalog,allocator,function_signatures,function_parameters
-        );
-        if(signature_status!=0){return sfr_function_signature_status(signature_status);}
         var signature_index:i64=0;
         while(signature_index<vec_len<SourceFunctionSignature>(function_signatures)){
             let candidate:SourceFunctionSignature=vec_get<SourceFunctionSignature>(function_signatures,signature_index);
@@ -3205,10 +3270,29 @@ requires_caps [allocate]
         ));
     } else {
         let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(function_signatures,current_signature);
+        var function_exported:i32=0;
+        var declaration_index:i64=2;
+        while(declaration_index<vec_len<Token>(source_tokens)){
+            let declaration_name:Token=vec_get<Token>(source_tokens,declaration_index);
+            if(sfr_span_equal(source,token_start(name_token),token_length(name_token),token_start(declaration_name),token_length(declaration_name))!=0){
+                let declaration_fn:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,1));
+                if(token_kind(declaration_fn)==token_identifier_kind()){
+                    if(token_length(declaration_fn)==2){
+                        if(buffer_get(source,token_start(declaration_fn))==sfr_ascii_f()){
+                            if(buffer_get(source,checked_add(token_start(declaration_fn),1))==sfr_ascii_n()){
+                                let declaration_prefix:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,2));
+                                function_exported=sfr_token_is_pub(source,declaration_prefix);
+                            }
+                        }
+                    }
+                }
+            }
+            declaration_index=checked_add(declaration_index,1);
+        }
         vec_push<MirFunctionRecord>(records,function_mir_callable_header(
             token_start(name_token),token_length(name_token),token_start(name_token),token_length(name_token),result_type_code,
             source_function_signature_return_mode(signature),source_function_signature_borrowed_origin(signature),
-            source_function_signature_parameter_count(signature)
+            source_function_signature_parameter_count(signature),function_exported
         ));
     }
 
@@ -3433,7 +3517,7 @@ requires_caps [allocate]
                             statement_operand_start(expression), statement_operand_length(expression),
                             1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters
                         );
-                        if (result_local < 0) { return 26; }
+                        if (result_local < 0) { return sfr_expression_failure_status(result_local); }
                         let instruction_id: i64 = vec_get<i64>(counters, 1);
                         vec_push<MirFunctionRecord>(records, function_mir_print(
                             statement_record_start(statement), statement_record_length(statement),

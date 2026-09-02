@@ -23,7 +23,7 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 7
+SNAPSHOT_VERSION = 9
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
@@ -49,6 +49,8 @@ _SECTION_WIDTHS_BY_VERSION = {
     5: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 7, 16, 7, 3),
     6: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3),
     7: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3, 1),
+    8: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3, 1),
+    9: (16, 12, 5, 8, 4, 8, 7, 3, 1, 11, 11, 7, 16, 7, 3, 1),
 }
 SNAPSHOT_SECTION_COUNT = len(_SECTION_WIDTHS_BY_VERSION[SNAPSHOT_VERSION])
 
@@ -80,6 +82,7 @@ class ResolvedSourceFunctionSnapshot:
     numeric_type_descriptors: tuple[tuple[int, ...], ...] = ()
     destructors: tuple[ResolvedSourceDestructorSnapshot, ...] = ()
     effective_source_bytes: tuple[int, ...] = ()
+    exported: bool = False
     version: int = SNAPSHOT_VERSION
 
 
@@ -159,6 +162,15 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         ):
             raise ResolvedSourceFunctionSnapshotError("destructor record sections contain unreferenced rows")
 
+    if data[1] >= 8 and sections[0]:
+        if sections[0][0][13] not in {0, 1}:
+            raise ResolvedSourceFunctionSnapshotError(
+                "resolved source snapshot has invalid export metadata"
+            )
+        exported = sections[0][0][13] == 1
+    else:
+        exported = False
+
     return ResolvedSourceFunctionSnapshot(
         body_records=sections[0],
         contract_records=sections[1],
@@ -173,6 +185,7 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         numeric_type_descriptors=sections[10] if data[1] >= 6 else (),
         destructors=tuple(destructor_snapshots),
         effective_source_bytes=tuple(row[0] for row in sections[15]) if data[1] >= 7 else (),
+        exported=exported,
         version=data[1],
     )
 
@@ -180,17 +193,30 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
 def _descriptor_type_names(
     rows: tuple[tuple[int, ...], ...], *, version: int = 2,
     known_types: Mapping[int, MirType] | None = None,
+    source: str = "",
 ) -> dict[int, MirType]:
     raw: dict[int, tuple[int, int, int, int]] = {}
     aggregate_fields: dict[int, list[int]] = {}
     aggregate_policies: dict[int, int] = {}
     enum_fields: dict[int, list[int]] = {}
+    aggregate_abi: dict[int, tuple[int, str, list[str]]] = {}
     for index, row in enumerate(rows):
-        if version >= 5:
+        if version >= 9:
+            (
+                code, kind, identity, child_code, destructor_policy, ordinal,
+                name_start, name_length, member_start, member_length, abi_flags,
+            ) = row
+            if min(name_start, name_length, member_start, member_length) < 0 or abi_flags not in {0, 1, 2, 3}:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has invalid ABI metadata"
+                )
+        elif version >= 5:
             code, kind, identity, child_code, destructor_policy, ordinal = row
+            name_start = name_length = member_start = member_length = abi_flags = 0
         else:
             code, kind, identity, child_code, destructor_policy = row
             ordinal = 0
+            name_start = name_length = member_start = member_length = abi_flags = 0
         if code <= 0 or identity < 0 or child_code <= 0 or kind not in {
             _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT,
             _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM,
@@ -224,6 +250,38 @@ def _descriptor_type_names(
             if destructor_policy:
                 aggregate_policies[code] = len(fields)
             fields.append(child_code)
+            if version >= 9:
+                def span_text(start: int, length: int, label: str) -> str:
+                    end = start + length
+                    source_bytes = source.encode("utf-8")
+                    if length <= 0 or end > len(source_bytes):
+                        raise ResolvedSourceFunctionSnapshotError(
+                            f"type descriptor {index} has invalid {label} span"
+                        )
+                    try:
+                        value = source_bytes[start:end].decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise ResolvedSourceFunctionSnapshotError(
+                            f"type descriptor {index} has invalid {label} UTF-8"
+                        ) from exc
+                    if not value.isidentifier():
+                        raise ResolvedSourceFunctionSnapshotError(
+                            f"type descriptor {index} has invalid {label} identifier"
+                        )
+                    return value
+
+                type_name = span_text(name_start, name_length, "type-name")
+                member_name = span_text(member_start, member_length, "member-name")
+                prior = aggregate_abi.get(code)
+                if prior is None:
+                    aggregate_abi[code] = (abi_flags, type_name, [member_name])
+                else:
+                    prior_flags, prior_name, members = prior
+                    if (prior_flags, prior_name) != (abi_flags, type_name):
+                        raise ResolvedSourceFunctionSnapshotError(
+                            f"type descriptor {index} has inconsistent ABI identity"
+                        )
+                    members.append(member_name)
             continue
         if kind == _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM and version >= 5:
             if destructor_policy != 0:
@@ -337,7 +395,13 @@ def _descriptor_type_names(
             if not children:
                 raise ResolvedSourceFunctionSnapshotError("aggregate type descriptor has no fields")
             policy = aggregate_policies.get(code, -1)
-            result = MirType(f"struct_aggregate_{identity}_destructor_{policy}", children)
+            name = f"struct_aggregate_{identity}_destructor_{policy}"
+            abi = aggregate_abi.get(code)
+            if abi is not None:
+                flags, type_name, members = abi
+                encoded = "_".join(value.encode("utf-8").hex() for value in (type_name, *members))
+                name = f"{name}__abi_{flags}_{encoded}"
+            result = MirType(name, children)
             resolved[code] = result
             return result
         if descriptor is None:
@@ -439,6 +503,7 @@ def materialize_resolved_source_function_snapshot(
     numeric_names = _numeric_descriptor_type_names(snapshot.numeric_type_descriptors)
     descriptor_names = _descriptor_type_names(
         snapshot.type_descriptors, version=snapshot.version, known_types=numeric_names,
+        source=effective_source,
     )
     if descriptor_names.keys() & numeric_names.keys():
         raise ResolvedSourceFunctionSnapshotError("numeric and aggregate type descriptors conflict")
@@ -501,8 +566,9 @@ def materialize_resolved_source_function_snapshot(
         destructors.append(MirDestructor(
             target, (self_local, *lowered.locals[1:]), lowered.blocks, lowered.entry_block
         ))
+    function = replace(function_module.functions[0], exported=snapshot.exported)
     return MirModule(
         function_module.name,
-        function_module.functions,
+        (function,),
         destructors=tuple(destructors),
     )

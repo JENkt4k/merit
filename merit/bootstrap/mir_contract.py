@@ -239,6 +239,7 @@ class MirFunction:
     parameters: tuple[MirParameter, ...] = ()
     return_mode: str = "value"
     borrowed_origin: int | None = None
+    exported: bool = False
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -288,6 +289,8 @@ class MirFunction:
         if self.return_mode != "value":
             data["return_mode"] = self.return_mode
             data["borrowed_origin"] = self.borrowed_origin
+        if self.exported:
+            data["exported"] = True
         return data
 
 
@@ -547,6 +550,7 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
             locals_, blocks, entry_block, tuple(capabilities), tuple(parameters),
             str(raw_function.get("return_mode", "value")),
             None if raw_origin is None else int(raw_origin),
+            bool(raw_function.get("exported", False)),
         ))
     destructors: list[MirDestructor] = []
     for raw_destructor in destructors_data:
