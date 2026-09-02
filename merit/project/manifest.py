@@ -20,7 +20,7 @@ class Manifest:
 
 def load_manifest(path: Path) -> Manifest:
     path = path.resolve()
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    data = tomllib.loads(path.read_text())
     package = data.get("package", {})
     build = data.get("build", {})
     name = package.get("name")
