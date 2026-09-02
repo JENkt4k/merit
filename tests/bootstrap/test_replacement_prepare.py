@@ -37,6 +37,25 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
+def _multimodule_project(tmp_path: Path) -> Path:
+    root = tmp_path / "prepare_multimodule_project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname = "prepare_multimodule_project"\n'
+        'entry = "src/main.mrt"\nsources = ["src/**/*.mrt"]\n\n'
+        '[build]\nc_flags = ["-O2"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "helper.mrt").write_text(
+        "module helper\npub fn value()->i64 { return 6; }\n", encoding="utf-8",
+    )
+    (root / "src" / "main.mrt").write_text(
+        "module main\nimport helper;\nfn main()->i32 { print(helper.value()); return 0; }\n",
+        encoding="utf-8",
+    )
+    return root
+
+
 def _python_driver(tmp_path: Path, name: str, body: str) -> Path:
     script = tmp_path / f"{name}.py"
     script.write_text(body, encoding="utf-8", newline="\n")
@@ -81,6 +100,20 @@ def _utf8_driver(tmp_path: Path) -> Path:
     return _python_driver(tmp_path, "utf8-replacement-driver", body)
 
 
+def _multimodule_driver(tmp_path: Path) -> Path:
+    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
+    values = encode_resolved_source_function_bundle((snapshot, snapshot))
+    body = (
+        "import os, sys\n"
+        "source = sys.stdin.read()\n"
+        "assert os.environ['MERIT_REPLACEMENT_MODULE'] == 'prepare_multimodule_project'\n"
+        "assert source.count('module ') == 1\n"
+        "assert 'fn value' in source and 'fn main' in source\n"
+        + f"print({repr(chr(10).join(str(value) for value in values))})\n"
+    )
+    return _python_driver(tmp_path, "multimodule-replacement-driver", body)
+
+
 def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_path: Path) -> None:
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
@@ -116,6 +149,32 @@ def test_prepare_replacement_sends_source_to_native_driver_as_utf8(tmp_path: Pat
     )
 
     assert len(prepared.snapshot_paths) == 2
+
+
+def test_prepare_replacement_publishes_one_canonical_multimodule_bundle(tmp_path: Path) -> None:
+    root = _multimodule_project(tmp_path)
+    project = load_project(root / "Merit.toml")
+
+    prepared = prepare_replacement_artifacts(
+        project, NativeReplacementDriver(_multimodule_driver(tmp_path))
+    )
+
+    assert len(prepared.snapshot_paths) == 2
+    payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
+    assert {item["module"] for item in payload["functions"]} == {
+        "prepare_multimodule_project"
+    }
+    assert {item["project_source"] for item in payload["functions"]} == {
+        "replacement-project.source"
+    }
+    assert len(load_replacement_inputs(project)) == 2
+
+    (root / "src" / "helper.mrt").write_text(
+        "module helper\npub fn value()->i64 { return 8; }\n", encoding="utf-8",
+    )
+    changed = load_project(root / "Merit.toml")
+    with pytest.raises(ReplacementProjectError, match="stale after source changes"):
+        load_replacement_inputs(changed)
 
 
 def test_prepared_artifacts_are_rejected_after_source_changes(tmp_path: Path) -> None:

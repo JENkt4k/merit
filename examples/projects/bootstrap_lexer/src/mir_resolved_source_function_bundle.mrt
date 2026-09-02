@@ -11,7 +11,7 @@ import bootstrap_mir_resolved_source_function_snapshot;
 // resolved-source-function-bundle-v1
 // magic "MRBF", version, function count, then for each function:
 // snapshot value count followed by one complete
-// bootstrap-resolved-source-function-snapshot-v4 payload.
+// bootstrap-resolved-source-function-snapshot-v9 payload.
 
 pub fn resolved_source_function_snapshot_value_count(
     borrow effective_source: Buffer,
@@ -41,7 +41,7 @@ pub fn resolved_source_function_snapshot_value_count(
     count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(cfg), 7));
     count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(placements), 3));
     count = checked_add(count, vec_len<i64>(capabilities));
-    count = checked_add(count, checked_mul(vec_len<MirTypeDescriptor>(type_descriptors), 6));
+    count = checked_add(count, checked_mul(vec_len<MirTypeDescriptor>(type_descriptors), 11));
     count = checked_add(count, checked_mul(vec_len<MirNumericTypeDescriptor>(numeric_type_descriptors), 11));
     count = checked_add(count, checked_mul(vec_len<MirDestructorDescriptor>(destructor_descriptors), 7));
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(destructor_body), 16));

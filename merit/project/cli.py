@@ -12,7 +12,7 @@ from merit.diagnostics import diagnostic_from_exception, render_exception
 
 from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
-from .replacement import build_replacement_project
+from .replacement import build_replacement_project, build_replacement_shared
 from .replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 
 
@@ -71,7 +71,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"capability sites: {len(checker.audit_sites)}")
             return 0
         output = Path(args.output) if args.output else project.manifest.root / "build" / project.manifest.name
-        if args.compiler == "replacement" and args.command in {"build", "run"}:
+        if args.compiler == "replacement" and args.command in {"build", "build-shared", "run"}:
+            if args.command == "build-shared":
+                replacement_shared = build_replacement_shared(project, output)
+                print(replacement_shared.library)
+                return 0
             replacement = build_replacement_project(project, output)
             if args.command == "build":
                 print(replacement.executable)

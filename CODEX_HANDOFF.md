@@ -3,8 +3,10 @@
 ## Repository state
 This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
+Alpha.2 replacement work has closed M1-M4, and PR #109 is merged. M5 project/module/import/export/visibility closure is the current frontier; M6-M10 remain open. The replacement compiler is not yet trusted, and `ALPHA2_CLOSURE.md` is the authoritative detailed work queue.
+
 Current baseline:
-- 376 tests passing after editable installation
+- Exact test counts are recorded by canonical gate runs rather than frozen here
 - Python-hosted compiler
 - C11 native backend
 - single-file and project CLIs

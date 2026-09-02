@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -71,10 +72,29 @@ def test_replacement_cli_rejects_reference_only_commands(tmp_path: Path, capsys)
     assert "does not support 'verify'" in capsys.readouterr().err
 
 
+def test_replacement_cli_routes_shared_build_without_reference_fallback(
+    tmp_path: Path, capsys, monkeypatch,
+) -> None:
+    root = _project(tmp_path)
+    library = root / "build" / "replacement_project.so"
+    observed: list[tuple[object, Path]] = []
+
+    def fake_build_shared(project, output: Path):
+        observed.append((project, output))
+        return SimpleNamespace(library=library)
+
+    monkeypatch.setattr("merit.project.cli.build_replacement_shared", fake_build_shared)
+    status = main(["build-shared", str(root), "--compiler", "replacement"])
+
+    assert status == 0
+    assert observed and observed[0][1] == root / "build" / "replacement_project"
+    assert capsys.readouterr().out.strip() == str(library)
+
+
 def test_replacement_mode_is_explicit_in_help(capsys) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["--help"])
     assert exc.value.code == 0
     output = capsys.readouterr().out
     assert "--compiler {reference,replacement}" in output
-    assert "never falls back" in output
+    assert "never falls back" in " ".join(output.split())

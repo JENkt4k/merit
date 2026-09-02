@@ -1,6 +1,12 @@
 # Changelog
 
-## v0.1.0-alpha.2 development — Replacement lexer foundation
+## v0.1.0-alpha.2 development
+
+- Closed replacement milestones M1-M4 for statements/control flow, resource and payload-enum lifecycle, exact numerics and aggregates, and generics/traits; PR #109 is merged.
+- Continued with M5 project/module/import/export/visibility closure. Corpus convergence, acceptance migration, production cutover, reproducibility/trust, and release audit remain open; Alpha.2 is not yet complete or trusted.
+- `ALPHA2_CLOSURE.md` remains the authoritative detailed milestone ledger.
+
+### Replacement lexer foundation
 
 - Added the first compiler slice written in Merit: typed, byte-spanned tokenization over an owned source buffer.
 - Added interpreter/native fixtures for identifiers, integers, strings, punctuation, comments, and invalid unterminated strings, plus capability compile-fail coverage and generated-C inspection.

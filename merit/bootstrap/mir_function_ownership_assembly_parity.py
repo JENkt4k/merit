@@ -210,4 +210,5 @@ def lower_native_ownership_whole_function_assembly(
         function.parameters,
         function.return_mode,
         function.borrowed_origin,
+        function.exported,
     ),))

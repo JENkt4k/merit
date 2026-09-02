@@ -46,9 +46,7 @@ The Python-hosted alpha compiler remains the independent semantic oracle, but it
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v1`. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-PR #78 attached the first concrete Merit-native replacement driver for the narrow supported source subset. PR #79 removed its one-function source-unit restriction: the native driver now discovers complete top-level functions, preserves original source offsets in function-specific token views, lowers each function independently, and emits one bundle item per resolved function.
-
-The next production frontier is native source derivation of enum-variant and capability catalogs so the concrete driver can move beyond the current no-enum/no-capability subset without hand-authored semantic catalogs. See `STATUS.md`, `ROADMAP.md`, and `BOOTSTRAP_STATUS.md`.
+The concrete native driver now covers the closed M1-M4 replacement milestones: statements/control flow, resource and payload-enum lifecycle, exact numerics and aggregates, and generics/traits. PR #109 is merged. M5 project/module/import/export/visibility closure is the current frontier; M6-M10 remain later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
 
 ## Established language surface
 

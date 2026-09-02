@@ -14,7 +14,7 @@ from merit.bootstrap.mir_contract import (
     MirTerminator,
     MirType,
 )
-from merit.bootstrap.mir_to_c import MirToCError, emit_c_module
+from merit.bootstrap.mir_to_c import MirToCError, emit_c_header, emit_c_module
 
 
 I64 = MirType("i64")
@@ -80,6 +80,25 @@ def typed_binary_function(name, type_name, left, right, operator):
         ), MirTerminator("return", operands=(2,))),),
         0,
     )
+
+
+def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
+    point = MirType(
+        "struct_aggregate_0_destructor_-1__abi_1_506f696e74_78",
+        (MirType("i32"),),
+    )
+    function = MirFunction(
+        "read_point", MirType("i32"),
+        (MirLocal(0, "point", point), MirLocal(1, "result", MirType("i32"))),
+        (MirBlock(
+            0, (MirInstruction(0, "const", result=1, value=0),),
+            MirTerminator("return", operands=(1,)),
+        ),),
+        0, parameters=(MirParameter(0),), exported=True,
+    )
+
+    with pytest.raises(MirToCError, match="must be public and stable"):
+        emit_c_header(MirModule("example", (function,)))
 
 
 def test_emits_and_runs_ordered_arithmetic(tmp_path):

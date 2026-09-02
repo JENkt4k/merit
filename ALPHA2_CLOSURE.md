@@ -61,8 +61,8 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | deterministic C emission | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | replacement executable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | payload-bearing enums | ✓ | ✓ | ✓ | ✓ | ✓ | — | CLOSED |
-| complete branching/control flow | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
-| loops | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | partial | OPEN |
+| complete branching/control flow | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
+| loops | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | rich owned structs/aggregates | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | strings/buffers complete alpha surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | exact decimal complete surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
@@ -70,9 +70,9 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | generic functions/types | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | generic collections | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | coherent traits | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
-| cross-module imports | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
-| visibility/qualified names | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
-| stable exports/shared libraries | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
+| cross-module imports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
+| visibility/qualified names | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
+| stable exports/shared libraries | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | all alpha accepted corpus | ✓ | OPEN | OPEN | OPEN | — | — | OPEN |
 | all alpha rejected corpus | ✓ | OPEN | OPEN | — | OPEN | — | OPEN |
 | all nine acceptance projects | ✓ | OPEN | OPEN | OPEN | — | OPEN | OPEN |
@@ -450,6 +450,49 @@ interactions remain M5.
 ### M5 — Module/project closure
 
 **Goal:** Close multi-source-unit compilation, imports, qualified names, visibility, exports, stable-layout/shared-library interactions.
+
+`test_concrete_native_driver_compiles_qualified_multimodule_project_as_one_bundle`
+drives four source units through one deterministic canonical project source and
+one native MRBF bundle. Imported types, functions, traits, generic
+instantiations, qualified constructors/calls, and an imported destructor helper
+reach prepared artifacts, canonical MIR, deterministic C, native execution, and
+reference/replacement parity. Published project source and source digests are
+validated on consumption, so changed units reject stale artifacts.
+
+Snapshot v9 carries native-derived aggregate type/member spans plus public and
+stable flags in the existing type-descriptor contract. Export identity remains
+in the canonical function header. The replacement shared-library path consumes
+only that native metadata to emit public prototypes, stable aggregate typedefs,
+and deterministic size/offset assertions. It rejects unrepresented or
+non-public/non-stable aggregate ABI types rather than reparsing source or
+inventing a layout. `test_concrete_native_driver_builds_public_scalar_shared_library_from_project_bundle`
+proves private `main` exclusion, scalar and stable-aggregate exports, generated
+header layout, native shared linking, and foreign `ctypes` calls. The project
+CLI exposes this path through `build-shared --compiler replacement` and retains
+its no-reference-fallback rule.
+
+Existing Alpha.1 project diagnostics remain the negative authority for missing
+imports, unimported qualification, private ABI leaks, and nested private type
+exposure. Replacement preparation additionally fails closed on missing,
+malformed, stale, or source-inconsistent project artifacts and never silently
+uses reference lowering.
+
+M5 is **CLOSED**. Complete accepted/rejected corpus convergence remains M6;
+general acceptance-project migration remains M7; normal production cutover,
+reproducibility/trust, and release audit remain M8-M10.
+
+**Deferred bootstrap compiler defect discovered during M5:** threading one
+additional scalar `exported:i32` argument through
+`print_resolved_source_function_bundle_item` into the existing large
+`print_resolved_source_function_snapshot` call serialized the complete snapshot
+but then returned corrupted status `1392`; the production driver wrapped that
+as status `4392`. The minimal trigger is a two-function source containing a
+public `fn identity(value:i32)->i32 { return value; }` and a `main` that calls
+it, after adding the scalar argument to those two snapshot-print signatures and
+forwarding it unchanged. Export identity is instead encoded canonically in the
+function-header record in snapshot v8. The large-call/status-corruption defect
+is real but does not block M5 and is deferred to a dedicated bootstrap call-ABI
+repair; do not treat the representation change as its fix.
 
 ### M6 — Corpus convergence
 

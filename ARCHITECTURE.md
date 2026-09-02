@@ -102,4 +102,6 @@ The semantic alpha blockers are now closed. Package decomposition and per-module
 
 The active post-alpha path is a compiler written in the accepted Merit subset and initially compiled by the Python host. `spec/BOOTSTRAP.md` defines the versioned boundaries. The first slice, `examples/projects/bootstrap_lexer`, establishes typed byte-span tokens, explicit allocation, owned token-vector cleanup, and interpreter/native equivalence. It also exposed and closed aggregate initialization for functions returning monomorphized vectors in generated C.
 
+The replacement implementation has since closed M1-M4 through the concrete native-driver pipeline; PR #109 is merged and M5 project/module/import/export/visibility closure is current. `ALPHA2_CLOSURE.md` is authoritative for detailed milestone evidence and the remaining M6-M10 sequence.
+
 Until stage equivalence is established, the Python compiler remains the executable semantic reference. Replacement stages must compare their outputs with it rather than silently creating a second language path.

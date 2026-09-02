@@ -6,7 +6,7 @@ single Merit source unit.  Framing is intentionally simple and deterministic:
     magic, version, function_count,
     snapshot_value_count, <snapshot values>, ...
 
-Each nested snapshot remains bootstrap-resolved-source-function-snapshot-v1 and
+Each nested snapshot retains its own versioned resolved-source snapshot contract and
 is decoded by the existing strict decoder.  This layer performs no source or
 semantic reconstruction.
 """
