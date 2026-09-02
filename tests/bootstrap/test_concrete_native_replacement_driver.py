@@ -23,6 +23,133 @@ MULTI_FUNCTION_SOURCE = (
     "fn helper()->i32 { return 6; }\n"
     "fn main()->i32 { return 7; }\n"
 )
+GENERIC_FUNCTION_SOURCE = (
+    "module main\n"
+    "fn identity<T: Copy>(value:T)->T { return value; }\n"
+    "fn main()->i32 { let value:i64=identity<i64>(7); print(value); return 0; }\n"
+)
+GENERIC_AGGREGATE_SOURCE = """module main
+struct Pair<T,U> { first:T; second:U; }
+enum Option<T> { Some(T), None }
+fn main()->i32 {
+    let pair:Pair<i64,i32>=Pair<i64,i32>{first:7,second:3};
+    let maybe:Option<i64>=Option<i64>::Some(pair.first);
+    match(maybe){Option<i64>::Some(value)=>{print(value);} Option<i64>::None=>{print(0);}}
+    return 0;
+}
+"""
+GENERIC_TRAIT_DISPATCH_SOURCE = """module main
+struct Point { x:i32; }
+trait Summarized { fn score(value:Self)->i32; }
+impl Summarized for Point { fn score(value:Point)->i32 { return value.x; } }
+fn summarize<T:Summarized>(value:T)->i32 { return score(value); }
+fn main()->i32 {
+    let point:Point=Point{x:17};
+    let total:i32=summarize<Point>(point);
+    print(total);return 0;
+}
+"""
+GENERIC_VEC_I64_SOURCE = """module main
+capability allocate;
+fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+    var values:Vec<i64>=vec_new<i64>(allocator,2);
+    vec_push<i64>(values,7);vec_push<i64>(values,11);
+    vec_set<i64>(values,1,13);
+    print(vec_len<i64>(values));print(vec_get<i64>(values,0));print(vec_pop<i64>(values));
+} return 0; }
+"""
+GENERIC_OWNERSHIP_SOURCE = """module main
+capability allocate;
+fn forward<T>(value:T)->T { return value; }
+fn observe<T>(borrow value:T)->i32 { return 1; }
+fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+    let source:Buffer=buffer_from_string(allocator,"owned");
+    let moved:Buffer=forward<Buffer>(source);
+    print(observe<Buffer>(moved));print(buffer_len(moved));drop(moved);
+} return 0; }
+"""
+GENERIC_VEC_OWNED_SOURCE = """module main
+capability allocate;
+stable("marker-v1") struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn main()->i32 { with capability allocate {
+    let portable:Allocator=portable_allocator();let system:Allocator=system_allocator();
+    var values:Vec<Marker>=vec_new<Marker>(portable,1);
+    let first:Marker=Marker{number:41};let second:Marker=Marker{number:43};
+    vec_push<Marker>(values,first);vec_replace<Marker>(values,0,second);
+    print(allocator_compatible(vec_allocator<Marker>(values),portable));
+    var destination:Vec<Marker>=vec_new<Marker>(portable,0);
+    vec_transfer<Marker>(destination,values);
+    let restored:Marker=vec_pop<Marker>(destination);print(restored.number);drop(restored);
+    var inner:Vec<Marker>=vec_new<Marker>(system,1);
+    let nested:Marker=Marker{number:53};vec_push<Marker>(inner,nested);
+    var outer:Vec<Vec<Marker>>=vec_new<Vec<Marker>>(system,1);
+    vec_push<Vec<Marker>>(outer,inner);print(vec_len<Vec<Marker>>(outer));
+} return 0; }
+"""
+M4_REJECTED_SOURCES = (
+    (
+        "wrong-generic-arity",
+        "module main\nstruct Pair<T,U>{first:T;second:U;}\n"
+        "fn main()->i32 { let pair:Pair<i64>=Pair<i64>{first:1}; return 0; }\n",
+    ),
+    (
+        "missing-trait-implementation",
+        "module main\nstruct Point{x:i32;}\ntrait Summarized{fn score(value:Self)->i32;}\n"
+        "fn summarize<T:Summarized>(value:T)->i32{return score(value);}\n"
+        "fn main()->i32 { let point:Point=Point{x:1}; return summarize<Point>(point); }\n",
+    ),
+    (
+        "duplicate-trait-implementation",
+        "module main\nstruct Point{x:i32;}\ntrait Summarized{fn score(value:Self)->i32;}\n"
+        "impl Summarized for Point{fn score(value:Point)->i32{return value.x;}}\n"
+        "impl Summarized for Point{fn score(value:Point)->i32{return value.x;}}\n"
+        "fn main()->i32{return 0;}\n",
+    ),
+    (
+        "ambiguous-trait-method",
+        "module main\nstruct Point{x:i32;}\n"
+        "trait Primary{fn score(value:Self)->i32;} trait Secondary{fn score(value:Self)->i32;}\n"
+        "impl Primary for Point{fn score(value:Point)->i32{return value.x;}}\n"
+        "impl Secondary for Point{fn score(value:Point)->i32{return value.x;}}\n"
+        "fn summarize<T:Primary+Secondary>(value:T)->i32{return score(value);}\n"
+        "fn main()->i32{let point:Point=Point{x:1};return summarize<Point>(point);}\n",
+    ),
+    (
+        "generic-use-after-move",
+        "module main\ncapability allocate;\nfn forward<T>(value:T)->T{return value;}\n"
+        "fn main()->i32{with capability allocate{let allocator:Allocator=system_allocator();"
+        "let source:Buffer=buffer_from_string(allocator,\"x\");let moved:Buffer=forward<Buffer>(source);"
+        "print(buffer_len(source));drop(moved);}return 0;}\n",
+    ),
+    (
+        "non-copy-generic-copy-bound",
+        "module main\ncapability allocate;\nfn copy_value<T:Copy>(value:T)->T{return value;}\n"
+        "fn main()->i32{with capability allocate{let allocator:Allocator=system_allocator();"
+        "let source:Buffer=buffer_from_string(allocator,\"x\");"
+        "let copied:Buffer=copy_value<Buffer>(source);drop(copied);}return 0;}\n",
+    ),
+    (
+        "illegal-vector-copy",
+        "module main\ncapability allocate;\nfn main()->i32{with capability allocate{"
+        "let allocator:Allocator=system_allocator();var values:Vec<i64>=vec_new<i64>(allocator,1);"
+        "let moved:Vec<i64>=values;print(vec_len<i64>(values));drop(moved);}return 0;}\n",
+    ),
+    (
+        "illegal-owned-vector-copy-out",
+        "module main\ncapability allocate;\nfn main()->i32{with capability allocate{"
+        "let allocator:Allocator=system_allocator();var values:Vec<Buffer>=vec_new<Buffer>(allocator,1);"
+        "let item:Buffer=buffer_from_string(allocator,\"x\");vec_push<Buffer>(values,item);"
+        "let copied:Buffer=vec_get<Buffer>(values,0);drop(copied);}return 0;}\n",
+    ),
+    (
+        "vector-allocation-without-capability",
+        "module main\nfn main()->i32{let allocator:Allocator=system_allocator();"
+        "var values:Vec<i64>=vec_new<i64>(allocator,1);drop(values);return 0;}\n",
+    ),
+)
 PRIMITIVE_INTEGER_SURFACE_SOURCE = (
     "module main\n"
     "fn main()->i32 { "
@@ -887,6 +1014,209 @@ def test_concrete_native_driver_lowers_each_function_into_one_bundle_item(tmp_pa
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_monomorphizes_generic_function_before_mir(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=GENERIC_FUNCTION_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=GENERIC_FUNCTION_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 2
+    assert all(snapshot.effective_source_bytes for snapshot in bundle.functions)
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "fn identity__i64(value:i64)->i64" in effective_source
+    assert "identity<i64>" not in effective_source
+
+    root = _project(tmp_path, GENERIC_FUNCTION_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-generic-function")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-generic-function")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert replacement.returncode == 0, (replacement.returncode, replacement.stdout, replacement.stderr)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_monomorphizes_generic_struct_and_payload_enum_before_mir(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=GENERIC_AGGREGATE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=GENERIC_AGGREGATE_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 1
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "struct Pair__i64__i32" in effective_source
+    assert "enum Option__i64" in effective_source
+    assert "Option__i64__Some(i64)" in effective_source
+
+    root = _project(tmp_path, GENERIC_AGGREGATE_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-generic-aggregate")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-generic-aggregate")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_uses_static_user_trait_dispatch_before_mir(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=GENERIC_TRAIT_DISPATCH_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    second = subprocess.run(
+        [str(driver.executable)], input=GENERIC_TRAIT_DISPATCH_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 3
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "impl__Summarized__Point__score" in effective_source
+    assert "summarize__Point" in effective_source
+
+    root = _project(tmp_path, GENERIC_TRAIT_DISPATCH_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-generic-trait")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-generic-trait")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_vec_i64_lifecycle_before_mir(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run(
+        [str(driver.executable)], input=GENERIC_VEC_I64_SOURCE,
+        text=True, capture_output=True,
+    )
+    assert first.returncode == 0, (first.returncode, first.stdout, first.stderr)
+    second = subprocess.run(
+        [str(driver.executable)], input=GENERIC_VEC_I64_SOURCE,
+        text=True, capture_output=True, check=True,
+    )
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    assert len(bundle.functions) == 1
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "Vec__i64" in effective_source
+    assert "vec_new__i64" in effective_source
+
+    root = _project(tmp_path, GENERIC_VEC_I64_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-vec-i64")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-vec-i64")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_uses_ordinary_ownership_for_generic_calls(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run([str(driver.executable)], input=GENERIC_OWNERSHIP_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=GENERIC_OWNERSHIP_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "fn forward__Buffer(value:Buffer)->Buffer" in effective_source
+    assert "fn observe__Buffer(borrow value:Buffer)->i32" in effective_source
+
+    root = _project(tmp_path, GENERIC_OWNERSHIP_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-generic-ownership")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-generic-ownership")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    ) == (0, "1\n5\n", "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_owned_and_nested_vec_lifecycle_before_mir(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    first = subprocess.run([str(driver.executable)], input=GENERIC_VEC_OWNED_SOURCE, text=True, capture_output=True, check=True)
+    second = subprocess.run([str(driver.executable)], input=GENERIC_VEC_OWNED_SOURCE, text=True, capture_output=True, check=True)
+    assert first.stdout == second.stdout
+    bundle = decode_resolved_source_function_bundle(int(line) for line in first.stdout.splitlines())
+    effective_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    assert "Vec__Marker" in effective_source
+    assert "Vec__Vec__Marker" in effective_source
+
+    root = _project(tmp_path, GENERIC_VEC_OWNED_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-vec-owned")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True, check=True)
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-vec-owned")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    assert replacement.returncode == 0, (replacement.returncode, replacement.stdout, replacement.stderr)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    ) == (0, "41\n1\n43\n43\n1\n53\n", "")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize("case_name,source", M4_REJECTED_SOURCES)
+def test_concrete_native_driver_fails_closed_for_invalid_generic_trait_and_vec_semantics(
+    tmp_path: Path, driver: NativeReplacementDriver, case_name: str, source: str,
+) -> None:
+    with pytest.raises((CompileError, UnexpectedInput)):
+        Checker(parse(source)).check()
+
+    first = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    second = subprocess.run([str(driver.executable)], input=source, text=True, capture_output=True)
+    assert first.returncode != 0
+    assert (first.returncode, first.stdout, first.stderr) == (
+        second.returncode, second.stdout, second.stderr,
+    )
+
+    root = _project(tmp_path / case_name, source)
+    try:
+        project = load_project(root / "Merit.toml")
+    except ProjectError:
+        assert not (root / ".merit" / "replacement-build-v1.json").exists()
+        return
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+    assert not (root / ".merit" / "replacement-build-v1.json").exists()
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

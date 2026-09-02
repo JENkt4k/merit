@@ -120,6 +120,12 @@ requires_caps [allocate]
                 let callee:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,ast_left(ast));
                 let builtin_kind:i32=sfr_builtin_call_kind(source,ast_start(callee),ast_length(callee));
                 if(builtin_kind!=0){resolved_type=sfr_builtin_call_return_type(builtin_kind);}
+                else {
+                    let callable_type:i32=resolve_source_call_return_type(
+                        source,ast_start(callee),ast_length(callee),allocator
+                    );
+                    if(callable_type!=function_mir_unresolved_type_code()){resolved_type=callable_type;}
+                }
             }
         }
         vec_push<HirExpressionRecord>(hir_nodes, lower_resolved_hir_record(
@@ -339,6 +345,16 @@ requires_caps [allocate]
                                 let value_binding:i64=hir_binding_id(payload);
                                 if(consumed_binding<0){consumed_binding=value_binding;}
                                 else {vec_push<i64>(direct_binding,value_binding);}
+                            }
+                        } else {
+                            var borrowed_payload:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,vec_get<i64>(call_arguments,argument_ordinal));
+                            var borrowed_kind:i32=hir_kind(borrowed_payload);
+                            while(borrowed_kind==3){
+                                borrowed_payload=vec_get<HirExpressionRecord>(hir_nodes,hir_left(borrowed_payload));
+                                borrowed_kind=hir_kind(borrowed_payload);
+                            }
+                            if(borrowed_kind==4){
+                                vec_push<MirOwnershipEvent>(events,ownership_event_use(hir_binding_id(borrowed_payload)));
                             }
                         }
                     }

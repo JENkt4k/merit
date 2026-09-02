@@ -1,0 +1,844 @@
+module bootstrap_mir_generic_catalog
+import bootstrap_tokens;
+
+capability allocate;
+
+// Canonical source catalog for the explicit Alpha.1 generic/trait surface.
+// Numeric values below are the serialization boundary; consumers use the
+// symbolic accessors rather than duplicating raw discriminants or statuses.
+pub struct GenericDeclarationIdentity {
+    kind: i32;
+    declaration_id: i64;
+    name_start: i64;
+    name_length: i64;
+    parameter_start: i64;
+    parameter_count: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+pub struct GenericParameterIdentity {
+    declaration_id: i64;
+    ordinal: i64;
+    name_start: i64;
+    name_length: i64;
+    bound_start: i64;
+    bound_count: i64;
+}
+
+pub struct GenericBoundIdentity {
+    declaration_id: i64;
+    parameter_ordinal: i64;
+    ordinal: i64;
+    trait_start: i64;
+    trait_length: i64;
+}
+
+pub struct TraitDeclarationIdentity {
+    trait_id: i64;
+    name_start: i64;
+    name_length: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+pub struct TraitImplementationIdentity {
+    implementation_id: i64;
+    trait_id: i64;
+    trait_start: i64;
+    trait_length: i64;
+    target_start: i64;
+    target_length: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+pub struct TraitMethodIdentity {
+    trait_id: i64;
+    ordinal: i64;
+    name_start: i64;
+    name_length: i64;
+}
+
+pub struct TraitImplementationMethodIdentity {
+    implementation_id: i64;
+    ordinal: i64;
+    name_start: i64;
+    name_length: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+struct GenericCatalogCandidate {
+    kind: i32;
+    name_start: i64;
+    name_length: i64;
+    parameter_open: i64;
+    parameter_close: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+struct TraitCatalogCandidate {
+    name_start: i64;
+    name_length: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+struct ImplementationCatalogCandidate {
+    trait_start: i64;
+    trait_length: i64;
+    target_start: i64;
+    target_length: i64;
+    source_start: i64;
+    source_length: i64;
+}
+
+pub fn generic_declaration_struct_kind() -> i32 { return 1; }
+pub fn generic_declaration_enum_kind() -> i32 { return 2; }
+pub fn generic_declaration_function_kind() -> i32 { return 3; }
+
+pub fn generic_catalog_ok() -> i32 { return 0; }
+pub fn generic_catalog_malformed_declaration_status() -> i32 { return 1; }
+pub fn generic_catalog_duplicate_declaration_status() -> i32 { return 2; }
+pub fn generic_catalog_duplicate_trait_status() -> i32 { return 3; }
+pub fn generic_catalog_unknown_impl_trait_status() -> i32 { return 4; }
+pub fn generic_catalog_duplicate_impl_status() -> i32 { return 5; }
+pub fn generic_catalog_malformed_parameter_status() -> i32 { return 6; }
+
+pub fn generic_declaration_kind(borrow value:GenericDeclarationIdentity)->i32{return value.kind;}
+pub fn generic_declaration_id(borrow value:GenericDeclarationIdentity)->i64{return value.declaration_id;}
+pub fn generic_declaration_name_start(borrow value:GenericDeclarationIdentity)->i64{return value.name_start;}
+pub fn generic_declaration_name_length(borrow value:GenericDeclarationIdentity)->i64{return value.name_length;}
+pub fn generic_declaration_parameter_start(borrow value:GenericDeclarationIdentity)->i64{return value.parameter_start;}
+pub fn generic_declaration_parameter_count(borrow value:GenericDeclarationIdentity)->i64{return value.parameter_count;}
+pub fn generic_declaration_source_start(borrow value:GenericDeclarationIdentity)->i64{return value.source_start;}
+pub fn generic_declaration_source_length(borrow value:GenericDeclarationIdentity)->i64{return value.source_length;}
+
+pub fn generic_parameter_declaration_id(borrow value:GenericParameterIdentity)->i64{return value.declaration_id;}
+pub fn generic_parameter_ordinal(borrow value:GenericParameterIdentity)->i64{return value.ordinal;}
+pub fn generic_parameter_name_start(borrow value:GenericParameterIdentity)->i64{return value.name_start;}
+pub fn generic_parameter_name_length(borrow value:GenericParameterIdentity)->i64{return value.name_length;}
+pub fn generic_parameter_bound_start(borrow value:GenericParameterIdentity)->i64{return value.bound_start;}
+pub fn generic_parameter_bound_count(borrow value:GenericParameterIdentity)->i64{return value.bound_count;}
+
+pub fn generic_bound_declaration_id(borrow value:GenericBoundIdentity)->i64{return value.declaration_id;}
+pub fn generic_bound_parameter_ordinal(borrow value:GenericBoundIdentity)->i64{return value.parameter_ordinal;}
+pub fn generic_bound_ordinal(borrow value:GenericBoundIdentity)->i64{return value.ordinal;}
+pub fn generic_bound_trait_start(borrow value:GenericBoundIdentity)->i64{return value.trait_start;}
+pub fn generic_bound_trait_length(borrow value:GenericBoundIdentity)->i64{return value.trait_length;}
+
+pub fn trait_declaration_id(borrow value:TraitDeclarationIdentity)->i64{return value.trait_id;}
+pub fn trait_declaration_name_start(borrow value:TraitDeclarationIdentity)->i64{return value.name_start;}
+pub fn trait_declaration_name_length(borrow value:TraitDeclarationIdentity)->i64{return value.name_length;}
+pub fn trait_declaration_source_start(borrow value:TraitDeclarationIdentity)->i64{return value.source_start;}
+pub fn trait_declaration_source_length(borrow value:TraitDeclarationIdentity)->i64{return value.source_length;}
+
+pub fn trait_implementation_id(borrow value:TraitImplementationIdentity)->i64{return value.implementation_id;}
+pub fn trait_implementation_trait_id(borrow value:TraitImplementationIdentity)->i64{return value.trait_id;}
+pub fn trait_implementation_trait_start(borrow value:TraitImplementationIdentity)->i64{return value.trait_start;}
+pub fn trait_implementation_trait_length(borrow value:TraitImplementationIdentity)->i64{return value.trait_length;}
+pub fn trait_implementation_target_start(borrow value:TraitImplementationIdentity)->i64{return value.target_start;}
+pub fn trait_implementation_target_length(borrow value:TraitImplementationIdentity)->i64{return value.target_length;}
+pub fn trait_implementation_source_start(borrow value:TraitImplementationIdentity)->i64{return value.source_start;}
+pub fn trait_implementation_source_length(borrow value:TraitImplementationIdentity)->i64{return value.source_length;}
+pub fn trait_method_trait_id(borrow value:TraitMethodIdentity)->i64{return value.trait_id;}
+pub fn trait_method_ordinal(borrow value:TraitMethodIdentity)->i64{return value.ordinal;}
+pub fn trait_method_name_start(borrow value:TraitMethodIdentity)->i64{return value.name_start;}
+pub fn trait_method_name_length(borrow value:TraitMethodIdentity)->i64{return value.name_length;}
+pub fn trait_implementation_method_implementation_id(borrow value:TraitImplementationMethodIdentity)->i64{return value.implementation_id;}
+pub fn trait_implementation_method_ordinal(borrow value:TraitImplementationMethodIdentity)->i64{return value.ordinal;}
+pub fn trait_implementation_method_name_start(borrow value:TraitImplementationMethodIdentity)->i64{return value.name_start;}
+pub fn trait_implementation_method_name_length(borrow value:TraitImplementationMethodIdentity)->i64{return value.name_length;}
+pub fn trait_implementation_method_source_start(borrow value:TraitImplementationMethodIdentity)->i64{return value.source_start;}
+pub fn trait_implementation_method_source_length(borrow value:TraitImplementationMethodIdentity)->i64{return value.source_length;}
+
+fn generic_catalog_span_equal(
+    borrow source:Buffer,left_start:i64,left_length:i64,right_start:i64,right_length:i64
+)->i32{
+    if(left_length!=right_length){return 0;}
+    var offset:i64=0;
+    while(offset<left_length){
+        if(buffer_get(source,checked_add(left_start,offset))!=buffer_get(source,checked_add(right_start,offset))){return 0;}
+        offset=checked_add(offset,1);
+    }
+    return 1;
+}
+
+fn generic_catalog_cross_span_equal(
+    borrow left:Buffer,left_start:i64,left_length:i64,
+    borrow right:Buffer,right_start:i64,right_length:i64
+)->i32{
+    if(left_length!=right_length){return 0;}
+    var offset:i64=0;
+    while(offset<left_length){
+        if(buffer_get(left,checked_add(left_start,offset))!=buffer_get(right,checked_add(right_start,offset))){return 0;}
+        offset=checked_add(offset,1);
+    }
+    return 1;
+}
+
+// -1 left precedes right, 0 equal, 1 left follows right.
+fn generic_catalog_span_compare(
+    borrow source:Buffer,left_start:i64,left_length:i64,right_start:i64,right_length:i64
+)->i32{
+    var offset:i64=0;
+    var limit:i64=left_length;
+    if(right_length<limit){limit=right_length;}
+    while(offset<limit){
+        let left:i64=buffer_get(source,checked_add(left_start,offset));
+        let right:i64=buffer_get(source,checked_add(right_start,offset));
+        if(left<right){return -1;}
+        if(left>right){return 1;}
+        offset=checked_add(offset,1);
+    }
+    if(left_length<right_length){return -1;}
+    if(left_length>right_length){return 1;}
+    return 0;
+}
+
+fn generic_keyword_struct()->i32{return 1;}
+fn generic_keyword_enum()->i32{return 2;}
+fn generic_keyword_fn()->i32{return 3;}
+fn generic_keyword_trait()->i32{return 4;}
+fn generic_keyword_impl()->i32{return 5;}
+fn generic_keyword_for()->i32{return 6;}
+
+// Canonical UTF-8/ASCII source-encoding boundary for reserved words.
+fn generic_ascii_a()->i64{return 97;} fn generic_ascii_c()->i64{return 99;}
+fn generic_ascii_d()->i64{return 100;}
+fn generic_ascii_e()->i64{return 101;} fn generic_ascii_f()->i64{return 102;}
+fn generic_ascii_g()->i64{return 103;}
+fn generic_ascii_i()->i64{return 105;} fn generic_ascii_l()->i64{return 108;}
+fn generic_ascii_m()->i64{return 109;} fn generic_ascii_n()->i64{return 110;}
+fn generic_ascii_o()->i64{return 111;} fn generic_ascii_p()->i64{return 112;}
+fn generic_ascii_q()->i64{return 113;} fn generic_ascii_r()->i64{return 114;} fn generic_ascii_s()->i64{return 115;}
+fn generic_ascii_t()->i64{return 116;} fn generic_ascii_u()->i64{return 117;}
+fn generic_ascii_y()->i64{return 121;}
+fn generic_ascii_upper_c()->i64{return 67;} fn generic_ascii_upper_d()->i64{return 68;}
+fn generic_ascii_upper_e()->i64{return 69;} fn generic_ascii_upper_o()->i64{return 79;}
+fn generic_ascii_upper_s()->i64{return 83;}
+fn generic_ascii_digit_one()->i64{return 49;} fn generic_ascii_digit_two()->i64{return 50;}
+fn generic_ascii_digit_three()->i64{return 51;} fn generic_ascii_digit_four()->i64{return 52;}
+fn generic_ascii_digit_six()->i64{return 54;} fn generic_ascii_digit_eight()->i64{return 56;}
+
+fn generic_catalog_byte(borrow source:Buffer,start:i64,offset:i64,expected:i64)->i32{
+    if(buffer_get(source,checked_add(start,offset))==expected){return 1;}
+    return 0;
+}
+
+fn generic_catalog_keyword(
+    borrow source:Buffer,start:i64,length:i64,keyword:i32
+)->i32{
+    if(keyword==generic_keyword_struct()){
+        if(length!=6){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_s())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_t())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_r())==0){return 0;}
+        if(generic_catalog_byte(source,start,3,generic_ascii_u())==0){return 0;}
+        if(generic_catalog_byte(source,start,4,generic_ascii_c())==0){return 0;}
+        if(generic_catalog_byte(source,start,5,generic_ascii_t())==0){return 0;}
+        return 1;
+    }
+    if(keyword==generic_keyword_enum()){
+        if(length!=4){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_e())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_n())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_u())==0){return 0;}
+        if(generic_catalog_byte(source,start,3,generic_ascii_m())==0){return 0;}
+        return 1;
+    }
+    if(keyword==generic_keyword_fn()){
+        if(length!=2){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_f())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_n())==0){return 0;}
+        return 1;
+    }
+    if(keyword==generic_keyword_trait()){
+        if(length!=5){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_t())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_r())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_a())==0){return 0;}
+        if(generic_catalog_byte(source,start,3,generic_ascii_i())==0){return 0;}
+        if(generic_catalog_byte(source,start,4,generic_ascii_t())==0){return 0;}
+        return 1;
+    }
+    if(keyword==generic_keyword_impl()){
+        if(length!=4){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_i())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_m())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_p())==0){return 0;}
+        if(generic_catalog_byte(source,start,3,generic_ascii_l())==0){return 0;}
+        return 1;
+    }
+    if(keyword==generic_keyword_for()){
+        if(length!=3){return 0;}
+        if(generic_catalog_byte(source,start,0,generic_ascii_f())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_o())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_r())==0){return 0;}
+        return 1;
+    }
+    return 0;
+}
+
+fn generic_trait_copy_kind()->i32{return 1;}
+fn generic_trait_eq_kind()->i32{return 2;}
+fn generic_trait_ord_kind()->i32{return 3;}
+fn generic_trait_display_kind()->i32{return 4;}
+
+pub fn generic_implements_missing()->i32{return 0;}
+pub fn generic_implements_satisfied()->i32{return 1;}
+pub fn generic_implements_unknown_trait()->i32{return -1;}
+
+fn generic_catalog_builtin_trait_kind(
+    borrow source:Buffer,start:i64,length:i64
+)->i32{
+    if(length==2){
+        if(generic_catalog_byte(source,start,0,generic_ascii_upper_e())!=0){
+            if(generic_catalog_byte(source,start,1,generic_ascii_q())!=0){return generic_trait_eq_kind();}
+        }
+    }
+    if(length==3){
+        if(generic_catalog_byte(source,start,0,generic_ascii_upper_o())!=0){
+            if(generic_catalog_byte(source,start,1,generic_ascii_r())!=0){
+                if(generic_catalog_byte(source,start,2,generic_ascii_d())!=0){return generic_trait_ord_kind();}
+            }
+        }
+    }
+    if(length==4){
+        if(generic_catalog_byte(source,start,0,generic_ascii_upper_c())!=0){
+            if(generic_catalog_byte(source,start,1,generic_ascii_o())!=0){
+                if(generic_catalog_byte(source,start,2,generic_ascii_p())!=0){
+                    if(generic_catalog_byte(source,start,3,generic_ascii_y())!=0){return generic_trait_copy_kind();}
+                }
+            }
+        }
+    }
+    if(length==7){
+        if(generic_catalog_byte(source,start,0,generic_ascii_upper_d())!=0){
+            if(generic_catalog_byte(source,start,1,generic_ascii_i())!=0){
+                if(generic_catalog_byte(source,start,2,generic_ascii_s())!=0){
+                    if(generic_catalog_byte(source,start,3,generic_ascii_p())!=0){
+                        if(generic_catalog_byte(source,start,4,generic_ascii_l())!=0){
+                            if(generic_catalog_byte(source,start,5,generic_ascii_a())!=0){
+                                if(generic_catalog_byte(source,start,6,generic_ascii_y())!=0){return generic_trait_display_kind();}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+fn generic_catalog_builtin_bound_type(
+    borrow source:Buffer,start:i64,length:i64
+)->i32{
+    if(length==2){
+        let first:i64=buffer_get(source,start);let second:i64=buffer_get(source,checked_add(start,1));
+        if(second==generic_ascii_digit_eight()){
+            if(first==generic_ascii_i()){return 1;}
+            if(first==generic_ascii_u()){return 1;}
+        }
+    }
+    if(length==3){
+        let first:i64=buffer_get(source,start);let second:i64=buffer_get(source,checked_add(start,1));let third:i64=buffer_get(source,checked_add(start,2));
+        var prefix:i32=0;if(first==generic_ascii_i()){prefix=1;}if(first==generic_ascii_u()){prefix=1;}
+        if(prefix!=0){
+            if(second==generic_ascii_digit_one()){if(third==generic_ascii_digit_six()){return 1;}}
+            if(second==generic_ascii_digit_three()){if(third==generic_ascii_digit_two()){return 1;}}
+            if(second==generic_ascii_digit_six()){if(third==generic_ascii_digit_four()){return 1;}}
+        }
+    }
+    if(length==6){
+        if(generic_catalog_byte(source,start,0,generic_ascii_upper_s())==0){return 0;}
+        if(generic_catalog_byte(source,start,1,generic_ascii_t())==0){return 0;}
+        if(generic_catalog_byte(source,start,2,generic_ascii_r())==0){return 0;}
+        if(generic_catalog_byte(source,start,3,generic_ascii_i())==0){return 0;}
+        if(generic_catalog_byte(source,start,4,generic_ascii_n())==0){return 0;}
+        if(generic_catalog_byte(source,start,5,generic_ascii_g())==0){return 0;}
+        return 1;
+    }
+    return 0;
+}
+
+// Exact Alpha.1 predicate. User implementations are concrete registry entries;
+// there are no blanket/generic impl predicates or recursive requirements.
+pub fn generic_type_implements_trait(
+    borrow type_source:Buffer,type_start:i64,type_length:i64,
+    borrow declaration_source:Buffer,trait_start:i64,trait_length:i64,
+    borrow traits:Vec<TraitDeclarationIdentity>,borrow implementations:Vec<TraitImplementationIdentity>
+)->i32{
+    if(generic_catalog_builtin_trait_kind(declaration_source,trait_start,trait_length)!=0){
+        if(generic_catalog_builtin_bound_type(type_source,type_start,type_length)!=0){return generic_implements_satisfied();}
+        return generic_implements_missing();
+    }
+    let trait_id:i64=generic_catalog_trait_id(declaration_source,traits,trait_start,trait_length);
+    if(trait_id<0){return generic_implements_unknown_trait();}
+    var index:i64=0;
+    while(index<vec_len<TraitImplementationIdentity>(implementations)){
+        let implementation:TraitImplementationIdentity=vec_get<TraitImplementationIdentity>(implementations,index);
+        if(implementation.trait_id==trait_id){
+            if(generic_catalog_cross_span_equal(
+                declaration_source,implementation.target_start,implementation.target_length,
+                type_source,type_start,type_length
+            )!=0){return generic_implements_satisfied();}
+        }
+        index=checked_add(index,1);
+    }
+    return generic_implements_missing();
+}
+
+fn generic_catalog_punctuation(borrow source:Buffer,borrow token:Token,byte:i64)->i32{
+    if(token_kind(token)!=token_punctuation_kind()){return 0;}
+    if(token_length(token)!=1){return 0;}
+    if(buffer_get(source,token_start(token))!=byte){return 0;}
+    return 1;
+}
+
+fn generic_catalog_matching_brace(
+    borrow source:Buffer,borrow tokens:Vec<Token>,open_index:i64
+)->i64{
+    var depth:i64=0;
+    var index:i64=open_index;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(generic_catalog_punctuation(source,token,token_open_brace_byte())!=0){depth=checked_add(depth,1);}
+        if(generic_catalog_punctuation(source,token,token_close_brace_byte())!=0){
+            depth=checked_sub(depth,1);
+            if(depth==0){return index;}
+        }
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_catalog_matching_angle(
+    borrow source:Buffer,borrow tokens:Vec<Token>,open_index:i64
+)->i64{
+    var depth:i64=0;
+    var index:i64=open_index;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(generic_catalog_punctuation(source,token,60)!=0){depth=checked_add(depth,1);}
+        if(generic_catalog_punctuation(source,token,62)!=0){
+            depth=checked_sub(depth,1);
+            if(depth==0){return index;}
+        }
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_catalog_find_open_brace(
+    borrow source:Buffer,borrow tokens:Vec<Token>,start_index:i64
+)->i64{
+    var index:i64=start_index;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(generic_catalog_punctuation(source,token,token_open_brace_byte())!=0){return index;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_catalog_generic_kind(borrow source:Buffer,borrow token:Token)->i32{
+    if(token_kind(token)!=token_identifier_kind()){return 0;}
+    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_struct())!=0){return generic_declaration_struct_kind();}
+    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_enum())!=0){return generic_declaration_enum_kind();}
+    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_fn())!=0){return generic_declaration_function_kind();}
+    return 0;
+}
+
+fn generic_catalog_generic_rank(
+    borrow source:Buffer,borrow candidates:Vec<GenericCatalogCandidate>,candidate_index:i64
+)->i64{
+    let candidate:GenericCatalogCandidate=vec_get<GenericCatalogCandidate>(candidates,candidate_index);
+    var rank:i64=0;
+    var index:i64=0;
+    while(index<vec_len<GenericCatalogCandidate>(candidates)){
+        if(index!=candidate_index){
+            let other:GenericCatalogCandidate=vec_get<GenericCatalogCandidate>(candidates,index);
+            let name_order:i32=generic_catalog_span_compare(source,other.name_start,other.name_length,candidate.name_start,candidate.name_length);
+            if(name_order<0){rank=checked_add(rank,1);}
+            else { if(name_order==0){if(other.kind<candidate.kind){rank=checked_add(rank,1);}} }
+        }
+        index=checked_add(index,1);
+    }
+    return rank;
+}
+
+fn generic_catalog_trait_rank(
+    borrow source:Buffer,borrow candidates:Vec<TraitCatalogCandidate>,candidate_index:i64
+)->i64{
+    let candidate:TraitCatalogCandidate=vec_get<TraitCatalogCandidate>(candidates,candidate_index);
+    var rank:i64=0;
+    var index:i64=0;
+    while(index<vec_len<TraitCatalogCandidate>(candidates)){
+        if(index!=candidate_index){
+            let other:TraitCatalogCandidate=vec_get<TraitCatalogCandidate>(candidates,index);
+            if(generic_catalog_span_compare(source,other.name_start,other.name_length,candidate.name_start,candidate.name_length)<0){rank=checked_add(rank,1);}
+        }
+        index=checked_add(index,1);
+    }
+    return rank;
+}
+
+fn generic_catalog_impl_compare(
+    borrow source:Buffer,borrow left:ImplementationCatalogCandidate,borrow right:ImplementationCatalogCandidate
+)->i32{
+    let trait_order:i32=generic_catalog_span_compare(source,left.trait_start,left.trait_length,right.trait_start,right.trait_length);
+    if(trait_order!=0){return trait_order;}
+    return generic_catalog_span_compare(source,left.target_start,left.target_length,right.target_start,right.target_length);
+}
+
+fn generic_catalog_impl_rank(
+    borrow source:Buffer,borrow candidates:Vec<ImplementationCatalogCandidate>,candidate_index:i64
+)->i64{
+    let candidate:ImplementationCatalogCandidate=vec_get<ImplementationCatalogCandidate>(candidates,candidate_index);
+    var rank:i64=0;
+    var index:i64=0;
+    while(index<vec_len<ImplementationCatalogCandidate>(candidates)){
+        if(index!=candidate_index){
+            let other:ImplementationCatalogCandidate=vec_get<ImplementationCatalogCandidate>(candidates,index);
+            if(generic_catalog_impl_compare(source,other,candidate)<0){rank=checked_add(rank,1);}
+        }
+        index=checked_add(index,1);
+    }
+    return rank;
+}
+
+fn generic_catalog_trait_id(
+    borrow source:Buffer,borrow traits:Vec<TraitDeclarationIdentity>,start:i64,length:i64
+)->i64{
+    var index:i64=0;
+    while(index<vec_len<TraitDeclarationIdentity>(traits)){
+        let trait:TraitDeclarationIdentity=vec_get<TraitDeclarationIdentity>(traits,index);
+        if(generic_catalog_span_equal(source,trait.name_start,trait.name_length,start,length)!=0){return trait.trait_id;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_catalog_parse_parameters(
+    borrow source:Buffer,borrow tokens:Vec<Token>,borrow candidate:GenericCatalogCandidate,
+    declaration_id:i64,borrow_mut parameters:Vec<GenericParameterIdentity>,borrow_mut bounds:Vec<GenericBoundIdentity>
+)->i32 requires_caps [allocate] {
+    var index:i64=checked_add(candidate.parameter_open,1);
+    var ordinal:i64=0;
+    while(index<candidate.parameter_close){
+        let name:Token=vec_get<Token>(tokens,index);
+        if(token_kind(name)!=token_identifier_kind()){return generic_catalog_malformed_parameter_status();}
+        let bound_start:i64=vec_len<GenericBoundIdentity>(bounds);
+        var bound_count:i64=0;
+        index=checked_add(index,1);
+        if(index<candidate.parameter_close){
+            let possible_colon:Token=vec_get<Token>(tokens,index);
+            if(generic_catalog_punctuation(source,possible_colon,58)!=0){
+                index=checked_add(index,1);
+                var expect_bound:i32=1;
+                var parsing_bounds:i32=1;
+                var next_parameter:i64=-1;
+                while(index<candidate.parameter_close){
+                    let part:Token=vec_get<Token>(tokens,index);
+                    if(generic_catalog_punctuation(source,part,44)!=0){parsing_bounds=0;next_parameter=index;}
+                    if(parsing_bounds!=0){
+                        if(expect_bound!=0){
+                            if(token_kind(part)!=token_identifier_kind()){return generic_catalog_malformed_parameter_status();}
+                            vec_push<GenericBoundIdentity>(bounds,GenericBoundIdentity{
+                                declaration_id:declaration_id,parameter_ordinal:ordinal,ordinal:bound_count,
+                                trait_start:token_start(part),trait_length:token_length(part)
+                            });
+                            bound_count=checked_add(bound_count,1);expect_bound=0;
+                        }else{
+                            if(generic_catalog_punctuation(source,part,43)==0){return generic_catalog_malformed_parameter_status();}
+                            expect_bound=1;
+                        }
+                        index=checked_add(index,1);
+                    }else{
+                        index=candidate.parameter_close;
+                    }
+                }
+                if(expect_bound!=0){return generic_catalog_malformed_parameter_status();}
+                if(next_parameter>=0){index=next_parameter;}
+            }
+        }
+        vec_push<GenericParameterIdentity>(parameters,GenericParameterIdentity{
+            declaration_id:declaration_id,ordinal:ordinal,name_start:token_start(name),name_length:token_length(name),
+            bound_start:bound_start,bound_count:bound_count
+        });
+        ordinal=checked_add(ordinal,1);
+        if(index<candidate.parameter_close){
+            let comma:Token=vec_get<Token>(tokens,index);
+            if(generic_catalog_punctuation(source,comma,44)==0){return generic_catalog_malformed_parameter_status();}
+            index=checked_add(index,1);
+            if(index>=candidate.parameter_close){return generic_catalog_malformed_parameter_status();}
+        }
+    }
+    return generic_catalog_ok();
+}
+
+fn generic_catalog_collect_methods(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow traits:Vec<TraitDeclarationIdentity>,borrow implementations:Vec<TraitImplementationIdentity>,
+    borrow_mut trait_methods:Vec<TraitMethodIdentity>,
+    borrow_mut implementation_methods:Vec<TraitImplementationMethodIdentity>
+)->i32 requires_caps [allocate] {
+    var parent_index:i64=0;
+    while(parent_index<vec_len<TraitDeclarationIdentity>(traits)){
+        let parent:TraitDeclarationIdentity=vec_get<TraitDeclarationIdentity>(traits,parent_index);
+        let parent_end:i64=checked_add(parent.source_start,parent.source_length);
+        var token_index:i64=0;var ordinal:i64=0;
+        while(token_index<vec_len<Token>(tokens)){
+            let token:Token=vec_get<Token>(tokens,token_index);
+            if(token_start(token)>=parent.source_start){if(token_start(token)<parent_end){
+                if(token_kind(token)==token_identifier_kind()){
+                    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_fn())!=0){
+                        let name_index:i64=checked_add(token_index,1);
+                        if(name_index>=vec_len<Token>(tokens)){return generic_catalog_malformed_declaration_status();}
+                        let name:Token=vec_get<Token>(tokens,name_index);
+                        if(token_kind(name)!=token_identifier_kind()){return generic_catalog_malformed_declaration_status();}
+                        vec_push<TraitMethodIdentity>(trait_methods,TraitMethodIdentity{
+                            trait_id:parent.trait_id,ordinal:ordinal,name_start:token_start(name),name_length:token_length(name)
+                        });ordinal=checked_add(ordinal,1);
+                    }
+                }
+            }}
+            token_index=checked_add(token_index,1);
+        }
+        parent_index=checked_add(parent_index,1);
+    }
+    parent_index=0;
+    while(parent_index<vec_len<TraitImplementationIdentity>(implementations)){
+        let parent:TraitImplementationIdentity=vec_get<TraitImplementationIdentity>(implementations,parent_index);
+        let parent_end:i64=checked_add(parent.source_start,parent.source_length);
+        var token_index:i64=0;var ordinal:i64=0;
+        while(token_index<vec_len<Token>(tokens)){
+            let token:Token=vec_get<Token>(tokens,token_index);
+            if(token_start(token)>=parent.source_start){if(token_start(token)<parent_end){
+                if(token_kind(token)==token_identifier_kind()){
+                    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_fn())!=0){
+                        let name_index:i64=checked_add(token_index,1);
+                        if(name_index>=vec_len<Token>(tokens)){return generic_catalog_malformed_declaration_status();}
+                        let name:Token=vec_get<Token>(tokens,name_index);
+                        let open_index:i64=generic_catalog_find_open_brace(source,tokens,checked_add(name_index,1));
+                        if(open_index<0){return generic_catalog_malformed_declaration_status();}
+                        let close_index:i64=generic_catalog_matching_brace(source,tokens,open_index);
+                        if(close_index<0){return generic_catalog_malformed_declaration_status();}
+                        let close:Token=vec_get<Token>(tokens,close_index);
+                        vec_push<TraitImplementationMethodIdentity>(implementation_methods,TraitImplementationMethodIdentity{
+                            implementation_id:parent.implementation_id,ordinal:ordinal,
+                            name_start:token_start(name),name_length:token_length(name),source_start:token_start(token),
+                            source_length:checked_sub(checked_add(token_start(close),token_length(close)),token_start(token))
+                        });ordinal=checked_add(ordinal,1);token_index=close_index;
+                    }
+                }
+            }}
+            token_index=checked_add(token_index,1);
+        }
+        parent_index=checked_add(parent_index,1);
+    }
+    return generic_catalog_ok();
+}
+
+pub fn derive_generic_identity_catalog(
+    borrow source:Buffer,borrow tokens:Vec<Token>,allocator:Allocator,
+    borrow_mut declarations:Vec<GenericDeclarationIdentity>,borrow_mut parameters:Vec<GenericParameterIdentity>,
+    borrow_mut bounds:Vec<GenericBoundIdentity>,borrow_mut traits:Vec<TraitDeclarationIdentity>,
+    borrow_mut implementations:Vec<TraitImplementationIdentity>,
+    borrow_mut trait_methods:Vec<TraitMethodIdentity>,
+    borrow_mut implementation_methods:Vec<TraitImplementationMethodIdentity>
+)->i32 requires_caps [allocate] {
+    var generic_candidates:Vec<GenericCatalogCandidate>=vec_new<GenericCatalogCandidate>(allocator,8);
+    var trait_candidates:Vec<TraitCatalogCandidate>=vec_new<TraitCatalogCandidate>(allocator,4);
+    var impl_candidates:Vec<ImplementationCatalogCandidate>=vec_new<ImplementationCatalogCandidate>(allocator,4);
+    var status:i32=generic_catalog_ok();
+    var depth:i64=0;
+    var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(depth==0){
+            let generic_kind:i32=generic_catalog_generic_kind(source,token);
+            if(generic_kind!=0){
+                let name_index:i64=checked_add(index,1);let angle_index:i64=checked_add(index,2);
+                if(angle_index<vec_len<Token>(tokens)){
+                    let name:Token=vec_get<Token>(tokens,name_index);let angle:Token=vec_get<Token>(tokens,angle_index);
+                    if(token_kind(name)==token_identifier_kind()){
+                        if(generic_catalog_punctuation(source,angle,60)!=0){
+                            let angle_close:i64=generic_catalog_matching_angle(source,tokens,angle_index);
+                            if(angle_close<0){status=generic_catalog_malformed_declaration_status();}
+                            else{
+                                let open_brace:i64=generic_catalog_find_open_brace(source,tokens,checked_add(angle_close,1));
+                                if(open_brace<0){status=generic_catalog_malformed_declaration_status();}
+                                else{
+                                    let close_brace:i64=generic_catalog_matching_brace(source,tokens,open_brace);
+                                    if(close_brace<0){status=generic_catalog_malformed_declaration_status();}
+                                    else{
+                                        let close_token:Token=vec_get<Token>(tokens,close_brace);
+                                        vec_push<GenericCatalogCandidate>(generic_candidates,GenericCatalogCandidate{
+                                            kind:generic_kind,name_start:token_start(name),name_length:token_length(name),
+                                            parameter_open:angle_index,parameter_close:angle_close,
+                                            source_start:token_start(token),
+                                            source_length:checked_sub(checked_add(token_start(close_token),token_length(close_token)),token_start(token))
+                                        });
+                                        index=close_brace;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }else{
+                if(token_kind(token)==token_identifier_kind()){
+                    if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_trait())!=0){
+                        let name_index:i64=checked_add(index,1);let open_index:i64=checked_add(index,2);
+                        if(open_index>=vec_len<Token>(tokens)){status=generic_catalog_malformed_declaration_status();}
+                        else{
+                            let name:Token=vec_get<Token>(tokens,name_index);let open:Token=vec_get<Token>(tokens,open_index);
+                            if(token_kind(name)!=token_identifier_kind()){status=generic_catalog_malformed_declaration_status();}
+                            else{if(generic_catalog_punctuation(source,open,token_open_brace_byte())==0){status=generic_catalog_malformed_declaration_status();}
+                            else{
+                                let close_index:i64=generic_catalog_matching_brace(source,tokens,open_index);
+                                if(close_index<0){status=generic_catalog_malformed_declaration_status();}
+                                else{
+                                    let close:Token=vec_get<Token>(tokens,close_index);
+                                    vec_push<TraitCatalogCandidate>(trait_candidates,TraitCatalogCandidate{
+                                        name_start:token_start(name),name_length:token_length(name),source_start:token_start(token),
+                                        source_length:checked_sub(checked_add(token_start(close),token_length(close)),token_start(token))
+                                    });index=close_index;
+                                }
+                            }}
+                        }
+                    }else{if(generic_catalog_keyword(source,token_start(token),token_length(token),generic_keyword_impl())!=0){
+                        let trait_index:i64=checked_add(index,1);let for_index:i64=checked_add(index,2);let target_index:i64=checked_add(index,3);let open_index:i64=checked_add(index,4);
+                        if(open_index>=vec_len<Token>(tokens)){status=generic_catalog_malformed_declaration_status();}
+                        else{
+                            let trait:Token=vec_get<Token>(tokens,trait_index);let for_token:Token=vec_get<Token>(tokens,for_index);
+                            let target:Token=vec_get<Token>(tokens,target_index);let open:Token=vec_get<Token>(tokens,open_index);
+                            if(token_kind(trait)!=token_identifier_kind()){status=generic_catalog_malformed_declaration_status();}
+                            else{if(generic_catalog_keyword(source,token_start(for_token),token_length(for_token),generic_keyword_for())==0){status=generic_catalog_malformed_declaration_status();}
+                            else{if(token_kind(target)!=token_identifier_kind()){status=generic_catalog_malformed_declaration_status();}
+                            else{if(generic_catalog_punctuation(source,open,token_open_brace_byte())==0){status=generic_catalog_malformed_declaration_status();}
+                            else{
+                                let close_index:i64=generic_catalog_matching_brace(source,tokens,open_index);
+                                if(close_index<0){status=generic_catalog_malformed_declaration_status();}
+                                else{
+                                    let close:Token=vec_get<Token>(tokens,close_index);
+                                    vec_push<ImplementationCatalogCandidate>(impl_candidates,ImplementationCatalogCandidate{
+                                        trait_start:token_start(trait),trait_length:token_length(trait),target_start:token_start(target),target_length:token_length(target),
+                                        source_start:token_start(token),source_length:checked_sub(checked_add(token_start(close),token_length(close)),token_start(token))
+                                    });index=close_index;
+                                }
+                            }}}}
+                        }
+                    }}
+                }
+            }
+        }
+        if(status!=generic_catalog_ok()){return status;}
+        if(generic_catalog_punctuation(source,token,token_open_brace_byte())!=0){depth=checked_add(depth,1);}
+        if(generic_catalog_punctuation(source,token,token_close_brace_byte())!=0){depth=checked_sub(depth,1);}
+        index=checked_add(index,1);
+    }
+
+    index=0;
+    while(index<vec_len<GenericCatalogCandidate>(generic_candidates)){
+        let candidate:GenericCatalogCandidate=vec_get<GenericCatalogCandidate>(generic_candidates,index);
+        var other_index:i64=checked_add(index,1);
+        while(other_index<vec_len<GenericCatalogCandidate>(generic_candidates)){
+            let other:GenericCatalogCandidate=vec_get<GenericCatalogCandidate>(generic_candidates,other_index);
+            if(generic_catalog_span_equal(source,candidate.name_start,candidate.name_length,other.name_start,other.name_length)!=0){
+                return generic_catalog_duplicate_declaration_status();
+            }
+            other_index=checked_add(other_index,1);
+        }
+        index=checked_add(index,1);
+    }
+    index=0;
+    while(index<vec_len<TraitCatalogCandidate>(trait_candidates)){
+        let candidate:TraitCatalogCandidate=vec_get<TraitCatalogCandidate>(trait_candidates,index);
+        var other_index:i64=checked_add(index,1);
+        while(other_index<vec_len<TraitCatalogCandidate>(trait_candidates)){
+            let other:TraitCatalogCandidate=vec_get<TraitCatalogCandidate>(trait_candidates,other_index);
+            if(generic_catalog_span_equal(source,candidate.name_start,candidate.name_length,other.name_start,other.name_length)!=0){
+                return generic_catalog_duplicate_trait_status();
+            }
+            other_index=checked_add(other_index,1);
+        }
+        index=checked_add(index,1);
+    }
+
+    var rank:i64=0;
+    while(rank<vec_len<GenericCatalogCandidate>(generic_candidates)){
+        index=0;
+        while(index<vec_len<GenericCatalogCandidate>(generic_candidates)){
+            if(generic_catalog_generic_rank(source,generic_candidates,index)==rank){
+                let candidate:GenericCatalogCandidate=vec_get<GenericCatalogCandidate>(generic_candidates,index);
+                let parameter_start:i64=vec_len<GenericParameterIdentity>(parameters);
+                let parse_status:i32=generic_catalog_parse_parameters(source,tokens,candidate,rank,parameters,bounds);
+                if(parse_status!=generic_catalog_ok()){return parse_status;}
+                vec_push<GenericDeclarationIdentity>(declarations,GenericDeclarationIdentity{
+                    kind:candidate.kind,declaration_id:rank,name_start:candidate.name_start,name_length:candidate.name_length,
+                    parameter_start:parameter_start,parameter_count:checked_sub(vec_len<GenericParameterIdentity>(parameters),parameter_start),
+                    source_start:candidate.source_start,source_length:candidate.source_length
+                });
+            }
+            index=checked_add(index,1);
+        }
+        rank=checked_add(rank,1);
+    }
+    rank=0;
+    while(rank<vec_len<TraitCatalogCandidate>(trait_candidates)){
+        index=0;
+        while(index<vec_len<TraitCatalogCandidate>(trait_candidates)){
+            if(generic_catalog_trait_rank(source,trait_candidates,index)==rank){
+                let candidate:TraitCatalogCandidate=vec_get<TraitCatalogCandidate>(trait_candidates,index);
+                vec_push<TraitDeclarationIdentity>(traits,TraitDeclarationIdentity{
+                    trait_id:rank,name_start:candidate.name_start,name_length:candidate.name_length,
+                    source_start:candidate.source_start,source_length:candidate.source_length
+                });
+            }
+            index=checked_add(index,1);
+        }
+        rank=checked_add(rank,1);
+    }
+
+    index=0;
+    while(index<vec_len<ImplementationCatalogCandidate>(impl_candidates)){
+        let candidate:ImplementationCatalogCandidate=vec_get<ImplementationCatalogCandidate>(impl_candidates,index);
+        let trait_id:i64=generic_catalog_trait_id(source,traits,candidate.trait_start,candidate.trait_length);
+        if(trait_id<0){return generic_catalog_unknown_impl_trait_status();}
+        var other_index:i64=checked_add(index,1);
+        while(other_index<vec_len<ImplementationCatalogCandidate>(impl_candidates)){
+            let other:ImplementationCatalogCandidate=vec_get<ImplementationCatalogCandidate>(impl_candidates,other_index);
+            if(generic_catalog_impl_compare(source,candidate,other)==0){return generic_catalog_duplicate_impl_status();}
+            other_index=checked_add(other_index,1);
+        }
+        index=checked_add(index,1);
+    }
+    rank=0;
+    while(rank<vec_len<ImplementationCatalogCandidate>(impl_candidates)){
+        index=0;
+        while(index<vec_len<ImplementationCatalogCandidate>(impl_candidates)){
+            if(generic_catalog_impl_rank(source,impl_candidates,index)==rank){
+                let candidate:ImplementationCatalogCandidate=vec_get<ImplementationCatalogCandidate>(impl_candidates,index);
+                let trait_id:i64=generic_catalog_trait_id(source,traits,candidate.trait_start,candidate.trait_length);
+                vec_push<TraitImplementationIdentity>(implementations,TraitImplementationIdentity{
+                    implementation_id:rank,trait_id:trait_id,trait_start:candidate.trait_start,trait_length:candidate.trait_length,
+                    target_start:candidate.target_start,target_length:candidate.target_length,
+                    source_start:candidate.source_start,source_length:candidate.source_length
+                });
+            }
+            index=checked_add(index,1);
+        }
+        rank=checked_add(rank,1);
+    }
+    let method_status:i32=generic_catalog_collect_methods(
+        source,tokens,traits,implementations,trait_methods,implementation_methods
+    );
+    if(method_status!=generic_catalog_ok()){return method_status;}
+    drop(impl_candidates);drop(trait_candidates);drop(generic_candidates);
+    return generic_catalog_ok();
+}

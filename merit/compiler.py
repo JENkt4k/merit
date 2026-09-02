@@ -792,6 +792,9 @@ BUILTIN_SIGS={
     'buffer_new':BuiltinSig((('value','Allocator'),('value','i64')), 'Buffer', 'allocate', 'allocation'),
     'buffer_from_string':BuiltinSig((('value','Allocator'),('value','String')), 'Buffer', 'allocate', 'allocation'),
     'buffer_push':BuiltinSig((('borrow_mut','Buffer'),('value','u8')), 'void', 'allocate', 'allocation'),
+    # Private stage-0 compiler primitive. Checker use is restricted to
+    # bootstrap modules so this does not enlarge the accepted user surface.
+    'bootstrap_buffer_append':BuiltinSig((('borrow_mut','Buffer'),('borrow','Buffer'),('value','i64'),('value','i64')), 'void', 'allocate', 'allocation'),
     'buffer_len':BuiltinSig((('borrow','Buffer'),), 'i64'),
     'buffer_get':BuiltinSig((('borrow','Buffer'),('value','i64')), 'i64'),
     'buffer_slice':BuiltinSig((('borrow','Buffer'),('value','i64'),('value','i64')), 'ByteSlice'),
@@ -1434,6 +1437,8 @@ class Checker:
                     if root: env[root].dropped=True;env[root].drop_origin=self.p.span(args[0])
                 return vec_return_type(op,elem)
             if name in BUILTIN_SIGS:
+                if name == 'bootstrap_buffer_append' and not self.p.module.startswith('bootstrap_'):
+                    self.fail('M3012: bootstrap_buffer_append is reserved for compiler implementation modules',e)
                 sig=BUILTIN_SIGS[name]; params=sig.params; ret=sig.return_type; cap=sig.capability
                 required=set(((cap,) if cap else ()) + sig.additional_capabilities);missing=required-caps
                 if self.contract_phase and (required or any(mode=='borrow_mut' for mode,_ in params)):
@@ -1791,6 +1796,11 @@ class Interpreter:
             if n=='buffer_from_string': return TypedValue('Buffer',bytearray(self.eval(args[1],env).value.encode('utf-8')),self.eval(args[0],env).value)
             if n=='buffer_push':
                 buf=self.eval(args[0],env); buf.value.append(self.eval(args[1],env).value); return TypedValue('void',None)
+            if n=='bootstrap_buffer_append':
+                destination=self.eval(args[0],env); source=self.eval(args[1],env).value
+                start=self.eval(args[2],env).value; length=self.eval(args[3],env).value
+                if start<0 or length<0 or start+length>len(source): raise RuntimeError('bootstrap buffer append range out of bounds')
+                destination.value.extend(source[start:start+length]); return TypedValue('void',None)
             if n=='buffer_len': return TypedValue('i64',len(self.eval(args[0],env).value))
             if n=='buffer_get':
                 buf=self.eval(args[0],env).value; idx=self.eval(args[1],env).value
@@ -2050,6 +2060,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
               r'''static merit_Buffer merit_buffer_new(merit_Allocator a,int64_t cap){merit_Buffer b={0};b.allocator=a;if(cap<0)merit_fail("negative capacity",81);merit_buffer_reserve(&b,(size_t)cap);return b;}''',
               r'''static merit_Buffer merit_buffer_from_string(merit_Allocator a,merit_String s){merit_Buffer b=merit_buffer_new(a,(int64_t)s.len);if(s.len){memcpy(b.data,s.data,s.len);b.len=s.len;}return b;}''',
               r'''static void merit_buffer_push(merit_Buffer *b,uint8_t v){merit_buffer_reserve(b,b->len+1);b->data[b->len++]=v;}''',
+              r'''static void merit_bootstrap_buffer_append(merit_Buffer *destination,const merit_Buffer *source,int64_t start,int64_t len){if(start<0||len<0||(size_t)start>source->len||(size_t)len>source->len-(size_t)start)merit_fail("bootstrap buffer append range out of bounds",88);size_t offset=(size_t)start;size_t count=(size_t)len;merit_buffer_reserve(destination,destination->len+count);if(count){memcpy(destination->data+destination->len,source->data+offset,count);destination->len+=count;}}''',
               r'''static int64_t merit_buffer_len(const merit_Buffer *b){return (int64_t)b->len;}''',
               r'''static int64_t merit_buffer_get(const merit_Buffer *b,int64_t i){if(i<0||(size_t)i>=b->len)merit_fail("buffer index out of bounds",82);return (int64_t)b->data[i];}''',
               r'''static merit_ByteSlice merit_buffer_slice(const merit_Buffer *b,int64_t start,int64_t len){if(start<0||len<0||(size_t)start>b->len||(size_t)len>b->len-(size_t)start)merit_fail("slice out of bounds",85);return (merit_ByteSlice){b->data+(size_t)start,(size_t)len};}''',
@@ -2453,6 +2464,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             if n=='buffer_new': return f'merit_buffer_new({self.expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='buffer_from_string': return f'merit_buffer_from_string({self.expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='buffer_push': return f'(merit_buffer_push({self.address_expr(a[0],env)}, {self.expr(a[1],env)}), 0)'
+            if n=='bootstrap_buffer_append': return f'(merit_bootstrap_buffer_append({self.address_expr(a[0],env)}, {self.address_expr(a[1],env)}, {self.expr(a[2],env)}, {self.expr(a[3],env)}), 0)'
             if n=='buffer_len': return f'merit_buffer_len({self.address_expr(a[0],env)})'
             if n=='buffer_get': return f'merit_buffer_get({self.address_expr(a[0],env)}, {self.expr(a[1],env)})'
             if n=='buffer_slice': return f'merit_buffer_slice({self.address_expr(a[0],env)}, {self.expr(a[1],env)}, {self.expr(a[2],env)})'

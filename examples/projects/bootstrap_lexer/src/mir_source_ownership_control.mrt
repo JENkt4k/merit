@@ -499,6 +499,17 @@ requires_caps [allocate]
             allocator, counters, direct, events
         );
         if(result<0){if(result!=sfr_unit_expression_result()){return 43;}}
+        var consumed_index:i64=1;
+        while(consumed_index<vec_len<i64>(direct)){
+            let consumed_binding:i64=vec_get<i64>(direct,consumed_index);
+            if(consumed_binding>=0){
+                let consumed_semantic:MirOwnershipBinding=vec_get<MirOwnershipBinding>(metadata,consumed_binding);
+                if(ownership_binding_owned(consumed_semantic)!=0){
+                    vec_push<MirOwnershipEvent>(events,ownership_event_consume(consumed_binding));
+                }
+            }
+            consumed_index=checked_add(consumed_index,1);
+        }
         return 0;
     }
     return checked_add(100, kind);

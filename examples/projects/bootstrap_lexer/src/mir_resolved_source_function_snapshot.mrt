@@ -7,11 +7,12 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 
-// bootstrap-resolved-source-function-snapshot-v6.
+// bootstrap-resolved-source-function-snapshot-v7.
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
-// then fifteen count-prefixed fixed-width sections matching the canonical adapter.
+// then sixteen count-prefixed fixed-width sections matching the canonical adapter.
 pub fn print_resolved_source_function_snapshot(
+    borrow effective_source: Buffer,
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
     borrow contract_locals: Vec<MirFunctionContractLocal>,
@@ -30,7 +31,7 @@ pub fn print_resolved_source_function_snapshot(
 ) -> i32
 {
     print(1297240902); // MRSF
-    print(6);
+    print(7);
 
     print(vec_len<MirFunctionRecord>(body));
     var i: i64 = 0;
@@ -166,6 +167,11 @@ pub fn print_resolved_source_function_snapshot(
     while (i < vec_len<MirPlacementRecord>(destructor_placements)) {
         let r: MirPlacementRecord = vec_get<MirPlacementRecord>(destructor_placements, i);
         print(placement_block_id(r)); print(placement_instruction_id(r)); print(placement_ordinal(r));
+        i = checked_add(i, 1);
+    }
+    print(buffer_len(effective_source)); i = 0;
+    while (i < buffer_len(effective_source)) {
+        print(buffer_get(effective_source, i));
         i = checked_add(i, 1);
     }
     return 0;

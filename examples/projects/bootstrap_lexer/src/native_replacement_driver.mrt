@@ -18,6 +18,7 @@ import bootstrap_mir_cfg_placement;
 import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_resolved_source_function_assembly;
 import bootstrap_mir_resolved_source_function_bundle;
+import bootstrap_mir_generic_expansion;
 
 capability allocate;
 
@@ -30,7 +31,16 @@ capability allocate;
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
-        let source: Buffer = buffer_from_string(allocator, source_text);
+        let original_source: Buffer = buffer_from_string(allocator, source_text);
+        let original_tokens: Vec<Token> = lex(original_source, allocator);
+        var source: Buffer = buffer_new(allocator, buffer_len(original_source));
+        let expansion_status: i32 = expand_generic_source(
+            original_source, original_tokens, allocator, source
+        );
+        drop(original_tokens);
+        if (expansion_status != generic_expansion_ok()) {
+            return generic_expansion_driver_status(expansion_status);
+        }
         let tokens: Vec<Token> = lex(source, allocator);
 
         // First pass: count top-level function bodies. Once a function starts,
@@ -588,7 +598,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             function_status = checked_add(950, capability_status);
                         } else {
                             let descriptor_status: i32 = derive_source_type_descriptors(
-                                source, structs, variants, type_descriptors
+                                source, tokens, structs, variants, allocator, type_descriptors
                             );
                             if (descriptor_status != 0) {
                                 function_status = source_type_descriptor_driver_status(descriptor_status);
@@ -757,7 +767,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 function_status = checked_add(1000, assembly_status);
                             } else {
                                 let item_status: i32 = print_resolved_source_function_bundle_item(
-                                    body, contracts, contract_locals, sources, ownership,
+                                    source, body, contracts, contract_locals, sources, ownership,
                                     ownership_records, cfg, placements, required, type_descriptors,
                                     numeric_type_descriptors,
                                     destructor_descriptors, destructor_body, destructor_cfg, destructor_placements

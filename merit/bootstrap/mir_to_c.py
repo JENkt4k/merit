@@ -48,6 +48,42 @@ _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
 _AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
+_VECTOR_OPERATIONS = frozenset({
+    "new", "push", "len", "get", "set", "replace", "pop", "drop", "transfer", "allocator",
+})
+
+
+def _vector_type(type_: MirType) -> MirType | None:
+    if type_.name != "Vec":
+        return None
+    if len(type_.arguments) != 1:
+        raise MirToCError("Vec MIR types require exactly one element type")
+    return type_.arguments[0]
+
+
+def _type_mangle(type_: MirType) -> str:
+    name = type_.name.encode("utf-8").hex()
+    if not type_.arguments:
+        return name
+    return name + "_a_" + "_z_".join(_type_mangle(argument) for argument in type_.arguments)
+
+
+def _vector_c_name(type_: MirType) -> str:
+    element = _vector_type(type_)
+    if element is None:
+        raise MirToCError(f"not a vector MIR type: {type_.name}")
+    return f"merit_Vec_{_type_mangle(element)}"
+
+
+def _vector_runtime_name(type_: MirType, operation: str) -> str:
+    if operation not in _VECTOR_OPERATIONS:
+        raise MirToCError(f"unsupported vector operation: {operation}")
+    return f"merit_vec_{operation}_{_type_mangle(_vector_type(type_) or type_)}"
+
+
+def _vector_call_operation(symbol: str) -> str | None:
+    match = re.fullmatch(r"vec_(new|push|len|get|set|replace|pop|drop|transfer|allocator)__.+", symbol)
+    return None if match is None else match.group(1)
 
 
 def _decimal_type(type_: MirType) -> tuple[int, int, int, int] | None:
@@ -157,6 +193,8 @@ def _identifier(name: str) -> str:
 
 
 def _type(type_: MirType) -> str:
+    if _vector_type(type_) is not None:
+        return _vector_c_name(type_)
     decimal = _decimal_type(type_)
     if decimal is not None:
         return "int64_t" if decimal[1] <= 18 else "__int128"
@@ -260,6 +298,8 @@ def _destructor_c_name(type_: MirType) -> str:
 def _drop_statements(
     expression: str, type_: MirType, destructors: dict[MirType, MirDestructor]
 ) -> list[str]:
+    if _vector_type(type_) is not None:
+        return [f"{_vector_runtime_name(type_, 'drop')}(&({expression}));"]
     if type_.name == "Buffer" and not type_.arguments:
         return [f"merit_buffer_drop(&({expression}));"]
     aggregate = _aggregate_struct_identity(type_)
@@ -299,6 +339,87 @@ def _drop_statements(
     if _i64_struct_identity(type_) is not None:
         return [f"/* deterministic drop of non-copy aggregate {expression} */"]
     return ["/* explicit no-op in scalar bootstrap C subset */"]
+
+
+def _vector_depth(type_: MirType) -> int:
+    element = _vector_type(type_)
+    if element is None:
+        return 0
+    return 1 + _vector_depth(element)
+
+
+def _vector_runtime(
+    vector_types: tuple[MirType, ...], destructors: dict[MirType, MirDestructor]
+) -> list[str]:
+    lines: list[str] = []
+    for vector_type in sorted(vector_types, key=lambda item: (_vector_depth(item), _type_mangle(item))):
+        element = _vector_type(vector_type)
+        assert element is not None
+        vector_c = _type(vector_type)
+        element_c = _type(element)
+        reserve = f"merit_vec_reserve_{_type_mangle(element)}"
+        new = _vector_runtime_name(vector_type, "new")
+        push = _vector_runtime_name(vector_type, "push")
+        length = _vector_runtime_name(vector_type, "len")
+        get = _vector_runtime_name(vector_type, "get")
+        set_ = _vector_runtime_name(vector_type, "set")
+        replace = _vector_runtime_name(vector_type, "replace")
+        pop = _vector_runtime_name(vector_type, "pop")
+        drop = _vector_runtime_name(vector_type, "drop")
+        transfer = _vector_runtime_name(vector_type, "transfer")
+        allocator = _vector_runtime_name(vector_type, "allocator")
+        element_at = f"(({element_c} *)value->data)[index]"
+        lines.extend([
+            f"static void {reserve}({vector_c} *value, size_t needed) {{",
+            "    if (needed <= value->capacity) return;",
+            "    size_t capacity = value->capacity ? value->capacity : 8;",
+            "    while (capacity < needed) capacity *= 2;",
+            f"    void *data = realloc(value->data, capacity * sizeof({element_c}));",
+            '    if (!data) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
+            "    value->data = data; value->capacity = capacity;",
+            "}",
+            f"static {vector_c} {new}(merit_Allocator allocator, int64_t capacity) {{",
+            '    if (capacity < 0) { fprintf(stderr, "Merit negative capacity\\n"); exit(81); }',
+            f"    {vector_c} result = {{0}}; result.allocator = allocator; {reserve}(&result, (size_t)capacity);",
+            "    return result;",
+            "}",
+            f"static void {push}({vector_c} *value, {element_c} element) {{",
+            f"    {reserve}(value, value->len + 1); (({element_c} *)value->data)[value->len++] = element;",
+            "}",
+            f"static int64_t {length}(const {vector_c} *value) {{ return (int64_t)value->len; }}",
+            f"static merit_Allocator {allocator}(const {vector_c} *value) {{ return value->allocator; }}",
+            f"static {element_c} {get}(const {vector_c} *value, int64_t index) {{",
+            '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit vector index out of bounds\\n"); exit(86); }',
+            f"    return ((const {element_c} *)value->data)[index];",
+            "}",
+            f"static void {set_}({vector_c} *value, int64_t index, {element_c} element) {{",
+            '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit vector index out of bounds\\n"); exit(86); }',
+            f"    (({element_c} *)value->data)[index] = element;",
+            "}",
+            f"static void {replace}({vector_c} *value, int64_t index, {element_c} element) {{",
+            '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit vector index out of bounds\\n"); exit(86); }',
+            *[f"    {statement}" for statement in _drop_statements(element_at, element, destructors)],
+            f"    (({element_c} *)value->data)[index] = element;",
+            "}",
+            f"static {element_c} {pop}({vector_c} *value) {{",
+            '    if (!value->len) { fprintf(stderr, "Merit vector pop from empty\\n"); exit(86); }',
+            f"    return (({element_c} *)value->data)[--value->len];",
+            "}",
+            f"static void {drop}({vector_c} *value) {{",
+            "    for (size_t index = 0; index < value->len; ++index) {",
+            *[f"        {statement}" for statement in _drop_statements(element_at, element, destructors)],
+            "    }",
+            "    free(value->data); value->data = NULL; value->len = 0; value->capacity = 0;",
+            "}",
+            f"static void {transfer}({vector_c} *destination, {vector_c} *source) {{",
+            '    if (destination == source) { fprintf(stderr, "Merit vector transfer aliases itself\\n"); exit(90); }',
+            '    if (!merit_allocator_compatible(destination->allocator, source->allocator)) { fprintf(stderr, "Merit incompatible vector allocators\\n"); exit(90); }',
+            '    if (destination->len) { fprintf(stderr, "Merit vector transfer destination is not empty\\n"); exit(90); }',
+            "    free(destination->data); destination->data = source->data; destination->len = source->len; destination->capacity = source->capacity;",
+            "    source->data = NULL; source->len = 0; source->capacity = 0;",
+            "}",
+        ])
+    return lines
 
 
 def _instruction(
@@ -562,6 +683,40 @@ def _instruction(
             if len(operands) != 2 or result is None:
                 raise MirToCError("slice_get requires ByteSlice, index, and one result")
             return [f"{result} = merit_slice_get({operands[0]}, {operands[1]});"]
+        vector_operation = _vector_call_operation(instruction.symbol)
+        if vector_operation is not None:
+            if local_types is None:
+                raise MirToCError("vector calls require resolved local types")
+            if vector_operation == "new":
+                if len(operands) != 2 or result is None:
+                    raise MirToCError("vec_new requires allocator, capacity, and one result")
+                vector_type = local_types.get(instruction.result)
+            else:
+                if not operands:
+                    raise MirToCError(f"vec_{vector_operation} requires a vector receiver")
+                vector_type = local_types.get(instruction.operands[0])
+            if vector_type is None or _vector_type(vector_type) is None:
+                raise MirToCError(f"vec_{vector_operation} has no canonical vector type")
+            helper = _vector_runtime_name(vector_type, vector_operation)
+            if vector_operation == "new":
+                return [f"{result} = {helper}({operands[0]}, {operands[1]});"]
+            receiver_ownership = local_ownership.get(instruction.operands[0], "value")
+            receiver = operands[0] if receiver_ownership in {"borrowed", "mutable_borrow"} else f"&{operands[0]}"
+            arguments = ", ".join((receiver, *operands[1:]))
+            unit_operations = {"push", "set", "replace", "drop", "transfer"}
+            if vector_operation in unit_operations:
+                if result is not None:
+                    raise MirToCError(f"vec_{vector_operation} cannot produce a result")
+                if vector_operation == "transfer":
+                    if len(operands) != 2:
+                        raise MirToCError("vec_transfer requires destination and source")
+                    source_ownership = local_ownership.get(instruction.operands[1], "value")
+                    source = operands[1] if source_ownership == "mutable_borrow" else f"&{operands[1]}"
+                    arguments = f"{receiver}, {source}"
+                return [f"{helper}({arguments});"]
+            if result is None:
+                raise MirToCError(f"vec_{vector_operation} requires a result")
+            return [f"{result} = {helper}({arguments});"]
         callee = functions.get(instruction.symbol)
         if callee is None:
             raise MirToCError(f"call references unknown MIR function: {instruction.symbol}")
@@ -623,6 +778,8 @@ def _instruction(
             raise MirToCError("drop instruction requires one operand")
         if local_types is not None and instruction.operands[0] in local_types:
             operand_type = local_types[instruction.operands[0]]
+            if _vector_type(operand_type) is not None:
+                return _drop_statements(operands[0], operand_type, destructors)
             if operand_type.name == "Buffer" and not operand_type.arguments:
                 return _drop_statements(operands[0], operand_type, destructors)
             if _aggregate_struct_identity(operand_type) is not None:
@@ -710,6 +867,7 @@ def _local_initializer(type_: MirType) -> str:
         or _owned_field_struct_identity(type_) is not None
         or _recursive_owned_payload_enum_identity(type_) is not None
         or _aggregate_struct_identity(type_) is not None
+        or _vector_type(type_) is not None
     ):
         return "{0}"
     return "0"
@@ -930,6 +1088,10 @@ def emit_c_module(module: MirModule) -> str:
         for type_ in (destructor.target, *(local.type for local in destructor.locals))
         for nested in _walk_types(type_)
     }
+    vector_types = tuple(sorted(
+        (type_ for type_ in all_types if _vector_type(type_) is not None),
+        key=_type_mangle,
+    ))
     checked_operations: set[tuple[str, str]] = set()
     for executable in (*module.functions, *module.destructors):
         executable_types = {local.local_id: local.type for local in executable.locals}
@@ -952,7 +1114,7 @@ def emit_c_module(module: MirModule) -> str:
                     and (bounded := _bounded_type(executable_types[instruction.operands[0]])) is not None
                 ):
                     checked_operations.add((bounded[4].name, instruction.symbol))
-    needs_buffer_runtime = any(
+    needs_buffer_runtime = bool(vector_types) or any(
         type_.name in {"Allocator", "Buffer"} and not type_.arguments
         for type_ in all_types
     )
@@ -1041,6 +1203,14 @@ def emit_c_module(module: MirModule) -> str:
             "",
         ] if needs_decimal_runtime else []),
     ]
+    if vector_types:
+        prelude.extend([
+            *[
+                f"typedef struct {{ void *data; size_t len; size_t capacity; merit_Allocator allocator; }} {_type(type_)};"
+                for type_ in vector_types
+            ],
+            "",
+        ])
     enum_identities = sorted({
         identity
         for type_ in all_types
@@ -1172,13 +1342,6 @@ def emit_c_module(module: MirModule) -> str:
             ],
             "",
         ])
-    runtime = [*_checked_helpers(checked_operations), *_exact_numeric_helpers(all_types)]
-    if needs_contract:
-        runtime.append("static void merit_contract_failure(const char *kind) { (void)kind; abort(); }")
-    if needs_capability:
-        runtime.append("static void merit_capability_check(const char *capability) { (void)capability; }")
-    if runtime:
-        prelude.extend([*runtime, ""])
     prototypes = [_prototype(function) for function in module.functions]
     prototypes.extend(
         f"static void {_destructor_c_name(destructor.target)}({_type(destructor.target)} *self);"
@@ -1186,6 +1349,17 @@ def emit_c_module(module: MirModule) -> str:
     )
     if prototypes:
         prelude.extend([*prototypes, ""])
+    runtime = [
+        *_checked_helpers(checked_operations),
+        *_exact_numeric_helpers(all_types),
+        *_vector_runtime(vector_types, destructors),
+    ]
+    if needs_contract:
+        runtime.append("static void merit_contract_failure(const char *kind) { (void)kind; abort(); }")
+    if needs_capability:
+        runtime.append("static void merit_capability_check(const char *capability) { (void)capability; }")
+    if runtime:
+        prelude.extend([*runtime, ""])
     emitted_destructors = [
         _emit_c_destructor(destructor, functions, destructors)
         for destructor in module.destructors

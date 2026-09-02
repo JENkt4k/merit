@@ -102,7 +102,9 @@ fn resolved_pipeline_validate_allocation_capability(
     while(token_index<vec_len<Token>(tokens)){
         let token:Token=vec_get<Token>(tokens,token_index);
         let builtin_kind:i32=sfr_builtin_call_kind(source,token_start(token),token_length(token));
-        if(sfr_builtin_requires_allocate(builtin_kind)!=0){
+        var requires_allocate:i32=sfr_builtin_requires_allocate(builtin_kind);
+        if(sfr_vector_requires_allocate(source,token_start(token),token_length(token))!=0){requires_allocate=1;}
+        if(requires_allocate!=0){
             var is_call:i32=0;
             let open_index:i64=checked_add(token_index,1);
             if(open_index<vec_len<Token>(tokens)){
