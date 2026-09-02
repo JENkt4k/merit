@@ -49,6 +49,8 @@ $env:CHERE_INVOKING = "1"
 $env:CC = $Compiler
 $env:TEMP = $TempRoot
 $env:TMP = $TempRoot
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
 @(
     "GCC_EXEC_PREFIX",
