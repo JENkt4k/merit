@@ -12,6 +12,11 @@ $ErrorActionPreference = "Stop"
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepositoryRoot
 
+# Merit source and native program text are UTF-8. Force Python's text-mode
+# defaults to the same deterministic encoding even when activation is skipped.
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
 if (-not $SkipActivation) {
     if ($Msys2Root) {
         & (Join-Path $PSScriptRoot "activate-windows-dev.ps1") -Msys2Root $Msys2Root

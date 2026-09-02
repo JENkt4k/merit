@@ -105,7 +105,7 @@ def _resolve_qualified_names(source: str, module: str, imports: tuple[str, ...],
 
 
 def _parse_unit(path: Path, module_names: set[str], generic_prelude: str = "") -> SourceUnit:
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     imports = tuple(IMPORT_RE.findall(source))
     imports_source = IMPORT_RE.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     exports = frozenset(match.group(2) for match in PUB_RE.finditer(imports_source))
@@ -411,7 +411,7 @@ def _merge(manifest: Manifest, units: tuple[SourceUnit, ...], entry_module: str)
 def load_project(manifest_path: Path) -> LoadedProject:
     manifest = load_manifest(manifest_path)
     paths = _discover(manifest)
-    raw_sources = {path: path.read_text() for path in paths}
+    raw_sources = {path: path.read_text(encoding="utf-8") for path in paths}
     generic_contexts = {path: _extract_generic_context_declarations(PUB_RE.sub(r"\1", IMPORT_RE.sub("", source))) for path, source in raw_sources.items()}
     module_names={re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)",source,re.MULTILINE).group(1) for source in raw_sources.values()}
     units = tuple(_parse_unit(path, module_names, "\n".join(text for other, text in generic_contexts.items() if other != path)) for path in paths)
