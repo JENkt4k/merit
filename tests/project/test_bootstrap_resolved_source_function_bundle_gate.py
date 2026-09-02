@@ -29,6 +29,7 @@ capability allocate;
 fn main()->i32 {
  with capability allocate {
   let allocator:Allocator=system_allocator();
+  let effective_source:Buffer=buffer_new(allocator,0);
   var body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
   var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
   var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
@@ -48,19 +49,19 @@ fn main()->i32 {
   let header_status:i32=print_resolved_source_function_bundle_header(2);
   if(header_status!=0){ return header_status; }
   let first_status:i32=print_resolved_source_function_bundle_item(
-    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,
+    effective_source,body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,
     destructor_descriptors,destructor_body,destructor_cfg,destructor_placements
   );
   if(first_status!=0){ return checked_add(10,first_status); }
   let second_status:i32=print_resolved_source_function_bundle_item(
-    body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,
+    effective_source,body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,
     destructor_descriptors,destructor_body,destructor_cfg,destructor_placements
   );
   if(second_status!=0){ return checked_add(20,second_status); }
 
   drop(destructor_placements); drop(destructor_cfg); drop(destructor_body); drop(destructor_descriptors);
   drop(numeric_type_descriptors); drop(type_descriptors); drop(capabilities); drop(placements); drop(cfg); drop(ownership); drop(bindings);
-  drop(sources); drop(contract_locals); drop(contracts); drop(body);
+  drop(sources); drop(contract_locals); drop(contracts); drop(body); drop(effective_source);
  }
  return 0;
 }

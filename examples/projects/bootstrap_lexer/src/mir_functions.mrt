@@ -114,6 +114,7 @@ pub fn function_mir_destructor_placement_count(borrow value: MirDestructorDescri
 pub fn function_mir_type_descriptor_owned_field_struct_kind() -> i32 { return 1; }
 pub fn function_mir_type_descriptor_owned_payload_enum_kind() -> i32 { return 2; }
 pub fn function_mir_type_descriptor_aggregate_struct_kind() -> i32 { return 3; }
+pub fn function_mir_type_descriptor_vector_kind() -> i32 { return 4; }
 pub fn function_mir_type_descriptor(
     type_code: i32, kind: i32, identity: i32, child_type_code: i32,
     destructor_policy: i32, ordinal: i32
@@ -246,6 +247,11 @@ pub fn function_mir_recursive_owned_payload_enum_type_code(enum_id: i32) -> i32 
 pub fn function_mir_aggregate_struct_type_code(struct_id: i32) -> i32 {
     return checked_add(1200000, struct_id);
 }
+// Concrete Vec identities occupy a disjoint v7 descriptor range. The child
+// type is carried by MirTypeDescriptor rather than encoded into this integer.
+pub fn function_mir_vector_type_code(identity: i32) -> i32 {
+    return checked_add(1500000, identity);
+}
 pub fn function_mir_type_is_owned_payload_enum(type_code: i32) -> i32 {
     if (type_code >= function_mir_recursive_owned_payload_enum_type_code(0)) {
         if (type_code < function_mir_aggregate_struct_type_code(0)) { return 1; }
@@ -264,6 +270,7 @@ pub fn function_mir_type_is_i64_struct(type_code: i32) -> i32 {
 pub fn function_mir_type_uses_ownership_transfer(type_code: i32) -> i32 {
     if (type_code == function_mir_buffer_type_code()) { return 1; }
     if (function_mir_type_is_i64_struct(type_code) != 0) { return 1; }
+    if (type_code >= function_mir_vector_type_code(0)) { return 1; }
     if (type_code >= function_mir_owned_field_struct_type_code(0)) { return 1; }
     return function_mir_type_is_owned_payload_enum(type_code);
 }

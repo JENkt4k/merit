@@ -23,15 +23,17 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 )
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
-SNAPSHOT_VERSION = 6
+SNAPSHOT_VERSION = 7
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
+_TYPE_DESCRIPTOR_VECTOR = 4
 _OWNED_FIELD_STRUCT_TYPE_BASE = 1_000_000
 _OWNED_PAYLOAD_ENUM_TYPE_BASE = 1_100_000
 _AGGREGATE_STRUCT_TYPE_BASE = 1_200_000
 _DECIMAL_TYPE_BASE = 1_300_000
 _BOUNDED_TYPE_BASE = 1_400_000
+_VECTOR_TYPE_BASE = 1_500_000
 _NUMERIC_DESCRIPTOR_DECIMAL = 1
 _NUMERIC_DESCRIPTOR_BOUNDED = 2
 _NUMERIC_DESCRIPTOR_LIMB_BASE = 1_000_000_000
@@ -46,6 +48,7 @@ _SECTION_WIDTHS_BY_VERSION = {
     4: (16, 12, 5, 8, 4, 8, 7, 3, 1, 5, 7, 16, 7, 3),
     5: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 7, 16, 7, 3),
     6: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3),
+    7: (16, 12, 5, 8, 4, 8, 7, 3, 1, 6, 11, 7, 16, 7, 3, 1),
 }
 SNAPSHOT_SECTION_COUNT = len(_SECTION_WIDTHS_BY_VERSION[SNAPSHOT_VERSION])
 
@@ -76,6 +79,7 @@ class ResolvedSourceFunctionSnapshot:
     type_descriptors: tuple[tuple[int, ...], ...] = ()
     numeric_type_descriptors: tuple[tuple[int, ...], ...] = ()
     destructors: tuple[ResolvedSourceDestructorSnapshot, ...] = ()
+    effective_source_bytes: tuple[int, ...] = ()
     version: int = SNAPSHOT_VERSION
 
 
@@ -168,6 +172,7 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         type_descriptors=sections[9] if len(sections) > 9 else (),
         numeric_type_descriptors=sections[10] if data[1] >= 6 else (),
         destructors=tuple(destructor_snapshots),
+        effective_source_bytes=tuple(row[0] for row in sections[15]) if data[1] >= 7 else (),
         version=data[1],
     )
 
@@ -190,6 +195,7 @@ def _descriptor_type_names(
             _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT,
             _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM,
             *({_TYPE_DESCRIPTOR_AGGREGATE_STRUCT} if version >= 3 else set()),
+            *({_TYPE_DESCRIPTOR_VECTOR} if version >= 7 else set()),
         }:
             raise ResolvedSourceFunctionSnapshotError(f"type descriptor {index} is invalid")
         if kind == _TYPE_DESCRIPTOR_AGGREGATE_STRUCT:
@@ -239,6 +245,22 @@ def _descriptor_type_names(
                     f"type descriptor {index} has noncanonical variant ordinal"
                 )
             variants.append(child_code)
+            continue
+        if kind == _TYPE_DESCRIPTOR_VECTOR:
+            if destructor_policy != 0 or ordinal != 0:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has invalid vector metadata"
+                )
+            expected_code = _VECTOR_TYPE_BASE + identity
+            if code != expected_code:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} has noncanonical type code"
+                )
+            if code in raw or code in aggregate_fields or code in enum_fields:
+                raise ResolvedSourceFunctionSnapshotError(
+                    f"type descriptor {index} conflicts with another descriptor kind"
+                )
+            raw[code] = (kind, identity, child_code, destructor_policy)
             continue
         if destructor_policy != 0:
             raise ResolvedSourceFunctionSnapshotError(
@@ -326,12 +348,15 @@ def _descriptor_type_names(
             raise ResolvedSourceFunctionSnapshotError("type descriptor graph is cyclic")
         kind, identity, child_code, _ = descriptor
         child = resolve(child_code, active | {code})
-        name = (
-            "struct_owned_field"
-            if kind == _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT
-            else "enum_owned_payload"
-        )
-        result = MirType(f"{name}_{identity}", (child,))
+        if kind == _TYPE_DESCRIPTOR_VECTOR:
+            result = MirType("Vec", (child,))
+        else:
+            name = (
+                "struct_owned_field"
+                if kind == _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT
+                else "enum_owned_payload"
+            )
+            result = MirType(f"{name}_{identity}", (child,))
         resolved[code] = result
         return result
 
@@ -398,6 +423,19 @@ def materialize_resolved_source_function_snapshot(
 ) -> MirModule:
     """Materialize a decoded native snapshot as canonical bootstrap-mir-v1."""
 
+    effective_source = source
+    if snapshot.effective_source_bytes:
+        if any(value < 0 or value > 255 for value in snapshot.effective_source_bytes):
+            raise ResolvedSourceFunctionSnapshotError(
+                "resolved source snapshot contains an invalid effective-source byte"
+            )
+        try:
+            effective_source = bytes(snapshot.effective_source_bytes).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ResolvedSourceFunctionSnapshotError(
+                "resolved source snapshot effective source is not UTF-8"
+            ) from exc
+
     numeric_names = _numeric_descriptor_type_names(snapshot.numeric_type_descriptors)
     descriptor_names = _descriptor_type_names(
         snapshot.type_descriptors, version=snapshot.version, known_types=numeric_names,
@@ -413,7 +451,7 @@ def materialize_resolved_source_function_snapshot(
                 )
         descriptor_names.update(type_names)
     function_module = lower_native_ownership_whole_function_assembly(
-        source=source,
+        source=effective_source,
         module_name=module_name,
         body_records=snapshot.body_records,
         contract_records=snapshot.contract_records,
@@ -437,7 +475,7 @@ def materialize_resolved_source_function_snapshot(
                 f"destructor descriptor {index} references unresolved type code {raw.type_code}"
             )
         lowered = lower_native_whole_function_assembly(
-            source=source,
+            source=effective_source,
             module_name=module_name,
             body_records=raw.body_records,
             contract_records=(),

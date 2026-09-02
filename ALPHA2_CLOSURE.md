@@ -67,9 +67,9 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | strings/buffers complete alpha surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | exact decimal complete surface | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | bounded integers complete surface | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
-| generic functions/types | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
-| generic collections | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
-| coherent traits | ✓ | OPEN/PARTIAL | OPEN | OPEN | partial | partial | OPEN |
+| generic functions/types | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
+| generic collections | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
+| coherent traits | ✓ | ✓ | ✓ | ✓ | ✓ | partial | CLOSED |
 | cross-module imports | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
 | visibility/qualified names | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
 | stable exports/shared libraries | ✓ | PARTIAL | PARTIAL | PARTIAL | partial | ✓ | OPEN |
@@ -401,6 +401,51 @@ remains M7.
 **Goal:** Move explicit generics, generic collections, coherent trait resolution and instantiated operations through replacement compilation.
 
 Do not introduce a second generic/trait semantic model.
+
+`test_generic_trait_impl_identities_are_native_and_source_order_independent`
+and the native generic-expansion gate establish canonical generic declarations,
+ordered parameters and bounds, exact concrete trait-implementation lookup, and
+source-order-independent trait identities in Merit-native code. Generic
+functions, structs, payload enums, user-trait method dispatch, and the builtin
+`Vec<T>` surface are specialized to concrete nominal declarations and calls
+before source-function discovery and MIR lowering. No generic MIR or recursive
+trait solver is introduced; Alpha.1 has no syntax for recursive implementation
+requirements, so trait-resolution cycle semantics are not part of this
+milestone.
+
+`test_concrete_native_driver_monomorphizes_generic_function_before_mir`,
+`test_concrete_native_driver_monomorphizes_generic_struct_and_payload_enum_before_mir`,
+and `test_concrete_native_driver_uses_static_user_trait_dispatch_before_mir`
+carry those concrete expansions through MRBF, prepared replacement artifacts,
+canonical MIR, deterministic C, native execution, and reference/replacement
+parity. Specialization preserves source parameter order and ordinary concrete
+ownership modes rather than assigning meaning from generated binding IDs.
+`test_concrete_native_driver_uses_ordinary_ownership_for_generic_calls` proves
+owned argument/return transfer and borrowed observation for a concrete
+`Buffer` specialization.
+
+`test_concrete_native_driver_executes_vec_i64_lifecycle_before_mir` and
+`test_concrete_native_driver_executes_owned_and_nested_vec_lifecycle_before_mir`
+close the documented Alpha.1 generic collection surface. They cover allocation,
+push, length, get, set, replace, pop, allocator retention, transfer, explicit
+and implicit drop, moved-out elements, recursively nested vectors, and element
+destructors. Canonical vector type descriptors survive snapshot transport;
+generated C uses type-directed helpers and recursively destroys live owned
+elements exactly once. Repeated native bundles are byte-identical and both
+primitive and owned/nested cases execute with reference/replacement parity.
+
+`test_concrete_native_driver_fails_closed_for_invalid_generic_trait_and_vec_semantics`
+provides the adjacent rejection evidence for wrong generic arity, missing and
+duplicate trait implementations, ambiguous trait methods, unsatisfied `Copy`
+bounds, generic use-after-move, moved-vector reuse, illegal owned-element
+copy-out, and vector allocation without capability. Rejection is deterministic
+at the earliest authoritative replacement boundary and never publishes a
+replacement manifest. Existing Alpha.1 generic and trait tests remain the
+independent Python-oracle evidence.
+
+M4 is **CLOSED**. Generic acceptance-project migration remains M7, and imported
+generic declarations, visibility, qualified names, exports, and shared-library
+interactions remain M5.
 
 ### M5 — Module/project closure
 

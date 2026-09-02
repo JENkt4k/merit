@@ -41,6 +41,8 @@ pub fn ownership_event_consume(id: i64) -> MirOwnershipEvent { return MirOwnersh
 pub fn ownership_event_return(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 10, a: local, b: 0 }; }
 pub fn ownership_event_kind_end_scope() -> i32 { return 11; }
 pub fn ownership_event_end_scope(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: ownership_event_kind_end_scope(), a: id, b: 0 }; }
+pub fn ownership_event_kind_use() -> i32 { return 12; }
+pub fn ownership_event_use(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: ownership_event_kind_use(), a: id, b: 0 }; }
 pub fn ownership_status_live_at_scope_exit() -> i32 { return 105; }
 pub fn ownership_event_if(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 20, a: local, b: 0 }; }
 pub fn ownership_event_else() -> MirOwnershipEvent { return MirOwnershipEvent { kind: 21, a: 0, b: 0 }; }
@@ -293,6 +295,15 @@ requires_caps [allocate]
             if (vec_get<i32>(states, binding_index) != 1) { return 100; }
             append_record(records, ownership_record_kind_nested_transfer(), -1, event.a, -1, binding.local_id, 0, 1, 2);
             vec_set<i32>(states, binding_index, 2);
+        }
+        if (kind == ownership_event_kind_use()) {
+            handled = 1; if (terminated != 0) { return 106; }
+            let binding_index: i64 = find_binding(bindings, event.a);
+            if (binding_index < 0) { return 107; }
+            let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
+            if (binding.owned != 0) {
+                if (vec_get<i32>(states, binding_index) != 1) { return 108; }
+            }
         }
         if (kind == 4) {
             handled = 1; if (terminated != 0) { return 31; }

@@ -1,0 +1,618 @@
+module bootstrap_mir_generic_expansion
+import bootstrap_tokens;
+import bootstrap_lexer_core;
+import bootstrap_mir_generic_catalog;
+
+capability allocate;
+
+pub struct GenericInstantiationRequest {
+    declaration_id: i64;
+    canonical_start: i64;
+    canonical_length: i64;
+    argument_start: i64;
+    argument_count: i64;
+}
+
+pub struct GenericInstantiationArgument {
+    request_id: i64;
+    ordinal: i64;
+    canonical_start: i64;
+    canonical_length: i64;
+}
+
+pub fn generic_expansion_ok()->i32{return 0;}
+pub fn generic_expansion_catalog_status_base()->i32{return 100;}
+pub fn generic_expansion_wrong_arity_status()->i32{return 201;}
+pub fn generic_expansion_malformed_application_status()->i32{return 202;}
+pub fn generic_expansion_depth_status()->i32{return 203;}
+pub fn generic_expansion_unresolved_parameter_status()->i32{return 204;}
+pub fn generic_expansion_unsatisfied_bound_status()->i32{return 205;}
+pub fn generic_expansion_canonical_type_status()->i32{return 206;}
+pub fn generic_expansion_unclosed_application_status()->i32{return 207;}
+pub fn generic_expansion_declaration_header_status()->i32{return 208;}
+pub fn generic_expansion_ambiguous_method_status()->i32{return 209;}
+pub fn generic_expansion_driver_status(status:i32)->i32{return checked_add(1100,status);}
+
+pub fn generic_request_declaration_id(borrow value:GenericInstantiationRequest)->i64{return value.declaration_id;}
+pub fn generic_request_canonical_start(borrow value:GenericInstantiationRequest)->i64{return value.canonical_start;}
+pub fn generic_request_canonical_length(borrow value:GenericInstantiationRequest)->i64{return value.canonical_length;}
+pub fn generic_request_argument_start(borrow value:GenericInstantiationRequest)->i64{return value.argument_start;}
+pub fn generic_request_argument_count(borrow value:GenericInstantiationRequest)->i64{return value.argument_count;}
+pub fn generic_argument_request_id(borrow value:GenericInstantiationArgument)->i64{return value.request_id;}
+pub fn generic_argument_ordinal(borrow value:GenericInstantiationArgument)->i64{return value.ordinal;}
+pub fn generic_argument_canonical_start(borrow value:GenericInstantiationArgument)->i64{return value.canonical_start;}
+pub fn generic_argument_canonical_length(borrow value:GenericInstantiationArgument)->i64{return value.canonical_length;}
+
+fn generic_expansion_span_equal(
+    borrow left:Buffer,left_start:i64,left_length:i64,
+    borrow right:Buffer,right_start:i64,right_length:i64
+)->i32{
+    if(left_length!=right_length){return 0;}
+    var offset:i64=0;
+    while(offset<left_length){
+        if(buffer_get(left,checked_add(left_start,offset))!=buffer_get(right,checked_add(right_start,offset))){return 0;}
+        offset=checked_add(offset,1);
+    }
+    return 1;
+}
+
+fn generic_expansion_punctuation(borrow source:Buffer,borrow token:Token,byte:i64)->i32{
+    if(token_kind(token)!=token_punctuation_kind()){return 0;}
+    if(token_length(token)!=1){return 0;}
+    if(buffer_get(source,token_start(token))!=byte){return 0;}
+    return 1;
+}
+
+fn generic_expansion_angle_close(borrow source:Buffer,borrow token:Token)->i32{
+    if(token_kind(token)!=token_punctuation_kind()){return 0;}
+    if(token_length(token)<1){return 0;}
+    if(buffer_get(source,token_start(token))!=62){return 0;}
+    return 1;
+}
+
+fn generic_expansion_scope_operator(borrow source:Buffer,borrow token:Token)->i32{
+    if(token_kind(token)!=token_punctuation_kind()){return 0;}
+    if(token_length(token)!=2){return 0;}
+    if(buffer_get(source,token_start(token))!=58){return 0;}
+    if(buffer_get(source,checked_add(token_start(token),1))!=58){return 0;}
+    return 1;
+}
+
+fn generic_expansion_append_span(
+    borrow source:Buffer,start:i64,length:i64,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    bootstrap_buffer_append(output,source,start,length);
+    return 0;
+}
+
+fn generic_expansion_append_separator(borrow_mut output:Buffer)->i32 requires_caps [allocate] {
+    buffer_push(output,95);buffer_push(output,95);return 0;
+}
+
+fn generic_expansion_append_impl_prefix(borrow_mut output:Buffer)->i32 requires_caps [allocate] {
+    buffer_push(output,105);buffer_push(output,109);buffer_push(output,112);buffer_push(output,108);
+    generic_expansion_append_separator(output);return 0;
+}
+
+fn generic_expansion_append_impl_name(
+    borrow original:Buffer,trait_start:i64,trait_length:i64,
+    borrow concrete_names:Buffer,type_start:i64,type_length:i64,
+    method_start:i64,method_length:i64,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    generic_expansion_append_impl_prefix(output);
+    generic_expansion_append_span(original,trait_start,trait_length,output);
+    generic_expansion_append_separator(output);
+    generic_expansion_append_span(concrete_names,type_start,type_length,output);
+    generic_expansion_append_separator(output);
+    generic_expansion_append_span(original,method_start,method_length,output);
+    return generic_expansion_ok();
+}
+
+fn generic_expansion_implementation_index(
+    borrow implementations:Vec<TraitImplementationIdentity>,implementation_id:i64
+)->i64{
+    var index:i64=0;
+    while(index<vec_len<TraitImplementationIdentity>(implementations)){
+        let value:TraitImplementationIdentity=vec_get<TraitImplementationIdentity>(implementations,index);
+        if(trait_implementation_id(value)==implementation_id){return index;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_expansion_emit_implementation_methods(
+    borrow source:Buffer,borrow implementations:Vec<TraitImplementationIdentity>,
+    borrow methods:Vec<TraitImplementationMethodIdentity>,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    var index:i64=0;
+    while(index<vec_len<TraitImplementationMethodIdentity>(methods)){
+        let method:TraitImplementationMethodIdentity=vec_get<TraitImplementationMethodIdentity>(methods,index);
+        let implementation_index:i64=generic_expansion_implementation_index(
+            implementations,trait_implementation_method_implementation_id(method)
+        );
+        if(implementation_index<0){return generic_expansion_unresolved_parameter_status();}
+        let implementation:TraitImplementationIdentity=vec_get<TraitImplementationIdentity>(implementations,implementation_index);
+        buffer_push(output,10);
+        generic_expansion_append_span(
+            source,trait_implementation_method_source_start(method),
+            checked_sub(trait_implementation_method_name_start(method),trait_implementation_method_source_start(method)),output
+        );
+        generic_expansion_append_impl_name(
+            source,trait_implementation_trait_start(implementation),trait_implementation_trait_length(implementation),
+            source,trait_implementation_target_start(implementation),trait_implementation_target_length(implementation),
+            trait_implementation_method_name_start(method),trait_implementation_method_name_length(method),output
+        );
+        let name_end:i64=checked_add(
+            trait_implementation_method_name_start(method),trait_implementation_method_name_length(method)
+        );
+        let method_end:i64=checked_add(
+            trait_implementation_method_source_start(method),trait_implementation_method_source_length(method)
+        );
+        generic_expansion_append_span(source,name_end,checked_sub(method_end,name_end),output);
+        buffer_push(output,10);index=checked_add(index,1);
+    }
+    return generic_expansion_ok();
+}
+
+fn generic_expansion_find_angle_close(
+    borrow source:Buffer,borrow tokens:Vec<Token>,open_index:i64
+)->i64{
+    var depth:i64=0;var index:i64=open_index;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(generic_expansion_punctuation(source,token,60)!=0){depth=checked_add(depth,1);}
+        if(generic_expansion_angle_close(source,token)!=0){depth=checked_sub(depth,1);if(depth==0){return index;}}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_expansion_declaration_for_name(
+    borrow original:Buffer,borrow current:Buffer,start:i64,length:i64,
+    borrow declarations:Vec<GenericDeclarationIdentity>
+)->i64{
+    var index:i64=0;
+    while(index<vec_len<GenericDeclarationIdentity>(declarations)){
+        let declaration:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,index);
+        if(generic_expansion_span_equal(
+            original,generic_declaration_name_start(declaration),generic_declaration_name_length(declaration),
+            current,start,length
+        )!=0){return index;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_expansion_append_canonical_type(
+    borrow source:Buffer,borrow tokens:Vec<Token>,start_index:i64,end_index:i64,
+    borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    var index:i64=start_index;
+    var emitted:i32=0;
+    while(index<end_index){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(token_kind(token)==token_identifier_kind()){
+            generic_expansion_append_span(source,token_start(token),token_length(token),output);emitted=1;
+        }else{
+            if(generic_expansion_punctuation(source,token,60)!=0){generic_expansion_append_separator(output);}
+            else{if(generic_expansion_punctuation(source,token,44)!=0){generic_expansion_append_separator(output);}
+            else{if(generic_expansion_punctuation(source,token,62)==0){return generic_expansion_canonical_type_status();}}}
+        }
+        index=checked_add(index,1);
+    }
+    if(emitted==0){return generic_expansion_canonical_type_status();}
+    return generic_expansion_ok();
+}
+
+fn generic_expansion_request_exists(
+    borrow names:Buffer,start:i64,length:i64,borrow requests:Vec<GenericInstantiationRequest>
+)->i32{
+    var index:i64=0;
+    while(index<vec_len<GenericInstantiationRequest>(requests)){
+        let request:GenericInstantiationRequest=vec_get<GenericInstantiationRequest>(requests,index);
+        if(generic_expansion_span_equal(
+            names,request.canonical_start,request.canonical_length,names,start,length
+        )!=0){return 1;}
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
+fn generic_expansion_discover_requests(
+    borrow original:Buffer,borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow declarations:Vec<GenericDeclarationIdentity>,
+    borrow parameters:Vec<GenericParameterIdentity>,borrow bounds:Vec<GenericBoundIdentity>,
+    borrow traits:Vec<TraitDeclarationIdentity>,borrow implementations:Vec<TraitImplementationIdentity>,
+    borrow_mut names:Buffer,borrow_mut requests:Vec<GenericInstantiationRequest>,
+    borrow_mut arguments:Vec<GenericInstantiationArgument>
+)->i32 requires_caps [allocate] {
+    var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(token_kind(token)==token_identifier_kind()){
+            let declaration_index:i64=generic_expansion_declaration_for_name(
+                original,source,token_start(token),token_length(token),declarations
+            );
+            if(declaration_index>=0){
+                let open_index:i64=checked_add(index,1);
+                if(open_index<vec_len<Token>(tokens)){
+                    let open:Token=vec_get<Token>(tokens,open_index);
+                    if(generic_expansion_punctuation(source,open,60)!=0){
+                        let close_index:i64=generic_expansion_find_angle_close(source,tokens,open_index);
+                        if(close_index<0){return generic_expansion_unclosed_application_status();}
+                        let declaration:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,declaration_index);
+                        let name_start:i64=buffer_len(names);
+                        generic_expansion_append_span(source,token_start(token),token_length(token),names);
+                        var argument_ranges:Vec<i64>=vec_new<i64>(system_allocator(),8);
+                        var argument_start_index:i64=checked_add(open_index,1);var cursor:i64=argument_start_index;var depth:i64=0;
+                        while(cursor<close_index){
+                            let part:Token=vec_get<Token>(tokens,cursor);
+                            if(generic_expansion_punctuation(source,part,60)!=0){depth=checked_add(depth,1);}
+                            if(generic_expansion_punctuation(source,part,62)!=0){depth=checked_sub(depth,1);}
+                            if(depth==0){if(generic_expansion_punctuation(source,part,44)!=0){
+                                vec_push<i64>(argument_ranges,argument_start_index);vec_push<i64>(argument_ranges,cursor);
+                                argument_start_index=checked_add(cursor,1);
+                            }}
+                            cursor=checked_add(cursor,1);
+                        }
+                        vec_push<i64>(argument_ranges,argument_start_index);vec_push<i64>(argument_ranges,close_index);
+                        let argument_count:i64=vec_len<i64>(argument_ranges)/2;
+                        if(argument_count!=generic_declaration_parameter_count(declaration)){return generic_expansion_wrong_arity_status();}
+                        let pending_argument_start:i64=vec_len<GenericInstantiationArgument>(arguments);
+                        var ordinal:i64=0;
+                        while(ordinal<argument_count){
+                            generic_expansion_append_separator(names);
+                            let canonical_start:i64=buffer_len(names);
+                            let range_start:i64=vec_get<i64>(argument_ranges,checked_mul(ordinal,2));
+                            let range_end:i64=vec_get<i64>(argument_ranges,checked_add(checked_mul(ordinal,2),1));
+                            let canonical_status:i32=generic_expansion_append_canonical_type(source,tokens,range_start,range_end,names);
+                            if(canonical_status!=generic_expansion_ok()){return canonical_status;}
+                            let parameter:GenericParameterIdentity=vec_get<GenericParameterIdentity>(
+                                parameters,checked_add(generic_declaration_parameter_start(declaration),ordinal)
+                            );
+                            var bound_ordinal:i64=0;
+                            while(bound_ordinal<generic_parameter_bound_count(parameter)){
+                                let bound:GenericBoundIdentity=vec_get<GenericBoundIdentity>(
+                                    bounds,checked_add(generic_parameter_bound_start(parameter),bound_ordinal)
+                                );
+                                let implements:i32=generic_type_implements_trait(
+                                    names,canonical_start,checked_sub(buffer_len(names),canonical_start),
+                                    original,generic_bound_trait_start(bound),generic_bound_trait_length(bound),
+                                    traits,implementations
+                                );
+                                if(implements!=generic_implements_satisfied()){return generic_expansion_unsatisfied_bound_status();}
+                                bound_ordinal=checked_add(bound_ordinal,1);
+                            }
+                            vec_push<GenericInstantiationArgument>(arguments,GenericInstantiationArgument{
+                                request_id:vec_len<GenericInstantiationRequest>(requests),ordinal:ordinal,
+                                canonical_start:canonical_start,canonical_length:checked_sub(buffer_len(names),canonical_start)
+                            });
+                            ordinal=checked_add(ordinal,1);
+                        }
+                        let name_length:i64=checked_sub(buffer_len(names),name_start);
+                        if(generic_expansion_request_exists(names,name_start,name_length,requests)==0){
+                            vec_push<GenericInstantiationRequest>(requests,GenericInstantiationRequest{
+                                declaration_id:generic_declaration_id(declaration),canonical_start:name_start,canonical_length:name_length,
+                                argument_start:pending_argument_start,argument_count:argument_count
+                            });
+                        }else{
+                            while(vec_len<GenericInstantiationArgument>(arguments)>pending_argument_start){let discarded:GenericInstantiationArgument=vec_pop<GenericInstantiationArgument>(arguments);}
+                        }
+                        drop(argument_ranges);index=close_index;
+                    }
+                }
+            }
+        }
+        index=checked_add(index,1);
+    }
+    return generic_expansion_ok();
+}
+
+fn generic_expansion_excluded_byte(
+    offset:i64,borrow declarations:Vec<GenericDeclarationIdentity>,borrow traits:Vec<TraitDeclarationIdentity>,
+    borrow implementations:Vec<TraitImplementationIdentity>
+)->i32{
+    var index:i64=0;
+    while(index<vec_len<GenericDeclarationIdentity>(declarations)){
+        let value:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,index);
+        let start:i64=generic_declaration_source_start(value);let end:i64=checked_add(start,generic_declaration_source_length(value));
+        if(offset>=start){if(offset<end){return 1;}}index=checked_add(index,1);
+    }
+    index=0;
+    while(index<vec_len<TraitDeclarationIdentity>(traits)){
+        let value:TraitDeclarationIdentity=vec_get<TraitDeclarationIdentity>(traits,index);
+        let start:i64=trait_declaration_source_start(value);let end:i64=checked_add(start,trait_declaration_source_length(value));
+        if(offset>=start){if(offset<end){return 1;}}index=checked_add(index,1);
+    }
+    index=0;
+    while(index<vec_len<TraitImplementationIdentity>(implementations)){
+        let value:TraitImplementationIdentity=vec_get<TraitImplementationIdentity>(implementations,index);
+        let start:i64=trait_implementation_source_start(value);let end:i64=checked_add(start,trait_implementation_source_length(value));
+        if(offset>=start){if(offset<end){return 1;}}index=checked_add(index,1);
+    }
+    return 0;
+}
+
+fn generic_expansion_base_source(
+    borrow source:Buffer,borrow declarations:Vec<GenericDeclarationIdentity>,borrow traits:Vec<TraitDeclarationIdentity>,
+    borrow implementations:Vec<TraitImplementationIdentity>,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    var offset:i64=0;
+    while(offset<buffer_len(source)){
+        let byte:i64=buffer_get(source,offset);
+        if(generic_expansion_excluded_byte(offset,declarations,traits,implementations)!=0){
+            if(byte==10){buffer_push(output,10);}else{buffer_push(output,32);}
+        }else{bootstrap_buffer_append(output,source,offset,1);}
+        offset=checked_add(offset,1);
+    }
+    return 0;
+}
+
+fn generic_expansion_parameter_index(
+    borrow original:Buffer,borrow token:Token,borrow declaration:GenericDeclarationIdentity,
+    borrow parameters:Vec<GenericParameterIdentity>
+)->i64{
+    var ordinal:i64=0;
+    while(ordinal<generic_declaration_parameter_count(declaration)){
+        let parameter:GenericParameterIdentity=vec_get<GenericParameterIdentity>(parameters,checked_add(generic_declaration_parameter_start(declaration),ordinal));
+        if(generic_expansion_span_equal(
+            original,token_start(token),token_length(token),original,
+            generic_parameter_name_start(parameter),generic_parameter_name_length(parameter)
+        )!=0){return ordinal;}
+        ordinal=checked_add(ordinal,1);
+    }
+    return -1;
+}
+
+fn generic_expansion_declaration_by_id(
+    borrow declarations:Vec<GenericDeclarationIdentity>,declaration_id:i64
+)->i64{
+    var index:i64=0;
+    while(index<vec_len<GenericDeclarationIdentity>(declarations)){
+        let value:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,index);
+        if(generic_declaration_id(value)==declaration_id){return index;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn generic_expansion_generate_instance(
+    borrow original:Buffer,borrow original_tokens:Vec<Token>,borrow declaration:GenericDeclarationIdentity,
+    borrow parameters:Vec<GenericParameterIdentity>,borrow bounds:Vec<GenericBoundIdentity>,
+    borrow traits:Vec<TraitDeclarationIdentity>,borrow trait_methods:Vec<TraitMethodIdentity>,
+    borrow request:GenericInstantiationRequest,
+    borrow arguments:Vec<GenericInstantiationArgument>,borrow names:Buffer,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    buffer_push(output,10);
+    let source_start:i64=generic_declaration_source_start(declaration);
+    let source_end:i64=checked_add(source_start,generic_declaration_source_length(declaration));
+    var cursor:i64=source_start;var token_index:i64=0;var header_rewritten:i32=0;
+    var enum_body_depth:i64=0;var enum_payload_depth:i64=0;var expect_enum_variant:i32=0;
+    while(token_index<vec_len<Token>(original_tokens)){
+        let token:Token=vec_get<Token>(original_tokens,token_index);
+        if(token_start(token)>=source_start){if(token_start(token)<source_end){
+            generic_expansion_append_span(original,cursor,checked_sub(token_start(token),cursor),output);
+            var replaced:i32=0;
+            if(header_rewritten==0){
+                if(generic_expansion_span_equal(
+                    original,token_start(token),token_length(token),original,
+                    generic_declaration_name_start(declaration),generic_declaration_name_length(declaration)
+                )!=0){
+                    generic_expansion_append_span(names,request.canonical_start,request.canonical_length,output);
+                    let open_index:i64=checked_add(token_index,1);let close_index:i64=generic_expansion_find_angle_close(original,original_tokens,open_index);
+                    if(close_index<0){return generic_expansion_declaration_header_status();}
+                    let close:Token=vec_get<Token>(original_tokens,close_index);
+                    cursor=checked_add(token_start(close),1);token_index=close_index;
+                    header_rewritten=1;replaced=1;
+                }
+            }
+            if(replaced==0){
+                if(generic_declaration_kind(declaration)==generic_declaration_function_kind()){
+                    if(token_kind(token)==token_identifier_kind()){
+                        let next_index:i64=checked_add(token_index,1);
+                        if(next_index<vec_len<Token>(original_tokens)){
+                            let next:Token=vec_get<Token>(original_tokens,next_index);
+                            if(generic_expansion_punctuation(original,next,40)!=0){
+                                var selected_trait:i64=-1;var selected_parameter:i64=-1;
+                                var parameter_ordinal:i64=0;
+                                while(parameter_ordinal<generic_declaration_parameter_count(declaration)){
+                                    let parameter:GenericParameterIdentity=vec_get<GenericParameterIdentity>(
+                                        parameters,checked_add(generic_declaration_parameter_start(declaration),parameter_ordinal)
+                                    );
+                                    var bound_ordinal:i64=0;
+                                    while(bound_ordinal<generic_parameter_bound_count(parameter)){
+                                        let bound:GenericBoundIdentity=vec_get<GenericBoundIdentity>(
+                                            bounds,checked_add(generic_parameter_bound_start(parameter),bound_ordinal)
+                                        );
+                                        var trait_index:i64=0;
+                                        while(trait_index<vec_len<TraitDeclarationIdentity>(traits)){
+                                            let trait:TraitDeclarationIdentity=vec_get<TraitDeclarationIdentity>(traits,trait_index);
+                                            if(generic_expansion_span_equal(
+                                                original,generic_bound_trait_start(bound),generic_bound_trait_length(bound),
+                                                original,trait_declaration_name_start(trait),trait_declaration_name_length(trait)
+                                            )!=0){
+                                                var method_index:i64=0;
+                                                while(method_index<vec_len<TraitMethodIdentity>(trait_methods)){
+                                                    let method:TraitMethodIdentity=vec_get<TraitMethodIdentity>(trait_methods,method_index);
+                                                    if(trait_method_trait_id(method)==trait_declaration_id(trait)){
+                                                        if(generic_expansion_span_equal(
+                                                            original,token_start(token),token_length(token),original,
+                                                            trait_method_name_start(method),trait_method_name_length(method)
+                                                        )!=0){
+                                                            if(selected_trait>=0){if(selected_trait!=trait_index){return generic_expansion_ambiguous_method_status();}}
+                                                            selected_trait=trait_index;selected_parameter=parameter_ordinal;
+                                                        }
+                                                    }
+                                                    method_index=checked_add(method_index,1);
+                                                }
+                                            }
+                                            trait_index=checked_add(trait_index,1);
+                                        }
+                                        bound_ordinal=checked_add(bound_ordinal,1);
+                                    }
+                                    parameter_ordinal=checked_add(parameter_ordinal,1);
+                                }
+                                if(selected_trait>=0){
+                                    let trait:TraitDeclarationIdentity=vec_get<TraitDeclarationIdentity>(traits,selected_trait);
+                                    let argument:GenericInstantiationArgument=vec_get<GenericInstantiationArgument>(
+                                        arguments,checked_add(request.argument_start,selected_parameter)
+                                    );
+                                    generic_expansion_append_impl_name(
+                                        original,trait_declaration_name_start(trait),trait_declaration_name_length(trait),
+                                        names,argument.canonical_start,argument.canonical_length,
+                                        token_start(token),token_length(token),output
+                                    );replaced=1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(replaced==0){
+                if(generic_declaration_kind(declaration)==generic_declaration_enum_kind()){
+                    if(enum_body_depth==1){if(enum_payload_depth==0){if(expect_enum_variant!=0){
+                        if(token_kind(token)==token_identifier_kind()){
+                            generic_expansion_append_span(names,request.canonical_start,request.canonical_length,output);
+                            generic_expansion_append_separator(output);
+                            generic_expansion_append_span(original,token_start(token),token_length(token),output);
+                            expect_enum_variant=0;replaced=1;
+                        }
+                    }}}
+                }
+                if(replaced==0){
+                    let parameter_ordinal:i64=generic_expansion_parameter_index(original,token,declaration,parameters);
+                    if(parameter_ordinal>=0){
+                        let argument:GenericInstantiationArgument=vec_get<GenericInstantiationArgument>(arguments,checked_add(request.argument_start,parameter_ordinal));
+                        generic_expansion_append_span(names,argument.canonical_start,argument.canonical_length,output);replaced=1;
+                    }
+                }
+            }
+            if(replaced==0){generic_expansion_append_span(original,token_start(token),token_length(token),output);}
+            if(cursor<=token_start(token)){cursor=checked_add(token_start(token),token_length(token));}
+            if(generic_declaration_kind(declaration)==generic_declaration_enum_kind()){
+                if(generic_expansion_punctuation(original,token,123)!=0){
+                    enum_body_depth=checked_add(enum_body_depth,1);
+                    if(enum_body_depth==1){expect_enum_variant=1;}
+                }
+                if(generic_expansion_punctuation(original,token,125)!=0){enum_body_depth=checked_sub(enum_body_depth,1);}
+                if(enum_body_depth==1){
+                    if(generic_expansion_punctuation(original,token,40)!=0){enum_payload_depth=checked_add(enum_payload_depth,1);}
+                    if(generic_expansion_punctuation(original,token,41)!=0){enum_payload_depth=checked_sub(enum_payload_depth,1);}
+                    if(enum_payload_depth==0){if(generic_expansion_punctuation(original,token,44)!=0){expect_enum_variant=1;}}
+                }
+            }
+        }}
+        token_index=checked_add(token_index,1);
+    }
+    if(header_rewritten==0){return generic_expansion_unresolved_parameter_status();}
+    if(cursor<source_end){generic_expansion_append_span(original,cursor,checked_sub(source_end,cursor),output);}
+    buffer_push(output,10);return generic_expansion_ok();
+}
+
+fn generic_expansion_render_final(
+    borrow original:Buffer,borrow working:Buffer,borrow declarations:Vec<GenericDeclarationIdentity>,
+    allocator:Allocator,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    let tokens:Vec<Token>=lex(working,allocator);var cursor:i64=0;var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);var rewritten:i32=0;
+        if(token_kind(token)==token_identifier_kind()){
+            let declaration_index:i64=generic_expansion_declaration_for_name(original,working,token_start(token),token_length(token),declarations);
+            var builtin_generic:i32=0;
+            if(token_length(token)==3){
+                if(buffer_get(working,token_start(token))==86){if(buffer_get(working,checked_add(token_start(token),1))==101){if(buffer_get(working,checked_add(token_start(token),2))==99){builtin_generic=1;}}}
+            }
+            if(token_length(token)>4){
+                if(buffer_get(working,token_start(token))==118){if(buffer_get(working,checked_add(token_start(token),1))==101){if(buffer_get(working,checked_add(token_start(token),2))==99){if(buffer_get(working,checked_add(token_start(token),3))==95){builtin_generic=1;}}}}
+            }
+            if(declaration_index>=0){builtin_generic=1;}
+            if(builtin_generic!=0){
+                let open_index:i64=checked_add(index,1);
+                if(open_index<vec_len<Token>(tokens)){
+                    let open:Token=vec_get<Token>(tokens,open_index);
+                    if(generic_expansion_punctuation(working,open,60)!=0){
+                        let close_index:i64=generic_expansion_find_angle_close(working,tokens,open_index);
+                        if(close_index<0){return generic_expansion_malformed_application_status();}
+                        generic_expansion_append_span(working,cursor,checked_sub(token_start(token),cursor),output);
+                        generic_expansion_append_span(working,token_start(token),token_length(token),output);
+                        generic_expansion_append_separator(output);
+                        let canonical_status:i32=generic_expansion_append_canonical_type(working,tokens,checked_add(open_index,1),close_index,output);
+                        if(canonical_status!=generic_expansion_ok()){return canonical_status;}
+                        let close:Token=vec_get<Token>(tokens,close_index);
+                        cursor=checked_add(token_start(close),1);index=close_index;rewritten=1;
+                        if(declaration_index>=0){
+                            let declaration:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,declaration_index);
+                            if(generic_declaration_kind(declaration)==generic_declaration_enum_kind()){
+                                let scope_index:i64=checked_add(index,1);let variant_index:i64=checked_add(index,2);
+                                if(variant_index<vec_len<Token>(tokens)){
+                                    let scope:Token=vec_get<Token>(tokens,scope_index);let variant:Token=vec_get<Token>(tokens,variant_index);
+                                    if(generic_expansion_scope_operator(working,scope)!=0){if(token_kind(variant)==token_identifier_kind()){
+                                        generic_expansion_append_separator(output);generic_expansion_append_span(working,token_start(variant),token_length(variant),output);
+                                        cursor=checked_add(token_start(variant),token_length(variant));index=variant_index;
+                                    }}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        index=checked_add(index,1);
+    }
+    generic_expansion_append_span(working,cursor,checked_sub(buffer_len(working),cursor),output);drop(tokens);return generic_expansion_ok();
+}
+
+pub fn expand_generic_source(
+    borrow source:Buffer,borrow tokens:Vec<Token>,allocator:Allocator,borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    var declarations:Vec<GenericDeclarationIdentity>=vec_new<GenericDeclarationIdentity>(allocator,8);
+    var parameters:Vec<GenericParameterIdentity>=vec_new<GenericParameterIdentity>(allocator,16);
+    var bounds:Vec<GenericBoundIdentity>=vec_new<GenericBoundIdentity>(allocator,16);
+    var traits:Vec<TraitDeclarationIdentity>=vec_new<TraitDeclarationIdentity>(allocator,8);
+    var implementations:Vec<TraitImplementationIdentity>=vec_new<TraitImplementationIdentity>(allocator,8);
+    var trait_methods:Vec<TraitMethodIdentity>=vec_new<TraitMethodIdentity>(allocator,8);
+    var implementation_methods:Vec<TraitImplementationMethodIdentity>=vec_new<TraitImplementationMethodIdentity>(allocator,8);
+    let catalog_status:i32=derive_generic_identity_catalog(
+        source,tokens,allocator,declarations,parameters,bounds,traits,implementations,trait_methods,implementation_methods
+    );
+    if(catalog_status!=generic_catalog_ok()){return checked_add(generic_expansion_catalog_status_base(),catalog_status);}
+    var working:Buffer=buffer_new(allocator,buffer_len(source));
+    generic_expansion_base_source(source,declarations,traits,implementations,working);
+    let implementation_status:i32=generic_expansion_emit_implementation_methods(
+        source,implementations,implementation_methods,working
+    );
+    if(implementation_status!=generic_expansion_ok()){return implementation_status;}
+    var names:Buffer=buffer_new(allocator,64);
+    var requests:Vec<GenericInstantiationRequest>=vec_new<GenericInstantiationRequest>(allocator,8);
+    var arguments:Vec<GenericInstantiationArgument>=vec_new<GenericInstantiationArgument>(allocator,16);
+    var generated_count:i64=0;var iteration:i64=0;var status:i32=generic_expansion_ok();
+    while(status==generic_expansion_ok()){
+        let working_tokens:Vec<Token>=lex(working,allocator);
+        status=generic_expansion_discover_requests(
+            source,working,working_tokens,declarations,parameters,bounds,traits,implementations,
+            names,requests,arguments
+        );
+        drop(working_tokens);
+        if(status==generic_expansion_ok()){
+            if(generated_count==vec_len<GenericInstantiationRequest>(requests)){status=-1;}
+            else{
+                while(generated_count<vec_len<GenericInstantiationRequest>(requests)){
+                    let request:GenericInstantiationRequest=vec_get<GenericInstantiationRequest>(requests,generated_count);
+                    let declaration_index:i64=generic_expansion_declaration_by_id(declarations,request.declaration_id);
+                    if(declaration_index<0){return generic_expansion_unresolved_parameter_status();}
+                    let declaration:GenericDeclarationIdentity=vec_get<GenericDeclarationIdentity>(declarations,declaration_index);
+                    let generation_status:i32=generic_expansion_generate_instance(
+                        source,tokens,declaration,parameters,bounds,traits,trait_methods,request,arguments,names,working
+                    );
+                    if(generation_status!=generic_expansion_ok()){return generation_status;}
+                    generated_count=checked_add(generated_count,1);
+                }
+                iteration=checked_add(iteration,1);if(iteration>=64){return generic_expansion_depth_status();}
+            }
+        }
+    }
+    if(status!=-1){return status;}
+    let render_status:i32=generic_expansion_render_final(source,working,declarations,allocator,output);
+    drop(arguments);drop(requests);drop(names);drop(working);drop(implementation_methods);drop(trait_methods);drop(implementations);drop(traits);drop(bounds);drop(parameters);drop(declarations);
+    return render_status;
+}

@@ -91,7 +91,7 @@ fn main()->i32 {{
   print(ownership_binding_owned(first)); print(ownership_binding_mutable(first));
   print(ownership_binding_id(second)); print(ownership_binding_local_id(second));
   print(ownership_binding_owned(second)); print(ownership_binding_mutable(second));
-  print_resolved_source_function_snapshot(body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors,numeric_type_descriptors,destructor_descriptors,destructor_body,destructor_cfg,destructor_placements);
+  print_resolved_source_function_snapshot(source,body,contracts,contract_locals,sources,bindings,ownership_records,cfg,placements,required,type_descriptors,numeric_type_descriptors,destructor_descriptors,destructor_body,destructor_cfg,destructor_placements);
 
   drop(destructor_placements); drop(destructor_cfg); drop(destructor_body); drop(destructor_descriptors);
   drop(placements); drop(cfg); drop(assembled); drop(sources); drop(required); drop(contract_locals);

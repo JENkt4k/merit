@@ -14,6 +14,7 @@ import bootstrap_mir_resolved_source_function_snapshot;
 // bootstrap-resolved-source-function-snapshot-v4 payload.
 
 pub fn resolved_source_function_snapshot_value_count(
+    borrow effective_source: Buffer,
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
     borrow contract_locals: Vec<MirFunctionContractLocal>,
@@ -30,7 +31,7 @@ pub fn resolved_source_function_snapshot_value_count(
     borrow destructor_cfg: Vec<MirCfgRecord>,
     borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i64 {
-    var count: i64 = 17; // magic + version + fifteen section counts
+    var count: i64 = 18; // magic + version + sixteen section counts
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(body), 16));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractRecord>(contracts), 12));
     count = checked_add(count, checked_mul(vec_len<MirFunctionContractLocal>(contract_locals), 5));
@@ -46,6 +47,7 @@ pub fn resolved_source_function_snapshot_value_count(
     count = checked_add(count, checked_mul(vec_len<MirFunctionRecord>(destructor_body), 16));
     count = checked_add(count, checked_mul(vec_len<MirCfgRecord>(destructor_cfg), 7));
     count = checked_add(count, checked_mul(vec_len<MirPlacementRecord>(destructor_placements), 3));
+    count = checked_add(count, buffer_len(effective_source));
     return count;
 }
 
@@ -58,6 +60,7 @@ pub fn print_resolved_source_function_bundle_header(function_count: i64) -> i32 
 }
 
 pub fn print_resolved_source_function_bundle_item(
+    borrow effective_source: Buffer,
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
     borrow contract_locals: Vec<MirFunctionContractLocal>,
@@ -75,15 +78,15 @@ pub fn print_resolved_source_function_bundle_item(
     borrow destructor_placements: Vec<MirPlacementRecord>
 ) -> i32 {
     let value_count: i64 = resolved_source_function_snapshot_value_count(
-        body, contracts, contract_locals, sources, ownership_bindings,
+        effective_source, body, contracts, contract_locals, sources, ownership_bindings,
         ownership_records, cfg, placements, capabilities, type_descriptors,
         numeric_type_descriptors,
         destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
     );
-    if (value_count < 17) { return 1; }
+    if (value_count < 18) { return 1; }
     print(value_count);
     return print_resolved_source_function_snapshot(
-        body, contracts, contract_locals, sources, ownership_bindings,
+        effective_source, body, contracts, contract_locals, sources, ownership_bindings,
         ownership_records, cfg, placements, capabilities, type_descriptors,
         numeric_type_descriptors,
         destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
