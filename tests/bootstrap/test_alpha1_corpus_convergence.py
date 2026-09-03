@@ -108,6 +108,10 @@ def _replacement_rejection(
         prepare_replacement_artifacts(project, driver)
     except (ProjectError, CompileError, ReplacementProjectError, ValueError) as exc:
         return "replacement-prepare", type(exc).__name__, str(exc)
+    try:
+        build_replacement_project(project, manifest.parent / "replacement-rejected")
+    except (ProjectError, CompileError, ReplacementProjectError, ValueError) as exc:
+        return "replacement-build", type(exc).__name__, str(exc)
     pytest.fail("replacement compiler accepted an Alpha.1 rejected corpus case")
 
 
@@ -183,6 +187,8 @@ def test_alpha1_rejected_case_converges_reference_and_replacement_fail_closed(
     assert replacement_second == replacement_first
 
     # Project-loader rejection is shared project semantics; cases that reach the
-    # native frontend must fail before publishing a replacement manifest.
+    # native frontend must fail before publishing a replacement manifest only
+    # when rejection occurs during preparation. A later replacement-build
+    # rejection may legitimately leave deterministic prepared artifacts behind.
     if replacement_first[0] == "replacement-prepare":
         assert not (manifest.parent / ".merit" / REPLACEMENT_MANIFEST).exists()
