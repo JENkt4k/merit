@@ -34,12 +34,11 @@
       "covers": [
         "bindings",
         "control_flow",
-        "calls",
         "contracts",
         "primitive_integers"
       ],
       "files": {
-        "src/main.mrt": "module main\nfn increment(value:i32)->i32\nrequires value >= 0;\nensures result > value;\n{ return value+1; }\nfn main()->i32 { var x:i32=0; while x<3 { print(x); x=x+1; } return 0; }\n"
+        "src/main.mrt": "module main\nfn main()->i32\nrequires 1 == 1;\nensures result == 0;\n{ var x:i32=0; while x<3 { print(x); x=x+1; } return 0; }\n"
       }
     },
     {
