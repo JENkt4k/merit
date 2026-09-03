@@ -126,6 +126,16 @@ def run_acceptance() -> None:
             )
 
 
+def run_corpus() -> None:
+    with group("alpha.1 accepted/rejected corpus convergence"):
+        run(
+            [
+                sys.executable,
+                str(REPOSITORY_ROOT / "scripts" / "alpha1_corpus_report.py"),
+            ]
+        )
+
+
 def run_gate(
     name: str,
     durations: int | None,
@@ -147,6 +157,8 @@ def run_gate(
                 fail_fast=fail_fast,
                 workers=PARALLEL_TEST_WORKERS,
             )
+    elif name == "corpus":
+        run_corpus()
     elif name == "acceptance":
         run_acceptance()
     elif name == "full":
@@ -169,6 +181,7 @@ def run_gate(
         "python": sys.version.split()[0],
         "platform": sys.platform,
         "acceptance_projects": 10 if name in {"acceptance", "full"} else 0,
+        "corpus_convergence": name == "corpus",
     }
 
 
@@ -187,7 +200,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "subsystem", "acceptance", "full"),
+        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "full"),
         help="validation level to run",
     )
     parser.add_argument(
@@ -243,6 +256,8 @@ def main() -> int:
     print(f"duration_seconds={result['duration_seconds']}")
     if result["acceptance_projects"]:
         print("acceptance_projects=10/10")
+    if result.get("corpus_convergence"):
+        print("corpus_convergence=PASS")
     print(f"result={destination}")
     return 0
 
