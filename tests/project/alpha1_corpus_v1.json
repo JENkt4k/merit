@@ -30,15 +30,14 @@
   ],
   "accepted": [
     {
-      "id": "scalar-control-contracts",
+      "id": "scalar-control-flow",
       "covers": [
         "bindings",
         "control_flow",
-        "contracts",
         "primitive_integers"
       ],
       "files": {
-        "src/main.mrt": "module main\nfn main()->i32\nrequires 1 == 1;\nensures result == 0;\n{ var x:i32=0; while x<3 { print(x); x=x+1; } return 0; }\n"
+        "src/main.mrt": "module main\nfn main()->i32 { var x:i32=0; while x<3 { print(x); x=x+1; } return 0; }\n"
       }
     },
     {
@@ -67,14 +66,15 @@
       }
     },
     {
-      "id": "exact-numeric-surface",
+      "id": "exact-numeric-contract-surface",
       "covers": [
+        "contracts",
         "exact_decimal",
         "bounded_integers",
         "primitive_integers"
       ],
       "files": {
-        "src/main.mrt": "module main\ndecimal USD(18,2,half_even);\nbounded Sequence(u64,0,9999999999999999999);\nfn main()->i32 { let amount:USD=1.25; let second:USD=2.75; let sequence:Sequence=9999999999999999999; print(amount+second); print(sequence); let left:i16=300; let right:i16=7; print(checked_mul(left,right)); return 0; }\n"
+        "src/main.mrt": "module main\ndecimal USD(18,2,half_even);\nbounded Sequence(u64,0,9999999999999999999);\nfn main()->i32\nrequires 1 == 1;\nensures result == 0;\n{ let amount:USD=1.25; let second:USD=2.75; let sequence:Sequence=9999999999999999999; print(amount+second); print(sequence); let left:i16=300; let right:i16=7; print(checked_mul(left,right)); return 0; }\n"
       }
     },
     {
