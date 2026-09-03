@@ -11,20 +11,19 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / ".merit" / "gates" / "corpus" / "coverage.json"
 
 # ALPHA2_CLOSURE.md identifies tests/test_epoch_*.py as the established
-# Alpha.1 reference authority. Keep discovery dynamic so a newly added epoch
-# corpus file cannot silently fall outside M6.
+# Alpha.1 Python reference authority. Keep discovery dynamic so a newly added
+# epoch corpus file cannot silently fall outside M6.
 REFERENCE_CORPUS = tuple(
     str(path.relative_to(REPOSITORY_ROOT)).replace("\\", "/")
     for path in sorted((REPOSITORY_ROOT / "tests").glob("test_epoch_*.py"))
 )
 
-# M1-M5 differential/native closure is concentrated in the concrete native
-# replacement-driver suite. Project-boundary replacement behavior lives under
-# tests/project. Running both sets makes M6 a corpus-level convergence gate,
-# rather than another isolated feature test.
-REPLACEMENT_CORPUS = (
-    "tests/bootstrap/test_concrete_native_replacement_driver.py",
-    "tests/project",
+# This is the M6 same-source convergence proof. Each manifest case is applied
+# independently to reference and replacement compilation, including native
+# execution for accepted cases and deterministic fail-closed behavior for
+# rejected cases.
+CONVERGENCE_CORPUS = (
+    "tests/bootstrap/test_alpha1_corpus_convergence.py",
 )
 
 
@@ -82,7 +81,8 @@ def main() -> int:
         "reference_authority": "tests/test_epoch_*.py",
         "reference_file_count": len(REFERENCE_CORPUS),
         "reference_files": list(REFERENCE_CORPUS),
-        "replacement_evidence": list(REPLACEMENT_CORPUS),
+        "convergence_manifest": "tests/project/alpha1_corpus_v1.json",
+        "convergence_evidence": list(CONVERGENCE_CORPUS),
         "python": sys.version.split()[0],
         "platform": sys.platform,
     }
@@ -97,8 +97,10 @@ def main() -> int:
         return 1
 
     try:
-        payload["reference"] = _run("reference", REFERENCE_CORPUS)
-        payload["replacement"] = _run("replacement", REPLACEMENT_CORPUS)
+        payload["reference"] = _run("reference authority", REFERENCE_CORPUS)
+        payload["convergence"] = _run(
+            "same-source reference/replacement convergence", CONVERGENCE_CORPUS
+        )
     except CorpusFailure as exc:
         payload.update(
             status="failed",
