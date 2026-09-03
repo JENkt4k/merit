@@ -1,64 +1,60 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-09-02
+Checkpoint date: 2026-09-03
 
 Scope: `v0.1.0-alpha.2` replacement-compiler development after the stable alpha reference compiler. Python remains the independent oracle; the Merit-native replacement compiler is not yet trusted or self-hosted.
 
 ## Current verified architecture
 
-The replacement compiler is no longer accurately described as an expression-MIR experiment. The measured lexer/parser/AST/HIR/MIR fixtures remain useful differential evidence, but the active work has moved to complete source-backed function slices.
+The replacement compiler is no longer accurately described as an expression-MIR experiment. The measured lexer/parser/AST/HIR/MIR fixtures remain useful differential evidence, but the active work now reaches complete source-backed semantic slices, project-wide resolution, and same-source corpus convergence.
 
-The native replacement path now represents resolved functions with versioned records for function body instructions, contracts and contract locals, instruction source/provenance, ownership bindings/effects, CFG and placement, and capability identities/effects. A source unit can publish multiple such functions in one versioned `resolved-source-function-bundle-v1` bundle.
+The native replacement path represents resolved functions and projects with versioned records for bodies, contracts, provenance, ownership, CFG/placement, capabilities, exact numerics, aggregates/resources, generics/traits, imports/visibility, and export/ABI identity. Prepared replacement projects validate native-resolved artifacts against current source, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables. Replacement mode fails closed instead of falling back to Python semantics.
 
-Prepared replacement projects consume those native-resolved snapshots, validate them against the current source digest, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables. Replacement project mode fails closed instead of falling back to Python semantics.
-
-The concrete `NativeReplacementDriver` and multi-function bundle boundary are established. M1-M4 are closed and PR #109 is merged; detailed evidence remains centralized in `ALPHA2_CLOSURE.md`. Python remains responsible for orchestration at current seams and remains the independent oracle.
+M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the canonical accepted/rejected same-source corpus convergence boundary: accepted programs reach reference and replacement native execution with observable parity and repeated deterministic replacement artifacts; rejected programs are rejected independently and deterministically. Detailed evidence remains centralized in `ALPHA2_CLOSURE.md` and `docs/ALPHA1_CORPUS_CONVERGENCE.md`.
 
 ## Required quality dimensions
 
 | Metric | Current status |
 |---|---|
-| Total tests passing | Exact counts are gate-run evidence and intentionally not frozen in this status document |
-| Compile-pass tests | Positive semantic/project/native coverage remains part of the full suite; whole-suite count is not separately instrumented |
-| Compile-fail tests | Negative semantic, ownership, capability, visibility, malformed-input, stale-artifact, and replacement-boundary cases remain covered; whole-suite count is not separately instrumented |
-| Acceptance projects | Stable alpha acceptance projects remain part of `scripts/test.sh`; replacement migration is still incremental |
-| Lexer differential cases | Proven for the versioned measured bootstrap corpus |
-| Parser differential cases | Proven for the measured versioned bootstrap corpus |
-| AST differential cases | Proven for measured expression/bootstrap boundaries; not a whole-language percentage |
-| HIR differential cases | Proven for measured expression/bootstrap boundaries; not a whole-language percentage |
-| Bootstrap/reference parity | Exact for explicitly covered replacement boundaries; not yet whole-language replacement parity |
-| Reference compiler source | Python alpha compiler remains the independent semantic/diagnostic oracle |
-| Merit-native compiler source | Concrete native driver carries the closed M1-M4 surfaces through replacement compilation |
-| Generated C size | Evidence only; not remeasured for this checkpoint and not an optimization target |
-| Known semantic blockers | M5-M10 remain open: project closure, corpus convergence, acceptance migration, production cutover, reproducibility/trust, and release audit |
+| Total tests passing | Exact counts are gate-run evidence and intentionally not frozen here |
+| Compile-pass tests | Positive semantic/project/native coverage remains part of the full suite |
+| Compile-fail tests | Negative semantic, ownership, capability, visibility, malformed-input, stale-artifact, and replacement-boundary cases remain covered |
+| Acceptance projects | 10 canonical projects remain in the acceptance gate; replacement migration is M7 |
+| Lexer/parser differential cases | Proven for the versioned measured bootstrap corpora |
+| AST/HIR differential cases | Proven for measured boundaries; not used as whole-language percentages |
+| Bootstrap/reference parity | Canonical M6 same-source accepted/rejected corpus convergence is closed |
+| Reference compiler source | Python Alpha.1 compiler remains the independent semantic/diagnostic oracle |
+| Merit-native compiler source | Concrete native driver carries M1-M6 replacement evidence |
+| Known semantic blockers | No unexplained M6 corpus discrepancy remains; M7-M10 remain open |
 
 ## Replacement architecture evidence
 
 | Area | Current status |
 |---|---|
-| Stable alpha reference compiler | Complete for documented `v0.1.0-alpha.1` subset |
+| Stable Alpha.1 reference compiler | Complete for documented subset |
 | Merit-native lexer/parser bootstrap corpus | Proven for measured versioned corpora |
-| Expression AST/HIR/MIR bootstrap contracts | Proven for measured differential cases; not a whole-language percentage |
-| Source-backed function semantics | Native records exist for supported body/contract/ownership/CFG/capability surfaces |
-| Multi-function source units | Versioned native bundle boundary complete |
-| Replacement canonical MIR | Consumes native-resolved snapshots for supported functions |
-| Deterministic replacement C/native build | Proven for supported replacement inputs |
+| Source-backed function semantics | Closed for documented Alpha.1 replacement surface |
+| Multi-function/project resolution | Closed through M5 |
+| Replacement canonical MIR | Consumes native-resolved artifacts for documented Alpha.1 surface |
+| Deterministic replacement C/native build | Proven for covered replacement inputs |
 | Project replacement mode | Exists and refuses reference-compiler fallback |
-| Prepared-artifact freshness | Source SHA-256 checked; stale artifacts rejected |
-| Production frontend interface | `NativeReplacementDriver` executable boundary complete |
-| Concrete Merit-native driver attached | Complete |
-| Complete accepted-alpha replacement corpus | Not yet |
-| Normal Python-free production compilation | Not yet |
+| Prepared-artifact freshness | Source digests checked; stale artifacts rejected |
+| Complete accepted/rejected Alpha.1 convergence corpus | CLOSED in M6 |
+| All canonical acceptance projects through replacement | M7 OPEN |
+| Normal Python-free production compilation | M8 OPEN |
+| Stage reproducibility/trust | M9 OPEN |
 | Trusted/self-hosted replacement | Not yet |
 
 The canonical GitHub gates run the full clean suite on Ubuntu and native Windows.
 
 ## Current milestone
 
-M5 project/module/import/export/visibility closure is active. M6 corpus convergence, M7 acceptance migration, M8 production cutover, M9 reproducibility/trust, and M10 release audit follow in that order. Unsupported source must continue to fail deterministically rather than silently falling back to the reference compiler.
+**M7 acceptance migration is active.** All 10 canonical acceptance projects must compile and run through production replacement mode without Python semantic lowering or silent fallback. The exact-decimal `ledger_app` is mandatory evidence. See `docs/M7_ACCEPTANCE_MIGRATION.md` for the implementation and closure contract.
+
+M8 production cutover, M9 reproducibility/trust, and M10 release audit follow in that order. Unsupported source must continue to fail deterministically rather than silently falling back to the reference compiler.
 
 ## Deliberate non-blocking future work
 
 Stored references/lifetime parameters, subobject-disjoint borrowing, richer trait features, typed generic IR, LLVM, package infrastructure, formatter/LSP, concurrency, networking, and scientific array/tensor work remain outside the bootstrap critical path.
 
-Generated C size and replacement-source line counts are evidence rather than optimization targets. Trust is based on semantic contracts, differential parity, compile-pass/fail coverage, deterministic artifacts, and acceptance behavior.
+Generated C size and replacement-source line counts are evidence rather than optimization targets. Trust is based on semantic contracts, differential parity, compile-pass/fail coverage, deterministic artifacts, real acceptance behavior, production cutover, and reproducible stages.
