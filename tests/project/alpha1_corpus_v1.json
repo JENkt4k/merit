@@ -1,0 +1,204 @@
+{
+  "contract": "alpha1-corpus-convergence-v1",
+  "required_surfaces": [
+    "bindings",
+    "control_flow",
+    "calls",
+    "contracts",
+    "capabilities",
+    "ownership",
+    "borrowed_returns",
+    "structs",
+    "destructors",
+    "payload_enums",
+    "match",
+    "strings",
+    "buffers",
+    "exact_decimal",
+    "bounded_integers",
+    "primitive_integers",
+    "generic_functions",
+    "generic_types",
+    "generic_collections",
+    "traits",
+    "modules",
+    "imports",
+    "qualified_names",
+    "visibility",
+    "stable_exports",
+    "utf8"
+  ],
+  "accepted": [
+    {
+      "id": "scalar-control-contracts",
+      "covers": ["bindings", "control_flow", "calls", "contracts", "primitive_integers"],
+      "files": {
+        "src/main.mrt": "module main\nfn increment(value:i32)->i32\nrequires value >= 0;\nensures result > value;\n{ return checked_add(value,1); }\nfn main()->i32 { var x:i32=0; while x<3 { if x==1 { print(increment(x)); } else { print(x); } x=checked_add(x,1); } return 0; }\n"
+      }
+    },
+    {
+      "id": "owned-buffer-capability",
+      "covers": ["capabilities", "ownership", "strings", "buffers"],
+      "files": {
+        "src/main.mrt": "module main\ncapability allocate;\nfn main()->i32 { print(\"hi\"); with capability allocate { let a:Allocator=system_allocator(); var b:Buffer=buffer_from_string(a,\"ok\"); buffer_push(b,33); print(b); drop(b); } return 0; }\n"
+      }
+    },
+    {
+      "id": "recursive-owned-payload-enum",
+      "covers": ["ownership", "structs", "destructors", "payload_enums", "match"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Marker { number:i64; }\ndestructor Marker { print(self.number); }\nstruct Wrapper { marker:Marker; }\nstruct Outer { wrapper:Wrapper; }\nenum Parcel { Wrapped(Outer), Spare(Outer) }\nfn main()->i32 { let marker:Marker=Marker { number:131 }; let wrapper:Wrapper=Wrapper { marker:marker }; let outer:Outer=Outer { wrapper:wrapper }; let parcel:Parcel=Spare(outer); match (parcel) { Wrapped(value) => { drop(value); } Spare(value) => { drop(value); } } return 0; }\n"
+      }
+    },
+    {
+      "id": "exact-numeric-surface",
+      "covers": ["exact_decimal", "bounded_integers", "primitive_integers"],
+      "files": {
+        "src/main.mrt": "module main\ndecimal USD(18,2,half_even);\nbounded Sequence(u64,0,9999999999999999999);\nfn main()->i32 { let amount:USD=1.25; let second:USD=2.75; let sequence:Sequence=9999999999999999999; print(amount+second); print(sequence); let left:i16=300; let right:i16=7; print(checked_mul(left,right)); return 0; }\n"
+      }
+    },
+    {
+      "id": "generic-function-and-types",
+      "covers": ["generic_functions", "generic_types", "payload_enums", "match"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Pair<T,U> { first:T; second:U; }\nenum Option<T> { Some(T), None }\nfn identity<T: Copy>(value:T)->T { return value; }\nfn main()->i32 { let pair:Pair<i64,i32>=Pair<i64,i32>{first:identity<i64>(7),second:3}; let maybe:Option<i64>=Option<i64>::Some(pair.first); match(maybe){Option<i64>::Some(value)=>{print(value);} Option<i64>::None=>{print(0);}} return 0; }\n"
+      }
+    },
+    {
+      "id": "trait-static-dispatch",
+      "covers": ["generic_functions", "traits", "structs"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Point { x:i32; }\ntrait Summarized { fn score(value:Self)->i32; }\nimpl Summarized for Point { fn score(value:Point)->i32 { return value.x; } }\nfn summarize<T:Summarized>(value:T)->i32 { return score(value); }\nfn main()->i32 { let point:Point=Point{x:17}; let total:i32=summarize<Point>(point); print(total); return 0; }\n"
+      }
+    },
+    {
+      "id": "generic-vector",
+      "covers": ["capabilities", "generic_collections", "ownership"],
+      "files": {
+        "src/main.mrt": "module main\ncapability allocate;\nfn main()->i32 { with capability allocate { let allocator:Allocator=system_allocator(); var values:Vec<i64>=vec_new<i64>(allocator,2); vec_push<i64>(values,7); vec_push<i64>(values,11); vec_set<i64>(values,1,13); print(vec_len<i64>(values)); print(vec_get<i64>(values,0)); print(vec_pop<i64>(values)); } return 0; }\n"
+      }
+    },
+    {
+      "id": "borrowed-return-relay",
+      "covers": ["calls", "ownership", "borrowed_returns", "structs"],
+      "files": {
+        "src/main.mrt": "module relayed_shared_borrow\nstable(\"v1\") struct Value { number:i32; }\nfn expose(borrow value:Value)->borrow Value { return value; }\nfn relay(borrow value:Value)->borrow Value { return expose(value); }\nfn main()->i32 { let value:Value=Value{number:41}; print(relay(value).number); return 0; }\n"
+      }
+    },
+    {
+      "id": "multi-module-qualified-public-stable",
+      "covers": ["modules", "imports", "qualified_names", "visibility", "stable_exports", "structs", "calls"],
+      "files": {
+        "src/library.mrt": "module library\npub stable(\"record-v1\") struct Record { value:i32; }\npub fn visible(value:i32)->i32 { return value; }\n",
+        "src/main.mrt": "module main\nimport library;\nfn main()->i32 { let record:library.Record=library.Record{value:29}; print(library.visible(record.value)); return 0; }\n"
+      }
+    },
+    {
+      "id": "utf8-string-bytes",
+      "covers": ["strings", "utf8"],
+      "files": {
+        "src/main.mrt": "module main\nfn main()->i32 { let text:String=\"Aé\"; print(text); print(string_len(text)); print(string_get(text,0)); print(string_get(text,1)); print(string_get(text,2)); return 0; }\n"
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "id": "buffer-without-allocate-capability",
+      "category": "capability",
+      "covers": ["capabilities", "buffers"],
+      "files": {
+        "src/main.mrt": "module main\nfn main()->i32 { let a:Allocator=system_allocator(); let b:Buffer=buffer_new(a,8); return 0; }\n"
+      }
+    },
+    {
+      "id": "owned-use-after-move",
+      "category": "ownership",
+      "covers": ["ownership", "buffers", "calls"],
+      "files": {
+        "src/main.mrt": "module main\ncapability allocate;\nfn take(x:Buffer)->i32{return 0;}\nfn main()->i32 { with capability allocate { let a:Allocator=system_allocator(); let b:Buffer=buffer_new(a,8); let x:i32=take(b); print(buffer_len(b)); } return 0; }\n"
+      }
+    },
+    {
+      "id": "borrowed-return-from-owned-parameter",
+      "category": "borrow",
+      "covers": ["borrowed_returns", "ownership"],
+      "files": {
+        "src/main.mrt": "module borrowed_returns\nstable(\"v1\") struct Value { number:i32; }\nfn expose(value:Value)->borrow Value { return value; }\nfn main()->i32 { return 0; }\n"
+      }
+    },
+    {
+      "id": "inconsistent-borrowed-return-origin",
+      "category": "borrow",
+      "covers": ["borrowed_returns", "control_flow"],
+      "files": {
+        "src/main.mrt": "module inconsistent_borrowed_return\nstable(\"v1\") struct Value { number:i32; }\nfn choose(borrow left:Value,borrow right:Value)->borrow Value { if left.number { return left; } else { return right; } }\nfn main()->i32 { return 0; }\n"
+      }
+    },
+    {
+      "id": "wrong-generic-arity",
+      "category": "generic",
+      "covers": ["generic_types"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Pair<T,U>{first:T;second:U;}\nfn main()->i32 { let pair:Pair<i64>=Pair<i64>{first:1}; return 0; }\n"
+      }
+    },
+    {
+      "id": "missing-trait-implementation",
+      "category": "trait",
+      "covers": ["generic_functions", "traits"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Point{x:i32;}\ntrait Summarized{fn score(value:Self)->i32;}\nfn summarize<T:Summarized>(value:T)->i32{return score(value);}\nfn main()->i32 { let point:Point=Point{x:1}; return summarize<Point>(point); }\n"
+      }
+    },
+    {
+      "id": "duplicate-trait-implementation",
+      "category": "trait",
+      "covers": ["traits"],
+      "files": {
+        "src/main.mrt": "module main\nstruct Point{x:i32;}\ntrait Summarized{fn score(value:Self)->i32;}\nimpl Summarized for Point{fn score(value:Point)->i32{return value.x;}}\nimpl Summarized for Point{fn score(value:Point)->i32{return value.x;}}\nfn main()->i32{return 0;}\n"
+      }
+    },
+    {
+      "id": "vector-allocation-without-capability",
+      "category": "capability",
+      "covers": ["generic_collections", "capabilities"],
+      "files": {
+        "src/main.mrt": "module main\nfn main()->i32{let allocator:Allocator=system_allocator(); var values:Vec<i64>=vec_new<i64>(allocator,1); drop(values); return 0;}\n"
+      }
+    },
+    {
+      "id": "recursive-owned-type-cycle",
+      "category": "ownership",
+      "covers": ["ownership", "structs"],
+      "files": {
+        "src/main.mrt": "module main\nstruct First { second:Second; }\nstruct Second { first:First; }\nfn main()->i32 { return 0; }\n"
+      }
+    },
+    {
+      "id": "private-qualified-call",
+      "category": "visibility",
+      "covers": ["modules", "imports", "qualified_names", "visibility"],
+      "files": {
+        "src/library.mrt": "module library\nfn hidden()->i32{return 1;}\n",
+        "src/main.mrt": "module main\nimport library;\nfn main()->i32{return library.hidden();}\n"
+      }
+    },
+    {
+      "id": "unimported-qualified-call",
+      "category": "imports",
+      "covers": ["modules", "imports", "qualified_names"],
+      "files": {
+        "src/library.mrt": "module library\npub fn visible()->i32{return 1;}\n",
+        "src/main.mrt": "module main\nfn main()->i32{return library.visible();}\n"
+      }
+    },
+    {
+      "id": "immutable-assignment",
+      "category": "binding",
+      "covers": ["bindings"],
+      "files": {
+        "src/main.mrt": "module main\nfn main()->i32 { let value:i32=1; value=2; return value; }\n"
+      }
+    }
+  ]
+}
