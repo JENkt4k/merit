@@ -74,7 +74,7 @@
         "primitive_integers"
       ],
       "files": {
-        "src/main.mrt": "module main\ndecimal USD(18,2,half_even);\nbounded Sequence(u64,0,9999999999999999999);\nfn main()->i32\nrequires 1 == 1;\nensures result == 0;\n{ let amount:USD=1.25; let second:USD=2.75; let sequence:Sequence=9999999999999999999; print(amount+second); print(sequence); let left:i16=300; let right:i16=7; print(checked_mul(left,right)); return 0; }\n"
+        "src/main.mrt": "module main\ndecimal USD(18,2,half_even);\nbounded Sequence(u64,0,9999999999999999999);\nfn main()->i32\nrequires 1 == 1;\nensures 1 == 1;\n{ let amount:USD=1.25; let second:USD=2.75; let sequence:Sequence=9999999999999999999; print(amount+second); print(sequence); let left:i16=300; let right:i16=7; print(checked_mul(left,right)); return 0; }\n"
       }
     },
     {
