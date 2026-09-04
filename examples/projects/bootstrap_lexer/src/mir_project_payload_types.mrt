@@ -1,4 +1,4 @@
-module bootstrap_mir_project_payload_types;
+module bootstrap_mir_project_payload_types
 import bootstrap_tokens;
 import bootstrap_statement_semantics;
 import bootstrap_mir_functions;
