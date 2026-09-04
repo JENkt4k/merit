@@ -11,6 +11,7 @@ import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_source_function_records;
+import bootstrap_mir_project_payload_types;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_structured_lowering;
 import bootstrap_mir_cfg;
@@ -248,11 +249,11 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         );
                         if(numeric_status!=0){function_status=checked_add(985,numeric_status);}
                     }
-                    // Derive top-level payload-free enum declarations directly
-                    // from the complete source unit. Enum identity is declaration
-                    // ordinal; variant identity is deterministic source-unit
-                    // variant ordinal. Payload-bearing variants remain fail-closed
-                    // until recursive enum lifecycle metadata is represented.
+                    // Derive top-level enum declarations directly from the
+                    // complete source unit. Payload types are resolved by the
+                    // native project type resolver so generic vectors, exact
+                    // numerics, structs, and earlier enum declarations all use
+                    // the same canonical type identities as ordinary functions.
                     var enum_scan: i64 = 0;
                     var enum_depth: i64 = 0;
                     var enum_ordinal: i64 = 0;
@@ -354,21 +355,16 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                 );
                                                                 if (copy_payload != 0) { variant_payload_type_code = function_mir_i64_type_code(); }
                                                                 if (copy_payload == 0) {
-                                                                    variant_payload_type_code = sfr_builtin_type_code(
-                                                                        source, token_start(payload), token_length(payload)
+                                                                    variant_payload_type_code = project_payload_type_code(
+                                                                        source, tokens, variants, structs,
+                                                                        token_start(payload), token_length(payload)
                                                                     );
-                                                                    if (variant_payload_type_code == function_mir_buffer_type_code()) {
-                                                                        variant_payload_owned = 1;
+                                                                    if (variant_payload_type_code != function_mir_unresolved_type_code()) {
+                                                                        copy_payload = 1;
+                                                                        if (function_mir_type_uses_ownership_transfer(variant_payload_type_code) != 0) {
+                                                                            variant_payload_owned = 1;
+                                                                        }
                                                                     }
-                                                                    if (variant_payload_type_code == function_mir_unresolved_type_code()) {
-                                                                        variant_payload_type_code = source_i64_struct_type_code(
-                                                                            source, structs, token_start(payload), token_length(payload)
-                                                                        );
-                                                                    }
-                                                                    if (variant_payload_type_code >= function_mir_destructor_i64_struct_type_code(0)) {
-                                                                        variant_payload_owned = 1;
-                                                                    }
-                                                                    if (variant_payload_type_code != function_mir_unresolved_type_code()) { copy_payload = 1; }
                                                                 }
                                                                 if (token_kind(payload_close) != 4) { copy_payload = 0; }
                                                                 if (token_length(payload_close) != 1) { copy_payload = 0; }
