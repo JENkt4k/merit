@@ -26,6 +26,7 @@ from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, 
 from merit.project.replacement_source import canonical_replacement_project_source
 
 DRIVER_PROTOCOL = "resolved-source-function-bundle-v1"
+DRIVER_TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,13 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
             errors="strict",
             capture_output=True,
             env=_driver_environment(unit),
+            timeout=DRIVER_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise ReplacementProjectError(
+            f"replacement driver timed out after {DRIVER_TIMEOUT_SECONDS}s "
+            f"for module {unit.module!r}"
+        ) from exc
     except OSError as exc:
         raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
     if completed.returncode != 0:
