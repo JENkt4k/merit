@@ -281,9 +281,7 @@ pub fn function_mir_type_uses_ownership_transfer(type_code: i32) -> i32 {
     if (type_code == function_mir_buffer_type_code()) { return 1; }
     if (function_mir_type_is_i64_struct(type_code) != 0) { return 1; }
     if (type_code >= function_mir_vector_type_code(0)) { return 1; }
-    if (type_code >= function_mir_owned_field_struct_type_code(0)) {
-        if (type_code < function_mir_recursive_owned_payload_enum_type_code(0)) { return 1; }
-    }
+    if (type_code >= function_mir_owned_field_struct_type_code(0)) { return 1; }
     return function_mir_type_is_owned_payload_enum(type_code);
 }
 
