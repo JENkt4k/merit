@@ -8,7 +8,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-from scripts.m7_acceptance_inventory import ACCEPTANCE_PROJECTS
+from m7_acceptance_inventory import ACCEPTANCE_PROJECTS
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / ".merit" / "gates" / "acceptance-replacement" / "coverage.json"
