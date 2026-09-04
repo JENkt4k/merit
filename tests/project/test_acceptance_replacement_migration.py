@@ -13,22 +13,12 @@ from merit.project.build import build
 from merit.project.loader import load_project
 from merit.project.replacement import REPLACEMENT_MANIFEST, build_replacement_project
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
+from scripts.m7_acceptance_inventory import ACCEPTANCE_PROJECTS
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECTS = ROOT / "examples" / "projects"
-ACCEPTANCE_PROJECTS = (
-    "text_pipeline",
-    "binary_packet",
-    "generic_result",
-    "trait_bounds",
-    "generic_collections",
-    "borrowed_views",
-    "bootstrap_lexer",
-    "cobol_finance_modernization",
-    "filesystem_capabilities",
-    "ledger_app",
-)
+EXECUTABLE_TIMEOUT_SECONDS = 30
 
 
 def _has_c_compiler() -> bool:
@@ -39,15 +29,21 @@ def _has_c_compiler() -> bool:
 
 
 def _run(executable: Path, cwd: Path) -> tuple[int, str, str]:
-    completed = subprocess.run(
-        [str(executable)],
-        cwd=cwd,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [str(executable)],
+            cwd=cwd,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            capture_output=True,
+            check=False,
+            timeout=EXECUTABLE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            f"acceptance executable timed out after {EXECUTABLE_TIMEOUT_SECONDS}s: {executable}"
+        ) from exc
     return completed.returncode, completed.stdout, completed.stderr
 
 
