@@ -20,11 +20,14 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | Compile-pass tests | Positive semantic/project/native coverage remains part of the full suite |
 | Compile-fail tests | Negative semantic, ownership, capability, visibility, malformed-input, stale-artifact, and replacement-boundary cases remain covered |
 | Acceptance projects | 10 canonical projects remain in the acceptance gate; replacement migration is M7 |
-| Lexer/parser differential cases | Proven for the versioned measured bootstrap corpora |
-| AST/HIR differential cases | Proven for measured boundaries; not used as whole-language percentages |
+| Lexer differential cases | Proven for the versioned measured bootstrap corpora |
+| Parser differential cases | Proven for the versioned measured bootstrap corpora |
+| AST differential cases | Proven for measured boundaries; not used as whole-language percentages |
+| HIR differential cases | Proven for measured boundaries; not used as whole-language percentages |
 | Bootstrap/reference parity | Canonical M6 same-source accepted/rejected corpus convergence is closed |
 | Reference compiler source | Python Alpha.1 compiler remains the independent semantic/diagnostic oracle |
 | Merit-native compiler source | Concrete native driver carries M1-M6 replacement evidence |
+| Generated C size | Tracked as build evidence rather than an optimization target |
 | Known semantic blockers | No unexplained M6 corpus discrepancy remains; M7-M10 remain open |
 
 ## Replacement architecture evidence
