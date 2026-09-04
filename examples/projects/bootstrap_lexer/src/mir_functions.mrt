@@ -243,9 +243,9 @@ pub fn function_mir_owned_payload_enum_type_code(enum_id: i32, payload_struct_id
 }
 pub fn function_mir_owned_payload_enum_id(type_code: i32) -> i32 {
     if (type_code >= function_mir_recursive_owned_payload_enum_type_code(0)) {
-        return checked_sub(type_code, function_mir_recursive_owned_payload_enum_type_code(0));
+        return type_code - function_mir_recursive_owned_payload_enum_type_code(0);
     }
-    return checked_sub(type_code, 4000) / 1000;
+    return (type_code - 4000) / 1000;
 }
 pub fn function_mir_owned_field_struct_type_code(struct_id: i32) -> i32 {
     return checked_add(1000000, struct_id);
