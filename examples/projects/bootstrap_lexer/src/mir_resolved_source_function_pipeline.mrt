@@ -135,14 +135,27 @@ fn resolved_pipeline_validate_allocation_capability(
     return 0;
 }
 
-fn resolved_pipeline_enum_id_from_type_code(type_code:i32)->i64{
-    if(type_code>=function_mir_copy_payload_enum_type_code(0)){
-        if(type_code<function_mir_i64_struct_type_code(0)){
-            return checked_sub(type_code,function_mir_copy_payload_enum_type_code(0));
-        }
-    }
+fn resolved_pipeline_enum_id_from_type_code(
+    borrow enum_catalog:Vec<EnumVariantCatalogEntry>,type_code:i32
+)->i64{
+    var target_owned_id:i32=-1;
     if(function_mir_type_is_owned_payload_enum(type_code)!=0){
-        return function_mir_owned_payload_enum_id(type_code);
+        target_owned_id=function_mir_owned_payload_enum_id(type_code);
+    }
+    var enum_group:i32=0;
+    var index:i64=0;
+    while(index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+        let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,index);
+        if(entry.ordinal==0){
+            if(type_code==function_mir_copy_payload_enum_type_code(enum_group)){
+                return entry.enum_id;
+            }
+            if(target_owned_id>=0){
+                if(target_owned_id==enum_group){return entry.enum_id;}
+            }
+            enum_group=checked_add(enum_group,1);
+        }
+        index=checked_add(index,1);
     }
     return -1;
 }
@@ -267,7 +280,7 @@ requires_caps [allocate]
                                                             match_arm_variant_start(enclosing_arm),match_arm_variant_length(enclosing_arm)
                                                         )!=0){
                                                             let candidate_enum_id:i64=resolved_pipeline_enum_id_from_type_code(
-                                                                enum_variant_payload_type_code(entry)
+                                                                enum_catalog,enum_variant_payload_type_code(entry)
                                                             );
                                                             if(candidate_enum_id>=0){
                                                                 if(direct_enum_id<0){direct_enum_id=candidate_enum_id;}
