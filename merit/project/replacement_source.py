@@ -15,6 +15,10 @@ _IMPORT_LINE = re.compile(
     r"^[ \t]*import[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;[ \t]*$",
     re.MULTILINE,
 )
+_CAPABILITY_LINE = re.compile(
+    r"^[ \t]*capability[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*;[ \t]*$",
+    re.MULTILINE,
+)
 
 
 def _blank_match(match: re.Match[str]) -> str:
@@ -41,18 +45,43 @@ def _native_unit_source(project: LoadedProject, unit_index: int) -> str:
     )
 
 
+def _deduplicate_project_capabilities(source: str, seen: set[str]) -> str:
+    """Blank repeated declarations introduced only by project flattening.
+
+    Each source unit has already been parsed and validated independently.  Two
+    modules may therefore each declare the same capability even though a single
+    source unit may not declare it twice.  The native project envelope flattens
+    those validated units into one source buffer; retaining every declaration
+    would manufacture a duplicate that did not exist in either unit.  Preserve
+    the first declaration and width-blank later identical declarations so all
+    following source offsets remain stable.
+    """
+
+    def normalize(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name in seen:
+            return _blank_match(match)
+        seen.add(name)
+        return match.group(0)
+
+    return _CAPABILITY_LINE.sub(normalize, source)
+
+
 def canonical_replacement_project_source(project: LoadedProject) -> str:
     """Join validated units without invoking reference semantic lowering.
 
     Unit order is the manifest loader's deterministic source-path order. Module
     and import syntax is blanked without changing source offsets, qualified
-    project names retain width-preserving padding, and ``pub`` remains visible
-    to the native frontend for export classification.
+    project names retain width-preserving padding, repeated capability
+    declarations created by flattening separately validated modules are blanked,
+    and ``pub`` remains visible to the native frontend for export classification.
     """
 
     parts = [f"module {project.manifest.name}\n"]
+    seen_capabilities: set[str] = set()
     for unit_index, _unit in enumerate(project.units):
         source = _native_unit_source(project, unit_index)
+        source = _deduplicate_project_capabilities(source, seen_capabilities)
         parts.append(source)
         if not source.endswith("\n"):
             parts.append("\n")
