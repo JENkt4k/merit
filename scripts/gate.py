@@ -25,8 +25,6 @@ ACCEPTANCE_PROJECTS = (
     "cobol_finance_modernization",
 )
 
-# Intentionally small, cross-platform development gate. A feature change should
-# still run its directly affected tests before this gate.
 FAST_TESTS = (
     "tests/test_alpha2.py",
     "tests/test_alpha3.py",
@@ -47,9 +45,6 @@ SUBSYSTEM_TESTS = (
     "tests/project",
 )
 
-# Keep each test module in one process so module/session fixtures and local
-# ordering assumptions retain their current boundary, while independent files
-# can compile their native probes concurrently on both Linux and Windows.
 PARALLEL_TEST_WORKERS = 2
 PARALLEL_TEST_DISTRIBUTION = "loadfile"
 
@@ -92,9 +87,7 @@ def pytest(
     if fail_fast:
         command.append("-x")
     if workers is not None:
-        command.extend(
-            ("-n", str(workers), "--dist", PARALLEL_TEST_DISTRIBUTION)
-        )
+        command.extend(("-n", str(workers), "--dist", PARALLEL_TEST_DISTRIBUTION))
     command.extend(paths)
     if durations is not None:
         command.append(f"--durations={durations}")
@@ -128,20 +121,15 @@ def run_acceptance() -> None:
 
 def run_corpus() -> None:
     with group("alpha.1 accepted/rejected corpus convergence"):
-        run(
-            [
-                sys.executable,
-                str(REPOSITORY_ROOT / "scripts" / "alpha1_corpus_report.py"),
-            ]
-        )
+        run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "alpha1_corpus_report.py")])
 
 
-def run_gate(
-    name: str,
-    durations: int | None,
-    *,
-    fail_fast: bool,
-) -> dict[str, object]:
+def run_acceptance_replacement() -> None:
+    with group("alpha.2 M7 replacement acceptance migration"):
+        run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "acceptance_replacement_report.py")])
+
+
+def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, object]:
     started = time.monotonic()
     if name == "smoke":
         with group("pytest: smoke"):
@@ -151,24 +139,16 @@ def run_gate(
             pytest(FAST_TESTS, durations=durations, fail_fast=fail_fast)
     elif name == "subsystem":
         with group("pytest: bootstrap/project subsystem"):
-            pytest(
-                SUBSYSTEM_TESTS,
-                durations=durations,
-                fail_fast=fail_fast,
-                workers=PARALLEL_TEST_WORKERS,
-            )
+            pytest(SUBSYSTEM_TESTS, durations=durations, fail_fast=fail_fast, workers=PARALLEL_TEST_WORKERS)
     elif name == "corpus":
         run_corpus()
     elif name == "acceptance":
         run_acceptance()
+    elif name == "acceptance-replacement":
+        run_acceptance_replacement()
     elif name == "full":
         with group("pytest: full"):
-            pytest(
-                ["tests"],
-                durations=durations,
-                fail_fast=fail_fast,
-                workers=PARALLEL_TEST_WORKERS,
-            )
+            pytest(["tests"], durations=durations, fail_fast=fail_fast, workers=PARALLEL_TEST_WORKERS)
         run_acceptance()
     else:
         raise AssertionError(name)
@@ -180,8 +160,9 @@ def run_gate(
         "duration_seconds": round(duration, 3),
         "python": sys.version.split()[0],
         "platform": sys.platform,
-        "acceptance_projects": 10 if name in {"acceptance", "full"} else 0,
+        "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full"} else 0,
         "corpus_convergence": name == "corpus",
+        "replacement_acceptance": name == "acceptance-replacement",
     }
 
 
@@ -195,31 +176,15 @@ def write_result(name: str, result: dict[str, object], output: Path | None) -> P
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Canonical cross-platform Merit validation gates."
-    )
+    parser = argparse.ArgumentParser(description="Canonical cross-platform Merit validation gates.")
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "full"),
+        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "acceptance-replacement", "full"),
         help="validation level to run",
     )
-    parser.add_argument(
-        "--durations",
-        nargs="?",
-        type=int,
-        const=50,
-        help="show the N slowest pytest tests (default 50 when flag is present)",
-    )
-    parser.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="stop pytest at the first failure",
-    )
-    parser.add_argument(
-        "--result-json",
-        type=Path,
-        help="result JSON destination; defaults to .merit/gates/<gate>/result.json",
-    )
+    parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")
+    parser.add_argument("--fail-fast", action="store_true", help="stop pytest at the first failure")
+    parser.add_argument("--result-json", type=Path, help="result JSON destination; defaults to .merit/gates/<gate>/result.json")
     return parser.parse_args()
 
 
@@ -258,6 +223,8 @@ def main() -> int:
         print("acceptance_projects=10/10")
     if result.get("corpus_convergence"):
         print("corpus_convergence=PASS")
+    if result.get("replacement_acceptance"):
+        print("replacement_acceptance=PASS")
     print(f"result={destination}")
     return 0
 
