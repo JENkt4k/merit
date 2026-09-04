@@ -135,10 +135,23 @@ fn resolved_pipeline_validate_allocation_capability(
     return 0;
 }
 
+fn resolved_pipeline_enum_id_from_type_code(type_code:i32)->i64{
+    if(type_code>=function_mir_copy_payload_enum_type_code(0)){
+        if(type_code<function_mir_i64_struct_type_code(0)){
+            return checked_sub(type_code,function_mir_copy_payload_enum_type_code(0));
+        }
+    }
+    if(function_mir_type_is_owned_payload_enum(type_code)!=0){
+        return function_mir_owned_payload_enum_id(type_code);
+    }
+    return -1;
+}
+
 // Build one semantic enum identity for each distinct match statement. The
-// structured statement stage already preserves the subject span on every arm,
-// so this stage only has to bind a simple local subject to its preceding
-// declared type and then bind that type to a top-level enum declaration.
+// structured statement stage already preserves the subject span on every arm.
+// A match subject can be either an ordinary typed local or a payload binding
+// introduced by an enclosing match arm; both paths resolve to one canonical
+// enum declaration before arm semantics are lowered.
 fn resolved_pipeline_derive_match_identities(
     borrow source: Buffer,
     borrow statements: Vec<StatementRecord>,
@@ -167,6 +180,7 @@ requires_caps [allocate]
 
                 var type_start: i64 = -1;
                 var type_length: i64 = 0;
+                var direct_enum_id:i64=-1;
                 var binding_statement: i64 = 0;
                 while (binding_statement < match_statement) {
                     if (status == 0) {
@@ -212,25 +226,90 @@ requires_caps [allocate]
                     }
                     binding_statement = checked_add(binding_statement, 1);
                 }
+
+                // Payload bindings are not ordinary let/var declarations. If the
+                // subject was introduced by an enclosing match arm, locate that
+                // lexical arm, resolve its already-known parent match identity,
+                // and derive the nested enum identity from the variant payload.
+                if(status==0){
+                    if(type_start<0){
+                        let nested_statement:StatementRecord=vec_get<StatementRecord>(statements,match_statement);
+                        let nested_start:i64=statement_record_start(nested_statement);
+                        var enclosing_arm_index:i64=0;
+                        while(enclosing_arm_index<arm_index){
+                            let enclosing_arm:MatchArmRecord=vec_get<MatchArmRecord>(raw_arms,enclosing_arm_index);
+                            let binding_start:i64=match_arm_binding_start(enclosing_arm);
+                            let binding_length:i64=match_arm_binding_length(enclosing_arm);
+                            if(binding_start>=0){
+                                if(resolved_pipeline_span_equal(
+                                    source,binding_start,binding_length,subject_start,subject_length
+                                )!=0){
+                                    let body_start:i64=match_arm_body_start(enclosing_arm);
+                                    let body_end:i64=checked_add(body_start,match_arm_body_length(enclosing_arm));
+                                    if(nested_start>=body_start){
+                                        if(nested_start<body_end){
+                                            var parent_enum_id:i64=-1;
+                                            var identity_index:i64=0;
+                                            while(identity_index<vec_len<MatchEnumIdentity>(identities)){
+                                                let identity:MatchEnumIdentity=vec_get<MatchEnumIdentity>(identities,identity_index);
+                                                if(match_enum_identity_statement(identity)==match_arm_statement(enclosing_arm)){
+                                                    parent_enum_id=match_enum_identity_enum_id(identity);
+                                                }
+                                                identity_index=checked_add(identity_index,1);
+                                            }
+                                            if(parent_enum_id>=0){
+                                                var variant_index:i64=0;
+                                                while(variant_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+                                                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,variant_index);
+                                                    if(entry.enum_id==parent_enum_id){
+                                                        if(resolved_pipeline_span_equal(
+                                                            source,entry.name_start,entry.name_length,
+                                                            match_arm_variant_start(enclosing_arm),match_arm_variant_length(enclosing_arm)
+                                                        )!=0){
+                                                            let candidate_enum_id:i64=resolved_pipeline_enum_id_from_type_code(
+                                                                enum_variant_payload_type_code(entry)
+                                                            );
+                                                            if(candidate_enum_id>=0){
+                                                                if(direct_enum_id<0){direct_enum_id=candidate_enum_id;}
+                                                                else{if(direct_enum_id!=candidate_enum_id){status=3;}}
+                                                            }
+                                                        }
+                                                    }
+                                                    variant_index=checked_add(variant_index,1);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            enclosing_arm_index=checked_add(enclosing_arm_index,1);
+                        }
+                    }
+                }
                 if (status == 0) {
-                    if (type_start < 0) { status = 2; }
-                    if (type_length <= 0) { status = 2; }
+                    if (type_start < 0) { if(direct_enum_id<0){status = 2;} }
+                    if (type_start >= 0) { if(type_length <= 0) { status = 2; } }
                 }
 
                 var matching_enum_count: i64 = 0;
                 var effective_enum_id: i64 = -1;
-                var catalog_index:i64=0;
-                while(catalog_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
-                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,catalog_index);
-                    if(entry.ordinal==0){
-                        if(resolved_pipeline_span_equal(
-                            source,entry.enum_name_start,entry.enum_name_length,type_start,type_length
-                        )!=0){
-                            effective_enum_id=entry.enum_id;
-                            matching_enum_count=checked_add(matching_enum_count,1);
+                if(direct_enum_id>=0){
+                    effective_enum_id=direct_enum_id;
+                    matching_enum_count=1;
+                }else{
+                    var catalog_index:i64=0;
+                    while(catalog_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+                        let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,catalog_index);
+                        if(entry.ordinal==0){
+                            if(resolved_pipeline_span_equal(
+                                source,entry.enum_name_start,entry.enum_name_length,type_start,type_length
+                            )!=0){
+                                effective_enum_id=entry.enum_id;
+                                matching_enum_count=checked_add(matching_enum_count,1);
+                            }
                         }
+                        catalog_index=checked_add(catalog_index,1);
                     }
-                    catalog_index=checked_add(catalog_index,1);
                 }
                 if (status == 0) {
                     if (matching_enum_count != 1) {
