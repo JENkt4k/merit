@@ -19,6 +19,9 @@ _CAPABILITY_LINE = re.compile(
     r"^[ \t]*capability[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*;[ \t]*$",
     re.MULTILINE,
 )
+_LEGACY_I64VEC_BINDING = re.compile(
+    r"\b(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*I64Vec\b"
+)
 
 # Alpha.1 exposed I64Vec before the generic Vec<T> spelling existed.  The
 # replacement frontend's production vector path is the generic one, so lower
@@ -39,6 +42,16 @@ def _blank_match(match: re.Match[str]) -> str:
 
 
 def _desugar_legacy_i64vec(source: str) -> str:
+    # Preserve the identity of legacy bindings before rewriting their declared
+    # type. Explicit Alpha.1 drop(v) then lowers through the generic vector
+    # operation instead of the scalar source-ownership drop expression path.
+    legacy_bindings = {match.group(1) for match in _LEGACY_I64VEC_BINDING.finditer(source)}
+    for name in sorted(legacy_bindings):
+        source = re.sub(
+            rf"\bdrop\s*\(\s*{re.escape(name)}\s*\)",
+            f"vec_drop<i64>({name})",
+            source,
+        )
     for pattern, replacement in _LEGACY_I64VEC_REWRITES:
         source = pattern.sub(replacement, source)
     return source
@@ -94,9 +107,9 @@ def canonical_replacement_project_source(project: LoadedProject) -> str:
     Unit order is the manifest loader's deterministic source-path order. Module
     and import syntax is blanked, qualified project names retain width-preserving
     padding, legacy ``I64Vec`` syntax is desugared to the canonical generic
-    vector surface, repeated capability declarations created by flattening
-    separately validated modules are blanked, and ``pub`` remains visible to
-    the native frontend for export classification.
+    vector surface (including explicit drops), repeated capability declarations
+    created by flattening separately validated modules are blanked, and ``pub``
+    remains visible to the native frontend for export classification.
     """
 
     parts = [f"module {project.manifest.name}\n"]
