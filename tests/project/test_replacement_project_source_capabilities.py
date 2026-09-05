@@ -68,3 +68,5 @@ def test_project_envelope_desugars_legacy_i64vec_surface(tmp_path: Path) -> None
     assert "vec_push<i64>" in envelope
     assert "vec_len<i64>" in envelope
     assert "vec_get<i64>" in envelope
+    assert "drop(v)" not in envelope
+    assert "vec_drop<i64>(v)" in envelope
