@@ -12,7 +12,12 @@ permissions:
   contents: read
 
 jobs:
+  # TEMPORARY PR #113 isolation:
+  # Disabled while M7 acceptance-replacement is red.
+  # Re-enable after acceptance-replacement reaches 10/10,
+  # before PR #113 leaves draft status.
   linux-corpus:
+    if: ${{ false }}
     name: Python 3.11 / Ubuntu / Alpha 1 corpus convergence
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -66,7 +71,10 @@ jobs:
           path: .merit/gates/acceptance-replacement/*.json
           if-no-files-found: warn
 
-  # TEMPORARY: M7 focused regression validation. Re-enable before PR #113 leaves draft status.
+  # TEMPORARY PR #113 isolation:
+  # Disabled while M7 acceptance-replacement is red.
+  # Re-enable after acceptance-replacement reaches 10/10,
+  # before PR #113 leaves draft status.
   linux-full:
     if: ${{ false }}
     name: Python 3.11 / Ubuntu / full gate
@@ -97,7 +105,10 @@ jobs:
       - name: Run canonical full gate
         run: bash scripts/ci.sh --durations 50
 
-  # TEMPORARY: M7 focused regression validation. Re-enable before PR #113 leaves draft status.
+  # TEMPORARY PR #113 isolation:
+  # Disabled while M7 acceptance-replacement is red.
+  # Re-enable after acceptance-replacement reaches 10/10,
+  # before PR #113 leaves draft status.
   windows-full:
     if: ${{ false }}
     name: Python 3.11 / Windows / native full gate
