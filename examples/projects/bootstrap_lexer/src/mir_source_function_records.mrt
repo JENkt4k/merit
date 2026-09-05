@@ -2724,6 +2724,78 @@ requires_caps [allocate]
         ast_index = checked_add(ast_index, 1);
     }
 
+    // A bare numeric literal argument receives the callable parameter's
+    // resolved type before MIR temporaries/constants are emitted. This is
+    // deliberately contextual rather than a general implicit conversion:
+    // typed variables and non-literal expressions retain their own types.
+    var call_context_index:i64=0;
+    while(call_context_index<vec_len<HirExpressionRecord>(hir_nodes)){
+        let call_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,call_context_index);
+        if(hir_is_call(call_node)!=0){
+            if(hir_left(call_node)>=0){
+                let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(call_node));
+                let signature_index:i64=sfr_find_function_signature(
+                    source,function_signatures,hir_start(callee),hir_length(callee)
+                );
+                let builtin_kind:i32=sfr_builtin_call_kind(source,hir_start(callee),hir_length(callee));
+                var parameter_count:i64=-1;
+                var parameter_start:i64=-1;
+                if(signature_index>=0){
+                    let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(function_signatures,signature_index);
+                    parameter_count=source_function_signature_parameter_count(signature);
+                    parameter_start=source_function_signature_parameter_start(signature);
+                } else {
+                    if(builtin_kind!=0){parameter_count=sfr_builtin_call_parameter_count(builtin_kind);}
+                }
+                if(parameter_count>=0){
+                    var argument_nodes:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+                    var argument_stack:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+                    if(hir_right(call_node)>=0){vec_push<i64>(argument_stack,hir_right(call_node));}
+                    while(vec_len<i64>(argument_stack)>0){
+                        let argument_index:i64=vec_pop<i64>(argument_stack);
+                        let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
+                        if(hir_kind(argument)==8){
+                            vec_push<i64>(argument_stack,hir_right(argument));
+                            vec_push<i64>(argument_stack,hir_left(argument));
+                        } else {vec_push<i64>(argument_nodes,argument_index);}
+                    }
+                    if(vec_len<i64>(argument_nodes)==parameter_count){
+                        var argument_ordinal:i64=0;
+                        while(argument_ordinal<parameter_count){
+                            var expected_argument_type:i32=function_mir_unresolved_type_code();
+                            if(signature_index>=0){
+                                let parameter:SourceFunctionParameter=vec_get<SourceFunctionParameter>(
+                                    function_parameters,checked_add(parameter_start,argument_ordinal)
+                                );
+                                expected_argument_type=source_function_parameter_type(parameter);
+                            } else {
+                                if(builtin_kind!=0){
+                                    expected_argument_type=sfr_builtin_call_parameter_type(builtin_kind,argument_ordinal);
+                                }
+                            }
+                            var literal_index:i64=vec_get<i64>(argument_nodes,argument_ordinal);
+                            var literal:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,literal_index);
+                            while(hir_kind(literal)==3){
+                                literal_index=hir_left(literal);
+                                literal=vec_get<HirExpressionRecord>(hir_nodes,literal_index);
+                            }
+                            if(hir_kind(literal)==1){
+                                if(expected_argument_type!=function_mir_unresolved_type_code()){
+                                    vec_set<HirExpressionRecord>(
+                                        hir_nodes,literal_index,hir_with_type(literal,expected_argument_type)
+                                    );
+                                }
+                            }
+                            argument_ordinal=checked_add(argument_ordinal,1);
+                        }
+                    }
+                    drop(argument_stack);drop(argument_nodes);
+                }
+            }
+        }
+        call_context_index=checked_add(call_context_index,1);
+    }
+
     // Struct initializer expressions inherit their canonical field types. Walk
     // each initializer subtree independently so heterogeneous aggregate fields
     // never collapse into one numeric domain.

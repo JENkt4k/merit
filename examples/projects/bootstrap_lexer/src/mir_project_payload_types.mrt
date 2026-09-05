@@ -1,0 +1,190 @@
+module bootstrap_mir_project_payload_types
+import bootstrap_tokens;
+import bootstrap_statement_semantics;
+import bootstrap_mir_functions;
+import bootstrap_mir_source_function_records;
+
+fn project_payload_span_equal(
+    borrow source:Buffer,left_start:i64,left_length:i64,right_start:i64,right_length:i64
+)->i32{
+    if(left_length!=right_length){return 0;}
+    var offset:i64=0;
+    while(offset<left_length){
+        if(buffer_get(source,checked_add(left_start,offset))!=buffer_get(source,checked_add(right_start,offset))){return 0;}
+        offset=checked_add(offset,1);
+    }
+    return 1;
+}
+
+fn project_payload_span_compare(
+    borrow source:Buffer,left_start:i64,left_length:i64,right_start:i64,right_length:i64
+)->i32{
+    var offset:i64=0;
+    var limit:i64=left_length;
+    if(right_length<limit){limit=right_length;}
+    while(offset<limit){
+        let left:i64=buffer_get(source,checked_add(left_start,offset));
+        let right:i64=buffer_get(source,checked_add(right_start,offset));
+        if(left<right){return -1;}
+        if(left>right){return 1;}
+        offset=checked_add(offset,1);
+    }
+    if(left_length<right_length){return -1;}
+    if(left_length>right_length){return 1;}
+    return 0;
+}
+
+fn project_payload_is_vector(borrow source:Buffer,start:i64,length:i64)->i32{
+    if(length<=5){return 0;}
+    if(buffer_get(source,start)!=86){return 0;}
+    if(buffer_get(source,checked_add(start,1))!=101){return 0;}
+    if(buffer_get(source,checked_add(start,2))!=99){return 0;}
+    if(buffer_get(source,checked_add(start,3))!=95){return 0;}
+    if(buffer_get(source,checked_add(start,4))!=95){return 0;}
+    return 1;
+}
+
+fn project_payload_vector_type_code(
+    borrow source:Buffer,borrow tokens:Vec<Token>,start:i64,length:i64
+)->i32{
+    if(project_payload_is_vector(source,start,length)==0){return function_mir_unresolved_type_code();}
+    var rank:i32=0;
+    var token_index:i64=0;
+    while(token_index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,token_index);
+        if(token_kind(token)==token_identifier_kind()){
+            var candidate_start:i64=token_start(token);
+            var candidate_length:i64=token_length(token);
+            while(project_payload_is_vector(source,candidate_start,candidate_length)!=0){
+                var first:i32=1;
+                var prior_index:i64=0;
+                while(prior_index<token_index){
+                    let prior:Token=vec_get<Token>(tokens,prior_index);
+                    if(token_kind(prior)==token_identifier_kind()){
+                        var prior_start:i64=token_start(prior);
+                        var prior_length:i64=token_length(prior);
+                        while(project_payload_is_vector(source,prior_start,prior_length)!=0){
+                            if(project_payload_span_equal(source,candidate_start,candidate_length,prior_start,prior_length)!=0){first=0;}
+                            prior_start=checked_add(prior_start,5);
+                            prior_length=checked_sub(prior_length,5);
+                        }
+                    }
+                    prior_index=checked_add(prior_index,1);
+                }
+                if(first!=0){
+                    if(project_payload_span_compare(source,candidate_start,candidate_length,start,length)<0){rank=checked_add(rank,1);}
+                }
+                candidate_start=checked_add(candidate_start,5);
+                candidate_length=checked_sub(candidate_length,5);
+            }
+        }
+        token_index=checked_add(token_index,1);
+    }
+    return function_mir_vector_type_code(rank);
+}
+
+fn project_payload_keyword(
+    borrow source:Buffer,borrow token:Token,a:i64,b:i64,c:i64,d:i64,e:i64,f:i64,g:i64
+)->i32{
+    if(token_kind(token)!=token_identifier_kind()){return 0;}
+    if(token_length(token)!=7){return 0;}
+    let start:i64=token_start(token);
+    if(buffer_get(source,start)!=a){return 0;}
+    if(buffer_get(source,checked_add(start,1))!=b){return 0;}
+    if(buffer_get(source,checked_add(start,2))!=c){return 0;}
+    if(buffer_get(source,checked_add(start,3))!=d){return 0;}
+    if(buffer_get(source,checked_add(start,4))!=e){return 0;}
+    if(buffer_get(source,checked_add(start,5))!=f){return 0;}
+    if(buffer_get(source,checked_add(start,6))!=g){return 0;}
+    return 1;
+}
+
+fn project_payload_numeric_type_code(
+    borrow source:Buffer,borrow tokens:Vec<Token>,start:i64,length:i64
+)->i32{
+    var decimal_identity:i32=0;
+    var bounded_identity:i32=0;
+    var depth:i64=0;
+    var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(token_kind(token)==token_punctuation_kind()){
+            if(token_length(token)==1){
+                let byte:i64=buffer_get(source,token_start(token));
+                if(byte==123){depth=checked_add(depth,1);}
+                if(byte==125){if(depth>0){depth=checked_sub(depth,1);}}
+            }
+        }
+        if(depth==0){
+            var declaration_kind:i32=0;
+            if(project_payload_keyword(source,token,100,101,99,105,109,97,108)!=0){declaration_kind=1;}
+            if(project_payload_keyword(source,token,98,111,117,110,100,101,100)!=0){declaration_kind=2;}
+            if(declaration_kind!=0){
+                let name_index:i64=checked_add(index,1);
+                if(name_index<vec_len<Token>(tokens)){
+                    let name:Token=vec_get<Token>(tokens,name_index);
+                    if(project_payload_span_equal(source,start,length,token_start(name),token_length(name))!=0){
+                        if(declaration_kind==1){return function_mir_decimal_type_code(decimal_identity);}
+                        return function_mir_bounded_type_code(bounded_identity);
+                    }
+                }
+                if(declaration_kind==1){decimal_identity=checked_add(decimal_identity,1);}
+                if(declaration_kind==2){bounded_identity=checked_add(bounded_identity,1);}
+            }
+        }
+        index=checked_add(index,1);
+    }
+    return function_mir_unresolved_type_code();
+}
+
+fn project_payload_enum_type_code(
+    borrow source:Buffer,borrow variants:Vec<EnumVariantCatalogEntry>,start:i64,length:i64
+)->i32{
+    var group:i32=0;
+    var index:i64=0;
+    var prior_name_start:i64=-1;
+    var prior_name_length:i64=0;
+    while(index<vec_len<EnumVariantCatalogEntry>(variants)){
+        let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(variants,index);
+        let name_start:i64=enum_variant_enum_name_start(entry);
+        let name_length:i64=enum_variant_enum_name_length(entry);
+        if(prior_name_start>=0){
+            if(project_payload_span_equal(source,name_start,name_length,prior_name_start,prior_name_length)==0){group=checked_add(group,1);}
+        }
+        if(project_payload_span_equal(source,start,length,name_start,name_length)!=0){
+            var owned:i32=0;
+            var scan:i64=index;
+            while(scan<vec_len<EnumVariantCatalogEntry>(variants)){
+                let candidate:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(variants,scan);
+                if(project_payload_span_equal(
+                    source,name_start,name_length,
+                    enum_variant_enum_name_start(candidate),enum_variant_enum_name_length(candidate)
+                )==0){scan=vec_len<EnumVariantCatalogEntry>(variants);}else{
+                    if(function_mir_type_uses_ownership_transfer(enum_variant_payload_type_code(candidate))!=0){owned=1;}
+                    scan=checked_add(scan,1);
+                }
+            }
+            if(owned!=0){return function_mir_recursive_owned_payload_enum_type_code(group);}
+            return function_mir_copy_payload_enum_type_code(group);
+        }
+        prior_name_start=name_start;
+        prior_name_length=name_length;
+        index=checked_add(index,1);
+    }
+    return function_mir_unresolved_type_code();
+}
+
+pub fn project_payload_type_code(
+    borrow source:Buffer,borrow tokens:Vec<Token>,borrow variants:Vec<EnumVariantCatalogEntry>,
+    borrow structs:Vec<I64StructCatalogEntry>,start:i64,length:i64
+)->i32{
+    var type_code:i32=sfr_builtin_type_code(source,start,length);
+    if(type_code!=function_mir_unresolved_type_code()){return type_code;}
+    type_code=project_payload_vector_type_code(source,tokens,start,length);
+    if(type_code!=function_mir_unresolved_type_code()){return type_code;}
+    type_code=project_payload_numeric_type_code(source,tokens,start,length);
+    if(type_code!=function_mir_unresolved_type_code()){return type_code;}
+    type_code=source_i64_struct_type_code(source,structs,start,length);
+    if(type_code!=function_mir_unresolved_type_code()){return type_code;}
+    return project_payload_enum_type_code(source,variants,start,length);
+}
