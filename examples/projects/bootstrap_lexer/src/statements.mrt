@@ -309,14 +309,10 @@ fn stmt_classify(
     borrow source: Buffer, borrow tokens: Vec<Token>, index: i64
 ) -> i32 {
     let candidate: Token = vec_get<Token>(tokens, index);
-    let keyword_kind: i32 = stmt_kind(source, candidate);
-    if (keyword_kind != 0) { return keyword_kind; }
-    // Punctuation may follow a semicolon or closing body, but cannot begin the
-    // currently supported assignment/expression-statement surface. In
-    // particular, do not reinterpret a closing brace as an expression whose
-    // span reaches the next statement's semicolon.
     if (token_kind(candidate) == 4) { return 0; }
     if (stmt_statement_boundary(source, tokens, index) == 0) { return 0; }
+    let keyword_kind: i32 = stmt_kind(source, candidate);
+    if (keyword_kind != 0) { return keyword_kind; }
     let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
     if (semicolon <= index) { return 0; }
     let opening_body: i64 = stmt_find_top_level(source, tokens, index, 123);
