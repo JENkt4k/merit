@@ -145,9 +145,14 @@ fn source_control_direct_drop_binding(
         if (token_start_value >= operand_start) {
             if (token_end_value <= operand_end) {
                 if (token_kind(token) == token_identifier_kind()) {
-                    candidate_start = token_start_value;
-                    candidate_length = token_length(token);
-                    identifier_count = checked_add(identifier_count, 1);
+                    let resolved: i64 = source_find_binding(
+                        source, starts, lengths, token_start_value, token_length(token)
+                    );
+                    if (resolved >= 0) {
+                        candidate_start = token_start_value;
+                        candidate_length = token_length(token);
+                        identifier_count = checked_add(identifier_count, 1);
+                    }
                 } else {
                     if (token_kind(token) == 4) {
                         let punctuation: i64 = buffer_get(source, token_start_value);
