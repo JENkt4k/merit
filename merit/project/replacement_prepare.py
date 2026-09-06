@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -73,6 +74,54 @@ def _driver_environment(unit: SourceUnit) -> dict[str, str]:
     return environment
 
 
+def _failure_source_candidates(source: str, status: int | None) -> str:
+    """Return compact source-location hints for native replacement failures.
+
+    This is diagnostics only. It does not participate in replacement semantic
+    lowering or alter the source presented to the native frontend.
+    """
+
+    patterns: tuple[str, ...]
+    stage = "unclassified"
+    if status == 4721:
+        # native driver +1000 -> from_source +1000 -> from_source_types +1000
+        # -> assembly +1000 -> semantics +700 -> ownership-control status 21.
+        stage = "resolved ownership lowering: inner status 21"
+        patterns = (r"\bdrop\s*\(", r"\bvec_drop\s*<", r"\breturn\b")
+    elif status == 4368:
+        stage = "native source expression/call lowering"
+        patterns = (r"\bfile_read\s*\(", r"\bfile_write\s*\(", r"\bwith\s+capability\b")
+    elif status == 2105:
+        stage = "generic expansion/catalog lowering"
+        patterns = (r"<[^>]+>", r"\bVec\s*<", r"\bOption\s*<", r"\bResult\s*<")
+    elif status == 4905:
+        stage = "resolved numeric/ownership assembly"
+        patterns = (r"\bdecimal_", r"\bDecimal\b", r"\bdec\b", r"\bwith\s+capability\b")
+    else:
+        patterns = (r"\bdrop\s*\(", r"\breturn\b", r"\bwith\s+capability\b")
+
+    compiled = tuple(re.compile(pattern) for pattern in patterns)
+    hits: list[str] = []
+    for line_number, line in enumerate(source.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if any(pattern.search(line) for pattern in compiled):
+            hits.append(f"L{line_number}: {stripped[:180]}")
+            if len(hits) == 12:
+                break
+    if not hits:
+        return f"stage={stage}; source candidates=none"
+    return f"stage={stage}; source candidates=" + " | ".join(hits)
+
+
+def _driver_status(stderr: str) -> int | None:
+    match = re.search(r"replacement driver status\s+(-?\d+)", stderr)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tuple[int, ...], ...]:
     executable = driver.resolved()
     try:
@@ -89,15 +138,26 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
     except subprocess.TimeoutExpired as exc:
         raise ReplacementProjectError(
             f"replacement driver timed out after {DRIVER_TIMEOUT_SECONDS}s "
-            f"for module {unit.module!r}"
+            f"for module {unit.module!r}; "
+            f"{_failure_source_candidates(unit.parser_source, None)}"
         ) from exc
     except OSError as exc:
         raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
     if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostics"
+        stderr = completed.stderr.strip()
+        stdout = completed.stdout.strip()
+        status = _driver_status(stderr)
+        streams = []
+        if stderr:
+            streams.append(f"stderr={stderr}")
+        if stdout:
+            streams.append(f"stdout={stdout[-1200:]}")
+        if not streams:
+            streams.append("no driver output")
+        diagnostic = _failure_source_candidates(unit.parser_source, status)
         raise ReplacementProjectError(
             f"replacement driver failed for module {unit.module!r} with exit code "
-            f"{completed.returncode}: {detail}"
+            f"{completed.returncode}: {'; '.join(streams)}; {diagnostic}"
         )
     try:
         values = tuple(int(line.strip()) for line in completed.stdout.splitlines() if line.strip())
