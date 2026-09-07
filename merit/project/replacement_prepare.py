@@ -27,7 +27,12 @@ from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, 
 from merit.project.replacement_source import canonical_replacement_project_source
 
 DRIVER_PROTOCOL = "resolved-source-function-bundle-v1"
-DRIVER_TIMEOUT_SECONDS = 120
+# The bootstrap lexer is the largest M7 acceptance unit and currently exceeds
+# the old 120-second diagnostic ceiling on hosted runners. Keep a bounded
+# per-unit timeout while allowing the acceptance gate to measure it to
+# completion; M7 performance work can then use the observed duration rather
+# than terminating the native frontend before it reports a result.
+DRIVER_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
