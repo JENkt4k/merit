@@ -133,7 +133,10 @@ fn source_control_direct_drop_binding(
     borrow starts: Vec<i64>, borrow lengths: Vec<i64>
 ) -> i64 {
     let operand_start: i64 = statement_operand_start(operand);
-    let operand_end: i64 = checked_add(operand_start, statement_operand_length(operand));
+    let operand_length: i64 = statement_operand_length(operand);
+    let exact_binding: i64 = source_find_binding(source, starts, lengths, operand_start, operand_length);
+    if (exact_binding >= 0) { return exact_binding; }
+    let operand_end: i64 = checked_add(operand_start, operand_length);
     var candidate_start: i64 = -1;
     var candidate_length: i64 = 0;
     var identifier_count: i64 = 0;
