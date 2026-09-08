@@ -136,7 +136,7 @@ fn main()->i32 {{
 '''
 
 
-def _project(tmp_path: Path):
+def _project(tmp_path: Path, probe: str | None = None):
     root = tmp_path / "generic_catalog"
     shutil.copytree(PROJECT, root, ignore=shutil.ignore_patterns("build"))
     lexer_path = root / "src" / "lexer.mrt"
@@ -146,11 +146,17 @@ def _project(tmp_path: Path):
     )
     assert replacements == 1
     lexer_path.write_text(lexer, encoding="utf-8")
-    (root / "src" / "generic_catalog_probe.mrt").write_text(_probe(), encoding="utf-8")
+    probe_name = "generic_catalog_probe.mrt" if probe is None else "mir_source_function_records.mrt"
+    probe_path = root / "src" / probe_name
+    # Private type-resolution helpers are probed inside their owning module.
+    probe_path.write_text(
+        _probe() if probe is None else probe_path.read_text(encoding="utf-8") + "\n" + probe,
+        encoding="utf-8",
+    )
     manifest = root / "Merit.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            'entry = "src/lexer.mrt"', 'entry = "src/generic_catalog_probe.mrt"'
+            'entry = "src/lexer.mrt"', f'entry = "src/{probe_name}"'
         ),
         encoding="utf-8",
     )
@@ -170,3 +176,83 @@ def test_generic_trait_impl_identities_are_native_and_source_order_independent(t
     assert len(lines) % 2 == 0
     midpoint = len(lines) // 2
     assert lines[:midpoint] == lines[midpoint:]
+
+
+def test_vector_type_ranks_preserve_nested_suffixes_duplicates_and_source_order(tmp_path: Path):
+    # Inner Vec__i32 occurs first only as a suffix of Vec__Vec__i32.
+    names = ("Vec__i64", "Vec__Vec__i32", "Vec__i64", "Vec__bool", "Vec__Vec__i32")
+    canonical = sorted({"Vec__i64", "Vec__Vec__i32", "Vec__i32", "Vec__bool"})
+    observations = []
+    for order in (names, tuple(reversed(names)), names * 8):
+        source = " ".join(order) + " ordinary"
+        observations.append(f'let source:Buffer=buffer_from_string(allocator,"{source}");')
+        observations.append("let tokens:Vec<Token>=lex(source,allocator);")
+        for rank, name in enumerate(canonical):
+            observations.append(
+                "print(checked_sub(sfr_concrete_vector_type_code("
+                f"source,tokens,{source.index(name)},{len(name)}),function_mir_vector_type_code({rank})));"
+            )
+        observations.append(
+            "print(checked_sub(sfr_concrete_vector_type_code("
+            f"source,tokens,{source.index('ordinary')},{len('ordinary')}),function_mir_unresolved_type_code()));"
+        )
+        observations.append("drop(tokens);drop(source);")
+    probe = '''fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+''' + "\n".join(observations) + '''
+} return 0; }
+'''
+    root, project = _project(tmp_path, probe)
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == interpreted == "0\n" * (3 * (len(canonical) + 1))
+
+
+def test_shared_callable_catalog_matches_source_queries_without_mutation(tmp_path: Path):
+    source = (
+        "fn value(first:i64,borrow data:Buffer)->i64{return first;} "
+        "fn view(borrow data:Buffer)->borrow Buffer{return data;} "
+        "fn done()->void{return;} "
+        "missing buffer_len"
+    )
+    observations = []
+    for name in ("value", "view", "done", "missing", "buffer_len"):
+        span = f"{source.index(name)},{len(name)}"
+        for ordinal in (-1, 0, 1, 2):
+            observations.append(
+                "print(checked_sub(resolve_source_call_parameter_mode_from_catalog("
+                f"source,signatures,parameters,{span},{ordinal}),"
+                f"resolve_source_call_parameter_mode(source,{span},{ordinal},allocator)));"
+            )
+        for query in ("return_type", "borrowed_origin"):
+            observations.append(
+                f"print(checked_sub(resolve_source_call_{query}_from_catalog(source,signatures,{span}),"
+                f"resolve_source_call_{query}(source,{span},allocator)));"
+            )
+    probe = '''fn main()->i32 { with capability allocate {
+let allocator:Allocator=system_allocator();
+let source:Buffer=buffer_from_string(allocator,"''' + source + '''");
+let tokens:Vec<Token>=lex(source,allocator);
+var enums:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,0);
+var structs:Vec<I64StructCatalogEntry>=vec_new<I64StructCatalogEntry>(allocator,0);
+var signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,4);
+var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,4);
+print(derive_source_function_signatures(source,tokens,enums,structs,allocator,signatures,parameters));
+let signature_count:i64=vec_len<SourceFunctionSignature>(signatures);
+let parameter_count:i64=vec_len<SourceFunctionParameter>(parameters);
+''' + "\n".join(observations * 2) + '''
+print(checked_sub(vec_len<SourceFunctionSignature>(signatures),signature_count));
+print(checked_sub(vec_len<SourceFunctionParameter>(parameters),parameter_count));
+drop(parameters);drop(signatures);drop(structs);drop(enums);drop(tokens);drop(source);
+} return 0; }
+'''
+    root, project = _project(tmp_path, probe)
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == interpreted == "0\n" * (3 + 2 * len(observations))

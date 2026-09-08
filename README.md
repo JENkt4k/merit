@@ -44,7 +44,7 @@ The completed `v0.1.0-alpha.1` release gate is followed by `v0.1.0-alpha.2` repl
 
 The Python-hosted alpha compiler remains the independent semantic oracle, but it is no longer the only path represented in the repository. The Merit-native replacement work has progressed from lexer/parser/AST/HIR fixtures into source-backed resolved functions carrying contracts, ownership/control-flow metadata, capability identities, and source provenance.
 
-Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v1`. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
+Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
 The concrete native driver now covers the closed M1-M4 replacement milestones: statements/control flow, resource and payload-enum lifecycle, exact numerics and aggregates, and generics/traits. PR #109 is merged. M5 project/module/import/export/visibility closure is the current frontier; M6-M10 remain later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
 

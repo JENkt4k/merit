@@ -134,6 +134,27 @@ def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_pa
     assert all(item.snapshot_values[:2] == (SNAPSHOT_MAGIC, SNAPSHOT_VERSION) for item in inputs)
 
 
+def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    source_path = root / "src" / "main.mrt"
+    source_path.write_text(
+        "module main\ncapability allocate;\ncapability filesystem;\n"
+        "fn helper()->i64 { return 6; }\nfn main()->i32 { return 7; }\n",
+        encoding="utf-8",
+    )
+    project = load_project(root / "Merit.toml")
+
+    prepared = prepare_replacement_artifacts(
+        project, NativeReplacementDriver(_driver(tmp_path))
+    )
+
+    payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
+    assert all(
+        item["capability_names"] == {"0": "allocate", "1": "filesystem"}
+        for item in payload["functions"]
+    )
+
+
 def test_prepare_replacement_sends_source_to_native_driver_as_utf8(tmp_path: Path) -> None:
     root = _project(tmp_path)
     source_path = root / "src" / "main.mrt"

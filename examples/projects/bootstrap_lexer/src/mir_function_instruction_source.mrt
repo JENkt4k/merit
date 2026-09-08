@@ -4,6 +4,7 @@ module bootstrap_mir_function_instruction_source
 //   1 contract MIR record
 //   2 source-body MirFunctionRecord instruction
 //   3 ownership/lifecycle MirOwnershipRecord instruction
+// contract_kind: 1 precondition, 2 postcondition, 3 old() pre-state.
 pub struct MirFunctionInstructionSource {
     global_id: i64;
     source_kind: i32;
@@ -34,7 +35,7 @@ pub fn validate_function_assembly_sources(borrow sources: Vec<MirFunctionInstruc
         if (value.source_id < 0) { return 3; }
         if (value.source_kind == 1) {
             if (value.contract_kind < 1) { return 4; }
-            if (value.contract_kind > 2) { return 4; }
+            if (value.contract_kind > 3) { return 4; }
             if (value.clause_ordinal < 0) { return 5; }
         } else {
             if (value.contract_kind != 0) { return 6; }

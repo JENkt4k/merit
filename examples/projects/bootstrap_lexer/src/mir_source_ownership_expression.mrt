@@ -95,6 +95,7 @@ pub fn source_binding_index(
 }
 
 pub fn source_expression(
+    borrow callable_signatures:Vec<SourceFunctionSignature>,borrow callable_parameters:Vec<SourceFunctionParameter>,
     borrow source: Buffer, borrow tokens: Vec<Token>,
     borrow binding_starts: Vec<i64>, borrow binding_lengths: Vec<i64>,
     expression_start: i64, expression_length: i64, allocator: Allocator,
@@ -127,10 +128,13 @@ requires_caps [allocate]
             if(ast_left(ast)>=0){
                 let callee:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,ast_left(ast));
                 let builtin_kind:i32=sfr_builtin_call_kind(source,ast_start(callee),ast_length(callee));
-                if(builtin_kind!=0){resolved_type=sfr_builtin_call_return_type(builtin_kind);}
+                if(builtin_kind!=0){
+                    let builtin_return_type:i32=sfr_builtin_call_return_type(builtin_kind);
+                    if(builtin_return_type!=function_mir_unresolved_type_code()){resolved_type=builtin_return_type;}
+                }
                 else {
-                    let callable_type:i32=resolve_source_call_return_type(
-                        source,ast_start(callee),ast_length(callee),allocator
+                    let callable_type:i32=resolve_source_call_return_type_from_catalog(
+                        source,callable_signatures,ast_start(callee),ast_length(callee)
                     );
                     if(callable_type!=function_mir_unresolved_type_code()){resolved_type=callable_type;}
                 }
@@ -292,8 +296,8 @@ requires_caps [allocate]
                 if(receiver_kind==4){root_binding=hir_binding_id(receiver);}
                 if(hir_is_call(receiver)!=0){
                     let receiver_callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(receiver));
-                    let receiver_origin:i64=resolve_source_call_borrowed_origin(
-                        source,hir_start(receiver_callee),hir_length(receiver_callee),allocator
+                    let receiver_origin:i64=resolve_source_call_borrowed_origin_from_catalog(
+                        source,callable_signatures,hir_start(receiver_callee),hir_length(receiver_callee)
                     );
                     if(receiver_origin>=0){
                         var receiver_arguments:Vec<i64>=vec_new<i64>(allocator,4);
@@ -335,8 +339,8 @@ requires_caps [allocate]
                 }
                 var argument_ordinal:i64=0;
                 while(argument_ordinal<vec_len<i64>(call_arguments)){
-                    let mode:i32=resolve_source_call_parameter_mode(
-                        source,hir_start(callee),hir_length(callee),argument_ordinal,allocator
+                    let mode:i32=resolve_source_call_parameter_mode_from_catalog(
+                        source,callable_signatures,callable_parameters,hir_start(callee),hir_length(callee),argument_ordinal
                     );
                     // User-call signatures distinguish borrowed arguments. Calls
                     // outside that catalog are constructors/builtins and retain

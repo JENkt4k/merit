@@ -387,6 +387,50 @@ pub fn lower_resolved_source_function_semantics(
 ) -> i32
 requires_caps [allocate]
 {
+    let catalog_tokens:Vec<Token>=lex(source,allocator);
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_function_signatures(
+        source,catalog_tokens,enum_catalog,struct_catalog,allocator,callable_signatures,callable_parameters
+    );
+    if(catalog_status!=0){return lower_resolved_source_function_semantics_catalog_failure_status(catalog_status);}
+    let status:i32=lower_resolved_source_function_semantics_from_catalog(
+        catalog_tokens,callable_signatures,callable_parameters,
+        source,tokens,statements,statement_operands,enum_catalog,struct_catalog,match_enum_id,capability_catalog,ownership_metadata,allocator,body_records,clause_metadata,contract_records,resolved_arms,resolved_scopes,ownership_events,capability_effects,canonical_events,ownership_records
+    );
+    drop(callable_parameters);drop(callable_signatures);drop(catalog_tokens);
+    return status;
+}
+
+// Preserve the existing nested stage-status encoding at the source-only boundary.
+fn lower_resolved_source_function_semantics_catalog_failure_status(status:i32)->i32{return checked_add(370,status);}
+
+pub fn lower_resolved_source_function_semantics_from_catalog(
+    borrow catalog_tokens:Vec<Token>,
+    borrow callable_signatures:Vec<SourceFunctionSignature>,
+    borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    allocator: Allocator,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut canonical_events: Vec<MirLowerEvent>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>
+) -> i32
+requires_caps [allocate]
+{
     var raw_arms: Vec<MatchArmRecord> = vec_new<MatchArmRecord>(allocator, 8);
     var raw_scopes: Vec<CapabilityScopeRecord> = vec_new<CapabilityScopeRecord>(allocator, 8);
     let arm_status: i32 = lower_match_arm_records(source, tokens, statements, raw_arms);
@@ -440,9 +484,9 @@ requires_caps [allocate]
     }
 
     var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
-    let function_status: i32 = lower_source_function_semantics(
-        source, tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
-        capability_catalog, allocator, body_records, body_events, clause_metadata, contract_records
+    let function_status: i32 = lower_source_function_semantics_from_catalog(
+        source, tokens, catalog_tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
+        capability_catalog, callable_signatures, callable_parameters, allocator, body_records, body_events, clause_metadata, contract_records
     );
     if (function_status != 0) { return checked_add(200, function_status); }
 
@@ -456,7 +500,7 @@ requires_caps [allocate]
     );
     if(allocation_capability_status!=0){return checked_add(650,allocation_capability_status);}
 
-    let ownership_source_status: i32 = lower_resolved_source_ownership_events(
+    let ownership_source_status: i32 = lower_resolved_source_ownership_events_from_catalog(callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands, ownership_metadata,
         resolved_arms, resolved_scopes, allocator, ownership_events, capability_effects
     );
@@ -467,6 +511,13 @@ requires_caps [allocate]
         canonical_events, ownership_records
     );
     if (ownership_status != 0) { return checked_add(800, ownership_status); }
+    if(vec_len<MirLowerEvent>(canonical_events)==0){
+        var body_event_index:i64=0;
+        while(body_event_index<vec_len<MirLowerEvent>(body_events)){
+            vec_push<MirLowerEvent>(canonical_events,vec_get<MirLowerEvent>(body_events,body_event_index));
+            body_event_index=checked_add(body_event_index,1);
+        }
+    }
     let ownership_validation: i32 = validate_ownership_records(
         ownership_records, ownership_metadata
     );

@@ -26,7 +26,7 @@ from merit.project.replacement_source import canonical_replacement_project_sourc
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
-REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v1"
+REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v2"
 
 
 class ReplacementProjectError(ReplacementBuildError):

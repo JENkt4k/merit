@@ -241,6 +241,45 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     assert run.returncode == 0
 
 
+def test_emits_typed_copy_payload_union_and_switches_on_tag(tmp_path):
+    choice = MirType("enum_copy_payload_0", (I64, BOOL))
+    function = MirFunction(
+        "typed_payload",
+        BOOL,
+        (
+            MirLocal(0, "flag", BOOL),
+            MirLocal(1, "choice", choice),
+            MirLocal(2, "loaded", BOOL),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "const", result=0, value=True),
+                    MirInstruction(1, "construct", result=1, operands=(0,), symbol="variant_1"),
+                ),
+                MirTerminator("switch", operands=(1,), targets=(1, 2), cases=(1,)),
+            ),
+            MirBlock(
+                1,
+                (
+                    MirInstruction(2, "load_field", result=2, operands=(1,), symbol="payload_1"),
+                ),
+                MirTerminator("return", operands=(2,)),
+            ),
+            MirBlock(2, (), MirTerminator("return", operands=(0,))),
+        ),
+        0,
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "union { int64_t variant_0; bool variant_1; } payload" in generated
+    assert "switch (m1.tag)" in generated
+    assert "m2 = m1.payload.variant_1;" in generated
+    run = compile_and_run(tmp_path, module, "int main(void) { return typed_payload() ? 0 : 1; }")
+    assert run.returncode == 0
+
+
 def test_emits_non_copy_single_i64_struct_construct_field_and_drop(tmp_path):
     wrapper = MirType("struct_i64_0")
     function = MirFunction(

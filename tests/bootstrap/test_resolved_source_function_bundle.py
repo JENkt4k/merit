@@ -16,8 +16,14 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 
 
-def _snapshot() -> tuple[int, ...]:
-    return (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
+def _snapshot(source: tuple[int, ...] = ()) -> tuple[int, ...]:
+    return (
+        SNAPSHOT_MAGIC,
+        SNAPSHOT_VERSION,
+        *([0] * (SNAPSHOT_SECTION_COUNT - 1)),
+        len(source),
+        *source,
+    )
 
 
 def test_bundle_round_trips_multiple_nested_snapshots() -> None:
@@ -28,6 +34,27 @@ def test_bundle_round_trips_multiple_nested_snapshots() -> None:
     decoded = decode_resolved_source_function_bundle(encoded)
     assert decoded.encoded_snapshots == (first, second)
     assert len(decoded.functions) == 2
+
+
+def test_bundle_v2_deduplicates_and_rehydrates_effective_source() -> None:
+    source = tuple("module main".encode())
+    snapshot = _snapshot(source)
+
+    encoded = encode_resolved_source_function_bundle((snapshot, snapshot))
+
+    assert len(encoded) == 3 + 1 + len(snapshot) + 1 + len(_snapshot())
+    decoded = decode_resolved_source_function_bundle(encoded)
+    assert decoded.encoded_snapshots == (snapshot, snapshot)
+    assert decoded.functions[1].effective_source_bytes == source
+
+
+def test_bundle_v1_remains_decodable() -> None:
+    snapshot = _snapshot(tuple("old".encode()))
+    encoded = (BUNDLE_MAGIC, 1, 1, len(snapshot), *snapshot)
+
+    decoded = decode_resolved_source_function_bundle(encoded)
+
+    assert decoded.encoded_snapshots == (snapshot,)
 
 
 def test_bundle_rejects_empty_function_set() -> None:

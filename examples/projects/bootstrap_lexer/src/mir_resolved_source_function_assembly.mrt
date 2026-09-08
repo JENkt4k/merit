@@ -56,8 +56,57 @@ pub fn lower_resolved_source_function_assembly(
 ) -> i32
 requires_caps [allocate]
 {
+    let catalog_tokens:Vec<Token>=lex(source,allocator);
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_function_signatures(
+        source,catalog_tokens,enum_catalog,struct_catalog,allocator,callable_signatures,callable_parameters
+    );
+    if(catalog_status!=0){return lower_resolved_source_function_assembly_catalog_failure_status(catalog_status);}
+    let status:i32=lower_resolved_source_function_assembly_with_catalog(
+        catalog_tokens,callable_signatures,callable_parameters,
+        source,tokens,statements,statement_operands,enum_catalog,struct_catalog,match_enum_id,capability_catalog,ownership_metadata,allocator,body_records,clause_metadata,contract_records,resolved_arms,resolved_scopes,ownership_events,capability_effects,ownership_records,contract_locals,required_capabilities,instruction_sources,assembled_events,cfg_records,placements
+    );
+    drop(callable_parameters);drop(callable_signatures);drop(catalog_tokens);
+    return status;
+}
+
+// Preserve the existing nested stage-status encoding at the source-only boundary.
+fn lower_resolved_source_function_assembly_catalog_failure_status(status:i32)->i32{return checked_add(1370,status);}
+
+pub fn lower_resolved_source_function_assembly_with_catalog(
+    borrow catalog_tokens:Vec<Token>,
+    borrow callable_signatures:Vec<SourceFunctionSignature>,
+    borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    allocator: Allocator,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>,
+    borrow_mut contract_locals: Vec<MirFunctionContractLocal>,
+    borrow_mut required_capabilities: Vec<i64>,
+    borrow_mut instruction_sources: Vec<MirFunctionInstructionSource>,
+    borrow_mut assembled_events: Vec<MirLowerEvent>,
+    borrow_mut cfg_records: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
     var canonical_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 128);
-    let semantic_status: i32 = lower_resolved_source_function_semantics(
+    let semantic_status: i32 = lower_resolved_source_function_semantics_from_catalog(catalog_tokens,callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands,
         enum_catalog, struct_catalog, match_enum_id, capability_catalog, ownership_metadata,
         allocator, body_records, clause_metadata, contract_records,
@@ -137,8 +186,58 @@ pub fn lower_resolved_source_function_assembly_from_source_types(
 ) -> i32
 requires_caps [allocate]
 {
-    let parameter_metadata_status:i32=derive_source_parameter_ownership(
-        source,tokens,enum_catalog,struct_catalog,allocator,ownership_metadata
+    let catalog_tokens:Vec<Token>=lex(source,allocator);
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_function_signatures(
+        source,catalog_tokens,enum_catalog,struct_catalog,allocator,callable_signatures,callable_parameters
+    );
+    if(catalog_status!=0){return lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(catalog_status);}
+    let status:i32=lower_resolved_source_function_assembly_from_source_types_with_catalog(
+        catalog_tokens,callable_signatures,callable_parameters,
+        source,tokens,statements,statement_operands,enum_catalog,struct_catalog,match_enum_id,capability_catalog,type_ownership_catalog,allocator,ownership_metadata,body_records,clause_metadata,contract_records,resolved_arms,resolved_scopes,ownership_events,capability_effects,ownership_records,contract_locals,required_capabilities,instruction_sources,assembled_events,cfg_records,placements
+    );
+    drop(callable_parameters);drop(callable_signatures);drop(catalog_tokens);
+    return status;
+}
+
+// Preserve the existing nested stage-status encoding at the source-only boundary.
+fn lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(status:i32)->i32{return checked_add(90,status);}
+
+pub fn lower_resolved_source_function_assembly_from_source_types_with_catalog(
+    borrow catalog_tokens:Vec<Token>,
+    borrow callable_signatures:Vec<SourceFunctionSignature>,
+    borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow type_ownership_catalog: Vec<SourceTypeOwnershipEntry>,
+    allocator: Allocator,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>,
+    borrow_mut contract_locals: Vec<MirFunctionContractLocal>,
+    borrow_mut required_capabilities: Vec<i64>,
+    borrow_mut instruction_sources: Vec<MirFunctionInstructionSource>,
+    borrow_mut assembled_events: Vec<MirLowerEvent>,
+    borrow_mut cfg_records: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let parameter_metadata_status:i32=derive_source_parameter_ownership_from_catalog(
+        source,tokens,callable_signatures,callable_parameters,ownership_metadata
     );
     if(parameter_metadata_status!=0){return resolved_parameter_metadata_status(parameter_metadata_status);}
     let metadata_status: i32 = derive_source_ownership_bindings(
@@ -146,7 +245,7 @@ requires_caps [allocate]
     );
     if (metadata_status != 0) { return checked_add(100, metadata_status); }
 
-    let assembly_status: i32 = lower_resolved_source_function_assembly(
+    let assembly_status: i32 = lower_resolved_source_function_assembly_with_catalog(catalog_tokens,callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands,
         enum_catalog, struct_catalog, match_enum_id, capability_catalog, ownership_metadata,
         allocator, body_records, clause_metadata, contract_records,
@@ -168,9 +267,60 @@ requires_caps [allocate]
 // callers no longer supply semantic ownership facts. Declaration lookup must use
 // a complete source-unit token stream even when semantic lowering receives a
 // bounded function token view from the concrete replacement driver.
-pub fn lower_resolved_source_function_assembly_from_source(
+pub fn lower_resolved_source_function_assembly_from_source_tokens(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
+    borrow declaration_tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    allocator: Allocator,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>,
+    borrow_mut contract_locals: Vec<MirFunctionContractLocal>,
+    borrow_mut required_capabilities: Vec<i64>,
+    borrow_mut instruction_sources: Vec<MirFunctionInstructionSource>,
+    borrow_mut assembled_events: Vec<MirLowerEvent>,
+    borrow_mut cfg_records: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let catalog_tokens:Vec<Token>=lex(source,allocator);
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_function_signatures(
+        source,catalog_tokens,enum_catalog,struct_catalog,allocator,callable_signatures,callable_parameters
+    );
+    if(catalog_status!=0){return lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(catalog_status);}
+    let status:i32=lower_resolved_source_function_assembly_from_catalog(
+        catalog_tokens,callable_signatures,callable_parameters,
+        source,tokens,declaration_tokens,statements,statement_operands,enum_catalog,struct_catalog,match_enum_id,capability_catalog,allocator,ownership_metadata,body_records,clause_metadata,contract_records,resolved_arms,resolved_scopes,ownership_events,capability_effects,ownership_records,contract_locals,required_capabilities,instruction_sources,assembled_events,cfg_records,placements
+    );
+    drop(callable_parameters);drop(callable_signatures);drop(catalog_tokens);
+    return status;
+}
+
+// Preserve the existing nested stage-status encoding at the source-only boundary.
+fn lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(status:i32)->i32{return checked_add(1090,status);}
+
+pub fn lower_resolved_source_function_assembly_from_catalog(
+    borrow catalog_tokens:Vec<Token>,
+    borrow callable_signatures:Vec<SourceFunctionSignature>,
+    borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow declaration_tokens: Vec<Token>,
     borrow statements: Vec<StatementRecord>,
     borrow statement_operands: Vec<StatementOperand>,
     borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
@@ -199,14 +349,12 @@ requires_caps [allocate]
     var type_ownership: Vec<SourceTypeOwnershipEntry> = vec_new<SourceTypeOwnershipEntry>(
         allocator, vec_len<StatementRecord>(statements)
     );
-    let declaration_tokens: Vec<Token> = lex(source, allocator);
     let type_status: i32 = derive_source_type_ownership_catalog(
         source, declaration_tokens, statements, statement_operands, type_ownership
     );
-    drop(declaration_tokens);
     if (type_status != 0) { return checked_add(50, type_status); }
 
-    let assembly_status: i32 = lower_resolved_source_function_assembly_from_source_types(
+    let assembly_status: i32 = lower_resolved_source_function_assembly_from_source_types_with_catalog(catalog_tokens,callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands,
         enum_catalog, struct_catalog, match_enum_id, capability_catalog, type_ownership,
         allocator, ownership_metadata, body_records, clause_metadata, contract_records,
@@ -217,4 +365,48 @@ requires_caps [allocate]
     if (assembly_status != 0) { return checked_add(1000, assembly_status); }
     drop(type_ownership);
     return 0;
+}
+
+// Compatibility entry point for bounded callers that do not already retain
+// the complete source-unit token stream.
+pub fn lower_resolved_source_function_assembly_from_source(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    allocator: Allocator,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>,
+    borrow_mut contract_locals: Vec<MirFunctionContractLocal>,
+    borrow_mut required_capabilities: Vec<i64>,
+    borrow_mut instruction_sources: Vec<MirFunctionInstructionSource>,
+    borrow_mut assembled_events: Vec<MirLowerEvent>,
+    borrow_mut cfg_records: Vec<MirCfgRecord>,
+    borrow_mut placements: Vec<MirPlacementRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let declaration_tokens: Vec<Token> = lex(source, allocator);
+    let status: i32 = lower_resolved_source_function_assembly_from_source_tokens(
+        source, tokens, declaration_tokens, statements, statement_operands,
+        enum_catalog, struct_catalog, match_enum_id, capability_catalog,
+        allocator, ownership_metadata, body_records, clause_metadata,
+        contract_records, resolved_arms, resolved_scopes, ownership_events,
+        capability_effects, ownership_records, contract_locals,
+        required_capabilities, instruction_sources, assembled_events,
+        cfg_records, placements
+    );
+    drop(declaration_tokens);
+    return status;
 }

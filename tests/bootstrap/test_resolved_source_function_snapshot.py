@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from merit.bootstrap.mir_contract import MirType
 from merit.bootstrap.resolved_source_function_snapshot import (
     SNAPSHOT_MAGIC,
     ResolvedSourceFunctionSnapshotError,
@@ -104,6 +105,19 @@ def test_v5_native_type_descriptors_resolve_ordered_heterogeneous_enum() -> None
     assert [payload.name for payload in names[1_100_000].arguments] == [
         "struct_i64_destructor_0", "i64"
     ]
+
+
+def test_v9_native_type_descriptors_resolve_copy_payload_enum_schema() -> None:
+    names = _descriptor_type_names(
+        (
+            (1_000, 5, 0, 1, 0, 0, 0, 0, 0, 0, 0),
+            (1_000, 5, 0, 2, 0, 1, 0, 0, 0, 0, 0),
+        ),
+        version=9,
+        source="",
+    )
+
+    assert names[1_000] == MirType("enum_copy_payload_0", (MirType("i64"), MirType("bool")))
 
 
 @pytest.mark.parametrize(

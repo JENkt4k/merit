@@ -26,13 +26,28 @@ from merit.project.loader import LoadedProject, SourceUnit
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
 from merit.project.replacement_source import canonical_replacement_project_source
 
-DRIVER_PROTOCOL = "resolved-source-function-bundle-v1"
-# The bootstrap lexer is the largest M7 acceptance unit and currently exceeds
-# the old 120-second diagnostic ceiling on hosted runners. Keep a bounded
-# per-unit timeout while allowing the acceptance gate to measure it to
-# completion; M7 performance work can then use the observed duration rather
-# than terminating the native frontend before it reports a result.
-DRIVER_TIMEOUT_SECONDS = 300
+DRIVER_PROTOCOL = "resolved-source-function-bundle-v2"
+# Bounded per-unit ceiling, not evidence of acceptable compiler throughput.
+# The bootstrap-lexer M7 case still exceeds this limit; repeated native type
+# and callable analysis must be fixed rather than raising the timeout again.
+DRIVER_TIMEOUT_SECONDS = 900
+
+
+def _source_capability_names(source: str) -> dict[str, str]:
+    """Label native capability IDs using their canonical declaration order."""
+
+    names: dict[str, str] = {}
+    seen: set[str] = set()
+    for match in re.finditer(
+        r"^\s*capability\s+([A-Za-z_][A-Za-z0-9_]*)\s*;",
+        source,
+        re.MULTILINE,
+    ):
+        name = match.group(1)
+        if name not in seen:
+            names[str(len(names))] = name
+            seen.add(name)
+    return names
 
 
 @dataclass(frozen=True)
@@ -89,10 +104,10 @@ def _failure_source_candidates(source: str, status: int | None) -> str:
     patterns: tuple[str, ...]
     stage = "unclassified"
     if status == 4721:
-        # native driver +1000 -> from_source +1000 -> from_source_types +1000
-        # -> assembly +1000 -> semantics +700 -> ownership-control status 21.
-        stage = "resolved ownership lowering: inner status 21"
-        patterns = (r"\bdrop\s*\(", r"\bvec_drop\s*<", r"\breturn\b")
+        # Additive native-stage status wrapping is not injective. In particular,
+        # 4721 can identify contract lowering as well as ownership lowering.
+        stage = "resolved function semantic lowering: colliding inner status 21"
+        patterns = (r"\brequires\b", r"\bensures\b", r"\bdrop\s*\(", r"\breturn\b")
     elif status == 4368:
         stage = "native source expression/call lowering"
         patterns = (r"\bfile_read\s*\(", r"\bfile_write\s*\(", r"\bwith\s+capability\b")
@@ -231,6 +246,7 @@ def prepare_replacement_artifacts(
     for unit in driver_units:
         snapshots = _run_driver(driver, unit)
         digest = _source_digest(unit.parser_source)
+        capability_names = _source_capability_names(unit.parser_source)
         for function_index, values in enumerate(snapshots):
             filename = f"replacement-{unit.module}-{function_index}.snapshot"
             path = artifact_dir / filename
@@ -242,6 +258,7 @@ def prepare_replacement_artifacts(
                     "function_index": function_index,
                     "snapshot": filename,
                     "source_sha256": digest,
+                    "capability_names": capability_names,
                     **({"project_source": "replacement-project.source"} if project_source is not None else {}),
                 }
             )

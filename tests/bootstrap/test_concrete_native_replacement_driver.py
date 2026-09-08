@@ -1280,6 +1280,39 @@ def test_concrete_native_driver_executes_vec_i64_lifecycle_before_mir(
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_vec_get_set_preserve_drop_free_struct_elements(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    source = '''module main
+capability allocate;
+stable("pair-v1") struct Pair { first:i32; second:i32; }
+fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+    var values:Vec<Pair>=vec_new<Pair>(allocator,1);
+    let first:Pair=Pair{first:7,second:11};vec_push<Pair>(values,first);
+    let observed:Pair=vec_get<Pair>(values,0);print(observed.first);
+    let next:Pair=Pair{first:13,second:17};vec_set<Pair>(values,0,next);
+    let updated:Pair=vec_get<Pair>(values,0);print(updated.second);
+} return 0; }
+'''
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-drop-free-vec")
+    reference = subprocess.run(
+        [str(reference_executable)], text=True, capture_output=True, check=True
+    )
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-drop-free-vec")
+    replacement = subprocess.run(
+        [str(artifact.executable)], text=True, capture_output=True, check=True
+    )
+    assert reference.stdout == "7\n17\n"
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 def test_concrete_native_driver_uses_ordinary_ownership_for_generic_calls(
     tmp_path: Path, driver: NativeReplacementDriver,
 ) -> None:

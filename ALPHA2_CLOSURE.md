@@ -502,9 +502,53 @@ Output should be an executable/generated coverage report where practical.
 
 ### M7 — Acceptance migration
 
-**Goal:** All nine alpha acceptance projects compile/run through replacement mode with no Python semantic lowering.
+**Goal:** All ten alpha acceptance projects in `scripts/m7_acceptance_inventory.py` compile/run through replacement mode with no Python semantic lowering.
 
 The exact-decimal ledger is mandatory evidence.
+
+#### In-progress scalability checkpoint (2026-09-08)
+
+M7 remains **OPEN**. The reported `bootstrap_lexer` acceptance run exceeded the
+900-second driver deadline (936.96 seconds including test setup). Increasing the
+deadline is not closure evidence; do not repeat that long run until bounded
+measurements support it.
+
+A bounded native diagnostic on the current candidate identifies repeated type
+and callable analysis, not generic expansion, as expensive work. Vector type
+ranking now enumerates distinct lexical predecessors instead of rescanning all
+earlier occurrences for every vector token. The focused native/interpreter
+regression preserves ranks across reordered declarations, duplicates, and nested
+vector suffixes. Descriptor duplicate detection also stops at its first match.
+
+The diagnostic after these changes measured approximately 0.73 CPU seconds in
+descriptor construction and 13 seconds in one whole-source signature-table
+build, immediately followed by another signature-table build. These are local
+profiling observations, **not** acceptance or gate passes. Remaining work:
+
+- Build an invocation-local immutable callable catalog once and reuse it in
+  parameter ownership, body lowering, and call ownership analysis; these paths
+  currently reconstruct the whole-source table repeatedly.
+  Read-only `*_from_catalog` consumers now cover parameter modes, return types,
+  borrowed origins, parameter ownership, body records, and source-function
+  contract completion. Existing entry points delegate to the same consumers.
+  Production assembly/ownership orchestration still needs to retain and pass
+  one catalog; the extraction alone is not a throughput fix. A native/reference
+  query regression covers repeated catalog use, missing callees, invalid
+  parameter ordinals, builtins, unit results, and borrowed origins.
+- Preserve source sharing through prepared artifacts: the current MRBF v2
+  decoder re-expands shared source into every encoded snapshot, so transport
+  deduplication alone does not eliminate downstream source duplication.
+- Revalidate all ten applications, deterministic artifacts, affected subsystem,
+  and authoritative gates before claiming M7 closure.
+
+Focused vector evidence also exposed a lifecycle classification regression:
+general aggregate structs were absent from the ownership-transfer classifier.
+The repair includes that canonical range while keeping vector get/set/replace
+validation based on recursive **drop requirements**, as the alpha.1 reference
+does, rather than conflating them with non-Copy binding ownership. The targeted
+vector selection passed 12 tests, including drop-free struct get/set,
+destructor-backed nested vectors, and rejected generic/vector cases. This does
+not establish that the whole acceptance candidate is regression-free.
 
 ### M8 — Production cutover
 
