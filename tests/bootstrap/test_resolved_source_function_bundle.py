@@ -39,12 +39,14 @@ def test_bundle_round_trips_multiple_nested_snapshots() -> None:
 def test_bundle_v2_deduplicates_and_rehydrates_effective_source() -> None:
     source = tuple("module main".encode())
     snapshot = _snapshot(source)
+    compact_snapshot = _snapshot()
 
     encoded = encode_resolved_source_function_bundle((snapshot, snapshot))
 
     assert len(encoded) == 3 + 1 + len(snapshot) + 1 + len(_snapshot())
     decoded = decode_resolved_source_function_bundle(encoded)
-    assert decoded.encoded_snapshots == (snapshot, snapshot)
+    assert decoded.encoded_snapshots == (snapshot, compact_snapshot)
+    assert decoded.functions[0].effective_source_bytes == source
     assert decoded.functions[1].effective_source_bytes == source
 
 

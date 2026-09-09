@@ -122,10 +122,27 @@ fn restore(borrow_mut states: Vec<i32>, borrow snapshots: Vec<i32>, start: i64) 
     return 0;
 }
 
+fn ownership_state_moved() -> i32 { return 2; }
+fn ownership_state_dropped() -> i32 { return 3; }
+
+fn ownership_states_equivalent(left: i32, right: i32) -> i32 {
+    if (left == right) { return 1; }
+    var left_consumed: i32 = 0;
+    if (left == ownership_state_moved()) { left_consumed = 1; }
+    if (left == ownership_state_dropped()) { left_consumed = 1; }
+    var right_consumed: i32 = 0;
+    if (right == ownership_state_moved()) { right_consumed = 1; }
+    if (right == ownership_state_dropped()) { right_consumed = 1; }
+    if (left_consumed != 0) { if (right_consumed != 0) { return 1; } }
+    return 0;
+}
+
 fn states_equal(borrow states: Vec<i32>, borrow snapshots: Vec<i32>, start: i64) -> i32 {
     var i: i64 = 0;
     while (i < vec_len<i32>(states)) {
-        if (vec_get<i32>(states, i) != vec_get<i32>(snapshots, checked_add(start, i))) { return 0; }
+        if (ownership_states_equivalent(
+            vec_get<i32>(states, i), vec_get<i32>(snapshots, checked_add(start, i))
+        ) == 0) { return 0; }
         i = checked_add(i, 1);
     }
     return 1;
@@ -200,7 +217,9 @@ fn merge_if(
     if (terminated != 0) { restore(states, snapshots, frame.then_start); return 0; }
     var i: i64 = 0;
     while (i < vec_len<MirOwnershipBinding>(bindings)) {
-        if (vec_get<i32>(states, i) != vec_get<i32>(snapshots, checked_add(frame.then_start, i))) { return 62; }
+        if (ownership_states_equivalent(
+            vec_get<i32>(states, i), vec_get<i32>(snapshots, checked_add(frame.then_start, i))
+        ) == 0) { return 62; }
         i = checked_add(i, 1);
     }
     return 0;

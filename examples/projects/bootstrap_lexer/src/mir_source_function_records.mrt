@@ -757,8 +757,36 @@ fn sfr_builtin_slice_len_kind()->i32{return 13;}
 fn sfr_builtin_slice_get_kind()->i32{return 14;}
 fn sfr_builtin_file_read_kind()->i32{return 15;}
 fn sfr_builtin_file_write_kind()->i32{return 16;}
+fn sfr_builtin_bootstrap_buffer_append_kind()->i32{return 17;}
 pub fn sfr_builtin_call_kind(borrow source: Buffer, start: i64, length: i64) -> i32 {
     var matches:i32=1;
+    if(length==23){
+        matches=1;
+        if(buffer_get(source,start)!=sfr_ascii_b()){matches=0;}
+        if(buffer_get(source,checked_add(start,1))!=sfr_ascii_o()){matches=0;}
+        if(buffer_get(source,checked_add(start,2))!=sfr_ascii_o()){matches=0;}
+        if(buffer_get(source,checked_add(start,3))!=sfr_ascii_t()){matches=0;}
+        if(buffer_get(source,checked_add(start,4))!=sfr_ascii_s()){matches=0;}
+        if(buffer_get(source,checked_add(start,5))!=sfr_ascii_t()){matches=0;}
+        if(buffer_get(source,checked_add(start,6))!=sfr_ascii_r()){matches=0;}
+        if(buffer_get(source,checked_add(start,7))!=sfr_ascii_a()){matches=0;}
+        if(buffer_get(source,checked_add(start,8))!=sfr_ascii_p()){matches=0;}
+        if(buffer_get(source,checked_add(start,9))!=sfr_ascii_underscore()){matches=0;}
+        if(buffer_get(source,checked_add(start,10))!=sfr_ascii_b()){matches=0;}
+        if(buffer_get(source,checked_add(start,11))!=sfr_ascii_u()){matches=0;}
+        if(buffer_get(source,checked_add(start,12))!=sfr_ascii_f()){matches=0;}
+        if(buffer_get(source,checked_add(start,13))!=sfr_ascii_f()){matches=0;}
+        if(buffer_get(source,checked_add(start,14))!=sfr_ascii_e()){matches=0;}
+        if(buffer_get(source,checked_add(start,15))!=sfr_ascii_r()){matches=0;}
+        if(buffer_get(source,checked_add(start,16))!=sfr_ascii_underscore()){matches=0;}
+        if(buffer_get(source,checked_add(start,17))!=sfr_ascii_a()){matches=0;}
+        if(buffer_get(source,checked_add(start,18))!=sfr_ascii_p()){matches=0;}
+        if(buffer_get(source,checked_add(start,19))!=sfr_ascii_p()){matches=0;}
+        if(buffer_get(source,checked_add(start,20))!=sfr_ascii_e()){matches=0;}
+        if(buffer_get(source,checked_add(start,21))!=sfr_ascii_n()){matches=0;}
+        if(buffer_get(source,checked_add(start,22))!=sfr_ascii_d()){matches=0;}
+        if(matches!=0){return sfr_builtin_bootstrap_buffer_append_kind();}
+    }
     if(length==18){
         matches=1;
         if(buffer_get(source,start)!=112){matches=0;}
@@ -1040,6 +1068,7 @@ pub fn sfr_builtin_call_return_type(kind: i32) -> i32 {
     // type is supplied by the typed destination rather than a fixed builtin ID.
     if (kind == sfr_builtin_file_read_kind()) { return function_mir_unresolved_type_code(); }
     if (kind == sfr_builtin_file_write_kind()) { return function_mir_unresolved_type_code(); }
+    if (kind == sfr_builtin_bootstrap_buffer_append_kind()) { return function_mir_unit_type_code(); }
     return function_mir_unresolved_type_code();
 }
 
@@ -1047,6 +1076,7 @@ pub fn sfr_builtin_requires_allocate(kind:i32)->i32{
     if(kind==sfr_builtin_buffer_new_kind()){return 1;}
     if(kind==sfr_builtin_buffer_from_string_kind()){return 1;}
     if(kind==sfr_builtin_buffer_push_kind()){return 1;}
+    if(kind==sfr_builtin_bootstrap_buffer_append_kind()){return 1;}
     return 0;
 }
 
@@ -1069,6 +1099,7 @@ fn sfr_builtin_call_parameter_count(kind: i32) -> i64 {
     if (kind == sfr_builtin_slice_get_kind()) { return 2; }
     if (kind == sfr_builtin_file_read_kind()) { return 2; }
     if (kind == sfr_builtin_file_write_kind()) { return 2; }
+    if (kind == sfr_builtin_bootstrap_buffer_append_kind()) { return 4; }
     return -1;
 }
 
@@ -1079,6 +1110,10 @@ fn sfr_builtin_call_parameter_mode(kind: i32, ordinal: i64) -> i32 {
     if (kind == sfr_builtin_buffer_allocator_kind()) { if (ordinal == 0) { return function_mir_mode_borrowed(); } }
     if (kind == sfr_builtin_buffer_push_kind()) { if (ordinal == 0) { return function_mir_mode_mutable_borrow(); } }
     if (kind == sfr_builtin_file_write_kind()) { if (ordinal == 1) { return function_mir_mode_borrowed(); } }
+    if (kind == sfr_builtin_bootstrap_buffer_append_kind()) {
+        if (ordinal == 0) { return function_mir_mode_mutable_borrow(); }
+        if (ordinal == 1) { return function_mir_mode_borrowed(); }
+    }
     return function_mir_mode_value();
 }
 
@@ -1097,6 +1132,11 @@ fn sfr_builtin_call_parameter_type(kind:i32,ordinal:i64)->i32{
     if(kind==sfr_builtin_slice_get_kind()){if(ordinal==0){return function_mir_byte_slice_type_code();}return function_mir_i64_type_code();}
     if(kind==sfr_builtin_file_read_kind()){if(ordinal==0){return function_mir_allocator_type_code();}return function_mir_string_type_code();}
     if(kind==sfr_builtin_file_write_kind()){if(ordinal==0){return function_mir_string_type_code();}return function_mir_buffer_type_code();}
+    if(kind==sfr_builtin_bootstrap_buffer_append_kind()){
+        if(ordinal==0){return function_mir_buffer_type_code();}
+        if(ordinal==1){return function_mir_buffer_type_code();}
+        return function_mir_i64_type_code();
+    }
     return function_mir_unresolved_type_code();
 }
 
@@ -2880,7 +2920,9 @@ fn sfr_resolve_numeric_expression_domain(
         var authoritative:i32=0;
         if(hir_is_identifier(node)!=0){authoritative=1;}
         if(hir_is_field_access(node)!=0){authoritative=1;}
-        if(hir_is_binary(node)!=0){
+        var numeric_operator:i32=hir_is_binary(node);
+        if(hir_is_comparison(node)!=0){numeric_operator=1;}
+        if(numeric_operator!=0){
             vec_push<i64>(members,hir_left(node));vec_push<i64>(members,hir_right(node));
         }
         if(hir_is_pair(node)!=0){
@@ -2955,8 +2997,8 @@ requires_caps [allocate]
         var binding_id: i64 = -1;
         if (ast_kind(ast) == 30) {
             if (sfr_ast_identifier_is_field_label(ast_nodes, ast_index) == 0) {
-                binding_id = hir_find_binding_id(
-                    source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+                binding_id = hir_find_scoped_binding_id(
+                    source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
                 );
             }
             if (binding_id < 0) { binding_id = -2; }
@@ -3771,7 +3813,7 @@ pub fn lower_source_function_body_records_from_catalog(
             if (binding_index < 0) { return 10; }
             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
-            let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
+            let destination: i64 = hir_find_scoped_binding_id(source, tokens, binding_starts, binding_lengths,
                 statement_operand_start(binding), statement_operand_length(binding));
             var expression_start: i64 = statement_operand_start(expression);
             var expression_length: i64 = statement_operand_length(expression);
@@ -3843,7 +3885,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 if (binding_index < 0) { return 12; }
                 let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                 let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
-                let destination: i64 = hir_find_binding_id(source, binding_starts, binding_lengths,
+                let destination: i64 = hir_find_scoped_binding_id(source, tokens, binding_starts, binding_lengths,
                     statement_operand_start(binding), statement_operand_length(binding));
                 let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                     statement_operand_start(expression), statement_operand_length(expression),
@@ -3963,8 +4005,8 @@ pub fn lower_source_function_body_records_from_catalog(
                                 if (target_index < 0) { return 20; }
                                 if (value_index < 0) { return 20; }
                                 let target: StatementOperand = vec_get<StatementOperand>(operands, target_index);
-                                var destination: i64 = hir_find_binding_id(
-                                    source, binding_starts, binding_lengths,
+                                var destination: i64 = hir_find_scoped_binding_id(
+                                    source, tokens, binding_starts, binding_lengths,
                                     statement_operand_start(target), statement_operand_length(target)
                                 );
                                 var field_ordinal: i32 = -1;
@@ -3981,7 +4023,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                                 let field_token:Token=vec_get<Token>(tokens,field_index);
                                                 if(checked_add(token_start(field_token),token_length(field_token))==target_end){
                                                     if(sfr_token_byte_is(source,dot_token,sfr_ascii_dot())!=0){
-                                                        destination=hir_find_binding_id(source,binding_starts,binding_lengths,token_start(receiver_token),token_length(receiver_token));
+                                                        destination=hir_find_scoped_binding_id(source,tokens,binding_starts,binding_lengths,token_start(receiver_token),token_length(receiver_token));
                                                         if(destination>=0){
                                                             field_ordinal=sfr_i64_struct_field_ordinal(source,struct_catalog,sfr_local_type_code(records,destination),token_start(field_token),token_length(field_token));
                                                         }
@@ -4088,8 +4130,8 @@ pub fn lower_source_function_body_records_from_catalog(
                                             let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(resolved_arms, payload_arm);
                                             if (resolved_match_statement(arm) == statement_index) {
                                                 if (resolved_match_binding_start(arm) >= 0) {
-                                                    let payload_local: i64 = hir_find_binding_id(
-                                                        source, binding_starts, binding_lengths,
+                                                    let payload_local: i64 = hir_find_scoped_binding_id(
+                                                        source, tokens, binding_starts, binding_lengths,
                                                         resolved_match_binding_start(arm), resolved_match_binding_length(arm)
                                                     );
                                                     let payload_instruction: i64 = vec_get<i64>(counters, 1);
@@ -4122,7 +4164,17 @@ pub fn lower_source_function_body_records_from_catalog(
     var event_index: i64 = 0;
     while (event_index < vec_len<StatementRecord>(statements)) {
         let event_statement: StatementRecord = vec_get<StatementRecord>(statements, event_index);
-        if (statement_lowering_supports_kind(statement_record_kind(event_statement)) != 0) {
+        var event_supported:i32=statement_lowering_supports_kind(statement_record_kind(event_statement));
+        if(statement_record_kind(event_statement)==statement_record_let_kind()){
+            let initializer_index:i64=sfr_operand(
+                event_statement,operands,statement_operand_expression_kind()
+            );
+            if(initializer_index>=0){
+                let initializer:StatementOperand=vec_get<StatementOperand>(operands,initializer_index);
+                if(statement_operand_is_try(source,tokens,initializer)!=0){event_supported=0;}
+            }
+        }
+        if (event_supported != 0) {
             vec_push<StatementRecord>(event_statements, event_statement);
         }
         event_index = checked_add(event_index, 1);

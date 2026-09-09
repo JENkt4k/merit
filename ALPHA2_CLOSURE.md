@@ -543,9 +543,14 @@ profiling observations, **not** acceptance or gate passes. Remaining work:
   lowering now distinguishes a trivial scope exit from a resource scope exit;
   the latter retains the existing explicit-cleanup requirement and strict
   end-scope assertion. Full acceptance validation remains pending.
-- Preserve source sharing through prepared artifacts: the current MRBF v2
-  decoder re-expands shared source into every encoded snapshot, so transport
-  deduplication alone does not eliminate downstream source duplication.
+- MRBF v2 source sharing now survives prepared-artifact publication. The
+  decoder hydrates its in-memory function views for consumers while retaining
+  compact encoded snapshots for persistence; project materialization supplies
+  the already-validated canonical unit source. Focused bundle/preparation tests
+  prove later snapshot files omit the shared UTF-8 source without weakening
+  their materialization input. This removes a potentially source-size times
+  function-count artifact expansion, but bootstrap-lexer acceptance must still
+  be rerun before attributing the full timeout to that expansion.
 - Revalidate all ten applications, deterministic artifacts, affected subsystem,
   and authoritative gates before claiming M7 closure.
 

@@ -88,8 +88,15 @@ def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> P
     return _python_driver(tmp_path, "replacement-driver", body)
 
 
-def _utf8_driver(tmp_path: Path) -> Path:
-    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
+def _utf8_driver(tmp_path: Path, source: str) -> Path:
+    source_bytes = tuple(source.encode("utf-8"))
+    snapshot = (
+        SNAPSHOT_MAGIC,
+        SNAPSHOT_VERSION,
+        *([0] * (SNAPSHOT_SECTION_COUNT - 1)),
+        len(source_bytes),
+        *source_bytes,
+    )
     values = encode_resolved_source_function_bundle((snapshot, snapshot))
     body = (
         "import sys\n"
@@ -158,18 +165,26 @@ def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: 
 def test_prepare_replacement_sends_source_to_native_driver_as_utf8(tmp_path: Path) -> None:
     root = _project(tmp_path)
     source_path = root / "src" / "main.mrt"
-    source_path.write_text(
+    source = (
         'module main\nfn helper()->i64 { return 6; }\n'
-        'fn main()->i32 { let text:String="Aé"; print(text); return 7; }\n',
-        encoding="utf-8",
+        'fn main()->i32 { let text:String="Aé"; print(text); return 7; }\n'
     )
+    source_path.write_text(source, encoding="utf-8")
     project = load_project(root / "Merit.toml")
 
     prepared = prepare_replacement_artifacts(
-        project, NativeReplacementDriver(_utf8_driver(tmp_path))
+        project, NativeReplacementDriver(_utf8_driver(tmp_path, source))
     )
 
     assert len(prepared.snapshot_paths) == 2
+    first_values = tuple(
+        int(line) for line in prepared.snapshot_paths[0].read_text(encoding="utf-8").splitlines()
+    )
+    second_values = tuple(
+        int(line) for line in prepared.snapshot_paths[1].read_text(encoding="utf-8").splitlines()
+    )
+    assert len(first_values) == len(second_values) + len(source.encode("utf-8"))
+    assert load_replacement_inputs(project)[1].source == source
 
 
 def test_prepare_replacement_publishes_one_canonical_multimodule_bundle(tmp_path: Path) -> None:

@@ -207,6 +207,58 @@ def test_emits_borrowed_buffer_print_through_pointer(tmp_path):
     assert run.stdout == "abc\n"
 
 
+def test_emits_bootstrap_buffer_append_with_borrow_modes_and_bounds(tmp_path):
+    buffer = MirType("Buffer")
+    function = MirFunction(
+        "append_range",
+        UNIT,
+        (
+            MirLocal(0, "destination", buffer, mutable=True, ownership="mutable_borrow"),
+            MirLocal(1, "source", buffer, ownership="borrowed"),
+            MirLocal(2, "start", I64),
+            MirLocal(3, "length", I64),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(
+                        0,
+                        "call",
+                        operands=(0, 1, 2, 3),
+                        symbol="bootstrap_buffer_append",
+                    ),
+                ),
+                MirTerminator("return"),
+            ),
+        ),
+        0,
+        parameters=(
+            MirParameter(0, "mutable_borrow"),
+            MirParameter(1, "borrowed"),
+            MirParameter(2),
+            MirParameter(3),
+        ),
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "merit_bootstrap_buffer_append(m0, m1, m2, m3);" in generated
+    run = compile_and_run(
+        tmp_path,
+        module,
+        """int main(void) {
+            merit_Allocator allocator = merit_system_allocator();
+            merit_Buffer destination = merit_buffer_new(allocator, 0);
+            merit_Buffer source = merit_buffer_new(allocator, 1);
+            merit_buffer_push(&source, 65);
+            append_range(&destination, &source, 0, 1);
+            int result = destination.len == 1 && destination.data[0] == 65 ? 0 : 1;
+            merit_buffer_drop(&source); merit_buffer_drop(&destination); return result;
+        }""",
+    )
+    assert run.returncode == 0
+
+
 def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     choice = MirType("enum_copy_payload_0")
     function = MirFunction(

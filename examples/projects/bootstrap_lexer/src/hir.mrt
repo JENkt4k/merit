@@ -1,4 +1,5 @@
 module bootstrap_hir
+import bootstrap_tokens;
 import bootstrap_syntax;
 import bootstrap_mir_functions;
 
@@ -25,6 +26,7 @@ pub fn hir_numeric_policy(borrow node: HirExpressionRecord) -> i32 { return node
 pub fn hir_binding_id(borrow node: HirExpressionRecord) -> i64 { return node.binding_id; }
 pub fn hir_is_numeric_literal(borrow node:HirExpressionRecord)->i32{if(node.kind==1){return 1;}return 0;}
 pub fn hir_is_binary(borrow node:HirExpressionRecord)->i32{if(node.kind==2){return 1;}return 0;}
+pub fn hir_is_comparison(borrow node:HirExpressionRecord)->i32{if(node.kind==5){return 1;}return 0;}
 pub fn hir_is_group(borrow node:HirExpressionRecord)->i32{if(node.kind==3){return 1;}return 0;}
 pub fn hir_is_identifier(borrow node:HirExpressionRecord)->i32{if(node.kind==4){return 1;}return 0;}
 pub fn hir_is_call(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 6) { return 1; } return 0; }
@@ -89,6 +91,101 @@ pub fn hir_find_binding_id(
         candidate = checked_add(candidate, 1);
     }
     return -1;
+}
+
+fn hir_binding_scope_end(
+    borrow source: Buffer, borrow tokens: Vec<Token>, declaration_start: i64
+) -> i64 {
+    var cursor: i64 = vec_len<Token>(tokens);
+    var reverse_depth: i64 = 0;
+    var open_index: i64 = -1;
+    while (cursor > 0) {
+        cursor = checked_sub(cursor, 1);
+        let token: Token = vec_get<Token>(tokens, cursor);
+        if (token_start(token) < declaration_start) {
+            if (token_kind(token) == token_punctuation_kind()) {
+                let byte: i64 = buffer_get(source, token_start(token));
+                if (byte == token_close_brace_byte()) {
+                    reverse_depth = checked_add(reverse_depth, 1);
+                }
+                if (byte == token_open_brace_byte()) {
+                    if (reverse_depth == 0) {
+                        open_index = cursor;
+                        cursor = 0;
+                    } else {
+                        reverse_depth = checked_sub(reverse_depth, 1);
+                    }
+                }
+            }
+        }
+    }
+    if (open_index < 0) {
+        cursor = 0;
+        while (cursor < vec_len<Token>(tokens)) {
+            let token: Token = vec_get<Token>(tokens, cursor);
+            if (token_start(token) > declaration_start) {
+                if (token_kind(token) == token_punctuation_kind()) {
+                    if (buffer_get(source, token_start(token)) == token_open_brace_byte()) {
+                        open_index = cursor;
+                        cursor = vec_len<Token>(tokens);
+                    }
+                }
+            }
+            cursor = checked_add(cursor, 1);
+        }
+    }
+    if (open_index < 0) { return buffer_len(source); }
+    var depth: i64 = 0;
+    cursor = open_index;
+    while (cursor < vec_len<Token>(tokens)) {
+        let token: Token = vec_get<Token>(tokens, cursor);
+        if (token_kind(token) == token_punctuation_kind()) {
+            let byte: i64 = buffer_get(source, token_start(token));
+            if (byte == token_open_brace_byte()) { depth = checked_add(depth, 1); }
+            if (byte == token_close_brace_byte()) {
+                depth = checked_sub(depth, 1);
+                if (depth == 0) { return token_start(token); }
+            }
+        }
+        cursor = checked_add(cursor, 1);
+    }
+    return buffer_len(source);
+}
+
+pub fn hir_find_scoped_binding_id(
+    borrow source: Buffer, borrow tokens: Vec<Token>,
+    borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
+    start: i64, length: i64
+) -> i64 {
+    var selected: i64 = -1;
+    var selected_start: i64 = -1;
+    var candidate: i64 = 0;
+    while (candidate < vec_len<i64>(starts)) {
+        let candidate_start: i64 = vec_get<i64>(starts, candidate);
+        if (candidate_start <= start) {
+            if (vec_get<i64>(lengths, candidate) == length) {
+                var offset: i64 = 0;
+                var equal: i32 = 1;
+                while (offset < length) {
+                    if (buffer_get(source, checked_add(candidate_start, offset)) !=
+                        buffer_get(source, checked_add(start, offset))) {
+                        equal = 0;
+                        offset = length;
+                    } else { offset = checked_add(offset, 1); }
+                }
+                if (equal != 0) {
+                    if (start < hir_binding_scope_end(source, tokens, candidate_start)) {
+                        if (candidate_start > selected_start) {
+                            selected = candidate;
+                            selected_start = candidate_start;
+                        }
+                    }
+                }
+            }
+        }
+        candidate = checked_add(candidate, 1);
+    }
+    return selected;
 }
 
 // Executable bootstrap-hir-v1 flat record kinds.

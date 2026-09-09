@@ -735,6 +735,34 @@ PATH_SENSITIVE_OWNED_REJECTIONS = (
         "M5212: scoped owned binding leaked",
     ),
 )
+
+SHADOWED_BINDING_IDENTITY_SOURCE = '''module main
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn consume(value:Marker)->i32 {
+    let value:Marker=Marker{number:2};
+    drop(value);
+    return 0;
+}
+fn main()->i32 {
+    let marker:Marker=Marker{number:1};
+    if 1 { let marker:Marker=Marker{number:3}; drop(marker); }
+    let argument:Marker=Marker{number:4};
+    consume(argument);
+    drop(marker);
+    return 0;
+}
+'''
+
+DISCARD_AFTER_CONSTRUCTOR_SOURCE = '''module main
+struct ParseCursor { index:i64; }
+fn main()->i32 {
+    var cursor:ParseCursor=ParseCursor { index:0 };
+    let root:i64=cursor.index;
+    root;
+    return 0;
+}
+'''
 SINGLE_I64_STRUCT_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
@@ -2468,6 +2496,45 @@ def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_
         reference.stdout,
     )
     assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_preserves_shadowed_binding_identity(
+    tmp_path: Path, driver: NativeReplacementDriver
+) -> None:
+    root = _project(tmp_path, SHADOWED_BINDING_IDENTITY_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    )
+    assert (replacement.returncode, replacement.stdout) == (0, "3\n2\n4\n1\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_discard_after_constructor(
+    tmp_path: Path, driver: NativeReplacementDriver
+) -> None:
+    root = _project(tmp_path, DISCARD_AFTER_CONSTRUCTOR_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    ) == (0, "")
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

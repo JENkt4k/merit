@@ -33,6 +33,7 @@ pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return r
 pub fn statement_record_first_operand(borrow record: StatementRecord) -> i64 { return record.first_operand; }
 pub fn statement_record_operand_count(borrow record: StatementRecord) -> i64 { return record.operand_count; }
 pub fn statement_operand_kind(borrow operand: StatementOperand) -> i32 { return operand.kind; }
+pub fn statement_operand_expression_kind() -> i32 { return 3; }
 pub fn statement_operand_start(borrow operand: StatementOperand) -> i64 { return operand.start; }
 pub fn statement_operand_length(borrow operand: StatementOperand) -> i64 { return operand.length; }
 
@@ -43,7 +44,7 @@ fn statement_ascii_y() -> i64 { return 121; }
 pub fn statement_operand_is_try(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow operand: StatementOperand
 ) -> i32 {
-    if (statement_operand_kind(operand) != 3) { return 0; }
+    if (statement_operand_kind(operand) != statement_operand_expression_kind()) { return 0; }
     var index: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);

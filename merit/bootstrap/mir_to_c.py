@@ -759,6 +759,18 @@ def _instruction(
             ownership = local_ownership.get(instruction.operands[0], "value")
             argument = operands[0] if ownership == "mutable_borrow" else f"&{operands[0]}"
             return [f"merit_buffer_push({argument}, {operands[1]});"]
+        if instruction.symbol == "bootstrap_buffer_append":
+            if len(operands) != 4 or result is not None:
+                raise MirToCError(
+                    "bootstrap_buffer_append requires destination, source, start, length, and no result"
+                )
+            destination_ownership = local_ownership.get(instruction.operands[0], "value")
+            source_ownership = local_ownership.get(instruction.operands[1], "value")
+            destination = operands[0] if destination_ownership == "mutable_borrow" else f"&{operands[0]}"
+            source = operands[1] if source_ownership in {"borrowed", "mutable_borrow"} else f"&{operands[1]}"
+            return [
+                f"merit_bootstrap_buffer_append({destination}, {source}, {operands[2]}, {operands[3]});"
+            ]
         if instruction.symbol == "buffer_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("buffer_len requires one Buffer argument and one result")
@@ -1478,6 +1490,11 @@ def emit_c_module(module: MirModule) -> str:
             "    if (value.len) { memcpy(result.data, value.data, value.len); result.len = value.len; } return result;",
             "}",
             "static inline void merit_buffer_push(merit_Buffer *value, uint8_t byte) { merit_buffer_reserve(value, value->len + 1); value->data[value->len++] = byte; }",
+            "static inline void merit_bootstrap_buffer_append(merit_Buffer *destination, const merit_Buffer *source, int64_t start, int64_t length) {",
+            '    if (start < 0 || length < 0 || (size_t)start > source->len || (size_t)length > source->len - (size_t)start) { fprintf(stderr, "Merit bootstrap buffer append range out of bounds\\n"); exit(88); }',
+            "    size_t offset = (size_t)start; size_t count = (size_t)length; merit_buffer_reserve(destination, destination->len + count);",
+            "    if (count) { memcpy(destination->data + destination->len, source->data + offset, count); destination->len += count; }",
+            "}",
             "static inline int64_t merit_buffer_len(const merit_Buffer *value) { return (int64_t)value->len; }",
             "static inline int64_t merit_buffer_get(const merit_Buffer *value, int64_t index) {",
             '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit buffer index out of bounds\\n"); exit(82); }',

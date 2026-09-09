@@ -108,6 +108,7 @@ def decode_resolved_source_function_bundle(
                 f"resolved source function bundle function {index} is truncated"
             )
         snapshot_values = tuple(data[position:end])
+        encoded_snapshot_values = snapshot_values
         try:
             snapshot = decode_resolved_source_function_snapshot(snapshot_values)
         except ValueError as exc:
@@ -125,7 +126,11 @@ def decode_resolved_source_function_bundle(
                 raise ResolvedSourceFunctionBundleError(
                     f"resolved source function bundle function {index} has a different effective source"
                 )
-        encoded.append(snapshot_values)
+        # Preserve the compact transport representation.  ``functions`` holds
+        # the hydrated snapshots used by in-memory consumers, while prepared
+        # artifacts can continue to share the canonical source supplied by the
+        # project unit instead of duplicating it into every snapshot file.
+        encoded.append(encoded_snapshot_values)
         decoded.append(snapshot)
         position = end
 

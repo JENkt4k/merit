@@ -138,7 +138,7 @@ fn source_control_direct_drop_binding(
 ) -> i64 {
     let operand_start: i64 = statement_operand_start(operand);
     let operand_length: i64 = statement_operand_length(operand);
-    let exact_binding: i64 = source_find_binding(source, starts, lengths, operand_start, operand_length);
+    let exact_binding: i64 = source_find_binding(source, tokens, starts, lengths, operand_start, operand_length);
     if (exact_binding >= 0) { return exact_binding; }
     let operand_end: i64 = checked_add(operand_start, operand_length);
     var candidate_start: i64 = -1;
@@ -153,7 +153,7 @@ fn source_control_direct_drop_binding(
             if (token_end_value <= operand_end) {
                 if (token_kind(token) == token_identifier_kind()) {
                     let resolved: i64 = source_find_binding(
-                        source, starts, lengths, token_start_value, token_length(token)
+                        source, tokens, starts, lengths, token_start_value, token_length(token)
                     );
                     if (resolved >= 0) {
                         candidate_start = token_start_value;
@@ -173,7 +173,7 @@ fn source_control_direct_drop_binding(
         index = checked_add(index, 1);
     }
     if (identifier_count != 1) { return -1; }
-    return source_find_binding(source, starts, lengths, candidate_start, candidate_length);
+    return source_find_binding(source, tokens, starts, lengths, candidate_start, candidate_length);
 }
 
 fn source_control_initialize_binding(
@@ -186,7 +186,7 @@ fn source_control_initialize_binding(
 ) -> i32
 requires_caps [allocate]
 {
-    let destination: i64 = source_binding_index(source, statement, operands, starts, lengths);
+    let destination: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
     if (destination < 0) { return 10; }
     let semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, destination);
     if (ownership_binding_mutable(semantic) != expected_mutable) { return 11; }
@@ -234,7 +234,7 @@ fn source_control_initialize_try_binding(
 ) -> i32
 requires_caps [allocate]
 {
-    let destination: i64 = source_binding_index(source, statement, operands, starts, lengths);
+    let destination: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
     if (destination < 0) { return 70; }
     let destination_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, destination);
     if (ownership_binding_owned(destination_semantic) == 0) { return 71; }
@@ -305,26 +305,27 @@ fn source_control_scope_exists(borrow scopes: Vec<ResolvedCapabilityScope>, stat
 }
 
 fn source_control_emit_match_boundary(
-    borrow source: Buffer, borrow token: Token, borrow arms: Vec<ResolvedMatchArm>,
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow boundary_token: Token,
+    borrow arms: Vec<ResolvedMatchArm>,
     borrow metadata: Vec<MirOwnershipBinding>, borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
     borrow_mut events: Vec<MirOwnershipEvent>
 ) -> i32
 requires_caps [allocate]
 {
-    let opening: i32 = source_control_punctuation(source, token, 123);
-    let closing: i32 = source_control_punctuation(source, token, 125);
+    let opening: i32 = source_control_punctuation(source, boundary_token, 123);
+    let closing: i32 = source_control_punctuation(source, boundary_token, 125);
     if (opening == 0) { if (closing == 0) { return 0; } }
     var index: i64 = 0;
     while (index < vec_len<ResolvedMatchArm>(arms)) {
         let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, index);
         if (opening != 0) {
-            if (source_control_token_end(token) == resolved_match_body_start(arm)) {
+            if (source_control_token_end(boundary_token) == resolved_match_body_start(arm)) {
                 vec_push<MirOwnershipEvent>(events, ownership_event_case(
                     resolved_match_variant_ordinal(arm), resolved_match_ordinal(arm)
                 ));
                 if (resolved_match_binding_start(arm) >= 0) {
                     let binding_id: i64 = source_find_binding(
-                        source, starts, lengths,
+                        source, tokens, starts, lengths,
                         resolved_match_binding_start(arm), resolved_match_binding_length(arm)
                     );
                     if (binding_id < 0) { return 51; }
@@ -338,12 +339,12 @@ requires_caps [allocate]
             }
         }
         if (closing != 0) {
-            if (token_start(token) == checked_add(
+            if (token_start(boundary_token) == checked_add(
                 resolved_match_body_start(arm), resolved_match_body_length(arm)
             )) {
                 if (resolved_match_binding_start(arm) >= 0) {
                     let binding_id: i64 = source_find_binding(
-                        source, starts, lengths,
+                        source, tokens, starts, lengths,
                         resolved_match_binding_start(arm), resolved_match_binding_length(arm)
                     );
                     if (binding_id < 0) { return 52; }
@@ -598,14 +599,14 @@ requires_caps [allocate]
                 if (status != 0) { return status; }
                 let statement_kind: i32 = statement_record_kind(statement);
                 if (statement_kind == statement_record_let_kind()) {
-                    let binding_id: i64 = source_binding_index(source, statement, operands, starts, lengths);
+                    let binding_id: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
                     if (binding_id < 0) { return source_control_missing_scope_binding_status(); }
                     vec_set<i64>(binding_scope_ends, binding_id, source_control_binding_scope_end(
                         source, tokens, statement_record_start(statement), frames, arms
                     ));
                 }
                 if (statement_kind == statement_record_var_kind()) {
-                    let binding_id: i64 = source_binding_index(source, statement, operands, starts, lengths);
+                    let binding_id: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
                     if (binding_id < 0) { return source_control_missing_scope_binding_status(); }
                     vec_set<i64>(binding_scope_ends, binding_id, source_control_binding_scope_end(
                         source, tokens, statement_record_start(statement), frames, arms
@@ -633,7 +634,7 @@ requires_caps [allocate]
             }
         }
         let boundary_status: i32 = source_control_emit_match_boundary(
-            source, token, arms, metadata, starts, lengths, events
+            source, tokens, token, arms, metadata, starts, lengths, events
         );
         if (boundary_status != 0) { return boundary_status; }
         if (source_control_punctuation(source, token, 123)) {

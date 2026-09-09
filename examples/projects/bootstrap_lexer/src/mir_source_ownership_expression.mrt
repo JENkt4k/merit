@@ -37,10 +37,11 @@ pub fn source_ownership_operand(
 }
 
 pub fn source_find_binding(
-    borrow source: Buffer, borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
+    borrow source: Buffer, borrow tokens: Vec<Token>,
+    borrow starts: Vec<i64>, borrow lengths: Vec<i64>,
     start: i64, length: i64
 ) -> i64 {
-    return hir_find_binding_id(source, starts, lengths, start, length);
+    return hir_find_scoped_binding_id(source, tokens, starts, lengths, start, length);
 }
 
 pub fn source_collect_bindings(
@@ -82,14 +83,14 @@ requires_caps [allocate]
 }
 
 pub fn source_binding_index(
-    borrow source: Buffer, borrow statement: StatementRecord,
+    borrow source: Buffer, borrow tokens: Vec<Token>, borrow statement: StatementRecord,
     borrow operands: Vec<StatementOperand>, borrow starts: Vec<i64>, borrow lengths: Vec<i64>
 ) -> i64 {
     let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
     if (operand_index < 0) { return -1; }
     let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
     return source_find_binding(
-        source, starts, lengths,
+        source, tokens, starts, lengths,
         statement_operand_start(operand), statement_operand_length(operand)
     );
 }
@@ -119,7 +120,7 @@ requires_caps [allocate]
         var binding_id: i64 = -1;
         if (ast_kind(ast) == 30) {
             binding_id = source_find_binding(
-                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+                source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
             );
             if (binding_id < 0) { binding_id = -2; }
         }

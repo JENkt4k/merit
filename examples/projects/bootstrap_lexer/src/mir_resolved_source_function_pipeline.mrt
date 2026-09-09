@@ -33,6 +33,8 @@ requires_caps [allocate]
         let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
         if (resolved_pipeline_body_kind(statement_record_kind(statement)) != 0) {
             vec_push<StatementRecord>(output, statement);
+        } else {
+            drop(statement);
         }
         index = checked_add(index, 1);
     }

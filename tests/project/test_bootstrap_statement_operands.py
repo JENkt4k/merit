@@ -329,12 +329,21 @@ CASES = [
     "if check(f(1,2),3) { return g(4,5); } }\n",
     "module effects\n"
     "fn main()->i32 { var x:i32=1; x=x+1; x==2; x<=2; x!=3; return x; }\n",
+    "module discard_after_constructor\n"
+    "struct ParseCursor { index:i64; }\n"
+    "fn main()->i32 { var cursor:ParseCursor=ParseCursor { index:0 }; "
+    "let root:i64=cursor.index; root; return 0; }\n",
 ]
 
 
 @pytest.mark.parametrize(
     "source_text", CASES,
-    ids=("all-statement-operands", "nested-delimiters", "assignment-expression-statements"),
+    ids=(
+        "all-statement-operands",
+        "nested-delimiters",
+        "assignment-expression-statements",
+        "discard-after-constructor",
+    ),
 )
 def test_typed_statement_records_match_independent_oracle_interpreter_and_native(
     tmp_path, source_text

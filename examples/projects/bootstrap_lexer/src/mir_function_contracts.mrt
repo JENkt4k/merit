@@ -109,7 +109,7 @@ fn function_contract_emit(
    }
    if(is_symbol!=0){binding_id=hir_symbol_reference_binding_id();}
    else {
-    binding_id=hir_find_binding_id(source,binding_starts,binding_lengths,ast_start(ast),ast_length(ast));
+    binding_id=hir_find_scoped_binding_id(source,tokens,binding_starts,binding_lengths,ast_start(ast),ast_length(ast));
     if(binding_id<0){if(typed!=0){if(function_contract_is_result(source,ast_start(ast),ast_length(ast))!=0){binding_id=hir_result_reference_binding_id();}}}
     if(binding_id<0){if(binding_id!=hir_result_reference_binding_id()){return 21;}}
    }

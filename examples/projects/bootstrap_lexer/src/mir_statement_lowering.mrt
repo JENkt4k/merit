@@ -8,6 +8,8 @@ import bootstrap_mir_structured_lowering;
 
 capability allocate;
 
+fn statement_discarded_expression_result() -> i64 { return -1; }
+
 pub fn statement_lowering_supports_kind(kind: i32) -> i32 {
     if (kind == 20) { return 1; }
     if (kind == 21) { return 1; }
@@ -160,8 +162,8 @@ requires_caps [allocate]
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
         var binding_id: i64 = -1;
         if (ast_kind(ast) == 30) {
-            binding_id = hir_find_binding_id(
-                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+            binding_id = hir_find_scoped_binding_id(
+                source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
             );
         }
         let hir: HirExpressionRecord = lower_resolved_hir_record(
@@ -316,6 +318,7 @@ requires_caps [allocate]
     if (count > 0) {
         result_local = vec_get<i64>(local_ids, checked_sub(count, 1));
     }
+    if (discard_result != 0) { result_local = statement_discarded_expression_result(); }
     drop(local_ids);
     drop(hir_nodes);
     drop(ast_nodes);
