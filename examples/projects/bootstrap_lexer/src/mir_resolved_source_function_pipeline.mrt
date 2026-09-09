@@ -506,6 +506,29 @@ requires_caps [allocate]
     );
     if (ownership_source_status != 0) { return checked_add(700, ownership_source_status); }
 
+    // Non-Copy binding ownership does not imply a destruction obligation.
+    // Refine scope exits with the resolved local type before state lowering.
+    var scope_event_index:i64=0;
+    while(scope_event_index<vec_len<MirOwnershipEvent>(ownership_events)){
+        let scope_event:MirOwnershipEvent=vec_get<MirOwnershipEvent>(ownership_events,scope_event_index);
+        if(scope_event.kind==ownership_event_kind_end_scope()){
+            var binding_index:i64=0;
+            while(binding_index<vec_len<MirOwnershipBinding>(ownership_metadata)){
+                let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_metadata,binding_index);
+                if(ownership_binding_id(binding)==scope_event.a){
+                    let local_type:i32=sfr_local_type_code(body_records,ownership_binding_local_id(binding));
+                    if(local_type!=function_mir_unresolved_type_code()){
+                        if(source_type_needs_drop(source,struct_catalog,local_type)==0){
+                            vec_set<MirOwnershipEvent>(ownership_events,scope_event_index,ownership_event_end_trivial_scope(ownership_binding_id(binding)));
+                        }
+                    }
+                }
+                binding_index=checked_add(binding_index,1);
+            }
+        }
+        scope_event_index=checked_add(scope_event_index,1);
+    }
+
     let ownership_status: i32 = lower_ownership_flow(
         ownership_events, ownership_metadata, allocator,
         canonical_events, ownership_records

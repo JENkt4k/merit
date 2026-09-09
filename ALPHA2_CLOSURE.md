@@ -525,16 +525,24 @@ descriptor construction and 13 seconds in one whole-source signature-table
 build, immediately followed by another signature-table build. These are local
 profiling observations, **not** acceptance or gate passes. Remaining work:
 
-- Build an invocation-local immutable callable catalog once and reuse it in
-  parameter ownership, body lowering, and call ownership analysis; these paths
-  currently reconstruct the whole-source table repeatedly.
+- The production driver now builds an invocation-local callable catalog once
+  and shares read-only references through parameter ownership, destructor/body
+  lowering, and call ownership analysis.
   Read-only `*_from_catalog` consumers now cover parameter modes, return types,
   borrowed origins, parameter ownership, body records, and source-function
   contract completion. Existing entry points delegate to the same consumers.
-  Production assembly/ownership orchestration still needs to retain and pass
-  one catalog; the extraction alone is not a throughput fix. A native/reference
+  A bounded diagnostic after wiring observed one signature-table build, 16
+  completed functions, and a terminal scope-lifecycle error (status 4905) in
+  17.46 seconds, rather than a timeout. This establishes removal of the repeated
+  catalog work, not acceptance completion. A native/reference
   query regression covers repeated catalog use, missing callees, invalid
   parameter ordinals, builtins, unit results, and borrowed origins.
+- The next exposed case was a loop-local drop-free struct in
+  `clause_find_list_close`: reference accepts its lexical scope exit, whereas
+  the replacement scope assertion rejected a live non-Copy binding. Typed
+  lowering now distinguishes a trivial scope exit from a resource scope exit;
+  the latter retains the existing explicit-cleanup requirement and strict
+  end-scope assertion. Full acceptance validation remains pending.
 - Preserve source sharing through prepared artifacts: the current MRBF v2
   decoder re-expands shared source into every encoded snapshot, so transport
   deduplication alone does not eliminate downstream source duplication.
@@ -549,6 +557,31 @@ does, rather than conflating them with non-Copy binding ownership. The targeted
 vector selection passed 12 tests, including drop-free struct get/set,
 destructor-backed nested vectors, and rejected generic/vector cases. This does
 not establish that the whole acceptance candidate is regression-free.
+
+Separate reference-oracle observation (not repaired by the scalability work):
+both reference interpreter and native C accept the following cleanup shape but
+print `0` and `7`, omitting the destructor observation for the second iteration:
+
+```merit
+stable("marker-v1") struct Marker { number:i64; }
+destructor Marker { print(self.number); }
+fn work()->i32 {
+    var index:i64=0;
+    while(index<3) {
+        let marker:Marker=Marker{number:index};
+        if(index==1){return 7;}
+        drop(marker);
+        index=checked_add(index,1);
+    }
+    return 9;
+}
+fn main()->i32 { print(work()); return 0; }
+```
+
+This needs a separate diagnosis against the documented cleanup contract; do not
+interpret matching oracle output as proof that the lifetime behavior is correct.
+The focused scope regression uses explicit cleanup before its early-return
+branch and separately requires rejection when resource cleanup is absent.
 
 ### M8 — Production cutover
 

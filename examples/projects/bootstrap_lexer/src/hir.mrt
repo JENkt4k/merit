@@ -23,6 +23,10 @@ pub fn hir_symbol(borrow node: HirExpressionRecord) -> i32 { return node.symbol;
 pub fn hir_type_code(borrow node: HirExpressionRecord) -> i32 { return node.type_code; }
 pub fn hir_numeric_policy(borrow node: HirExpressionRecord) -> i32 { return node.numeric_policy; }
 pub fn hir_binding_id(borrow node: HirExpressionRecord) -> i64 { return node.binding_id; }
+pub fn hir_is_numeric_literal(borrow node:HirExpressionRecord)->i32{if(node.kind==1){return 1;}return 0;}
+pub fn hir_is_binary(borrow node:HirExpressionRecord)->i32{if(node.kind==2){return 1;}return 0;}
+pub fn hir_is_group(borrow node:HirExpressionRecord)->i32{if(node.kind==3){return 1;}return 0;}
+pub fn hir_is_identifier(borrow node:HirExpressionRecord)->i32{if(node.kind==4){return 1;}return 0;}
 pub fn hir_is_call(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 6) { return 1; } return 0; }
 pub fn hir_is_field_access(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 7) { return 1; } return 0; }
 pub fn hir_is_pair(borrow node: HirExpressionRecord) -> i32 { if (node.kind == 8) { return 1; } return 0; }

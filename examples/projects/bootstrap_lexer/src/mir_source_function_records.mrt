@@ -2062,6 +2062,10 @@ fn sfr_append_vector_parameter(
 // non-Copy bindings, but vector get/set is permitted for elements with no drop
 // obligation. Consult recursive fields and the custom destructor, not merely
 // the type-code ownership range (the same distinction as TypeSemantics).
+pub fn source_type_needs_drop(
+    borrow source:Buffer,borrow structs:Vec<I64StructCatalogEntry>,type_code:i32
+)->i32{return sfr_type_needs_drop_depth(source,structs,type_code,0);}
+
 fn sfr_type_needs_drop_depth(
     borrow source:Buffer,borrow structs:Vec<I64StructCatalogEntry>,type_code:i32,depth:i64
 )->i32{
@@ -2851,6 +2855,75 @@ fn sfr_find_function_signature(
     return found;
 }
 
+// Each numeric expression has its own domain. Ordinary calls contribute their
+// result type, never the independent domains of their argument expressions.
+// Checked numeric intrinsics instead share a domain with their operands.
+fn sfr_resolve_numeric_expression_domain(
+    borrow source:Buffer,borrow_mut nodes:Vec<HirExpressionRecord>,root_index:i64,
+    expected_type:i32,allocator:Allocator
+)->i64 requires_caps [allocate] {
+    let root:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,root_index);
+    if(hir_is_struct_constructor(root)!=0){return 0;}
+    if(hir_is_call(root)!=0){
+        let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,hir_left(root));
+        if(sfr_checked_numeric_symbol(source,callee)==0){
+            if(function_mir_type_is_numeric(hir_type_code(root))==0){return 0;}
+        }
+    }
+    var domain:i32=function_mir_unresolved_type_code();
+    if(function_mir_type_is_declared_numeric(expected_type)!=0){domain=expected_type;}
+    var members:Vec<i64>=vec_new<i64>(allocator,8);
+    vec_push<i64>(members,root_index);
+    var index:i64=0;
+    while(index<vec_len<i64>(members)){
+        let node:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,vec_get<i64>(members,index));
+        var authoritative:i32=0;
+        if(hir_is_identifier(node)!=0){authoritative=1;}
+        if(hir_is_field_access(node)!=0){authoritative=1;}
+        if(hir_is_binary(node)!=0){
+            vec_push<i64>(members,hir_left(node));vec_push<i64>(members,hir_right(node));
+        }
+        if(hir_is_pair(node)!=0){
+            vec_push<i64>(members,hir_left(node));vec_push<i64>(members,hir_right(node));
+        }
+        if(hir_is_group(node)!=0){vec_push<i64>(members,hir_left(node));}
+        if(hir_is_call(node)!=0){
+            let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,hir_left(node));
+            if(sfr_checked_numeric_symbol(source,callee)!=0){
+                if(hir_right(node)>=0){vec_push<i64>(members,hir_right(node));}
+            }else{authoritative=1;}
+        }
+        if(authoritative!=0){
+            let candidate:i32=hir_type_code(node);
+            if(function_mir_type_is_numeric(candidate)!=0){
+                if(domain==function_mir_unresolved_type_code()){domain=candidate;}
+                else{if(domain!=candidate){return sfr_conflicting_numeric_domain_error();}}
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(domain==function_mir_unresolved_type_code()){
+        if(function_mir_type_is_numeric(expected_type)!=0){domain=expected_type;}
+    }
+    if(domain!=function_mir_unresolved_type_code()){
+        index=0;
+        while(index<vec_len<i64>(members)){
+            let node_index:i64=vec_get<i64>(members,index);
+            let node:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,node_index);
+            var propagate:i32=0;
+            if(hir_is_numeric_literal(node)!=0){propagate=1;}
+            if(hir_is_binary(node)!=0){propagate=1;}
+            if(hir_is_call(node)!=0){
+                let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,hir_left(node));
+                if(sfr_checked_numeric_symbol(source,callee)!=0){propagate=1;}
+            }
+            if(propagate!=0){vec_set<HirExpressionRecord>(nodes,node_index,hir_with_type(node,domain));}
+            index=checked_add(index,1);
+        }
+    }
+    drop(members);return 0;
+}
+
 fn sfr_emit_expression(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -2990,10 +3063,10 @@ requires_caps [allocate]
         ast_index = checked_add(ast_index, 1);
     }
 
-    // A bare numeric literal argument receives the callable parameter's
-    // resolved type before MIR temporaries/constants are emitted. This is
-    // deliberately contextual rather than a general implicit conversion:
-    // typed variables and non-literal expressions retain their own types.
+    // Each numeric argument receives its own callable-parameter context before
+    // MIR temporaries/constants are emitted. Typed bindings and call results
+    // retain their types; literals and checked arithmetic are resolved within
+    // that argument, never from a neighboring argument or the enclosing result.
     var call_context_index:i64=0;
     while(call_context_index<vec_len<HirExpressionRecord>(hir_nodes)){
         let call_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,call_context_index);
@@ -3052,6 +3125,10 @@ requires_caps [allocate]
                                     );
                                 }
                             }
+                            let argument_domain_status:i64=sfr_resolve_numeric_expression_domain(
+                                source,hir_nodes,vec_get<i64>(argument_nodes,argument_ordinal),expected_argument_type,allocator
+                            );
+                            if(argument_domain_status!=0){return argument_domain_status;}
                             argument_ordinal=checked_add(argument_ordinal,1);
                         }
                     }
@@ -3079,92 +3156,19 @@ requires_caps [allocate]
                     source,struct_catalog,expected_type_code,field_ordinal
                 );
                 if(field_type==function_mir_unresolved_type_code()){return sfr_unresolved_struct_type_error();}
-                var field_stack:Vec<i64>=vec_new<i64>(allocator,8);
-                vec_push<i64>(field_stack,hir_right(initializer));
-                while(vec_len<i64>(field_stack)>0){
-                    let field_node_index:i64=vec_pop<i64>(field_stack);
-                    let field_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,field_node_index);
-                    let field_kind:i32=hir_kind(field_node);
-                    var propagate_field_type:i32=0;
-                    if(field_kind==1){propagate_field_type=1;}
-                    if(field_kind==2){propagate_field_type=1;}
-                    if(hir_is_call(field_node)!=0){propagate_field_type=1;}
-                    if(propagate_field_type!=0){
-                        vec_set<HirExpressionRecord>(hir_nodes,field_node_index,hir_with_type(field_node,field_type));
-                    }
-                    if(field_kind==2){
-                        vec_push<i64>(field_stack,hir_right(field_node));vec_push<i64>(field_stack,hir_left(field_node));
-                    }
-                    if(field_kind==3){vec_push<i64>(field_stack,hir_left(field_node));}
-                    if(hir_is_call(field_node)!=0){if(hir_right(field_node)>=0){vec_push<i64>(field_stack,hir_right(field_node));}}
-                    if(field_kind==8){
-                        vec_push<i64>(field_stack,hir_right(field_node));vec_push<i64>(field_stack,hir_left(field_node));
-                    }
-                    if(field_kind==11){vec_push<i64>(field_stack,hir_right(field_node));}
-                    if(field_kind==7){vec_push<i64>(field_stack,hir_left(field_node));}
-                }
-                drop(field_stack);
+                let field_domain_status:i64=sfr_resolve_numeric_expression_domain(
+                    source,hir_nodes,hir_right(initializer),field_type,allocator
+                );
+                if(field_domain_status!=0){return field_domain_status;}
             }
             initializer_index=checked_add(initializer_index,1);
         }
     }
 
-    // A print/expression context has no nominal destination type. Infer the
-    // single declared numeric domain from resolved identifiers and propagate it
-    // to literals, arithmetic results, and numeric builtin calls. Distinct
-    // nominal domains never unify implicitly.
-    var inferred_numeric_type:i32=function_mir_unresolved_type_code();
-    var infer_expression_domain:i32=1;
-    let root_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,checked_sub(count,1));
-    if(hir_is_struct_constructor(root_hir)!=0){infer_expression_domain=0;}
-    if(hir_is_call(root_hir)!=0){
-        let root_callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(root_hir));
-        if(sfr_checked_numeric_symbol(source,root_callee)==0){
-            if(function_mir_type_is_numeric(hir_type_code(root_hir))==0){infer_expression_domain=0;}
-        }
-    }
-    // Declared decimal/bounded destinations are nominal and therefore
-    // authoritative. Primitive i64 is also the context-free expression
-    // default, so primitive domains are instead inferred from bindings/calls.
-    if(function_mir_type_is_declared_numeric(expected_type_code)!=0){
-        inferred_numeric_type=expected_type_code;
-    }
-    var inference_index:i64=0;
-    while(inference_index<vec_len<HirExpressionRecord>(hir_nodes)){
-        let inference_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,inference_index);
-        let candidate_type:i32=hir_type_code(inference_node);
-        var authoritative_candidate:i32=0;
-        if(hir_kind(inference_node)==4){authoritative_candidate=1;}
-        if(hir_is_field_access(inference_node)!=0){authoritative_candidate=1;}
-        if(infer_expression_domain!=0){if(authoritative_candidate!=0){if(function_mir_type_is_numeric(candidate_type)!=0){
-            if(inferred_numeric_type==function_mir_unresolved_type_code()){
-                inferred_numeric_type=candidate_type;
-            }else{
-                if(inferred_numeric_type!=candidate_type){
-                    return sfr_conflicting_numeric_domain_error();
-                }
-            }
-        }}}
-        inference_index=checked_add(inference_index,1);
-    }
-    if(inferred_numeric_type!=function_mir_unresolved_type_code()){
-        inference_index=0;
-        while(inference_index<vec_len<HirExpressionRecord>(hir_nodes)){
-            let inference_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,inference_index);
-            let inference_kind:i32=hir_kind(inference_node);
-            var propagate:i32=0;
-            if(inference_kind==1){propagate=1;}
-            if(inference_kind==2){propagate=1;}
-            if(hir_is_call(inference_node)!=0){
-                let inference_callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(inference_node));
-                if(sfr_checked_numeric_symbol(source,inference_callee)!=0){propagate=1;}
-            }
-            if(propagate!=0){
-                vec_set<HirExpressionRecord>(hir_nodes,inference_index,hir_with_type(inference_node,inferred_numeric_type));
-            }
-            inference_index=checked_add(inference_index,1);
-        }
-    }
+    let domain_status:i64=sfr_resolve_numeric_expression_domain(
+        source,hir_nodes,checked_sub(count,1),expected_type_code,allocator
+    );
+    if(domain_status!=0){return domain_status;}
 
     var canonical_ids: Vec<i64> = vec_new<i64>(allocator, count);
     var local_ids: Vec<i64> = vec_new<i64>(allocator, count);
