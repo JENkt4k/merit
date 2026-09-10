@@ -147,10 +147,7 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
     try:
         completed = subprocess.run(
             [str(executable)],
-            input=unit.parser_source,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
+            input=unit.parser_source.encode("utf-8"),
             capture_output=True,
             env=_driver_environment(unit),
             timeout=DRIVER_TIMEOUT_SECONDS,
@@ -163,9 +160,16 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
         ) from exc
     except OSError as exc:
         raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
+    try:
+        stdout = completed.stdout.decode("utf-8")
+        stderr = completed.stderr.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReplacementProjectError(
+            f"replacement driver emitted non-UTF-8 output for module {unit.module!r}"
+        ) from exc
     if completed.returncode != 0:
-        stderr = completed.stderr.strip()
-        stdout = completed.stdout.strip()
+        stderr = stderr.strip()
+        stdout = stdout.strip()
         status = _driver_status(stderr)
         streams = []
         if stderr:
@@ -180,7 +184,7 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tupl
             f"{completed.returncode}: {'; '.join(streams)}; {diagnostic}"
         )
     try:
-        values = tuple(int(line.strip()) for line in completed.stdout.splitlines() if line.strip())
+        values = tuple(int(line.strip()) for line in stdout.splitlines() if line.strip())
     except ValueError as exc:
         raise ReplacementProjectError(
             f"replacement driver emitted non-integer bundle data for module {unit.module!r}"
