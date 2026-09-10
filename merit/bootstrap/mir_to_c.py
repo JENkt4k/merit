@@ -82,7 +82,10 @@ def _vector_runtime_name(type_: MirType, operation: str) -> str:
 
 
 def _vector_call_operation(symbol: str) -> str | None:
-    match = re.fullmatch(r"vec_(new|push|len|get|set|replace|pop|drop|transfer|allocator)__.+", symbol)
+    match = re.fullmatch(
+        r"vec_(new|push|len|get|set|replace|pop|drop|transfer|allocator)(?:__.+|<.+>)",
+        symbol,
+    )
     return None if match is None else match.group(1)
 
 

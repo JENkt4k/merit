@@ -545,7 +545,7 @@ requires_caps [allocate]
         if (target_binding < 0) { return 36; }
         let target_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, target_binding);
         if (ownership_binding_mutable(target_semantic) == 0) { return 37; }
-        if (ownership_binding_owned(target_semantic) != 0) { if(target_is_field==0){return 38;} }
+        if (ownership_binding_needs_drop(target_semantic) != 0) { if(target_is_field==0){return 38;} }
         let value_operand: StatementOperand = vec_get<StatementOperand>(operands, value_index);
         let value_local: i64 = source_expression(callable_signatures,callable_parameters,
             source, tokens, starts, lengths,

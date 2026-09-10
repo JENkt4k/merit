@@ -2966,6 +2966,36 @@ fn sfr_resolve_numeric_expression_domain(
     drop(members);return 0;
 }
 
+fn sfr_enclosing_struct_initializer_type(
+    borrow nodes:Vec<HirExpressionRecord>,initializer_index:i64,fallback_type:i32
+)->i32{
+    let initializer:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,initializer_index);
+    let initializer_end:i64=checked_add(hir_start(initializer),hir_length(initializer));
+    var selected_type:i32=function_mir_unresolved_type_code();
+    var selected_length:i64=-1;
+    if(fallback_type>=function_mir_i64_struct_type_code(0)){selected_type=fallback_type;}
+    var candidate_index:i64=0;
+    while(candidate_index<vec_len<HirExpressionRecord>(nodes)){
+        let candidate:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,candidate_index);
+        if(hir_is_struct_constructor(candidate)!=0){
+            let candidate_end:i64=checked_add(hir_start(candidate),hir_length(candidate));
+            if(hir_start(candidate)<=hir_start(initializer)){
+                if(initializer_end<=candidate_end){
+                    if(selected_length<0){
+                        selected_type=hir_type_code(candidate);selected_length=hir_length(candidate);
+                    }else{
+                        if(hir_length(candidate)<selected_length){
+                            selected_type=hir_type_code(candidate);selected_length=hir_length(candidate);
+                        }
+                    }
+                }
+            }
+        }
+        candidate_index=checked_add(candidate_index,1);
+    }
+    return selected_type;
+}
+
 fn sfr_emit_expression(
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
@@ -3184,18 +3214,21 @@ requires_caps [allocate]
     // Struct initializer expressions inherit their canonical field types. Walk
     // each initializer subtree independently so heterogeneous aggregate fields
     // never collapse into one numeric domain.
-    if(expected_type_code>=function_mir_i64_struct_type_code(0)){
-        var initializer_index:i64=0;
-        while(initializer_index<vec_len<HirExpressionRecord>(hir_nodes)){
-            let initializer:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,initializer_index);
-            if(hir_kind(initializer)==11){
+    var initializer_index:i64=0;
+    while(initializer_index<vec_len<HirExpressionRecord>(hir_nodes)){
+        let initializer:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,initializer_index);
+        if(hir_kind(initializer)==11){
+            let initializer_struct_type:i32=sfr_enclosing_struct_initializer_type(
+                hir_nodes,initializer_index,expected_type_code
+            );
+            if(initializer_struct_type>=function_mir_i64_struct_type_code(0)){
                 let label:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(initializer));
                 let field_ordinal:i32=sfr_i64_struct_field_ordinal(
-                    source,struct_catalog,expected_type_code,hir_start(label),hir_length(label)
+                    source,struct_catalog,initializer_struct_type,hir_start(label),hir_length(label)
                 );
                 if(field_ordinal<0){return sfr_invalid_struct_initializer_error();}
                 let field_type:i32=sfr_i64_struct_field_type_code(
-                    source,struct_catalog,expected_type_code,field_ordinal
+                    source,struct_catalog,initializer_struct_type,field_ordinal
                 );
                 if(field_type==function_mir_unresolved_type_code()){return sfr_unresolved_struct_type_error();}
                 let field_domain_status:i64=sfr_resolve_numeric_expression_domain(
@@ -3203,8 +3236,8 @@ requires_caps [allocate]
                 );
                 if(field_domain_status!=0){return field_domain_status;}
             }
-            initializer_index=checked_add(initializer_index,1);
         }
+        initializer_index=checked_add(initializer_index,1);
     }
 
     let domain_status:i64=sfr_resolve_numeric_expression_domain(
@@ -4176,6 +4209,8 @@ pub fn lower_source_function_body_records_from_catalog(
         }
         if (event_supported != 0) {
             vec_push<StatementRecord>(event_statements, event_statement);
+        } else {
+            drop(event_statement);
         }
         event_index = checked_add(event_index, 1);
     }

@@ -107,7 +107,11 @@ Add a dedicated gate, preferably:
 python scripts/gate.py acceptance-replacement
 ```
 
-The ordinary `acceptance` gate remains the independent established acceptance/reference contract. `full` must include replacement acceptance before M7 is declared closed.
+The ordinary `acceptance` gate remains the independent established
+acceptance/reference contract. The canonical `full` gate runs the M7 test file
+once as the explicit `acceptance-replacement` reporting phase, rather than also
+running it in the generic pytest phase, and then runs the established reference
+acceptance contract.
 
 Run M7 on Ubuntu and native Windows. Keep exact test/project counts in generated gate evidence rather than freezing transient counts in status prose.
 

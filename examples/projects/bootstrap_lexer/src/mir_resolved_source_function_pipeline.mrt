@@ -492,6 +492,22 @@ requires_caps [allocate]
     );
     if (function_status != 0) { return checked_add(200, function_status); }
 
+    // Non-Copy and destruction obligation are distinct Alpha.1 facts. Refine
+    // the conservative source bindings now that canonical local types exist;
+    // move analysis continues to use `owned`, while assignment/replace uses
+    // `needs_drop`.
+    var ownership_binding_index:i64=0;
+    while(ownership_binding_index<vec_len<MirOwnershipBinding>(ownership_metadata)){
+        let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_metadata,ownership_binding_index);
+        let local_type:i32=sfr_local_type_code(body_records,ownership_binding_local_id(binding));
+        if(local_type==function_mir_unresolved_type_code()){return 201;}
+        vec_set<MirOwnershipBinding>(ownership_metadata,ownership_binding_index,ownership_binding_with_drop(
+            ownership_binding_id(binding),ownership_binding_local_id(binding),ownership_binding_owned(binding),
+            ownership_binding_mutable(binding),source_type_needs_drop(source,struct_catalog,local_type)
+        ));
+        ownership_binding_index=checked_add(ownership_binding_index,1);
+    }
+
     let resolve_scopes_status: i32 = resolve_capability_scopes(
         source, raw_scopes, capability_catalog, resolved_scopes
     );

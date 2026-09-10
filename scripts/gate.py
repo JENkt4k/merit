@@ -47,6 +47,7 @@ SUBSYSTEM_TESTS = (
 
 PARALLEL_TEST_WORKERS = 2
 PARALLEL_TEST_DISTRIBUTION = "loadfile"
+M7_ACCEPTANCE_TEST = "tests/project/test_acceptance_replacement_migration.py"
 
 
 class GateFailure(RuntimeError):
@@ -139,7 +140,12 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
             pytest(FAST_TESTS, durations=durations, fail_fast=fail_fast)
     elif name == "subsystem":
         with group("pytest: bootstrap/project subsystem"):
-            pytest(SUBSYSTEM_TESTS, durations=durations, fail_fast=fail_fast, workers=PARALLEL_TEST_WORKERS)
+            pytest(
+                [*SUBSYSTEM_TESTS, f"--ignore={M7_ACCEPTANCE_TEST}"],
+                durations=durations,
+                fail_fast=fail_fast,
+                workers=PARALLEL_TEST_WORKERS,
+            )
     elif name == "corpus":
         run_corpus()
     elif name == "acceptance":
@@ -148,7 +154,13 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         run_acceptance_replacement()
     elif name == "full":
         with group("pytest: full"):
-            pytest(["tests"], durations=durations, fail_fast=fail_fast, workers=PARALLEL_TEST_WORKERS)
+            pytest(
+                ["tests", f"--ignore={M7_ACCEPTANCE_TEST}"],
+                durations=durations,
+                fail_fast=fail_fast,
+                workers=PARALLEL_TEST_WORKERS,
+            )
+        run_acceptance_replacement()
         run_acceptance()
     else:
         raise AssertionError(name)
@@ -162,7 +174,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         "platform": sys.platform,
         "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full"} else 0,
         "corpus_convergence": name == "corpus",
-        "replacement_acceptance": name == "acceptance-replacement",
+        "replacement_acceptance": name in {"acceptance-replacement", "full"},
     }
 
 

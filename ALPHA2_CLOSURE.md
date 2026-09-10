@@ -506,12 +506,16 @@ Output should be an executable/generated coverage report where practical.
 
 The exact-decimal ledger is mandatory evidence.
 
-#### In-progress scalability checkpoint (2026-09-08)
+#### In-progress closure checkpoint (2026-09-10)
 
-M7 remains **OPEN**. The reported `bootstrap_lexer` acceptance run exceeded the
-900-second driver deadline (936.96 seconds including test setup). Increasing the
-deadline is not closure evidence; do not repeat that long run until bounded
-measurements support it.
+M7 remains **OPEN** pending the dedicated and cross-platform authoritative
+gates. On the current candidate, all ten canonical applications pass the
+production replacement acceptance harness. The nine smaller applications plus
+the exact inventory check passed in 20.33 seconds; `bootstrap_lexer` passed in
+970.85 seconds. The harness compares reference and replacement exit status,
+stdout/stderr, and observable files, prepares unchanged inputs twice and checks
+deterministic artifacts, uses isolated project copies, and includes the
+mandatory exact-decimal `ledger_app`.
 
 A bounded native diagnostic on the current candidate identifies repeated type
 and callable analysis, not generic expansion, as expensive work. Vector type
@@ -551,8 +555,10 @@ profiling observations, **not** acceptance or gate passes. Remaining work:
   their materialization input. This removes a potentially source-size times
   function-count artifact expansion, but bootstrap-lexer acceptance must still
   be rerun before attributing the full timeout to that expansion.
-- Revalidate all ten applications, deterministic artifacts, affected subsystem,
-  and authoritative gates before claiming M7 closure.
+- All ten applications and their deterministic artifacts have now been
+  revalidated on the current candidate. The dedicated M7 gate, affected
+  subsystem, and authoritative Ubuntu/Windows full gates remain required before
+  claiming M7 closure.
 
 Focused vector evidence also exposed a lifecycle classification regression:
 general aggregate structs were absent from the ownership-transfer classifier.

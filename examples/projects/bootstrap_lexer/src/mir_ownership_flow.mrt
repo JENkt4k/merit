@@ -5,7 +5,7 @@ capability allocate;
 
 // Pre-MIR ownership events. Match uses semantic case values/ordinals and is
 // exhaustive; structured MIR receives one defensive default/unreachable edge.
-pub struct MirOwnershipBinding { binding_id: i64; local_id: i64; owned: i32; mutable: i32; }
+pub struct MirOwnershipBinding { binding_id: i64; local_id: i64; owned: i32; mutable: i32; needs_drop: i32; }
 pub struct MirOwnershipEvent { kind: i32; a: i64; b: i64; }
 pub struct MirOwnershipRecord {
     kind: i32; instruction_id: i64; binding_id: i64; other_binding_id: i64;
@@ -21,12 +21,20 @@ struct OwnershipFrame {
 }
 
 pub fn ownership_binding(binding_id: i64, local_id: i64, owned: i32, mutable: i32) -> MirOwnershipBinding {
-    return MirOwnershipBinding { binding_id: binding_id, local_id: local_id, owned: owned, mutable: mutable };
+    return MirOwnershipBinding { binding_id: binding_id, local_id: local_id, owned: owned, mutable: mutable, needs_drop: owned };
+}
+pub fn ownership_binding_with_drop(
+    binding_id:i64,local_id:i64,owned:i32,mutable:i32,needs_drop:i32
+)->MirOwnershipBinding{
+    return MirOwnershipBinding{
+        binding_id:binding_id,local_id:local_id,owned:owned,mutable:mutable,needs_drop:needs_drop
+    };
 }
 pub fn ownership_binding_id(borrow value: MirOwnershipBinding) -> i64 { return value.binding_id; }
 pub fn ownership_binding_local_id(borrow value: MirOwnershipBinding) -> i64 { return value.local_id; }
 pub fn ownership_binding_owned(borrow value: MirOwnershipBinding) -> i32 { return value.owned; }
 pub fn ownership_binding_mutable(borrow value: MirOwnershipBinding) -> i32 { return value.mutable; }
+pub fn ownership_binding_needs_drop(borrow value:MirOwnershipBinding)->i32{return value.needs_drop;}
 
 pub fn ownership_event_place(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 1, a: id, b: 0 }; }
 pub fn ownership_event_activate(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 2, a: id, b: 0 }; }

@@ -173,6 +173,25 @@ def test_emits_print_in_instruction_order(tmp_path):
     assert run.stdout == "42\n"
 
 
+def test_emits_explicit_vector_intrinsic_specialization_spelling() -> None:
+    vector = MirType("Vec", (I64,))
+    function = MirFunction(
+        "length",
+        I64,
+        (MirLocal(0, "values", vector, ownership="borrowed"), MirLocal(1, "result", I64)),
+        (MirBlock(
+            0,
+            (MirInstruction(0, "call", result=1, operands=(0,), symbol="vec_len<i64>"),),
+            MirTerminator("return", operands=(1,)),
+        ),),
+        0,
+        parameters=(MirParameter(0, "borrowed"),),
+    )
+
+    generated = emit_c_module(scalar_module(function))
+    assert "m1 = merit_vec_len_" in generated
+
+
 def test_emits_borrowed_buffer_print_through_pointer(tmp_path):
     buffer = MirType("Buffer")
     function = MirFunction(

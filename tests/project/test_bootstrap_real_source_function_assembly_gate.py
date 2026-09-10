@@ -191,7 +191,8 @@ def test_real_source_function_reaches_unified_cfg_with_native_parity(tmp_path: P
     assert any(block.terminator.kind == "unreachable" for block in function.blocks)
     assert any(instruction.kind == "drop" for block in function.blocks for instruction in block.instructions)
     assert sum(
-        instruction.contract_kind == "postcondition"
+        instruction.kind == "contract_check"
+        and instruction.contract_kind == "postcondition"
         for block in function.blocks
         for instruction in block.instructions
     ) == 2

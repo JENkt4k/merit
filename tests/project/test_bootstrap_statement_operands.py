@@ -120,13 +120,14 @@ def _statement_kind(data: bytes, tokens, index: int) -> int:
     semicolon = _find_top_level(data, tokens, index, b";")
     if semicolon <= index:
         return 0
+    equals = _assignment_equals(data, tokens, index)
     opening_body = _find_top_level(data, tokens, index, b"{")
     if 0 <= opening_body < semicolon:
-        return 0
+        if equals < 0 or opening_body < equals:
+            return 0
     colon = _find_top_level(data, tokens, index, b":")
     if 0 <= colon < semicolon:
         return 0
-    equals = _assignment_equals(data, tokens, index)
     return 30 if 0 <= equals < semicolon else 31
 
 
@@ -191,7 +192,7 @@ def _statement_operands(data: bytes, tokens, index: int, kind: int):
         if span:
             result.append((3, *span))
         return result
-    if kind == 23:
+    if kind in (23, 24):
         open_index = index + 1
         if open_index >= len(tokens) or _text(data, tokens[open_index]) != b"(":
             return result
@@ -333,6 +334,10 @@ CASES = [
     "struct ParseCursor { index:i64; }\n"
     "fn main()->i32 { var cursor:ParseCursor=ParseCursor { index:0 }; "
     "let root:i64=cursor.index; root; return 0; }\n",
+    "module aggregate_assignment\n"
+    "struct Item { number:i32; extra:i32; }\n"
+    "fn main()->i32 { var item:Item=Item{number:0,extra:0}; "
+    "item=Item{number:1,extra:2}; return item.number; }\n",
 ]
 
 
@@ -343,6 +348,7 @@ CASES = [
         "nested-delimiters",
         "assignment-expression-statements",
         "discard-after-constructor",
+        "aggregate-assignment",
     ),
 )
 def test_typed_statement_records_match_independent_oracle_interpreter_and_native(

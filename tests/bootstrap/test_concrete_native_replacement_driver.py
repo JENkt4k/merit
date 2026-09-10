@@ -1344,10 +1344,10 @@ fn main()->i32 {
 struct Item { number:i32; extra:i32; }
 fn main()->i32 {
     var index:i32=0;
-    while(index<2){let item:Item=Item{number:index,extra:0};print(item.number);index=checked_add(index,1);}
+    while(index<2){var item:Item=Item{number:index,extra:0};item=Item{number:checked_add(item.number,1),extra:1};print(item.number);index=checked_add(index,1);}
     return 0;
 }
-''', "0\n1\n"),
+''', "1\n2\n"),
     ('''module main
 stable("marker-v1") struct Marker { number:i64; }
 destructor Marker { print(self.number); }
