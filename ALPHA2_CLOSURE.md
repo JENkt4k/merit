@@ -520,8 +520,11 @@ mandatory exact-decimal `ledger_app`.
 The canonical `acceptance-replacement` gate subsequently passed all 11 tests
 in 1023.26 seconds and emitted machine-readable evidence for 10/10 projects with
 `replacement_acceptance=PASS`. The affected bootstrap/project subsystem gate
-also passed 406 tests with one intentional skip in 1033.83 seconds. M7 remains
-open only for the canonical Ubuntu and native-Windows full-gate evidence.
+also passed 406 tests with one intentional skip in 1033.83 seconds. The
+authoritative local full gate then passed 1132 tests with one intentional skip,
+the explicit 10/10 replacement-acceptance phase, and the established 10/10
+reference acceptance phase in 2135.286 seconds. M7 remains open only for the
+canonical Ubuntu and native-Windows full-gate evidence.
 
 A bounded native diagnostic on the current candidate identifies repeated type
 and callable analysis, not generic expansion, as expensive work. Vector type
