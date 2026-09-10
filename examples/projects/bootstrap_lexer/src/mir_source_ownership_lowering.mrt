@@ -1,5 +1,6 @@
 module bootstrap_mir_source_ownership_lowering
 import bootstrap_tokens;
+import bootstrap_mir_source_function_records;
 import bootstrap_statements;
 import bootstrap_statement_semantics;
 import bootstrap_mir_match_capability_flow;
@@ -22,7 +23,27 @@ pub fn lower_source_ownership_events(
 ) -> i32
 requires_caps [allocate]
 {
-    return source_lower_legacy(
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_only_callable_catalog(source,allocator,callable_signatures,callable_parameters);
+    let status:i32=lower_source_ownership_events_from_catalog(callable_signatures,callable_parameters,source,tokens,statements,operands,metadata,allocator,events);
+    drop(callable_parameters);drop(callable_signatures);
+    return status;
+}
+
+pub fn lower_source_ownership_events_from_catalog(
+    borrow callable_signatures:Vec<SourceFunctionSignature>,borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow metadata: Vec<MirOwnershipBinding>,
+    allocator: Allocator,
+    borrow_mut events: Vec<MirOwnershipEvent>
+) -> i32
+requires_caps [allocate]
+{
+    return source_lower_legacy(callable_signatures,callable_parameters,
         source, tokens, statements, operands, metadata, allocator, events
     );
 }
@@ -41,7 +62,30 @@ pub fn lower_resolved_source_ownership_events(
 ) -> i32
 requires_caps [allocate]
 {
-    return source_lower_resolved(
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_only_callable_catalog(source,allocator,callable_signatures,callable_parameters);
+    let status:i32=lower_resolved_source_ownership_events_from_catalog(callable_signatures,callable_parameters,source,tokens,statements,operands,metadata,arms,scopes,allocator,events,effects);
+    drop(callable_parameters);drop(callable_signatures);
+    return status;
+}
+
+pub fn lower_resolved_source_ownership_events_from_catalog(
+    borrow callable_signatures:Vec<SourceFunctionSignature>,borrow callable_parameters:Vec<SourceFunctionParameter>,
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow operands: Vec<StatementOperand>,
+    borrow metadata: Vec<MirOwnershipBinding>,
+    borrow arms: Vec<ResolvedMatchArm>,
+    borrow scopes: Vec<ResolvedCapabilityScope>,
+    allocator: Allocator,
+    borrow_mut events: Vec<MirOwnershipEvent>,
+    borrow_mut effects: Vec<MirCapabilityEffect>
+) -> i32
+requires_caps [allocate]
+{
+    return source_lower_resolved(callable_signatures,callable_parameters,
         source, tokens, statements, operands, metadata,
         arms, scopes, allocator, events, effects
     );

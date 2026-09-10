@@ -35,6 +35,13 @@ PlacementRecord = tuple[int, ...]
 
 _SYMBOLS = {1: "+", 2: "-", 3: "*", 4: "/", 5: "==", 6: "!=", 7: ">=", 8: "<=", 9: ">", 10: "<"}
 _POLICIES = {1: "exact", 2: "checked"}
+_CONTRACT_BUILTIN_SLICE_LEN = 13
+_CONTRACT_BUILTIN_CALLS = {_CONTRACT_BUILTIN_SLICE_LEN: "slice_len"}
+_CONTRACT_CALL = 5
+_CONTRACT_RESULT_CAPTURE = 6
+_CONTRACT_FIELD_LOAD = 7
+_CONTRACT_OLD_SNAPSHOT = 8
+_I64_TYPE_CODE = 1
 _BODY_CONSTRUCT = 9
 _BODY_ENUM_TAG_LOAD = 10
 _BODY_ENUM_PAYLOAD_LOAD = 11
@@ -46,7 +53,17 @@ _BODY_CALL = 16
 _BODY_CALL_ARGUMENT = 17
 
 
-def _materialize_literal(text: str, type_: MirType) -> int | str:
+def _materialize_literal(
+    text: str, type_: MirType, *, enforce_bounded_domain: bool = True
+) -> bool | int | str:
+    if type_ == MirType("bool"):
+        if text in {"true", "1"}:
+            return True
+        if text in {"false", "0"}:
+            return False
+        raise NativeWholeFunctionMirError(
+            "bool constant must be true/false or encoded 0/1"
+        )
     if type_ == MirType("String"):
         try:
             value = json.loads(text)
@@ -73,7 +90,7 @@ def _materialize_literal(text: str, type_: MirType) -> int | str:
     if bounded_match is not None and len(type_.arguments) == 1:
         result = int(text)
         minimum, maximum = map(int, bounded_match.groups())
-        if not minimum <= result <= maximum:
+        if enforce_bounded_domain and not minimum <= result <= maximum:
             raise NativeWholeFunctionMirError("bounded constant is outside its resolved domain")
         return result
     return int(text)
@@ -268,13 +285,26 @@ def lower_native_whole_function_assembly(
                     raise NativeWholeFunctionMirError(f"body print {index} has invalid operands")
                 body_instructions[rid] = MirInstruction(rid, "print", operands=(left,), span=instruction_span)
             elif kind == _BODY_CONSTRUCT:
-                if result < 0 or left < 0 or symbol_code < 0 or type_code < _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE:
+                if result < 0 or symbol_code < 0:
                     raise NativeWholeFunctionMirError(f"body enum construct {index} is invalid")
-                body_instructions[rid] = MirInstruction(
-                    rid, "construct", result=result, operands=(left,), symbol=f"variant_{symbol_code}",
-                    span=instruction_span,
-                    ownership="owned" if type_code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE else "value",
-                )
+                if type_code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE and left == -1:
+                    body_instructions[rid] = MirInstruction(
+                        rid, "construct", result=result, operands=(), symbol=f"variant_{symbol_code}",
+                        span=instruction_span, ownership="value",
+                    )
+                elif type_code == _I64_TYPE_CODE and left == -1:
+                    body_instructions[rid] = MirInstruction(
+                        rid, "const", result=result, value=symbol_code,
+                        span=instruction_span, ownership="value",
+                    )
+                else:
+                    if left < 0 or type_code < _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE:
+                        raise NativeWholeFunctionMirError(f"body enum construct {index} is invalid")
+                    body_instructions[rid] = MirInstruction(
+                        rid, "construct", result=result, operands=(left,), symbol=f"variant_{symbol_code}",
+                        span=instruction_span,
+                        ownership="owned" if type_code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE else "value",
+                    )
             elif kind == _BODY_ENUM_TAG_LOAD:
                 if result < 0 or left < 0:
                     raise NativeWholeFunctionMirError(f"body enum tag load {index} is invalid")
@@ -345,7 +375,7 @@ def lower_native_whole_function_assembly(
         raise NativeWholeFunctionMirError("function parameter metadata is noncanonical")
 
     for local_id, source_local_id, local_type, contract_kind, clause_ordinal in contract_local_rows:
-        if local_id in locals_by_id or local_id < 0 or source_local_id < 0 or contract_kind not in {1, 2} or clause_ordinal < 0:
+        if local_id in locals_by_id or local_id < 0 or source_local_id < 0 or contract_kind not in {1, 2, 3} or clause_ordinal < 0:
             raise NativeWholeFunctionMirError("invalid assembled contract local")
         locals_by_id[local_id] = MirLocal(local_id, f"_contract_{contract_kind}_{source_local_id}", resolved_type(local_type, "contract local"))
 
@@ -382,19 +412,21 @@ def lower_native_whole_function_assembly(
             except KeyError as error:
                 raise NativeWholeFunctionMirError(f"unknown contract instruction {source_id}") from error
             kind, _, row_contract_kind, start, length, _, _, _, _, symbol_code, type_code, policy_code = row
-            if row_contract_kind != contract_kind or contract_kind not in {1, 2}:
+            if row_contract_kind != contract_kind or contract_kind not in {1, 2, 3}:
                 raise NativeWholeFunctionMirError("contract provenance disagrees with contract record")
             instruction_span = span(start, length, "contract instruction")
             contract_name = "precondition" if contract_kind == 1 else "postcondition"
             if kind == 2:
                 literal = source_text(instruction_span, "contract constant")
-                if type_code == 2:
-                    value: object = literal == "true"
-                    if literal not in {"true", "false"}:
-                        raise NativeWholeFunctionMirError("bool contract constant must be true/false")
-                else:
-                    value = int(literal)
-                global_instructions[global_id] = MirInstruction(global_id, "const", result=result, value=value, span=instruction_span, ownership="value")
+                value = _materialize_literal(
+                    literal,
+                    resolved_type(type_code, "contract constant"),
+                    enforce_bounded_domain=False,
+                )
+                global_instructions[global_id] = MirInstruction(
+                    global_id, "const", result=result, value=value,
+                    span=instruction_span, ownership="value", contract_kind=contract_name,
+                )
             elif kind == 3:
                 try:
                     op = _SYMBOLS[symbol_code]
@@ -404,6 +436,36 @@ def lower_native_whole_function_assembly(
                 global_instructions[global_id] = MirInstruction(global_id, "binary", result=result, operands=(left, right), symbol=op, span=instruction_span, numeric_policy=numeric_policy)
             elif kind == 4:
                 global_instructions[global_id] = MirInstruction(global_id, "contract_check", operands=(left,), span=instruction_span, contract_kind=contract_name)
+            elif kind == _CONTRACT_CALL:
+                try:
+                    symbol = _CONTRACT_BUILTIN_CALLS[symbol_code]
+                except KeyError as error:
+                    raise NativeWholeFunctionMirError("contract call has unsupported builtin symbol") from error
+                if result < 0 or left < 0 or right != -1:
+                    raise NativeWholeFunctionMirError("contract call has invalid result or arguments")
+                global_instructions[global_id] = MirInstruction(
+                    global_id, "call", result=result, operands=(left,), symbol=symbol,
+                    span=instruction_span,
+                )
+            elif kind == _CONTRACT_RESULT_CAPTURE:
+                if result < 0 or left < 0 or right != -1 or contract_kind != 2:
+                    raise NativeWholeFunctionMirError("contract result capture has invalid placement")
+                global_instructions[global_id] = MirInstruction(
+                    global_id, "copy", result=result, operands=(left,), span=instruction_span,
+                )
+            elif kind == _CONTRACT_FIELD_LOAD:
+                if result < 0 or left < 0 or right != -1 or symbol_code < 0:
+                    raise NativeWholeFunctionMirError("contract field load has invalid operands")
+                global_instructions[global_id] = MirInstruction(
+                    global_id, "load_field", result=result, operands=(left,),
+                    symbol=f"field_{symbol_code}", span=instruction_span,
+                )
+            elif kind == _CONTRACT_OLD_SNAPSHOT:
+                if result < 0 or left < 0 or right != -1 or contract_kind != 3:
+                    raise NativeWholeFunctionMirError("old snapshot has invalid entry placement")
+                global_instructions[global_id] = MirInstruction(
+                    global_id, "copy", result=result, operands=(left,), span=instruction_span,
+                )
             else:
                 raise NativeWholeFunctionMirError(f"unsupported contract instruction kind {kind}")
         else:

@@ -27,6 +27,8 @@ requires_caps [allocate]
                 let token: Token = vec_get<Token>(tokens, index);
                 if (expression_span_contains(token, start, end)) {
                     vec_push<Token>(selected, token);
+                } else {
+                    drop(token);
                 }
                 index = checked_add(index, 1);
             }

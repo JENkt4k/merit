@@ -173,6 +173,25 @@ def test_emits_print_in_instruction_order(tmp_path):
     assert run.stdout == "42\n"
 
 
+def test_emits_explicit_vector_intrinsic_specialization_spelling() -> None:
+    vector = MirType("Vec", (I64,))
+    function = MirFunction(
+        "length",
+        I64,
+        (MirLocal(0, "values", vector, ownership="borrowed"), MirLocal(1, "result", I64)),
+        (MirBlock(
+            0,
+            (MirInstruction(0, "call", result=1, operands=(0,), symbol="vec_len<i64>"),),
+            MirTerminator("return", operands=(1,)),
+        ),),
+        0,
+        parameters=(MirParameter(0, "borrowed"),),
+    )
+
+    generated = emit_c_module(scalar_module(function))
+    assert "m1 = merit_vec_len_" in generated
+
+
 def test_emits_borrowed_buffer_print_through_pointer(tmp_path):
     buffer = MirType("Buffer")
     function = MirFunction(
@@ -207,6 +226,58 @@ def test_emits_borrowed_buffer_print_through_pointer(tmp_path):
     assert run.stdout == "abc\n"
 
 
+def test_emits_bootstrap_buffer_append_with_borrow_modes_and_bounds(tmp_path):
+    buffer = MirType("Buffer")
+    function = MirFunction(
+        "append_range",
+        UNIT,
+        (
+            MirLocal(0, "destination", buffer, mutable=True, ownership="mutable_borrow"),
+            MirLocal(1, "source", buffer, ownership="borrowed"),
+            MirLocal(2, "start", I64),
+            MirLocal(3, "length", I64),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(
+                        0,
+                        "call",
+                        operands=(0, 1, 2, 3),
+                        symbol="bootstrap_buffer_append",
+                    ),
+                ),
+                MirTerminator("return"),
+            ),
+        ),
+        0,
+        parameters=(
+            MirParameter(0, "mutable_borrow"),
+            MirParameter(1, "borrowed"),
+            MirParameter(2),
+            MirParameter(3),
+        ),
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "merit_bootstrap_buffer_append(m0, m1, m2, m3);" in generated
+    run = compile_and_run(
+        tmp_path,
+        module,
+        """int main(void) {
+            merit_Allocator allocator = merit_system_allocator();
+            merit_Buffer destination = merit_buffer_new(allocator, 0);
+            merit_Buffer source = merit_buffer_new(allocator, 1);
+            merit_buffer_push(&source, 65);
+            append_range(&destination, &source, 0, 1);
+            int result = destination.len == 1 && destination.data[0] == 65 ? 0 : 1;
+            merit_buffer_drop(&source); merit_buffer_drop(&destination); return result;
+        }""",
+    )
+    assert run.returncode == 0
+
+
 def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     choice = MirType("enum_copy_payload_0")
     function = MirFunction(
@@ -238,6 +309,45 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     assert "m2 = m1.tag;" in generated
     assert "m3 = m1.payload;" in generated
     run = compile_and_run(tmp_path, module, "int main(void) { return payload() == 7 ? 0 : 1; }")
+    assert run.returncode == 0
+
+
+def test_emits_typed_copy_payload_union_and_switches_on_tag(tmp_path):
+    choice = MirType("enum_copy_payload_0", (I64, BOOL))
+    function = MirFunction(
+        "typed_payload",
+        BOOL,
+        (
+            MirLocal(0, "flag", BOOL),
+            MirLocal(1, "choice", choice),
+            MirLocal(2, "loaded", BOOL),
+        ),
+        (
+            MirBlock(
+                0,
+                (
+                    MirInstruction(0, "const", result=0, value=True),
+                    MirInstruction(1, "construct", result=1, operands=(0,), symbol="variant_1"),
+                ),
+                MirTerminator("switch", operands=(1,), targets=(1, 2), cases=(1,)),
+            ),
+            MirBlock(
+                1,
+                (
+                    MirInstruction(2, "load_field", result=2, operands=(1,), symbol="payload_1"),
+                ),
+                MirTerminator("return", operands=(2,)),
+            ),
+            MirBlock(2, (), MirTerminator("return", operands=(0,))),
+        ),
+        0,
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "union { int64_t variant_0; bool variant_1; } payload" in generated
+    assert "switch (m1.tag)" in generated
+    assert "m2 = m1.payload.variant_1;" in generated
+    run = compile_and_run(tmp_path, module, "int main(void) { return typed_payload() ? 0 : 1; }")
     assert run.returncode == 0
 
 

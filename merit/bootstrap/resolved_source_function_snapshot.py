@@ -28,6 +28,7 @@ _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
 _TYPE_DESCRIPTOR_VECTOR = 4
+_TYPE_DESCRIPTOR_COPY_PAYLOAD_ENUM = 5
 _OWNED_FIELD_STRUCT_TYPE_BASE = 1_000_000
 _OWNED_PAYLOAD_ENUM_TYPE_BASE = 1_100_000
 _AGGREGATE_STRUCT_TYPE_BASE = 1_200_000
@@ -220,6 +221,7 @@ def _descriptor_type_names(
         if code <= 0 or identity < 0 or child_code <= 0 or kind not in {
             _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT,
             _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM,
+            _TYPE_DESCRIPTOR_COPY_PAYLOAD_ENUM,
             *({_TYPE_DESCRIPTOR_AGGREGATE_STRUCT} if version >= 3 else set()),
             *({_TYPE_DESCRIPTOR_VECTOR} if version >= 7 else set()),
         }:
@@ -283,12 +285,16 @@ def _descriptor_type_names(
                         )
                     members.append(member_name)
             continue
-        if kind == _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM and version >= 5:
+        if kind in {_TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM, _TYPE_DESCRIPTOR_COPY_PAYLOAD_ENUM} and version >= 5:
             if destructor_policy != 0:
                 raise ResolvedSourceFunctionSnapshotError(
                     f"type descriptor {index} has unsupported destructor policy"
                 )
-            expected_code = _OWNED_PAYLOAD_ENUM_TYPE_BASE + identity
+            expected_code = (
+                _OWNED_PAYLOAD_ENUM_TYPE_BASE + identity
+                if kind == _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM
+                else _COPY_PAYLOAD_ENUM_TYPE_BASE + identity
+            )
             if code != expected_code:
                 raise ResolvedSourceFunctionSnapshotError(
                     f"type descriptor {index} has noncanonical type code"
@@ -368,7 +374,7 @@ def _descriptor_type_names(
     def resolve(code: int, active: frozenset[int]) -> MirType:
         if code in resolved:
             return resolved[code]
-        if _COPY_PAYLOAD_ENUM_TYPE_BASE <= code < _I64_STRUCT_TYPE_BASE:
+        if _COPY_PAYLOAD_ENUM_TYPE_BASE <= code < _I64_STRUCT_TYPE_BASE and code not in enum_fields:
             return MirType(f"enum_copy_payload_{code - _COPY_PAYLOAD_ENUM_TYPE_BASE}")
         if _I64_STRUCT_TYPE_BASE <= code < _DESTRUCTOR_I64_STRUCT_TYPE_BASE:
             return MirType(f"struct_i64_{code - _I64_STRUCT_TYPE_BASE}")
@@ -380,11 +386,15 @@ def _descriptor_type_names(
         if enum_variants is not None:
             if code in active:
                 raise ResolvedSourceFunctionSnapshotError("type descriptor graph is cyclic")
-            identity = code - _OWNED_PAYLOAD_ENUM_TYPE_BASE
+            owned_payload = code >= _OWNED_PAYLOAD_ENUM_TYPE_BASE
+            identity = code - (
+                _OWNED_PAYLOAD_ENUM_TYPE_BASE if owned_payload else _COPY_PAYLOAD_ENUM_TYPE_BASE
+            )
             children = tuple(resolve(child, active | {code}) for child in enum_variants)
             if not children:
                 raise ResolvedSourceFunctionSnapshotError("enum type descriptor has no variants")
-            result = MirType(f"enum_owned_payload_{identity}", children)
+            prefix = "enum_owned_payload" if owned_payload else "enum_copy_payload"
+            result = MirType(f"{prefix}_{identity}", children)
             resolved[code] = result
             return result
         if aggregate is not None:

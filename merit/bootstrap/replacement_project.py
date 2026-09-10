@@ -9,7 +9,8 @@ multi-function/module snapshot production is completed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -24,6 +25,11 @@ from merit.bootstrap.resolved_source_function_snapshot import (
     decode_resolved_source_function_snapshot,
     materialize_resolved_source_function_snapshot,
 )
+
+
+_OWNED_PAYLOAD_ENUM_DESCRIPTOR_KIND = 2
+_UNIT_TYPE_CODE = 14
+_UNIT_ENUM_STORAGE = re.compile(r"\bvoid (variant_\d+);")
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,41 @@ class ReplacementFunctionInput:
         )
 
 
+def _canonicalize_payloadless_enum_descriptors(snapshot):
+    """Map the native no-payload sentinel to canonical MIR unit.
+
+    Native enum catalogs use unresolved type code 0 to represent a variant with
+    no payload.  Once that catalog has been emitted as an owned-enum type
+    descriptor the absence is semantic, not unresolved: canonical MIR models
+    the variant payload as unit.  Keep this normalization at the snapshot
+    transport boundary so Python does not re-interpret source declarations.
+    """
+
+    descriptors = tuple(
+        row[:3] + (_UNIT_TYPE_CODE,) + row[4:]
+        if len(row) >= 4
+        and row[1] == _OWNED_PAYLOAD_ENUM_DESCRIPTOR_KIND
+        and row[3] == 0
+        else row
+        for row in snapshot.type_descriptors
+    )
+    if descriptors == snapshot.type_descriptors:
+        return snapshot
+    return replace(snapshot, type_descriptors=descriptors)
+
+
+def _represent_unit_enum_storage(c_source: str) -> str:
+    """Give semantic-unit enum variants inert, representable C storage.
+
+    Canonical MIR keeps payloadless enum variants typed as ``unit``.  ``unit``
+    normally emits as C ``void``, but C forbids ``void`` union fields.  Preserve
+    the semantic type while assigning one byte of inert representation at the
+    C storage boundary.
+    """
+
+    return _UNIT_ENUM_STORAGE.sub(r"uint8_t \1;", c_source)
+
+
 def build_replacement_project_artifact(
     functions: Iterable[ReplacementFunctionInput],
     *,
@@ -77,6 +118,7 @@ def build_replacement_project_artifact(
     destructors_by_target: dict[MirType, MirDestructor] = {}
     for function_input in resolved:
         snapshot = decode_resolved_source_function_snapshot(function_input.snapshot_values)
+        snapshot = _canonicalize_payloadless_enum_descriptors(snapshot)
         partial = materialize_resolved_source_function_snapshot(
             source=function_input.source,
             module_name=function_input.module_name,
@@ -106,7 +148,8 @@ def build_replacement_project_artifact(
         functions=tuple(canonical_functions),
         destructors=tuple(canonical_destructors),
     )
-    return ReplacementBuildArtifact(module=module, c_source=emit_c_module(module))
+    c_source = _represent_unit_enum_storage(emit_c_module(module))
+    return ReplacementBuildArtifact(module=module, c_source=c_source)
 
 
 def compile_replacement_project(

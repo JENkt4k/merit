@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Mapping
 
 from merit.bootstrap.mir_contract import MirType
+from merit.bootstrap.resolved_source_function_snapshot import (
+    decode_resolved_source_function_snapshot,
+)
 from merit.bootstrap.replacement_build import (
     ReplacementBuildError,
     compile_replacement_artifact,
@@ -26,7 +29,7 @@ from merit.project.replacement_source import canonical_replacement_project_sourc
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
-REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v1"
+REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v2"
 
 
 class ReplacementProjectError(ReplacementBuildError):
@@ -127,6 +130,7 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
 
     unit_by_module = {unit.module: unit for unit in project.units}
     canonical_project_source: str | None = None
+    effective_sources: dict[str, str] = {}
     resolved: list[ReplacementFunctionInput] = []
     for index, item in enumerate(functions):
         if not isinstance(item, dict):
@@ -191,9 +195,24 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
                     f"replacement artifacts for module {module_name!r} are stale after source changes; "
                     "run prepare-replacement again"
                 )
+        materialization_source = source
+        if payload.get("producer_protocol") == REPLACEMENT_BUNDLE_PROTOCOL:
+            try:
+                decoded_snapshot = decode_resolved_source_function_snapshot(snapshot_values)
+                if decoded_snapshot.effective_source_bytes:
+                    materialization_source = bytes(
+                        decoded_snapshot.effective_source_bytes
+                    ).decode("utf-8")
+                    effective_sources[module_name] = materialization_source
+                elif module_name in effective_sources:
+                    materialization_source = effective_sources[module_name]
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ReplacementProjectError(
+                    f"replacement function {index} has invalid effective source"
+                ) from exc
         resolved.append(
             ReplacementFunctionInput.from_values(
-                source=source,
+                source=materialization_source,
                 module_name=module_name,
                 snapshot_values=snapshot_values,
                 capability_names=_capability_names(item.get("capability_names")),

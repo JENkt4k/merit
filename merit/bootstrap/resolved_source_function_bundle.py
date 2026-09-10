@@ -6,9 +6,10 @@ single Merit source unit.  Framing is intentionally simple and deterministic:
     magic, version, function_count,
     snapshot_value_count, <snapshot values>, ...
 
-Each nested snapshot retains its own versioned resolved-source snapshot contract and
-is decoded by the existing strict decoder.  This layer performs no source or
-semantic reconstruction.
+Bundle v2 carries the canonical effective source in the first nested snapshot;
+later snapshots may encode an empty final source section and inherit that byte
+sequence. Each materialized nested snapshot still retains the complete existing
+resolved-source snapshot contract.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2
+_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, BUNDLE_VERSION})
 
 
 class ResolvedSourceFunctionBundleError(ValueError):
@@ -43,18 +45,30 @@ def encode_resolved_source_function_bundle(
     encoded = tuple(tuple(int(value) for value in snapshot) for snapshot in snapshots)
     if not encoded:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is empty")
-    values: list[int] = [BUNDLE_MAGIC, BUNDLE_VERSION, len(encoded)]
+    decoded_snapshots: list[ResolvedSourceFunctionSnapshot] = []
     for index, snapshot in enumerate(encoded):
         if not snapshot:
             raise ResolvedSourceFunctionBundleError(f"bundle snapshot {index} is empty")
         try:
-            decode_resolved_source_function_snapshot(snapshot)
+            decoded_snapshots.append(decode_resolved_source_function_snapshot(snapshot))
         except ValueError as exc:
             raise ResolvedSourceFunctionBundleError(
                 f"bundle snapshot {index} is invalid: {exc}"
             ) from exc
-        values.append(len(snapshot))
-        values.extend(snapshot)
+
+    shared_source = decoded_snapshots[0].effective_source_bytes
+    values: list[int] = [BUNDLE_MAGIC, BUNDLE_VERSION, len(encoded)]
+    for index, snapshot in enumerate(encoded):
+        source = decoded_snapshots[index].effective_source_bytes
+        if source != shared_source:
+            raise ResolvedSourceFunctionBundleError(
+                f"bundle snapshot {index} has a different effective source"
+            )
+        encoded_snapshot = snapshot
+        if index > 0 and shared_source:
+            encoded_snapshot = snapshot[: -len(shared_source) - 1] + (0,)
+        values.append(len(encoded_snapshot))
+        values.extend(encoded_snapshot)
     return tuple(values)
 
 
@@ -64,7 +78,7 @@ def decode_resolved_source_function_bundle(
     data = tuple(int(value) for value in values)
     if len(data) < 3 or data[0] != BUNDLE_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
-    if data[1] != BUNDLE_VERSION:
+    if data[1] not in _SUPPORTED_BUNDLE_VERSIONS:
         raise ResolvedSourceFunctionBundleError(
             f"unsupported resolved source function bundle version {data[1]}"
         )
@@ -72,9 +86,11 @@ def decode_resolved_source_function_bundle(
     if count <= 0:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
 
+    bundle_version = data[1]
     position = 3
     decoded: list[ResolvedSourceFunctionSnapshot] = []
     encoded: list[tuple[int, ...]] = []
+    shared_source: tuple[int, ...] = ()
     for index in range(count):
         if position >= len(data):
             raise ResolvedSourceFunctionBundleError(
@@ -92,13 +108,29 @@ def decode_resolved_source_function_bundle(
                 f"resolved source function bundle function {index} is truncated"
             )
         snapshot_values = tuple(data[position:end])
+        encoded_snapshot_values = snapshot_values
         try:
             snapshot = decode_resolved_source_function_snapshot(snapshot_values)
         except ValueError as exc:
             raise ResolvedSourceFunctionBundleError(
                 f"resolved source function bundle function {index} is invalid: {exc}"
             ) from exc
-        encoded.append(snapshot_values)
+        if bundle_version >= 2:
+            source = snapshot.effective_source_bytes
+            if index == 0:
+                shared_source = source
+            elif not source and shared_source:
+                snapshot_values = snapshot_values[:-1] + (len(shared_source), *shared_source)
+                snapshot = decode_resolved_source_function_snapshot(snapshot_values)
+            elif source != shared_source:
+                raise ResolvedSourceFunctionBundleError(
+                    f"resolved source function bundle function {index} has a different effective source"
+                )
+        # Preserve the compact transport representation.  ``functions`` holds
+        # the hydrated snapshots used by in-memory consumers, while prepared
+        # artifacts can continue to share the canonical source supplied by the
+        # project unit instead of duplicating it into every snapshot file.
+        encoded.append(encoded_snapshot_values)
         decoded.append(snapshot)
         position = end
 

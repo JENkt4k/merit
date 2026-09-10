@@ -11,6 +11,7 @@ import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_source_function_records;
+import bootstrap_mir_project_payload_types;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_structured_lowering;
 import bootstrap_mir_cfg;
@@ -28,6 +29,9 @@ capability allocate;
 // entrypoint rather than adding bootstrap helper functions. The bootstrap
 // project is itself fixture input for whole-function compiler tests, so new
 // top-level helper functions change its semantic function inventory.
+// Existing driver -> assembly -> parameter-metadata -> callable stage encoding.
+fn native_driver_callable_catalog_failure_status(status:i32)->i32{return checked_add(2090,status);}
+
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
@@ -110,6 +114,17 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         // Second pass: materialize and lower each complete function token view.
         // Token source offsets are retained, so all emitted spans remain anchored
         // to the original source buffer.
+        var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
+        var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
+        var type_descriptors: Vec<MirTypeDescriptor> = vec_new<MirTypeDescriptor>(allocator, 8);
+        var numeric_type_descriptors: Vec<MirNumericTypeDescriptor> = vec_new<MirNumericTypeDescriptor>(allocator, 8);
+        var destructor_descriptors: Vec<MirDestructorDescriptor> = vec_new<MirDestructorDescriptor>(allocator, 4);
+        var destructor_body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 64);
+        var destructor_cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 32);
+        var destructor_placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
+        var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
+        var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+        var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
         scan = 0;
         var emitted_functions: i64 = 0;
         while (scan < vec_len<Token>(tokens)) {
@@ -181,15 +196,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 let statements: Vec<StatementRecord> = parse_statement_records(source, function_tokens, allocator);
                 let operands: Vec<StatementOperand> = parse_statement_operands(source, function_tokens, allocator);
 
-                var variants: Vec<EnumVariantCatalogEntry> = vec_new<EnumVariantCatalogEntry>(allocator, 8);
-                var structs: Vec<I64StructCatalogEntry> = vec_new<I64StructCatalogEntry>(allocator, 4);
-                var type_descriptors: Vec<MirTypeDescriptor> = vec_new<MirTypeDescriptor>(allocator, 8);
-                var numeric_type_descriptors: Vec<MirNumericTypeDescriptor> = vec_new<MirNumericTypeDescriptor>(allocator, 8);
-                var destructor_descriptors: Vec<MirDestructorDescriptor> = vec_new<MirDestructorDescriptor>(allocator, 4);
-                var destructor_body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 64);
-                var destructor_cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 32);
-                var destructor_placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
-                var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
                 var ownership: Vec<MirOwnershipBinding> = vec_new<MirOwnershipBinding>(allocator, 16);
                 var body: Vec<MirFunctionRecord> = vec_new<MirFunctionRecord>(allocator, 96);
                 var metadata: Vec<MirFunctionClauseMetadata> = vec_new<MirFunctionClauseMetadata>(allocator, 8);
@@ -207,7 +213,9 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
 
                 var function_status: i32 = slice_status;
+                let resolved_match_enum_id: i64 = -1;
                 if (function_status == 0) {
+                if (emitted_functions == 0) {
                     var struct_status: i32 = derive_i64_struct_catalog(source, tokens, structs);
                     if (struct_status == 0) {
                         if (vec_len<I64StructCatalogEntry>(structs) > 0) {
@@ -248,11 +256,11 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                         );
                         if(numeric_status!=0){function_status=checked_add(985,numeric_status);}
                     }
-                    // Derive top-level payload-free enum declarations directly
-                    // from the complete source unit. Enum identity is declaration
-                    // ordinal; variant identity is deterministic source-unit
-                    // variant ordinal. Payload-bearing variants remain fail-closed
-                    // until recursive enum lifecycle metadata is represented.
+                    // Derive top-level enum declarations directly from the
+                    // complete source unit. Payload types are resolved by the
+                    // native project type resolver so generic vectors, exact
+                    // numerics, structs, and earlier enum declarations all use
+                    // the same canonical type identities as ordinary functions.
                     var enum_scan: i64 = 0;
                     var enum_depth: i64 = 0;
                     var enum_ordinal: i64 = 0;
@@ -354,21 +362,16 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                                                 );
                                                                 if (copy_payload != 0) { variant_payload_type_code = function_mir_i64_type_code(); }
                                                                 if (copy_payload == 0) {
-                                                                    variant_payload_type_code = sfr_builtin_type_code(
-                                                                        source, token_start(payload), token_length(payload)
+                                                                    variant_payload_type_code = project_payload_type_code(
+                                                                        source, tokens, variants, structs,
+                                                                        token_start(payload), token_length(payload)
                                                                     );
-                                                                    if (variant_payload_type_code == function_mir_buffer_type_code()) {
-                                                                        variant_payload_owned = 1;
+                                                                    if (variant_payload_type_code != function_mir_unresolved_type_code()) {
+                                                                        copy_payload = 1;
+                                                                        if (function_mir_type_uses_ownership_transfer(variant_payload_type_code) != 0) {
+                                                                            variant_payload_owned = 1;
+                                                                        }
                                                                     }
-                                                                    if (variant_payload_type_code == function_mir_unresolved_type_code()) {
-                                                                        variant_payload_type_code = source_i64_struct_type_code(
-                                                                            source, structs, token_start(payload), token_length(payload)
-                                                                        );
-                                                                    }
-                                                                    if (variant_payload_type_code >= function_mir_destructor_i64_struct_type_code(0)) {
-                                                                        variant_payload_owned = 1;
-                                                                    }
-                                                                    if (variant_payload_type_code != function_mir_unresolved_type_code()) { copy_payload = 1; }
                                                                 }
                                                                 if (token_kind(payload_close) != 4) { copy_payload = 0; }
                                                                 if (token_length(payload_close) != 1) { copy_payload = 0; }
@@ -484,8 +487,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                     // resolution to the resolved semantic stage. The driver owns
                     // declaration catalog derivation, but no longer guesses which
                     // enum a match belongs to merely from source-unit cardinality.
-                    let resolved_match_enum_id: i64 = -1;
-
                     // Derive top-level `capability name;` declarations from the
                     // complete source unit. IDs are stable declaration ordinals.
                     // Uses inside function bodies are excluded by brace depth.
@@ -603,6 +604,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             if (descriptor_status != 0) {
                                 function_status = source_type_descriptor_driver_status(descriptor_status);
                             } else {
+                            let callable_status:i32=derive_source_function_signatures(
+                                source,tokens,variants,structs,allocator,callable_signatures,callable_parameters
+                            );
+                            if(callable_status!=0){return native_driver_callable_catalog_failure_status(callable_status);}
                             // Destructors are canonical executable programs, not
                             // type-name policies. Lower every top-level destructor
                             // through the same expression/statement/CFG records and
@@ -707,9 +712,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                             var local_placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 64);
                                             var empty_destructor_arms: Vec<ResolvedMatchArm> = vec_new<ResolvedMatchArm>(allocator, 0);
                                             if (function_status == 0) {
-                                                let destructor_body_status: i32 = lower_source_function_body_records(
-                                                    source, destructor_tokens, destructor_statements, destructor_operands,
-                                                    variants, structs, empty_destructor_arms, allocator, local_body, local_events
+                                                let destructor_body_status: i32 = lower_source_function_body_records_from_catalog(
+                                                    source, destructor_tokens, tokens, destructor_statements, destructor_operands,
+                                                    variants, structs, empty_destructor_arms, callable_signatures, callable_parameters,
+                                                    allocator, local_body, local_events
                                                 );
                                                 if (destructor_body_status != 0) {
                                                     function_status = function_mir_destructor_body_error(destructor_body_status);
@@ -755,9 +761,15 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                     if (function_status != 0) { destructor_scan = vec_len<Token>(tokens); }
                                 }
                             }
+                            }
+                        }
+                    }
+                    }
+                }
                             if (function_status == 0) {
-                            let assembly_status: i32 = lower_resolved_source_function_assembly_from_source(
-                                source, function_tokens, statements, operands,
+                            let assembly_status: i32 = lower_resolved_source_function_assembly_from_catalog(
+                                tokens,callable_signatures,callable_parameters,
+                                source, function_tokens, tokens, statements, operands,
                                 variants, structs, resolved_match_enum_id, capabilities, allocator,
                                 ownership, body, metadata, contracts, arms, scopes,
                                 ownership_events, effects, ownership_records, contract_locals,
@@ -766,8 +778,10 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             if (assembly_status != 0) {
                                 function_status = checked_add(1000, assembly_status);
                             } else {
-                                let item_status: i32 = print_resolved_source_function_bundle_item(
-                                    source, body, contracts, contract_locals, sources, ownership,
+                                var include_effective_source: i32 = 0;
+                                if (emitted_functions == 0) { include_effective_source = 1; }
+                                let item_status: i32 = print_resolved_source_function_bundle_item_with_source_policy(
+                                    source, include_effective_source, body, contracts, contract_locals, sources, ownership,
                                     ownership_records, cfg, placements, required, type_descriptors,
                                     numeric_type_descriptors,
                                     destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
@@ -779,10 +793,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 }
                             }
                             }
-                            }
-                        }
-                    }
-                    }
                 }
 
                 // One ownership epilogue, one syntactic consumption per binding.
@@ -803,15 +813,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 drop(metadata);
                 drop(body);
                 drop(ownership);
-                drop(capabilities);
-                drop(destructor_placements);
-                drop(destructor_cfg);
-                drop(destructor_body);
-                drop(destructor_descriptors);
-                drop(numeric_type_descriptors);
-                drop(type_descriptors);
-                drop(structs);
-                drop(variants);
                 drop(operands);
                 drop(statements);
                 drop(function_tokens);
@@ -819,6 +820,16 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 if (function_status != 0) { return function_status; }
             }
         }
+        drop(callable_parameters);drop(callable_signatures);
+        drop(capabilities);
+        drop(destructor_placements);
+        drop(destructor_cfg);
+        drop(destructor_body);
+        drop(destructor_descriptors);
+        drop(numeric_type_descriptors);
+        drop(type_descriptors);
+        drop(structs);
+        drop(variants);
         if (emitted_functions != function_count) { return 906; }
         return 0;
     }

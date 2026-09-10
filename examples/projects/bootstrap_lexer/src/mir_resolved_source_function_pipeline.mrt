@@ -33,6 +33,8 @@ requires_caps [allocate]
         let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
         if (resolved_pipeline_body_kind(statement_record_kind(statement)) != 0) {
             vec_push<StatementRecord>(output, statement);
+        } else {
+            drop(statement);
         }
         index = checked_add(index, 1);
     }
@@ -135,10 +137,36 @@ fn resolved_pipeline_validate_allocation_capability(
     return 0;
 }
 
+fn resolved_pipeline_enum_id_from_type_code(
+    borrow enum_catalog:Vec<EnumVariantCatalogEntry>,type_code:i32
+)->i64{
+    var target_owned_id:i32=-1;
+    if(function_mir_type_is_owned_payload_enum(type_code)!=0){
+        target_owned_id=function_mir_owned_payload_enum_id(type_code);
+    }
+    var enum_group:i32=0;
+    var index:i64=0;
+    while(index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+        let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,index);
+        if(entry.ordinal==0){
+            if(type_code==function_mir_copy_payload_enum_type_code(enum_group)){
+                return entry.enum_id;
+            }
+            if(target_owned_id>=0){
+                if(target_owned_id==enum_group){return entry.enum_id;}
+            }
+            enum_group=checked_add(enum_group,1);
+        }
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
 // Build one semantic enum identity for each distinct match statement. The
-// structured statement stage already preserves the subject span on every arm,
-// so this stage only has to bind a simple local subject to its preceding
-// declared type and then bind that type to a top-level enum declaration.
+// structured statement stage already preserves the subject span on every arm.
+// A match subject can be either an ordinary typed local or a payload binding
+// introduced by an enclosing match arm; both paths resolve to one canonical
+// enum declaration before arm semantics are lowered.
 fn resolved_pipeline_derive_match_identities(
     borrow source: Buffer,
     borrow statements: Vec<StatementRecord>,
@@ -167,6 +195,7 @@ requires_caps [allocate]
 
                 var type_start: i64 = -1;
                 var type_length: i64 = 0;
+                var direct_enum_id:i64=-1;
                 var binding_statement: i64 = 0;
                 while (binding_statement < match_statement) {
                     if (status == 0) {
@@ -212,25 +241,90 @@ requires_caps [allocate]
                     }
                     binding_statement = checked_add(binding_statement, 1);
                 }
+
+                // Payload bindings are not ordinary let/var declarations. If the
+                // subject was introduced by an enclosing match arm, locate that
+                // lexical arm, resolve its already-known parent match identity,
+                // and derive the nested enum identity from the variant payload.
+                if(status==0){
+                    if(type_start<0){
+                        let nested_statement:StatementRecord=vec_get<StatementRecord>(statements,match_statement);
+                        let nested_start:i64=statement_record_start(nested_statement);
+                        var enclosing_arm_index:i64=0;
+                        while(enclosing_arm_index<arm_index){
+                            let enclosing_arm:MatchArmRecord=vec_get<MatchArmRecord>(raw_arms,enclosing_arm_index);
+                            let binding_start:i64=match_arm_binding_start(enclosing_arm);
+                            let binding_length:i64=match_arm_binding_length(enclosing_arm);
+                            if(binding_start>=0){
+                                if(resolved_pipeline_span_equal(
+                                    source,binding_start,binding_length,subject_start,subject_length
+                                )!=0){
+                                    let body_start:i64=match_arm_body_start(enclosing_arm);
+                                    let body_end:i64=checked_add(body_start,match_arm_body_length(enclosing_arm));
+                                    if(nested_start>=body_start){
+                                        if(nested_start<body_end){
+                                            var parent_enum_id:i64=-1;
+                                            var identity_index:i64=0;
+                                            while(identity_index<vec_len<MatchEnumIdentity>(identities)){
+                                                let identity:MatchEnumIdentity=vec_get<MatchEnumIdentity>(identities,identity_index);
+                                                if(match_enum_identity_statement(identity)==match_arm_statement(enclosing_arm)){
+                                                    parent_enum_id=match_enum_identity_enum_id(identity);
+                                                }
+                                                identity_index=checked_add(identity_index,1);
+                                            }
+                                            if(parent_enum_id>=0){
+                                                var variant_index:i64=0;
+                                                while(variant_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+                                                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,variant_index);
+                                                    if(entry.enum_id==parent_enum_id){
+                                                        if(resolved_pipeline_span_equal(
+                                                            source,entry.name_start,entry.name_length,
+                                                            match_arm_variant_start(enclosing_arm),match_arm_variant_length(enclosing_arm)
+                                                        )!=0){
+                                                            let candidate_enum_id:i64=resolved_pipeline_enum_id_from_type_code(
+                                                                enum_catalog,enum_variant_payload_type_code(entry)
+                                                            );
+                                                            if(candidate_enum_id>=0){
+                                                                if(direct_enum_id<0){direct_enum_id=candidate_enum_id;}
+                                                                else{if(direct_enum_id!=candidate_enum_id){status=3;}}
+                                                            }
+                                                        }
+                                                    }
+                                                    variant_index=checked_add(variant_index,1);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            enclosing_arm_index=checked_add(enclosing_arm_index,1);
+                        }
+                    }
+                }
                 if (status == 0) {
-                    if (type_start < 0) { status = 2; }
-                    if (type_length <= 0) { status = 2; }
+                    if (type_start < 0) { if(direct_enum_id<0){status = 2;} }
+                    if (type_start >= 0) { if(type_length <= 0) { status = 2; } }
                 }
 
                 var matching_enum_count: i64 = 0;
                 var effective_enum_id: i64 = -1;
-                var catalog_index:i64=0;
-                while(catalog_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
-                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,catalog_index);
-                    if(entry.ordinal==0){
-                        if(resolved_pipeline_span_equal(
-                            source,entry.enum_name_start,entry.enum_name_length,type_start,type_length
-                        )!=0){
-                            effective_enum_id=entry.enum_id;
-                            matching_enum_count=checked_add(matching_enum_count,1);
+                if(direct_enum_id>=0){
+                    effective_enum_id=direct_enum_id;
+                    matching_enum_count=1;
+                }else{
+                    var catalog_index:i64=0;
+                    while(catalog_index<vec_len<EnumVariantCatalogEntry>(enum_catalog)){
+                        let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(enum_catalog,catalog_index);
+                        if(entry.ordinal==0){
+                            if(resolved_pipeline_span_equal(
+                                source,entry.enum_name_start,entry.enum_name_length,type_start,type_length
+                            )!=0){
+                                effective_enum_id=entry.enum_id;
+                                matching_enum_count=checked_add(matching_enum_count,1);
+                            }
                         }
+                        catalog_index=checked_add(catalog_index,1);
                     }
-                    catalog_index=checked_add(catalog_index,1);
                 }
                 if (status == 0) {
                     if (matching_enum_count != 1) {
@@ -273,6 +367,50 @@ pub fn validate_resolved_function_return_surface(
 }
 
 pub fn lower_resolved_source_function_semantics(
+    borrow source: Buffer,
+    borrow tokens: Vec<Token>,
+    borrow statements: Vec<StatementRecord>,
+    borrow statement_operands: Vec<StatementOperand>,
+    borrow enum_catalog: Vec<EnumVariantCatalogEntry>,
+    borrow struct_catalog: Vec<I64StructCatalogEntry>,
+    match_enum_id: i64,
+    borrow capability_catalog: Vec<CapabilityCatalogEntry>,
+    borrow_mut ownership_metadata: Vec<MirOwnershipBinding>,
+    allocator: Allocator,
+    borrow_mut body_records: Vec<MirFunctionRecord>,
+    borrow_mut clause_metadata: Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records: Vec<MirFunctionContractRecord>,
+    borrow_mut resolved_arms: Vec<ResolvedMatchArm>,
+    borrow_mut resolved_scopes: Vec<ResolvedCapabilityScope>,
+    borrow_mut ownership_events: Vec<MirOwnershipEvent>,
+    borrow_mut capability_effects: Vec<MirCapabilityEffect>,
+    borrow_mut canonical_events: Vec<MirLowerEvent>,
+    borrow_mut ownership_records: Vec<MirOwnershipRecord>
+) -> i32
+requires_caps [allocate]
+{
+    let catalog_tokens:Vec<Token>=lex(source,allocator);
+    var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
+    var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+    let catalog_status:i32=derive_source_function_signatures(
+        source,catalog_tokens,enum_catalog,struct_catalog,allocator,callable_signatures,callable_parameters
+    );
+    if(catalog_status!=0){return lower_resolved_source_function_semantics_catalog_failure_status(catalog_status);}
+    let status:i32=lower_resolved_source_function_semantics_from_catalog(
+        catalog_tokens,callable_signatures,callable_parameters,
+        source,tokens,statements,statement_operands,enum_catalog,struct_catalog,match_enum_id,capability_catalog,ownership_metadata,allocator,body_records,clause_metadata,contract_records,resolved_arms,resolved_scopes,ownership_events,capability_effects,canonical_events,ownership_records
+    );
+    drop(callable_parameters);drop(callable_signatures);drop(catalog_tokens);
+    return status;
+}
+
+// Preserve the existing nested stage-status encoding at the source-only boundary.
+fn lower_resolved_source_function_semantics_catalog_failure_status(status:i32)->i32{return checked_add(370,status);}
+
+pub fn lower_resolved_source_function_semantics_from_catalog(
+    borrow catalog_tokens:Vec<Token>,
+    borrow callable_signatures:Vec<SourceFunctionSignature>,
+    borrow callable_parameters:Vec<SourceFunctionParameter>,
     borrow source: Buffer,
     borrow tokens: Vec<Token>,
     borrow statements: Vec<StatementRecord>,
@@ -348,11 +486,27 @@ requires_caps [allocate]
     }
 
     var body_events: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 64);
-    let function_status: i32 = lower_source_function_semantics(
-        source, tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
-        capability_catalog, allocator, body_records, body_events, clause_metadata, contract_records
+    let function_status: i32 = lower_source_function_semantics_from_catalog(
+        source, tokens, catalog_tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
+        capability_catalog, callable_signatures, callable_parameters, allocator, body_records, body_events, clause_metadata, contract_records
     );
     if (function_status != 0) { return checked_add(200, function_status); }
+
+    // Non-Copy and destruction obligation are distinct Alpha.1 facts. Refine
+    // the conservative source bindings now that canonical local types exist;
+    // move analysis continues to use `owned`, while assignment/replace uses
+    // `needs_drop`.
+    var ownership_binding_index:i64=0;
+    while(ownership_binding_index<vec_len<MirOwnershipBinding>(ownership_metadata)){
+        let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_metadata,ownership_binding_index);
+        let local_type:i32=sfr_local_type_code(body_records,ownership_binding_local_id(binding));
+        if(local_type==function_mir_unresolved_type_code()){return 201;}
+        vec_set<MirOwnershipBinding>(ownership_metadata,ownership_binding_index,ownership_binding_with_drop(
+            ownership_binding_id(binding),ownership_binding_local_id(binding),ownership_binding_owned(binding),
+            ownership_binding_mutable(binding),source_type_needs_drop(source,struct_catalog,local_type)
+        ));
+        ownership_binding_index=checked_add(ownership_binding_index,1);
+    }
 
     let resolve_scopes_status: i32 = resolve_capability_scopes(
         source, raw_scopes, capability_catalog, resolved_scopes
@@ -364,17 +518,47 @@ requires_caps [allocate]
     );
     if(allocation_capability_status!=0){return checked_add(650,allocation_capability_status);}
 
-    let ownership_source_status: i32 = lower_resolved_source_ownership_events(
+    let ownership_source_status: i32 = lower_resolved_source_ownership_events_from_catalog(callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands, ownership_metadata,
         resolved_arms, resolved_scopes, allocator, ownership_events, capability_effects
     );
     if (ownership_source_status != 0) { return checked_add(700, ownership_source_status); }
+
+    // Non-Copy binding ownership does not imply a destruction obligation.
+    // Refine scope exits with the resolved local type before state lowering.
+    var scope_event_index:i64=0;
+    while(scope_event_index<vec_len<MirOwnershipEvent>(ownership_events)){
+        let scope_event:MirOwnershipEvent=vec_get<MirOwnershipEvent>(ownership_events,scope_event_index);
+        if(scope_event.kind==ownership_event_kind_end_scope()){
+            var binding_index:i64=0;
+            while(binding_index<vec_len<MirOwnershipBinding>(ownership_metadata)){
+                let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_metadata,binding_index);
+                if(ownership_binding_id(binding)==scope_event.a){
+                    let local_type:i32=sfr_local_type_code(body_records,ownership_binding_local_id(binding));
+                    if(local_type!=function_mir_unresolved_type_code()){
+                        if(source_type_needs_drop(source,struct_catalog,local_type)==0){
+                            vec_set<MirOwnershipEvent>(ownership_events,scope_event_index,ownership_event_end_trivial_scope(ownership_binding_id(binding)));
+                        }
+                    }
+                }
+                binding_index=checked_add(binding_index,1);
+            }
+        }
+        scope_event_index=checked_add(scope_event_index,1);
+    }
 
     let ownership_status: i32 = lower_ownership_flow(
         ownership_events, ownership_metadata, allocator,
         canonical_events, ownership_records
     );
     if (ownership_status != 0) { return checked_add(800, ownership_status); }
+    if(vec_len<MirLowerEvent>(canonical_events)==0){
+        var body_event_index:i64=0;
+        while(body_event_index<vec_len<MirLowerEvent>(body_events)){
+            vec_push<MirLowerEvent>(canonical_events,vec_get<MirLowerEvent>(body_events,body_event_index));
+            body_event_index=checked_add(body_event_index,1);
+        }
+    }
     let ownership_validation: i32 = validate_ownership_records(
         ownership_records, ownership_metadata
     );

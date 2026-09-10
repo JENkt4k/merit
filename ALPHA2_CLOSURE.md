@@ -502,9 +502,106 @@ Output should be an executable/generated coverage report where practical.
 
 ### M7 — Acceptance migration
 
-**Goal:** All nine alpha acceptance projects compile/run through replacement mode with no Python semantic lowering.
+**Goal:** All ten alpha acceptance projects in `scripts/m7_acceptance_inventory.py` compile/run through replacement mode with no Python semantic lowering.
 
 The exact-decimal ledger is mandatory evidence.
+
+#### In-progress closure checkpoint (2026-09-10)
+
+M7 remains **OPEN** pending the dedicated and cross-platform authoritative
+gates. On the current candidate, all ten canonical applications pass the
+production replacement acceptance harness. The nine smaller applications plus
+the exact inventory check passed in 20.33 seconds; `bootstrap_lexer` passed in
+970.85 seconds. The harness compares reference and replacement exit status,
+stdout/stderr, and observable files, prepares unchanged inputs twice and checks
+deterministic artifacts, uses isolated project copies, and includes the
+mandatory exact-decimal `ledger_app`.
+
+The canonical `acceptance-replacement` gate subsequently passed all 11 tests
+in 1023.26 seconds and emitted machine-readable evidence for 10/10 projects with
+`replacement_acceptance=PASS`. The affected bootstrap/project subsystem gate
+also passed 406 tests with one intentional skip in 1033.83 seconds. The
+authoritative local full gate then passed 1132 tests with one intentional skip,
+the explicit 10/10 replacement-acceptance phase, and the established 10/10
+reference acceptance phase in 2135.286 seconds. M7 remains open only for the
+canonical Ubuntu and native-Windows full-gate evidence.
+
+A bounded native diagnostic on the current candidate identifies repeated type
+and callable analysis, not generic expansion, as expensive work. Vector type
+ranking now enumerates distinct lexical predecessors instead of rescanning all
+earlier occurrences for every vector token. The focused native/interpreter
+regression preserves ranks across reordered declarations, duplicates, and nested
+vector suffixes. Descriptor duplicate detection also stops at its first match.
+
+The diagnostic after these changes measured approximately 0.73 CPU seconds in
+descriptor construction and 13 seconds in one whole-source signature-table
+build, immediately followed by another signature-table build. These are local
+profiling observations, **not** acceptance or gate passes. Remaining work:
+
+- The production driver now builds an invocation-local callable catalog once
+  and shares read-only references through parameter ownership, destructor/body
+  lowering, and call ownership analysis.
+  Read-only `*_from_catalog` consumers now cover parameter modes, return types,
+  borrowed origins, parameter ownership, body records, and source-function
+  contract completion. Existing entry points delegate to the same consumers.
+  A bounded diagnostic after wiring observed one signature-table build, 16
+  completed functions, and a terminal scope-lifecycle error (status 4905) in
+  17.46 seconds, rather than a timeout. This establishes removal of the repeated
+  catalog work, not acceptance completion. A native/reference
+  query regression covers repeated catalog use, missing callees, invalid
+  parameter ordinals, builtins, unit results, and borrowed origins.
+- The next exposed case was a loop-local drop-free struct in
+  `clause_find_list_close`: reference accepts its lexical scope exit, whereas
+  the replacement scope assertion rejected a live non-Copy binding. Typed
+  lowering now distinguishes a trivial scope exit from a resource scope exit;
+  the latter retains the existing explicit-cleanup requirement and strict
+  end-scope assertion. Full acceptance validation remains pending.
+- MRBF v2 source sharing now survives prepared-artifact publication. The
+  decoder hydrates its in-memory function views for consumers while retaining
+  compact encoded snapshots for persistence; project materialization supplies
+  the already-validated canonical unit source. Focused bundle/preparation tests
+  prove later snapshot files omit the shared UTF-8 source without weakening
+  their materialization input. This removes a potentially source-size times
+  function-count artifact expansion, but bootstrap-lexer acceptance must still
+  be rerun before attributing the full timeout to that expansion.
+- All ten applications and their deterministic artifacts have now been
+  revalidated on the current candidate. The dedicated M7 and affected subsystem
+  gates are green; authoritative Ubuntu/Windows full gates remain required
+  before claiming M7 closure.
+
+Focused vector evidence also exposed a lifecycle classification regression:
+general aggregate structs were absent from the ownership-transfer classifier.
+The repair includes that canonical range while keeping vector get/set/replace
+validation based on recursive **drop requirements**, as the alpha.1 reference
+does, rather than conflating them with non-Copy binding ownership. The targeted
+vector selection passed 12 tests, including drop-free struct get/set,
+destructor-backed nested vectors, and rejected generic/vector cases. This does
+not establish that the whole acceptance candidate is regression-free.
+
+Separate reference-oracle observation (not repaired by the scalability work):
+both reference interpreter and native C accept the following cleanup shape but
+print `0` and `7`, omitting the destructor observation for the second iteration:
+
+```merit
+stable("marker-v1") struct Marker { number:i64; }
+destructor Marker { print(self.number); }
+fn work()->i32 {
+    var index:i64=0;
+    while(index<3) {
+        let marker:Marker=Marker{number:index};
+        if(index==1){return 7;}
+        drop(marker);
+        index=checked_add(index,1);
+    }
+    return 9;
+}
+fn main()->i32 { print(work()); return 0; }
+```
+
+This needs a separate diagnosis against the documented cleanup contract; do not
+interpret matching oracle output as proof that the lifetime behavior is correct.
+The focused scope regression uses explicit cleanup before its early-return
+branch and separately requires rejection when resource cleanup is absent.
 
 ### M8 — Production cutover
 

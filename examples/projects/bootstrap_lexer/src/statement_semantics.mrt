@@ -216,7 +216,6 @@ requires_caps [allocate]
         );
         if (catalog_index < 0) { return 22; }
         let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
-        if (entry.ordinal != expected_ordinal) { return 23; }
         if (entry.payload_owned != 0) {
             if (match_arm_binding_start(arm) < 0) { return 24; }
         }

@@ -4,6 +4,8 @@ import bootstrap_mir_function_contracts;
 
 capability allocate;
 
+fn assembly_contract_validation_status(status:i32)->i32{return checked_add(400,status);}
+
 pub struct MirFunctionContractLocal {
     local_id: i64;
     source_local_id: i64;
@@ -46,7 +48,8 @@ requires_caps [allocate]
     if (binding_count < 0) { return 1; }
     if (body_local_count < binding_count) { return 2; }
     if (validate_function_clause_metadata(metadata) != 0) { return 3; }
-    if (validate_function_contract_mir(contracts) != 0) { return 4; }
+    let contract_validation:i32=validate_function_contract_mir(contracts);
+    if(contract_validation!=0){return assembly_contract_validation_status(contract_validation);}
 
     var index: i64 = 0;
     while (index < vec_len<MirFunctionClauseMetadata>(metadata)) {

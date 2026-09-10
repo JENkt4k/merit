@@ -82,8 +82,59 @@ def _vector_runtime_name(type_: MirType, operation: str) -> str:
 
 
 def _vector_call_operation(symbol: str) -> str | None:
-    match = re.fullmatch(r"vec_(new|push|len|get|set|replace|pop|drop|transfer|allocator)__.+", symbol)
+    match = re.fullmatch(
+        r"vec_(new|push|len|get|set|replace|pop|drop|transfer|allocator)(?:__.+|<.+>)",
+        symbol,
+    )
     return None if match is None else match.group(1)
+
+
+def _filesystem_runtime(read_types: set[MirType], write_types: set[MirType]) -> list[str]:
+    lines: list[str] = []
+    for type_ in sorted(read_types, key=_type_mangle):
+        identity = _recursive_owned_payload_enum_identity(type_)
+        if identity is None or identity[1] != (MirType("Buffer"), MirType("i64")):
+            raise MirToCError("file_read requires FileReadResult-compatible MIR storage")
+        c_type = _type(type_)
+        helper = f"merit_file_read_{_type_mangle(type_)}"
+        lines.extend([
+            f"static {c_type} {helper}(merit_Allocator allocator, merit_String path) {{",
+            '    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
+            "    memcpy(name, path.data, path.len); name[path.len] = 0;",
+            "    FILE *file = fopen(name, \"rb\"); int open_error = errno; free(name);",
+            f"    if (!file) return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(open_error) }};",
+            "    if (fseek(file, 0, SEEK_END) != 0) { int error = errno; fclose(file);",
+            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }}",
+            "    long length = ftell(file); if (length < 0) { int error = errno; fclose(file);",
+            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }}",
+            "    rewind(file); merit_Buffer buffer = merit_buffer_new(allocator, (int64_t)length);",
+            "    if (length > 0) { size_t got = fread(buffer.data, 1, (size_t)length, file);",
+            "        if (got != (size_t)length) { int error = errno; merit_buffer_drop(&buffer); fclose(file);",
+            f"            return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }} buffer.len = got; }}",
+            "    if (fclose(file) != 0) { merit_buffer_drop(&buffer);",
+            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(errno) }}; }}",
+            f"    return ({c_type}){{ .tag = 0, .payload.variant_0 = buffer }};",
+            "}",
+        ])
+    for type_ in sorted(write_types, key=_type_mangle):
+        if _copy_payload_enum_identity(type_) is None:
+            raise MirToCError("file_write requires FileWriteResult-compatible MIR storage")
+        c_type = _type(type_)
+        helper = f"merit_file_write_{_type_mangle(type_)}"
+        lines.extend([
+            f"static {c_type} {helper}(merit_String path, const merit_Buffer *buffer) {{",
+            '    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
+            "    memcpy(name, path.data, path.len); name[path.len] = 0;",
+            f"    if (merit_path_is_directory(name)) {{ free(name); return ({c_type}){{ 1, 2 }}; }}",
+            "    FILE *file = fopen(name, \"wb\"); int open_error = errno; free(name);",
+            f"    if (!file) return ({c_type}){{ 1, merit_fs_error(open_error) }};",
+            "    size_t wrote = buffer->len ? fwrite(buffer->data, 1, buffer->len, file) : 0;",
+            f"    if (wrote != buffer->len) {{ int error = errno; fclose(file); return ({c_type}){{ 1, merit_fs_error(error) }}; }}",
+            f"    if (fclose(file) != 0) return ({c_type}){{ 1, merit_fs_error(errno) }};",
+            f"    return ({c_type}){{ 0, (int64_t)wrote }};",
+            "}",
+        ])
+    return lines
 
 
 def _decimal_type(type_: MirType) -> tuple[int, int, int, int] | None:
@@ -119,7 +170,7 @@ def _int128_literal(value: int) -> str:
 
 
 def _copy_payload_enum_identity(type_: MirType) -> str | None:
-    if type_.arguments or not type_.name.startswith(_COPY_PAYLOAD_ENUM_PREFIX):
+    if not type_.name.startswith(_COPY_PAYLOAD_ENUM_PREFIX):
         return None
     identity = type_.name[len(_COPY_PAYLOAD_ENUM_PREFIX):]
     if not identity or not identity.isdecimal():
@@ -256,7 +307,9 @@ def _type(type_: MirType) -> str:
         raise MirToCError(f"unsupported MIR type for C emission: {type_.name}") from error
 
 
-def _literal(value: object, type_: MirType) -> str:
+def _literal(
+    value: object, type_: MirType, *, allow_bounded_boundary: bool = False
+) -> str:
     if value is True:
         return "true"
     if value is False:
@@ -280,7 +333,7 @@ def _literal(value: object, type_: MirType) -> str:
             return f"INT64_C({value})" if decimal[1] <= 18 else _int128_literal(value)
         bounded = _bounded_type(type_)
         if bounded is not None:
-            if not bounded[2] <= value <= bounded[3]:
+            if not allow_bounded_boundary and not bounded[2] <= value <= bounded[3]:
                 raise MirToCError(f"bounded constant is out of range: {value}")
             return _literal(value, bounded[4])
         if type_.arguments or type_.name not in _INTEGER_TYPES:
@@ -464,7 +517,9 @@ def _instruction(
             raise MirToCError("const instruction requires a result")
         if local_types is None or instruction.result not in local_types:
             raise MirToCError("const instruction requires a resolved result type")
-        return [f"{result} = {_literal(instruction.value, local_types[instruction.result])};"]
+        return [
+            f"{result} = {_literal(instruction.value, local_types[instruction.result], allow_bounded_boundary=instruction.contract_kind != 'none')};"
+        ]
     if kind in {"copy", "move", "borrow"}:
         if result is None or len(operands) != 1:
             raise MirToCError(f"{kind} instruction requires one operand and a result")
@@ -473,11 +528,24 @@ def _instruction(
             source = f"&{source}"
         return [f"{result} = {source};"]
     if kind == "construct":
-        if result is None or len(operands) != 1 or not instruction.symbol:
-            raise MirToCError("aggregate construction requires one value and a constructor symbol")
+        if result is None or len(operands) > 1 or not instruction.symbol:
+            raise MirToCError("aggregate construction requires at most one value and a constructor symbol")
         if local_types is None or instruction.result not in local_types:
             raise MirToCError("aggregate construction requires a resolved result type")
         result_type = local_types[instruction.result]
+        if not operands:
+            if _copy_payload_enum_identity(result_type) is None:
+                raise MirToCError("payload-free construction requires a Copy-payload enum result")
+            if not instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
+                raise MirToCError("payload-free enum construction has an invalid variant symbol")
+            ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
+            if not ordinal or not ordinal.isdecimal():
+                raise MirToCError("payload-free enum construction has an invalid variant ordinal")
+            payload_initializer = "{0}" if result_type.arguments else "0"
+            return [
+                f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
+                f".payload = {payload_initializer} }};"
+            ]
         aggregate = _aggregate_struct_identity(result_type)
         if aggregate is not None:
             _, fields, _ = aggregate
@@ -513,6 +581,14 @@ def _instruction(
             ordinal_value = int(ordinal)
             if ordinal_value >= len(recursive[1]):
                 raise MirToCError("owned-payload enum constructor is outside schema")
+            return [
+                f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
+                f".payload.variant_{ordinal} = {operands[0]} }};"
+            ]
+        if result_type.arguments:
+            ordinal_value = int(ordinal)
+            if ordinal_value >= len(result_type.arguments):
+                raise MirToCError("Copy-payload enum constructor is outside schema")
             return [
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
                 f".payload.variant_{ordinal} = {operands[0]} }};"
@@ -563,6 +639,14 @@ def _instruction(
             ordinal = int(ordinal_text)
             if instruction.result not in local_types or local_types[instruction.result] != recursive[1][ordinal]:
                 raise MirToCError("enum payload result type disagrees with variant schema")
+            return [f"{result} = {operands[0]}{access}payload.variant_{ordinal};"]
+        if receiver_type.arguments and _copy_payload_enum_identity(receiver_type) is not None and instruction.symbol.startswith("payload_"):
+            ordinal_text = instruction.symbol.removeprefix("payload_")
+            if not ordinal_text.isdecimal() or int(ordinal_text) >= len(receiver_type.arguments):
+                raise MirToCError("enum payload variant is outside schema")
+            ordinal = int(ordinal_text)
+            if instruction.result not in local_types:
+                raise MirToCError("enum payload load has unresolved result type")
             return [f"{result} = {operands[0]}{access}payload.variant_{ordinal};"]
         if instruction.symbol.startswith("payload_"):
             return [f"{result} = {operands[0]}{access}payload;"]
@@ -678,6 +762,18 @@ def _instruction(
             ownership = local_ownership.get(instruction.operands[0], "value")
             argument = operands[0] if ownership == "mutable_borrow" else f"&{operands[0]}"
             return [f"merit_buffer_push({argument}, {operands[1]});"]
+        if instruction.symbol == "bootstrap_buffer_append":
+            if len(operands) != 4 or result is not None:
+                raise MirToCError(
+                    "bootstrap_buffer_append requires destination, source, start, length, and no result"
+                )
+            destination_ownership = local_ownership.get(instruction.operands[0], "value")
+            source_ownership = local_ownership.get(instruction.operands[1], "value")
+            destination = operands[0] if destination_ownership == "mutable_borrow" else f"&{operands[0]}"
+            source = operands[1] if source_ownership in {"borrowed", "mutable_borrow"} else f"&{operands[1]}"
+            return [
+                f"merit_bootstrap_buffer_append({destination}, {source}, {operands[2]}, {operands[3]});"
+            ]
         if instruction.symbol == "buffer_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("buffer_len requires one Buffer argument and one result")
@@ -708,6 +804,22 @@ def _instruction(
             if len(operands) != 2 or result is None:
                 raise MirToCError("slice_get requires ByteSlice, index, and one result")
             return [f"{result} = merit_slice_get({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "file_read":
+            if len(operands) != 2 or result is None or local_types is None:
+                raise MirToCError("file_read requires allocator, path, and one result")
+            result_type = local_types.get(instruction.result)
+            if result_type is None:
+                raise MirToCError("file_read requires a resolved result type")
+            return [f"{result} = merit_file_read_{_type_mangle(result_type)}({operands[0]}, {operands[1]});"]
+        if instruction.symbol == "file_write":
+            if len(operands) != 2 or result is None or local_types is None:
+                raise MirToCError("file_write requires path, Buffer, and one result")
+            result_type = local_types.get(instruction.result)
+            if result_type is None:
+                raise MirToCError("file_write requires a resolved result type")
+            ownership = local_ownership.get(instruction.operands[1], "value")
+            buffer = operands[1] if ownership in {"borrowed", "mutable_borrow"} else f"&{operands[1]}"
+            return [f"{result} = merit_file_write_{_type_mangle(result_type)}({operands[0]}, {buffer});"]
         vector_operation = _vector_call_operation(instruction.symbol)
         if vector_operation is not None:
             if local_types is None:
@@ -829,7 +941,11 @@ def _instruction(
     raise MirToCError(f"unsupported MIR instruction for C emission: {kind}")
 
 
-def _terminator(terminator: MirTerminator, return_type: str) -> list[str]:
+def _terminator(
+    terminator: MirTerminator,
+    return_type: str,
+    local_types: dict[int, MirType] | None = None,
+) -> list[str]:
     if terminator.kind == "return":
         if terminator.operands:
             return [f"return {_local(terminator.operands[0])};"]
@@ -842,7 +958,16 @@ def _terminator(terminator: MirTerminator, return_type: str) -> list[str]:
             f"goto b{terminator.targets[1]};",
         ]
     if terminator.kind == "switch":
-        lines = [f"switch ({_local(terminator.operands[0])}) {{"]
+        subject = _local(terminator.operands[0])
+        if local_types is not None:
+            subject_type = local_types.get(terminator.operands[0])
+            if subject_type is not None and (
+                _copy_payload_enum_identity(subject_type) is not None
+                or _owned_payload_enum_identity(subject_type) is not None
+                or _recursive_owned_payload_enum_identity(subject_type) is not None
+            ):
+                subject += ".tag"
+        lines = [f"switch ({subject}) {{"]
         for case, target in zip(terminator.cases, terminator.targets[:-1]):
             lines.append(f"case {case}: goto b{target};")
         lines.append(f"default: goto b{terminator.targets[-1]};")
@@ -1076,7 +1201,7 @@ def emit_c_function(
         for instruction in block.instructions:
             for statement in _instruction(instruction, functions, local_types, local_ownership, destructors):
                 lines.append(f"    {statement}")
-        for statement in _terminator(block.terminator, return_type):
+        for statement in _terminator(block.terminator, return_type, local_types):
             lines.append(f"    {statement}")
     lines.append("}")
     return "\n".join(lines)
@@ -1108,7 +1233,7 @@ def _emit_c_destructor(
                 raise MirToCError("destructor return terminators cannot carry values")
             lines.extend(["    *self = m0;", "    return;"])
         else:
-            for statement in _terminator(block.terminator, "void"):
+            for statement in _terminator(block.terminator, "void", local_types):
                 lines.append(f"    {statement.replace('goto b', 'goto b_destructor_')}")
     lines.append("}")
     return "\n".join(lines)
@@ -1260,6 +1385,25 @@ def emit_c_module(module: MirModule) -> str:
         for type_ in (destructor.target, *(local.type for local in destructor.locals))
         for nested in _walk_types(type_)
     }
+    observed_copy_payloads: dict[str, dict[int, MirType]] = {}
+    for function in module.functions:
+        function_types = {local.local_id: local.type for local in function.locals}
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if instruction.kind == "construct" and instruction.result is not None and instruction.operands:
+                    result_type = function_types[instruction.result]
+                    identity = _copy_payload_enum_identity(result_type)
+                    if identity is not None and instruction.symbol and instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
+                        ordinal_text = instruction.symbol.removeprefix(_ENUM_VARIANT_PREFIX)
+                        if ordinal_text.isdecimal():
+                            observed_copy_payloads.setdefault(identity, {})[int(ordinal_text)] = function_types[instruction.operands[0]]
+                if instruction.kind == "load_field" and instruction.result is not None and instruction.operands:
+                    receiver_type = function_types[instruction.operands[0]]
+                    identity = _copy_payload_enum_identity(receiver_type)
+                    if identity is not None and instruction.symbol and instruction.symbol.startswith("payload_"):
+                        ordinal_text = instruction.symbol.removeprefix("payload_")
+                        if ordinal_text.isdecimal():
+                            observed_copy_payloads.setdefault(identity, {})[int(ordinal_text)] = function_types[instruction.result]
     vector_types = tuple(sorted(
         (type_ for type_ in all_types if _vector_type(type_) is not None),
         key=_type_mangle,
@@ -1292,14 +1436,28 @@ def emit_c_module(module: MirModule) -> str:
     )
     needs_text_runtime=any(type_.name in {"String","ByteSlice"} and not type_.arguments for type_ in all_types)
     needs_decimal_runtime = any(_decimal_type(type_) is not None for type_ in all_types)
+    filesystem_read_types: set[MirType] = set()
+    filesystem_write_types: set[MirType] = set()
+    for function in module.functions:
+        local_types = {local.local_id: local.type for local in function.locals}
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if instruction.kind == "call" and instruction.result is not None:
+                    if instruction.symbol == "file_read":
+                        filesystem_read_types.add(local_types[instruction.result])
+                    if instruction.symbol == "file_write":
+                        filesystem_write_types.add(local_types[instruction.result])
+    needs_filesystem_runtime = bool(filesystem_read_types or filesystem_write_types)
     prelude = [
         "/* generated from bootstrap-mir-v1; deterministic, do not edit */",
+        *(["#include <errno.h>"] if needs_filesystem_runtime else []),
         "#include <stdbool.h>",
         *(["#include <stddef.h>"] if needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdint.h>",
         *(["#include <stdio.h>"] if needs_print or checked_operations or needs_decimal_runtime or needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdlib.h>",
         *(["#include <string.h>"] if needs_buffer_runtime else []),
+        *(["#include <sys/stat.h>"] if needs_filesystem_runtime else []),
         "",
         *([
             "typedef struct { const uint8_t *data; size_t len; } merit_String;",
@@ -1335,6 +1493,11 @@ def emit_c_module(module: MirModule) -> str:
             "    if (value.len) { memcpy(result.data, value.data, value.len); result.len = value.len; } return result;",
             "}",
             "static inline void merit_buffer_push(merit_Buffer *value, uint8_t byte) { merit_buffer_reserve(value, value->len + 1); value->data[value->len++] = byte; }",
+            "static inline void merit_bootstrap_buffer_append(merit_Buffer *destination, const merit_Buffer *source, int64_t start, int64_t length) {",
+            '    if (start < 0 || length < 0 || (size_t)start > source->len || (size_t)length > source->len - (size_t)start) { fprintf(stderr, "Merit bootstrap buffer append range out of bounds\\n"); exit(88); }',
+            "    size_t offset = (size_t)start; size_t count = (size_t)length; merit_buffer_reserve(destination, destination->len + count);",
+            "    if (count) { memcpy(destination->data + destination->len, source->data + offset, count); destination->len += count; }",
+            "}",
             "static inline int64_t merit_buffer_len(const merit_Buffer *value) { return (int64_t)value->len; }",
             "static inline int64_t merit_buffer_get(const merit_Buffer *value, int64_t index) {",
             '    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, "Merit buffer index out of bounds\\n"); exit(82); }',
@@ -1383,19 +1546,25 @@ def emit_c_module(module: MirModule) -> str:
             ],
             "",
         ])
-    enum_identities = sorted({
-        identity
-        for type_ in all_types
-        if (identity := _copy_payload_enum_identity(type_)) is not None
-    }, key=int)
-    if enum_identities:
-        prelude.extend([
-            *[
-                f"typedef struct {{ int64_t tag; int64_t payload; }} merit_enum_copy_payload_{identity};"
-                for identity in enum_identities
-            ],
-            "",
-        ])
+    copy_payload_enums: dict[str, MirType] = {}
+    for type_ in all_types:
+        identity = _copy_payload_enum_identity(type_)
+        if identity is not None:
+            prior = copy_payload_enums.get(identity)
+            if prior is None or (type_.arguments and not prior.arguments):
+                copy_payload_enums[identity] = type_
+    for identity, observed in observed_copy_payloads.items():
+        prior = copy_payload_enums.get(identity)
+        if prior is None or not prior.arguments:
+            continue
+        width = max((*observed, *(range(len(prior.arguments)))), default=-1) + 1
+        if width > 0:
+            payloads = tuple(
+                observed.get(ordinal, prior.arguments[ordinal] if ordinal < len(prior.arguments) else MirType("i64"))
+                for ordinal in range(width)
+            )
+            copy_payload_enums[identity] = MirType(prior.name, payloads)
+    enum_identities = sorted(copy_payload_enums, key=int)
     struct_identities = sorted({
         identity
         for type_ in all_types
@@ -1480,6 +1649,24 @@ def emit_c_module(module: MirModule) -> str:
             if not progressed:
                 raise MirToCError("aggregate struct type graph is cyclic")
         prelude.extend([*definitions, ""])
+    if enum_identities:
+        prelude.extend([
+            *[
+                (
+                    "typedef struct { int64_t tag; union { "
+                    + " ".join(
+                        f"{_type(payload)} variant_{ordinal};"
+                        for ordinal, payload in enumerate(type_.arguments)
+                    )
+                    + f" }} payload; }} merit_enum_copy_payload_{identity};"
+                    if type_.arguments else
+                    f"typedef struct {{ int64_t tag; int64_t payload; }} merit_enum_copy_payload_{identity};"
+                )
+                for identity in enum_identities
+                for type_ in (copy_payload_enums[identity],)
+            ],
+            "",
+        ])
     owned_enum_identities = sorted({
         identity
         for type_ in all_types
@@ -1522,6 +1709,11 @@ def emit_c_module(module: MirModule) -> str:
     if prototypes:
         prelude.extend([*prototypes, ""])
     runtime = [
+        *([
+            "static int64_t merit_fs_error(int error) { if (error == ENOENT) return 0; if (error == EACCES || error == EPERM) return 1; return 2; }",
+            "static int merit_path_is_directory(const char *path) { struct stat info; return stat(path, &info) == 0 && S_ISDIR(info.st_mode); }",
+        ] if needs_filesystem_runtime else []),
+        *_filesystem_runtime(filesystem_read_types, filesystem_write_types),
         *_checked_helpers(checked_operations),
         *_exact_numeric_helpers(all_types),
         *_vector_runtime(vector_types, destructors),

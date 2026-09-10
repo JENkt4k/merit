@@ -39,8 +39,39 @@ requires_caps [allocate]
         source, tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms, allocator,
         body_records, body_events
     );
-    if (body_status != 0) { return checked_add(100, body_status); }
+    if (body_status != 0) { return source_function_body_failure_status(body_status); }
+    return finish_source_function_semantics(
+        source,tokens,struct_catalog,capability_catalog,allocator,body_records,clause_metadata,contract_records
+    );
+}
 
+pub fn lower_source_function_semantics_from_catalog(
+    borrow source:Buffer,borrow tokens:Vec<Token>,borrow source_tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>,borrow statement_operands:Vec<StatementOperand>,
+    borrow enum_catalog:Vec<EnumVariantCatalogEntry>,borrow struct_catalog:Vec<I64StructCatalogEntry>,
+    borrow resolved_arms:Vec<ResolvedMatchArm>,borrow capability_catalog:Vec<CapabilityCatalogEntry>,
+    borrow function_signatures:Vec<SourceFunctionSignature>,borrow function_parameters:Vec<SourceFunctionParameter>,
+    allocator:Allocator,borrow_mut body_records:Vec<MirFunctionRecord>,borrow_mut body_events:Vec<MirLowerEvent>,
+    borrow_mut clause_metadata:Vec<MirFunctionClauseMetadata>,borrow_mut contract_records:Vec<MirFunctionContractRecord>
+)->i32 requires_caps [allocate] {
+    let body_status:i32=lower_source_function_body_records_from_catalog(
+        source,tokens,source_tokens,statements,statement_operands,enum_catalog,struct_catalog,resolved_arms,
+        function_signatures,function_parameters,allocator,body_records,body_events
+    );
+    if(body_status!=0){return source_function_body_failure_status(body_status);}
+    return finish_source_function_semantics(
+        source,tokens,struct_catalog,capability_catalog,allocator,body_records,clause_metadata,contract_records
+    );
+}
+
+fn source_function_body_failure_status(status:i32)->i32{return checked_add(100,status);}
+
+fn finish_source_function_semantics(
+    borrow source:Buffer,borrow tokens:Vec<Token>,borrow struct_catalog:Vec<I64StructCatalogEntry>,
+    borrow capability_catalog:Vec<CapabilityCatalogEntry>,allocator:Allocator,
+    borrow body_records:Vec<MirFunctionRecord>,borrow_mut clause_metadata:Vec<MirFunctionClauseMetadata>,
+    borrow_mut contract_records:Vec<MirFunctionContractRecord>
+)->i32 requires_caps [allocate] {
     var binding_starts: Vec<i64> = vec_new<i64>(allocator, 8);
     var binding_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
     var index: i64 = 0;
@@ -68,9 +99,9 @@ requires_caps [allocate]
     let metadata_validation: i32 = validate_function_clause_metadata(clause_metadata);
     if (metadata_validation != 0) { return checked_add(400, metadata_validation); }
 
-    let contract_status: i32 = lower_function_contract_mir(
+    let contract_status: i32 = lower_typed_function_contract_mir(
         source, tokens, clauses, clause_operands,
-        binding_starts, binding_lengths, allocator, contract_records
+        binding_starts, binding_lengths, body_records, struct_catalog, allocator, contract_records
     );
     if (contract_status != 0) { return checked_add(500, contract_status); }
     let contract_validation: i32 = validate_function_contract_mir(contract_records);

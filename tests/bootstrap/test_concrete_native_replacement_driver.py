@@ -735,6 +735,34 @@ PATH_SENSITIVE_OWNED_REJECTIONS = (
         "M5212: scoped owned binding leaked",
     ),
 )
+
+SHADOWED_BINDING_IDENTITY_SOURCE = '''module main
+struct Marker { number:i32; }
+destructor Marker { print(self.number); }
+fn consume(value:Marker)->i32 {
+    let value:Marker=Marker{number:2};
+    drop(value);
+    return 0;
+}
+fn main()->i32 {
+    let marker:Marker=Marker{number:1};
+    if 1 { let marker:Marker=Marker{number:3}; drop(marker); }
+    let argument:Marker=Marker{number:4};
+    consume(argument);
+    drop(marker);
+    return 0;
+}
+'''
+
+DISCARD_AFTER_CONSTRUCTOR_SOURCE = '''module main
+struct ParseCursor { index:i64; }
+fn main()->i32 {
+    var cursor:ParseCursor=ParseCursor { index:0 };
+    let root:i64=cursor.index;
+    root;
+    return 0;
+}
+'''
 SINGLE_I64_STRUCT_SOURCE = (
     "module main\n"
     "struct Box { value:i64; }\n"
@@ -1274,6 +1302,128 @@ def test_concrete_native_driver_executes_vec_i64_lifecycle_before_mir(
     prepare_replacement_artifacts(project, driver)
     artifact = build_replacement_project(project, root / "build" / "replacement-vec-i64")
     replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_keeps_numeric_call_argument_domains_independent(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    source = '''module main
+struct Stats { tag:i32; length:i64; }
+fn mixed(wide:i64,narrow:i32)->i64{return wide;}
+fn narrow(value:i32)->i64{return 9;}
+fn main()->i32 {
+    let wide:i64=41;let tag:i32=7;
+    print(mixed(wide,tag));
+    print(checked_add(mixed(wide,tag),1));
+    print(narrow(checked_add(tag,1)));
+    let stats:Stats=Stats{tag:tag,length:mixed(wide,tag)-1};
+    print(stats.length);
+    return 0;
+}
+'''
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "reference-numeric-call-domains")
+    reference = subprocess.run([str(executable)], text=True, capture_output=True, check=True)
+    assert reference.stdout == "41\n42\n9\n40\n"
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-numeric-call-domains")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+@pytest.mark.parametrize(("source", "expected"), (
+    ('''module main
+struct Item { number:i32; extra:i32; }
+fn main()->i32 {
+    var index:i32=0;
+    while(index<2){var item:Item=Item{number:index,extra:0};item=Item{number:checked_add(item.number,1),extra:1};print(item.number);index=checked_add(index,1);}
+    return 0;
+}
+''', "1\n2\n"),
+    ('''module main
+stable("marker-v1") struct Marker { number:i64; }
+destructor Marker { print(self.number); }
+fn work()->i32 {
+    var index:i64=0;
+    while(index<3){let marker:Marker=Marker{number:index};drop(marker);if(index==1){return 7;}index=checked_add(index,1);}
+    return 9;
+}
+fn main()->i32 {print(work());return 0;}
+''', "0\n1\n7\n"),
+), ids=("drop-free-struct", "explicit-drop-and-early-return"))
+def test_concrete_native_driver_cleans_loop_local_owners_at_scope_exit(
+    tmp_path: Path, driver: NativeReplacementDriver, source: str, expected: str,
+) -> None:
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "reference-scoped-owner")
+    reference = subprocess.run([str(executable)], text=True, capture_output=True, check=True)
+    assert reference.stdout == expected
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-scoped-owner")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True, check=True)
+    assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
+        reference.returncode, reference.stdout, reference.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_rejects_loop_resource_without_explicit_cleanup(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    source = '''module main
+stable("marker-v1") struct Marker { number:i64; }
+destructor Marker { print(self.number); }
+fn main()->i32 {
+    var index:i64=0;
+    while(index<2){let marker:Marker=Marker{number:index};index=checked_add(index,1);}
+    return 0;
+}
+'''
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    with pytest.raises(CompileError, match="M5212"):
+        build(project, root / "build" / "reference-unclosed-resource")
+    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+        prepare_replacement_artifacts(project, driver)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_vec_get_set_preserve_drop_free_struct_elements(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    source = '''module main
+capability allocate;
+stable("pair-v1") struct Pair { first:i32; second:i32; }
+fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+    var values:Vec<Pair>=vec_new<Pair>(allocator,1);
+    let first:Pair=Pair{first:7,second:11};vec_push<Pair>(values,first);
+    let observed:Pair=vec_get<Pair>(values,0);print(observed.first);
+    let next:Pair=Pair{first:13,second:17};vec_set<Pair>(values,0,next);
+    let updated:Pair=vec_get<Pair>(values,0);print(updated.second);
+} return 0; }
+'''
+    root = _project(tmp_path, source)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference-drop-free-vec")
+    reference = subprocess.run(
+        [str(reference_executable)], text=True, capture_output=True, check=True
+    )
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement-drop-free-vec")
+    replacement = subprocess.run(
+        [str(artifact.executable)], text=True, capture_output=True, check=True
+    )
+    assert reference.stdout == "7\n17\n"
     assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
         reference.returncode, reference.stdout, reference.stderr,
     )
@@ -2346,6 +2496,45 @@ def test_concrete_native_driver_executes_path_sensitive_owned_aggregate_control_
         reference.stdout,
     )
     assert (replacement.returncode, replacement.stdout) == (0, expected_stdout)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_preserves_shadowed_binding_identity(
+    tmp_path: Path, driver: NativeReplacementDriver
+) -> None:
+    root = _project(tmp_path, SHADOWED_BINDING_IDENTITY_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    )
+    assert (replacement.returncode, replacement.stdout) == (0, "3\n2\n4\n1\n")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_concrete_native_driver_executes_discard_after_constructor(
+    tmp_path: Path, driver: NativeReplacementDriver
+) -> None:
+    root = _project(tmp_path, DISCARD_AFTER_CONSTRUCTOR_SOURCE)
+    project = load_project(root / "Merit.toml")
+    _, _, reference_executable = build(project, root / "build" / "reference")
+    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+
+    prepare_replacement_artifacts(project, driver)
+    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+
+    assert (replacement.returncode, replacement.stdout) == (
+        reference.returncode,
+        reference.stdout,
+    ) == (0, "")
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

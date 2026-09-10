@@ -82,6 +82,7 @@ requires_caps [allocate]
             });
             expected_body_instruction = checked_add(expected_body_instruction, 1);
             vec_set<i64>(next_instruction, 0, checked_add(global_id, 1));
+            drop(event);
         } else {
             if (kind == 2) {
                 let post_status: i32 = emit_contract_records(
@@ -90,6 +91,7 @@ requires_caps [allocate]
                 );
                 if (post_status != 0) { return post_status; }
                 vec_push<MirLowerEvent>(events, mir_event_return(lower_event_a(event)));
+                drop(event);
             } else {
                 vec_push<MirLowerEvent>(events, event);
             }

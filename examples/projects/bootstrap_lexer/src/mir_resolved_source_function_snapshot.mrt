@@ -11,8 +11,9 @@ import bootstrap_mir_cfg_placement;
 // This is a parity/materialization transport only: it serializes already-resolved
 // records without reinterpreting source semantics. Layout is magic, version,
 // then sixteen count-prefixed fixed-width sections matching the canonical adapter.
-pub fn print_resolved_source_function_snapshot(
+pub fn print_resolved_source_function_snapshot_with_source_policy(
     borrow effective_source: Buffer,
+    include_effective_source: i32,
     borrow body: Vec<MirFunctionRecord>,
     borrow contracts: Vec<MirFunctionContractRecord>,
     borrow contract_locals: Vec<MirFunctionContractLocal>,
@@ -174,10 +175,41 @@ pub fn print_resolved_source_function_snapshot(
         print(placement_block_id(r)); print(placement_instruction_id(r)); print(placement_ordinal(r));
         i = checked_add(i, 1);
     }
-    print(buffer_len(effective_source)); i = 0;
-    while (i < buffer_len(effective_source)) {
-        print(buffer_get(effective_source, i));
-        i = checked_add(i, 1);
+    if (include_effective_source == 0) {
+        print(0);
+    } else {
+        print(buffer_len(effective_source)); i = 0;
+        while (i < buffer_len(effective_source)) {
+            print(buffer_get(effective_source, i));
+            i = checked_add(i, 1);
+        }
     }
     return 0;
+}
+
+pub fn print_resolved_source_function_snapshot(
+    borrow effective_source: Buffer,
+    borrow body: Vec<MirFunctionRecord>,
+    borrow contracts: Vec<MirFunctionContractRecord>,
+    borrow contract_locals: Vec<MirFunctionContractLocal>,
+    borrow sources: Vec<MirFunctionInstructionSource>,
+    borrow ownership_bindings: Vec<MirOwnershipBinding>,
+    borrow ownership_records: Vec<MirOwnershipRecord>,
+    borrow cfg: Vec<MirCfgRecord>,
+    borrow placements: Vec<MirPlacementRecord>,
+    borrow capabilities: Vec<i64>,
+    borrow type_descriptors: Vec<MirTypeDescriptor>,
+    borrow numeric_type_descriptors: Vec<MirNumericTypeDescriptor>,
+    borrow destructor_descriptors: Vec<MirDestructorDescriptor>,
+    borrow destructor_body: Vec<MirFunctionRecord>,
+    borrow destructor_cfg: Vec<MirCfgRecord>,
+    borrow destructor_placements: Vec<MirPlacementRecord>
+) -> i32
+{
+    return print_resolved_source_function_snapshot_with_source_policy(
+        effective_source, 1, body, contracts, contract_locals, sources,
+        ownership_bindings, ownership_records, cfg, placements, capabilities,
+        type_descriptors, numeric_type_descriptors, destructor_descriptors,
+        destructor_body, destructor_cfg, destructor_placements
+    );
 }

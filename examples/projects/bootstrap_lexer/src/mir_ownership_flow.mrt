@@ -5,7 +5,7 @@ capability allocate;
 
 // Pre-MIR ownership events. Match uses semantic case values/ordinals and is
 // exhaustive; structured MIR receives one defensive default/unreachable edge.
-pub struct MirOwnershipBinding { binding_id: i64; local_id: i64; owned: i32; mutable: i32; }
+pub struct MirOwnershipBinding { binding_id: i64; local_id: i64; owned: i32; mutable: i32; needs_drop: i32; }
 pub struct MirOwnershipEvent { kind: i32; a: i64; b: i64; }
 pub struct MirOwnershipRecord {
     kind: i32; instruction_id: i64; binding_id: i64; other_binding_id: i64;
@@ -21,12 +21,20 @@ struct OwnershipFrame {
 }
 
 pub fn ownership_binding(binding_id: i64, local_id: i64, owned: i32, mutable: i32) -> MirOwnershipBinding {
-    return MirOwnershipBinding { binding_id: binding_id, local_id: local_id, owned: owned, mutable: mutable };
+    return MirOwnershipBinding { binding_id: binding_id, local_id: local_id, owned: owned, mutable: mutable, needs_drop: owned };
+}
+pub fn ownership_binding_with_drop(
+    binding_id:i64,local_id:i64,owned:i32,mutable:i32,needs_drop:i32
+)->MirOwnershipBinding{
+    return MirOwnershipBinding{
+        binding_id:binding_id,local_id:local_id,owned:owned,mutable:mutable,needs_drop:needs_drop
+    };
 }
 pub fn ownership_binding_id(borrow value: MirOwnershipBinding) -> i64 { return value.binding_id; }
 pub fn ownership_binding_local_id(borrow value: MirOwnershipBinding) -> i64 { return value.local_id; }
 pub fn ownership_binding_owned(borrow value: MirOwnershipBinding) -> i32 { return value.owned; }
 pub fn ownership_binding_mutable(borrow value: MirOwnershipBinding) -> i32 { return value.mutable; }
+pub fn ownership_binding_needs_drop(borrow value:MirOwnershipBinding)->i32{return value.needs_drop;}
 
 pub fn ownership_event_place(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 1, a: id, b: 0 }; }
 pub fn ownership_event_activate(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 2, a: id, b: 0 }; }
@@ -42,6 +50,10 @@ pub fn ownership_event_return(local: i64) -> MirOwnershipEvent { return MirOwner
 pub fn ownership_event_kind_end_scope() -> i32 { return 11; }
 pub fn ownership_event_end_scope(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: ownership_event_kind_end_scope(), a: id, b: 0 }; }
 pub fn ownership_event_kind_use() -> i32 { return 12; }
+// Typed source lowering selects this only for values with no destructor/drop
+// obligation. Strict end_scope remains the resource-cleanup assertion.
+pub fn ownership_event_kind_end_trivial_scope() -> i32 { return 13; }
+pub fn ownership_event_end_trivial_scope(id:i64)->MirOwnershipEvent{return MirOwnershipEvent{kind:ownership_event_kind_end_trivial_scope(),a:id,b:0};}
 pub fn ownership_event_use(id: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: ownership_event_kind_use(), a: id, b: 0 }; }
 pub fn ownership_status_live_at_scope_exit() -> i32 { return 105; }
 pub fn ownership_event_if(local: i64) -> MirOwnershipEvent { return MirOwnershipEvent { kind: 20, a: local, b: 0 }; }
@@ -118,10 +130,27 @@ fn restore(borrow_mut states: Vec<i32>, borrow snapshots: Vec<i32>, start: i64) 
     return 0;
 }
 
+fn ownership_state_moved() -> i32 { return 2; }
+fn ownership_state_dropped() -> i32 { return 3; }
+
+fn ownership_states_equivalent(left: i32, right: i32) -> i32 {
+    if (left == right) { return 1; }
+    var left_consumed: i32 = 0;
+    if (left == ownership_state_moved()) { left_consumed = 1; }
+    if (left == ownership_state_dropped()) { left_consumed = 1; }
+    var right_consumed: i32 = 0;
+    if (right == ownership_state_moved()) { right_consumed = 1; }
+    if (right == ownership_state_dropped()) { right_consumed = 1; }
+    if (left_consumed != 0) { if (right_consumed != 0) { return 1; } }
+    return 0;
+}
+
 fn states_equal(borrow states: Vec<i32>, borrow snapshots: Vec<i32>, start: i64) -> i32 {
     var i: i64 = 0;
     while (i < vec_len<i32>(states)) {
-        if (vec_get<i32>(states, i) != vec_get<i32>(snapshots, checked_add(start, i))) { return 0; }
+        if (ownership_states_equivalent(
+            vec_get<i32>(states, i), vec_get<i32>(snapshots, checked_add(start, i))
+        ) == 0) { return 0; }
         i = checked_add(i, 1);
     }
     return 1;
@@ -159,15 +188,23 @@ requires_caps [allocate]
     var i: i64 = vec_len<MirOwnershipBinding>(bindings);
     while (i > 0) {
         i = checked_sub(i, 1);
-        let b: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, i);
+        cleanup_binding(bindings,states,i,output,records,next);
+    }
+    return 0;
+}
+
+fn cleanup_binding(
+    borrow bindings:Vec<MirOwnershipBinding>,borrow_mut states:Vec<i32>,index:i64,
+    borrow_mut output:Vec<MirLowerEvent>,borrow_mut records:Vec<MirOwnershipRecord>,borrow_mut next:Vec<i64>
+)->i32 requires_caps [allocate] {
+        let b: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, index);
         if (b.owned != 0) {
-            if (vec_get<i32>(states, i) == 1) {
+            if (vec_get<i32>(states, index) == 1) {
                 let id: i64 = emit_place(output, next);
                 append_record(records, 6, id, b.binding_id, -1, b.local_id, 1, 1, 3);
-                vec_set<i32>(states, i, 3);
+                vec_set<i32>(states, index, 3);
             }
         }
-    }
     return 0;
 }
 
@@ -188,7 +225,9 @@ fn merge_if(
     if (terminated != 0) { restore(states, snapshots, frame.then_start); return 0; }
     var i: i64 = 0;
     while (i < vec_len<MirOwnershipBinding>(bindings)) {
-        if (vec_get<i32>(states, i) != vec_get<i32>(snapshots, checked_add(frame.then_start, i))) { return 62; }
+        if (ownership_states_equivalent(
+            vec_get<i32>(states, i), vec_get<i32>(snapshots, checked_add(frame.then_start, i))
+        ) == 0) { return 62; }
         i = checked_add(i, 1);
     }
     return 0;
@@ -323,14 +362,20 @@ requires_caps [allocate]
         }
         if (kind == 6) { handled = 1; if (terminated != 0) { return 74; } let s: i32 = replace_from_binding(event, bindings, states, output, records, next); if (s != 0) { return s; } }
         if (kind == 10) { handled = 1; if (terminated != 0) { return 41; } if (event.a < -1) { return 42; } cleanup_live(bindings, states, output, records, next); vec_push<MirLowerEvent>(output, mir_event_return(event.a)); terminated = 1; }
-        if (kind == ownership_event_kind_end_scope()) {
+        var ending_scope:i32=0;
+        if(kind==ownership_event_kind_end_scope()){ending_scope=1;}
+        if(kind==ownership_event_kind_end_trivial_scope()){ending_scope=1;}
+        if (ending_scope != 0) {
             handled = 1;
             let binding_index: i64 = find_binding(bindings, event.a);
             if (binding_index < 0) { return 102; }
             let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
             if (binding.owned == 0) { return 103; }
             let state: i32 = vec_get<i32>(states, binding_index);
-            if (state == 1) { return ownership_status_live_at_scope_exit(); }
+            if (state == 1) {
+                if(kind==ownership_event_kind_end_scope()){return ownership_status_live_at_scope_exit();}
+                cleanup_binding(bindings,states,binding_index,output,records,next);
+            }
             if (state == 0) { return 104; }
             vec_set<i32>(states, binding_index, 0);
         }

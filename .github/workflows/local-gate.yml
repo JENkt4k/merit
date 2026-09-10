@@ -16,26 +16,21 @@ jobs:
     name: Python 3.11 / Ubuntu / Alpha 1 corpus convergence
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
-
       - name: Install Merit and test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install --no-build-isolation -e ".[dev]"
-
       - name: Run Alpha 1 corpus convergence gate
         run: python scripts/gate.py corpus
-
       - name: Upload corpus coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,38 +39,59 @@ jobs:
           path: .merit/gates/corpus/*.json
           if-no-files-found: warn
 
-  linux-full:
-    name: Python 3.11 / Ubuntu / full gate
+  linux-acceptance-replacement:
+    name: Python 3.11 / Ubuntu / M7 replacement acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
+      - name: Install Merit and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-build-isolation -e ".[dev]"
+      - name: Run M7 replacement acceptance gate
+        run: python scripts/gate.py acceptance-replacement
+      - name: Upload M7 acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m7-replacement-acceptance
+          path: .merit/gates/acceptance-replacement/*.json
+          if-no-files-found: warn
 
+  linux-full:
+    name: Python 3.11 / Ubuntu / full gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Set up Java benchmark runtime
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-
       - name: Set up .NET benchmark runtime
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
-
       - name: Install Merit and test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install --no-build-isolation -e ".[dev]"
-
       - name: Run canonical full gate
         run: bash scripts/ci.sh --durations 50
 
@@ -83,29 +99,24 @@ jobs:
     name: Python 3.11 / Windows / native full gate
     runs-on: windows-latest
     timeout-minutes: 60
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
-
       - name: Set up Java benchmark runtime
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-
       - name: Set up .NET benchmark runtime
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
-
       - name: Set up MSYS2 UCRT64 GCC
         id: msys2
         uses: msys2/setup-msys2@v2
@@ -114,14 +125,12 @@ jobs:
           update: true
           install: mingw-w64-ucrt-x86_64-gcc
           path-type: inherit
-
       - name: Create Windows virtual environment and install Merit
         shell: pwsh
         run: |
           python -m venv .venv
           .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
           .\.venv\Scripts\python.exe -m pip install --no-build-isolation -e ".[dev]"
-
       - name: Run native Windows full gate
         shell: pwsh
         run: .\scripts\test-windows.ps1 -Gate full -Durations 50 -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"

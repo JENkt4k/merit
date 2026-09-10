@@ -8,6 +8,8 @@ import bootstrap_mir_structured_lowering;
 
 capability allocate;
 
+fn statement_discarded_expression_result() -> i64 { return -1; }
+
 pub fn statement_lowering_supports_kind(kind: i32) -> i32 {
     if (kind == 20) { return 1; }
     if (kind == 21) { return 1; }
@@ -160,8 +162,8 @@ requires_caps [allocate]
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
         var binding_id: i64 = -1;
         if (ast_kind(ast) == 30) {
-            binding_id = hir_find_binding_id(
-                source, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
+            binding_id = hir_find_scoped_binding_id(
+                source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
             );
         }
         let hir: HirExpressionRecord = lower_resolved_hir_record(
@@ -251,6 +253,18 @@ requires_caps [allocate]
         drop(stack);
     }
 
+    // Parenthesized expressions are HIR aliases, not new runtime locals. Keep
+    // the structured-event condition identity aligned with the canonical body
+    // record emitter after child local allocation has completed.
+    var alias_index: i64 = 0;
+    while (alias_index < count) {
+        let alias: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, alias_index);
+        if (hir_kind(alias) == 3) {
+            vec_set<i64>(local_ids, alias_index, vec_get<i64>(local_ids, hir_left(alias)));
+        }
+        alias_index = checked_add(alias_index, 1);
+    }
+
     var hir_index: i64 = 0;
     while (hir_index < count) {
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
@@ -304,6 +318,7 @@ requires_caps [allocate]
     if (count > 0) {
         result_local = vec_get<i64>(local_ids, checked_sub(count, 1));
     }
+    if (discard_result != 0) { result_local = statement_discarded_expression_result(); }
     drop(local_ids);
     drop(hir_nodes);
     drop(ast_nodes);
@@ -327,15 +342,33 @@ requires_caps [allocate]
             let operand_index: i64 = lower_binding_operand(statement, operands);
             if (operand_index < 0) { return 1; }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
-            vec_push<i64>(binding_starts, statement_operand_start(operand));
-            vec_push<i64>(binding_lengths, statement_operand_length(operand));
+            var exists: i32 = 0; var binding_index: i64 = 0;
+            while (binding_index < vec_len<i64>(binding_starts)) {
+                if (vec_get<i64>(binding_starts, binding_index) == statement_operand_start(operand)) {
+                    if (vec_get<i64>(binding_lengths, binding_index) == statement_operand_length(operand)) { exists = 1; }
+                }
+                binding_index = checked_add(binding_index, 1);
+            }
+            if (exists == 0) {
+                vec_push<i64>(binding_starts, statement_operand_start(operand));
+                vec_push<i64>(binding_lengths, statement_operand_length(operand));
+            }
         }
         if (kind == 21) {
             let operand_index: i64 = lower_binding_operand(statement, operands);
             if (operand_index < 0) { return 1; }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
-            vec_push<i64>(binding_starts, statement_operand_start(operand));
-            vec_push<i64>(binding_lengths, statement_operand_length(operand));
+            var exists: i32 = 0; var binding_index: i64 = 0;
+            while (binding_index < vec_len<i64>(binding_starts)) {
+                if (vec_get<i64>(binding_starts, binding_index) == statement_operand_start(operand)) {
+                    if (vec_get<i64>(binding_lengths, binding_index) == statement_operand_length(operand)) { exists = 1; }
+                }
+                binding_index = checked_add(binding_index, 1);
+            }
+            if (exists == 0) {
+                vec_push<i64>(binding_starts, statement_operand_start(operand));
+                vec_push<i64>(binding_lengths, statement_operand_length(operand));
+            }
         }
         index = checked_add(index, 1);
     }
