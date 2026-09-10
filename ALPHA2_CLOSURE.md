@@ -517,6 +517,12 @@ stdout/stderr, and observable files, prepares unchanged inputs twice and checks
 deterministic artifacts, uses isolated project copies, and includes the
 mandatory exact-decimal `ledger_app`.
 
+The canonical `acceptance-replacement` gate subsequently passed all 11 tests
+in 1023.26 seconds and emitted machine-readable evidence for 10/10 projects with
+`replacement_acceptance=PASS`. The affected bootstrap/project subsystem gate
+also passed 406 tests with one intentional skip in 1033.83 seconds. M7 remains
+open only for the canonical Ubuntu and native-Windows full-gate evidence.
+
 A bounded native diagnostic on the current candidate identifies repeated type
 and callable analysis, not generic expansion, as expensive work. Vector type
 ranking now enumerates distinct lexical predecessors instead of rescanning all
@@ -556,9 +562,9 @@ profiling observations, **not** acceptance or gate passes. Remaining work:
   function-count artifact expansion, but bootstrap-lexer acceptance must still
   be rerun before attributing the full timeout to that expansion.
 - All ten applications and their deterministic artifacts have now been
-  revalidated on the current candidate. The dedicated M7 gate, affected
-  subsystem, and authoritative Ubuntu/Windows full gates remain required before
-  claiming M7 closure.
+  revalidated on the current candidate. The dedicated M7 and affected subsystem
+  gates are green; authoritative Ubuntu/Windows full gates remain required
+  before claiming M7 closure.
 
 Focused vector evidence also exposed a lifecycle classification regression:
 general aggregate structs were absent from the ownership-transfer classifier.

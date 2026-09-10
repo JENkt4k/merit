@@ -101,16 +101,22 @@ def test_native_assembly_materializes_canonical_contract_cfg():
     assert function.capabilities == ("clock",)
     assert [block.block_id for block in function.blocks] == [0, 1, 2, 3]
     assert [instruction.instruction_id for block in function.blocks for instruction in block.instructions] == list(range(9))
-    assert [instruction.contract_kind for instruction in function.blocks[0].instructions[:2]] == ["none", "precondition"]
-    assert [instruction.contract_kind for instruction in function.blocks[1].instructions[-2:]] == ["none", "postcondition"]
-    assert [instruction.contract_kind for instruction in function.blocks[3].instructions[-2:]] == ["none", "postcondition"]
+    assert [instruction.contract_kind for instruction in function.blocks[0].instructions[:2]] == ["precondition", "precondition"]
+    assert [instruction.contract_kind for instruction in function.blocks[1].instructions[-2:]] == ["postcondition", "postcondition"]
+    assert [instruction.contract_kind for instruction in function.blocks[3].instructions[-2:]] == ["postcondition", "postcondition"]
+    assert sum(
+        instruction.kind == "contract_check"
+        and instruction.contract_kind == "postcondition"
+        for block in function.blocks
+        for instruction in block.instructions
+    ) == 2
     assert function.blocks[0].terminator.kind == "branch"
     assert function.blocks[1].terminator.kind == "return"
     assert function.blocks[2].terminator.kind == "jump"
     assert function.blocks[3].terminator.kind == "return"
     data = canonical_mir_json(module)
     assert '\"capabilities\":[\"clock\"]' in data
-    assert data.count('\"contract_kind\":\"postcondition\"') == 2
+    assert data.count('\"contract_kind\":\"postcondition\"') == 4
 
 
 def test_canonical_assembled_mir_emits_and_executes_c(tmp_path: Path):

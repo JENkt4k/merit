@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import platform
@@ -91,6 +92,14 @@ def main() -> int:
     pytest_ok = pytest_line is not None
     _print_check("pytest", pytest_line or "not installed", pytest_ok)
     ok &= pytest_ok
+
+    xdist_ok = importlib.util.find_spec("xdist") is not None
+    _print_check(
+        "pytest-xdist",
+        "installed" if xdist_ok else "not installed",
+        xdist_ok,
+    )
+    ok &= xdist_ok
 
     compiler, compiler_version = _find_c_compiler()
     compiler_ok = compiler is not None

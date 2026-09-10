@@ -55,7 +55,15 @@ _BODY_CALL_ARGUMENT = 17
 
 def _materialize_literal(
     text: str, type_: MirType, *, enforce_bounded_domain: bool = True
-) -> int | str:
+) -> bool | int | str:
+    if type_ == MirType("bool"):
+        if text in {"true", "1"}:
+            return True
+        if text in {"false", "0"}:
+            return False
+        raise NativeWholeFunctionMirError(
+            "bool constant must be true/false or encoded 0/1"
+        )
     if type_ == MirType("String"):
         try:
             value = json.loads(text)
