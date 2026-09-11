@@ -4,6 +4,7 @@ import ctypes
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 from lark.exceptions import UnexpectedInput
@@ -1099,9 +1100,10 @@ def test_project_cli_defaults_to_fresh_native_replacement_compilation(
         "build", str(root), "--replacement-driver", str(driver.executable), "-o", str(output),
     ])
 
+    expected_output = output.with_suffix(".exe") if sys.platform.startswith("win") else output
     assert status == 0
-    assert output.is_file()
-    assert subprocess.run([str(output)]).returncode == 7
+    assert expected_output.is_file()
+    assert subprocess.run([str(expected_output)]).returncode == 7
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
