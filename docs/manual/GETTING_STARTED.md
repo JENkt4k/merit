@@ -23,11 +23,12 @@ merit audit program.mrt
 Projects use `Merit.toml` plus source modules and the `merit-project` commands:
 
 ```bash
-merit-project check PATH
-merit-project verify PATH
-merit-project run PATH
-merit-project layout PATH
-merit-project audit PATH
+merit-project check PATH --replacement-driver EXECUTABLE
+merit-project build PATH --replacement-driver EXECUTABLE
+merit-project run PATH --replacement-driver EXECUTABLE
+merit-project layout PATH --compiler reference
+merit-project audit PATH --compiler reference
+merit-project verify PATH --compiler reference
 ```
 
 ## Bindings
@@ -95,4 +96,4 @@ Merit includes exact fixed-scale decimals and bounded/checked integer facilities
 
 ## Reference compiler versus replacement compiler
 
-During `v0.1.0-alpha.2`, the Python-hosted compiler remains the semantic oracle while the Merit-native replacement compiler is built out. This is an implementation transition, not a language fork. Programs should target the documented language semantics, not implementation quirks of either compiler path.
+During `v0.1.0-alpha.2`, `merit-project` uses the Merit-native replacement compiler by default. The Python-hosted compiler remains available only when explicitly selected as the reference/oracle. This is an implementation transition, not a language fork. Programs should target the documented language semantics, not implementation quirks of either compiler path.

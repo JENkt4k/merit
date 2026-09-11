@@ -122,7 +122,7 @@ def write_invalid_project(tmp_path):
 @pytest.mark.parametrize("command", ["check", "build", "run", "verify", "audit"])
 def test_project_commands_render_source_aware_semantic_errors(tmp_path, capsys, command):
     root = write_invalid_project(tmp_path)
-    arguments = [command, str(root)]
+    arguments = [command, str(root), "--compiler", "reference"]
     if command in ("build", "run", "verify"):
         arguments += ["-o", str(tmp_path / "invalid-output")]
     assert project_cli_main(arguments) == 1
@@ -166,7 +166,7 @@ pub fn broken() -> i32 {
     }
     return 0;
 }''')
-    assert project_cli_main(["check", str(root)]) == 1
+    assert project_cli_main(["check", str(root), "--compiler", "reference"]) == 1
     error = capsys.readouterr().err
     assert f" --> {worker}:8:26" in error
     assert f" --> {worker}:7:35" in error
@@ -260,7 +260,7 @@ fn main() -> i32 {
 pub fn convert<T>(value: T) -> i32 {
     return value;
 }''')
-    assert project_cli_main(["check", str(root)]) == 1
+    assert project_cli_main(["check", str(root), "--compiler", "reference"]) == 1
     error = capsys.readouterr().err
     assert "error[M3002]: return type i64 does not match i32" in error
     assert f" --> {worker}:3:5" in error
@@ -344,7 +344,7 @@ fn main() -> i32 {
 }''')
     (root / "src" / "worker.mrt").write_text('''module worker
 pub fn identity<T: Copy>(value: T) -> T { return value; }''')
-    assert project_cli_main(["check", str(root)]) == 1
+    assert project_cli_main(["check", str(root), "--compiler", "reference"]) == 1
     error = capsys.readouterr().err
     assert "error[M7002]: type Buffer does not satisfy generic bound Copy" in error
     assert f" --> {main_source}:4:12" in error
@@ -382,7 +382,7 @@ def test_project_cli_emits_json_diagnostics(tmp_path, capsys):
     source.write_text('''module json_project_diagnostic
 capability allocate;
 fn main()->i32 { let allocator:Allocator=system_allocator(); let data:Buffer=buffer_new(allocator,8); drop(data); return 0; }''')
-    assert project_cli_main(["check", str(root), "--diagnostic-format", "json"]) == 1
+    assert project_cli_main(["check", str(root), "--compiler", "reference", "--diagnostic-format", "json"]) == 1
     payload = json.loads(capsys.readouterr().err)
     assert payload["code"] == "M2003"
     assert payload["path"] == str(source)
@@ -408,7 +408,7 @@ def test_project_error_honors_json_diagnostic_mode(tmp_path, capsys):
     (root / "src" / "main.mrt").write_text(
         "module missing_import_json\nimport absent;\nfn main()->i32 { return 0; }\n"
     )
-    assert project_cli_main(["check", str(root), "--diagnostic-format", "json"]) == 1
+    assert project_cli_main(["check", str(root), "--compiler", "reference", "--diagnostic-format", "json"]) == 1
     payload = json.loads(capsys.readouterr().err)
     assert payload["code"] == "M8000"
     assert "missing modules" in payload["message"]

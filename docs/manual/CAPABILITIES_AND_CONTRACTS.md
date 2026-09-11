@@ -44,7 +44,7 @@ This is different from a conventional permission check hidden deep in a library.
 
 ## Auditing
 
-`merit audit` and `merit-project audit` expose capability-oriented analysis for programs/projects. The goal is that a reviewer can answer where authority is introduced and which functions require it without reconstructing an implicit global environment.
+`merit audit` and `merit-project audit --compiler reference` expose capability-oriented reference analysis for programs/projects. The goal is that a reviewer can answer where authority is introduced and which functions require it without reconstructing an implicit global environment.
 
 ## Contracts
 

@@ -2,7 +2,7 @@
 
 ## v0.1.0-alpha.2 development
 
-- Closed replacement milestones M1-M4 for statements/control flow, resource and payload-enum lifecycle, exact numerics and aggregates, and generics/traits; PR #109 is merged.
+- Closed replacement milestones M1-M7 through complete Alpha.1 corpus convergence and all ten replacement acceptance applications; PR #113 is merged.
 - Continued with M5 project/module/import/export/visibility closure. Corpus convergence, acceptance migration, production cutover, reproducibility/trust, and release audit remain open; Alpha.2 is not yet complete or trusted.
 - `ALPHA2_CLOSURE.md` remains the authoritative detailed milestone ledger.
 

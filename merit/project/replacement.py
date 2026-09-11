@@ -25,6 +25,7 @@ from merit.bootstrap.replacement_build import (
 )
 from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
 from merit.project.loader import LoadedProject
+from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement_source import canonical_replacement_project_source
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
@@ -107,7 +108,7 @@ def _validate_bundle_indices(functions: list[object]) -> None:
         next_index[module_name] = expected + 1
 
 
-def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunctionInput, ...]:
+def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -> tuple[ReplacementFunctionInput, ...]:
     """Load native-produced replacement snapshots without semantic fallback."""
 
     manifest_path = project.manifest.root / ".merit" / REPLACEMENT_MANIFEST
@@ -222,33 +223,22 @@ def load_replacement_inputs(project: LoadedProject) -> tuple[ReplacementFunction
     return tuple(resolved)
 
 
-def _project_entry_name(project: LoadedProject) -> str:
-    """Return the conventional executable entry function from the loaded program."""
-
-    entry = next((function for function in project.program.functions if function.name == "main"), None)
-    if entry is None:
-        raise ReplacementProjectError("replacement executable requires a main function")
-    return entry.name
-
-
-def build_replacement_project(project: LoadedProject, output: Path) -> ReplacementProjectArtifact:
+def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
     """Build only from native-resolved snapshots; never invoke reference semantics."""
 
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
-    entry_name = _project_entry_name(project)
-    main_c = "" if entry_name == "main" else f"int main(void) {{ return (int){entry_name}(); }}"
     c_path, executable = compile_replacement_artifact(
         artifact,
         output,
-        main_c=main_c,
+        main_c="",
         c_flags=project.manifest.c_flags,
     )
     return ReplacementProjectArtifact(c_path=c_path, executable=executable)
 
 
 def build_replacement_shared(
-    project: LoadedProject, output: Path,
+    project: LoadedProject | ReplacementLoadedProject, output: Path,
 ) -> ReplacementSharedProjectArtifact:
     """Build a shared library solely from native-resolved replacement artifacts."""
 

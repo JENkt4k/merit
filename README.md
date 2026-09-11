@@ -46,7 +46,7 @@ The Python-hosted alpha compiler remains the independent semantic oracle, but it
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-The concrete native driver now covers the closed M1-M4 replacement milestones: statements/control flow, resource and payload-enum lifecycle, exact numerics and aggregates, and generics/traits. PR #109 is merged. M5 project/module/import/export/visibility closure is the current frontier; M6-M10 remain later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
+The concrete native driver now covers the closed M1-M7 replacement milestones, including the complete accepted/rejected Alpha.1 corpus and all ten acceptance applications. PR #113 is merged with authoritative Ubuntu and native-Windows gates. M8 production-path cutover is the current frontier; M9-M10 remain later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
 
 ## Established language surface
 
@@ -80,17 +80,16 @@ merit check program.mrt
 merit verify program.mrt
 merit layout program.mrt
 merit audit program.mrt
-merit-project check PATH
-merit-project verify PATH
-merit-project run PATH
-merit-project layout PATH
-merit-project audit PATH
+merit-project check PATH --replacement-driver EXECUTABLE
+merit-project build PATH --replacement-driver EXECUTABLE
+merit-project run PATH --replacement-driver EXECUTABLE
+merit-project layout PATH --compiler reference
+merit-project audit PATH --compiler reference
 merit-project prepare-replacement PATH --replacement-driver EXECUTABLE
-merit-project build PATH --compiler replacement
-merit-project run PATH --compiler replacement
+merit-project verify PATH --compiler reference
 ```
 
-Replacement mode is deliberately fail-closed. It consumes prepared native-resolved artifacts for the supported replacement subset and does not silently use the Python reference compiler when replacement semantics are unavailable.
+`merit-project` selects replacement compilation by default. It discovers the native frontend from `--replacement-driver`, `MERIT_REPLACEMENT_DRIVER`, or `merit-replacement-frontend` on `PATH`, and prepares fresh native-resolved artifacts before compiling. Existing prepared artifacts may still be consumed without rediscovery. Replacement mode is deliberately fail-closed and never silently uses Python semantics. `verify`, `layout`, and `audit` are reference/oracle tools and therefore require explicit `--compiler reference`. The single-file `merit` interface is retained as the explicitly documented reference compiler during the Alpha.2 transition.
 
 ---
 
