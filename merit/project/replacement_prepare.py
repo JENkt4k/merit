@@ -23,6 +23,7 @@ from merit.bootstrap.resolved_source_function_bundle import (
     decode_resolved_source_function_bundle,
 )
 from merit.project.loader import LoadedProject, SourceUnit
+from merit.project.replacement_loader import ReplacementLoadedProject, ReplacementSourceUnit
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
 from merit.project.replacement_source import canonical_replacement_project_source
 
@@ -81,7 +82,7 @@ def _source_digest(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def _driver_environment(unit: SourceUnit) -> dict[str, str]:
+def _driver_environment(unit: SourceUnit | ReplacementSourceUnit) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
         {
@@ -142,7 +143,7 @@ def _driver_status(stderr: str) -> int | None:
     return int(match.group(1))
 
 
-def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit) -> tuple[tuple[int, ...], ...]:
+def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit | ReplacementSourceUnit) -> tuple[tuple[int, ...], ...]:
     executable = driver.resolved()
     try:
         completed = subprocess.run(
@@ -217,7 +218,7 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 
 def prepare_replacement_artifacts(
-    project: LoadedProject,
+    project: LoadedProject | ReplacementLoadedProject,
     driver: NativeReplacementDriver,
 ) -> PreparedReplacementArtifacts:
     """Run the native replacement driver and publish all resolved functions atomically."""
@@ -237,13 +238,11 @@ def prepare_replacement_artifacts(
             if unit.path.resolve() == project.manifest.entry_path.resolve()
         )
         driver_units = (
-            SourceUnit(
+            ReplacementSourceUnit(
                 path=project.manifest.entry_path,
                 module=project.manifest.name,
                 imports=(),
                 parser_source=project_source,
-                program=entry_unit.program,
-                exports=frozenset().union(*(unit.exports for unit in project.units)),
             ),
         )
 

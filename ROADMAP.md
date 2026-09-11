@@ -40,11 +40,11 @@ Early bootstrap work established deterministic native lexer/parser records and c
 
 ### Immediate critical path
 
-`ALPHA2_CLOSURE.md` is the authoritative detailed work queue. **M1-M6 are closed.**
+`ALPHA2_CLOSURE.md` is the authoritative detailed work queue. **M1-M7 are closed.**
 
-The current frontier is **M7 acceptance-project migration**: all 10 canonical acceptance applications must compile and run through replacement mode with no Python semantic lowering or silent fallback. The exact-decimal `ledger_app` is mandatory evidence. `docs/M7_ACCEPTANCE_MIGRATION.md` defines the implementation and closure contract.
+M7 acceptance-project migration closed in PR #113 with all 10 canonical applications, including the exact-decimal `ledger_app`, passing replacement execution and the authoritative Ubuntu and native-Windows gates. The current frontier is **M8 production-path cutover**: replacement compilation becomes the normal project compiler path and Python remains explicitly reference/oracle-only.
 
-M7 is followed by M8 normal production-path cutover, M9 stage reproducibility/trust, and M10 the Alpha.2 release audit. Alpha.2 is not complete or trusted, and self-hosting begins only after the trust gate.
+M8 is followed by M9 stage reproducibility/trust and M10 the Alpha.2 release audit. Alpha.2 is not complete or trusted, and self-hosting begins only after the trust gate.
 
 ### Documentation path
 
@@ -52,7 +52,7 @@ The user-facing programming manual lives under `docs/manual/` and should advance
 
 ### Trust criteria
 
-Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, real acceptance behavior, and reproducible stages. M6 satisfies the corpus-convergence component; M7-M10 close the remaining application, production, reproducibility, and release boundaries.
+Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, real acceptance behavior, and reproducible stages. M6 satisfies corpus convergence and M7 satisfies acceptance migration; M8-M10 close the remaining production, reproducibility, and release boundaries.
 
 Persistent hosted CI is a verification aid for the local/reproducibility gates; it does not replace bootstrap trust criteria.
 

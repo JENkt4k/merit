@@ -50,7 +50,15 @@ def test_generated_copybook_declarations_pass_project_check(tmp_path):
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-m", "merit.project.cli", "check", str(project)],
+        [
+            sys.executable,
+            "-m",
+            "merit.project.cli",
+            "check",
+            str(project),
+            "--compiler",
+            "reference",
+        ],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr

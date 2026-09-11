@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-09-03
+Status date: 2026-09-10
 
 ## Release target
 
@@ -8,7 +8,7 @@ The `v0.1.0-alpha.1` local release gate is complete. Package metadata uses the P
 
 Development is on `v0.1.0-alpha.2`: remove Python from the normal compiler path without broadening the language. Python remains an independent semantic/diagnostic oracle until the replacement compiler qualifies as trusted.
 
-The canonical GitHub gates run the full clean suite on Ubuntu and native Windows. Alpha.2 milestones M1-M6 are closed. `ALPHA2_CLOSURE.md` is the authoritative source for detailed replacement-coverage and milestone state.
+The canonical GitHub gates run the full clean suite on Ubuntu and native Windows. Alpha.2 milestones M1-M7 are closed. `ALPHA2_CLOSURE.md` is the authoritative source for detailed replacement-coverage and milestone state.
 
 ## Proven alpha foundation
 
@@ -45,9 +45,9 @@ Python remains orchestration/transport at current seams and the independent orac
 
 ## Current frontier
 
-M7 acceptance migration is the current frontier. It must drive all 10 canonical acceptance projects through replacement compilation and native execution with no Python semantic fallback; the exact-decimal `ledger_app` is mandatory evidence. The implementation/closure contract is recorded in `docs/M7_ACCEPTANCE_MIGRATION.md`.
+M7 acceptance migration closed in PR #113: all 10 canonical acceptance projects, including the exact-decimal `ledger_app`, passed replacement compilation and native execution, and the canonical Ubuntu and native-Windows gates passed.
 
-M8 production-path cutover, M9 reproducibility/trust, and M10 release audit follow. Alpha.2 is therefore not yet complete or trusted.
+M8 production-path cutover is the current frontier. M9 reproducibility/trust and M10 release audit follow. Alpha.2 is therefore not yet complete or trusted.
 
 ## Documentation
 

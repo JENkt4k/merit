@@ -1,8 +1,34 @@
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
+import sys
 
 from scripts import gate
+
+
+def test_acceptance_verification_selects_reference_oracle_explicitly(monkeypatch) -> None:
+    observed: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        gate,
+        "run",
+        lambda command, *, cwd=gate.REPOSITORY_ROOT: observed.append((command, cwd)),
+    )
+
+    project = Path("example-project")
+    gate.verify_project("example", project)
+
+    assert observed == [
+        ([
+            sys.executable,
+            "-m",
+            "merit.project.cli",
+            "verify",
+            str(project),
+            "--compiler",
+            "reference",
+        ], gate.REPOSITORY_ROOT),
+    ]
 
 
 def test_full_gate_runs_replacement_acceptance_once_as_reported_phase(monkeypatch) -> None:

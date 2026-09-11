@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -14,11 +16,18 @@ from .build import build, build_shared, check, interpret
 from .loader import ProjectError, load_project
 from .replacement import build_replacement_project, build_replacement_shared
 from .replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
+from .replacement_loader import load_replacement_project
 
 
 def _manifest(value: str) -> Path:
     path = Path(value)
     return path / "Merit.toml" if path.is_dir() else path
+
+
+def _replacement_driver_path(argument: str | None) -> Path | None:
+    configured = argument or os.environ.get("MERIT_REPLACEMENT_DRIVER")
+    discovered = configured or shutil.which("merit-replacement-frontend")
+    return Path(discovered) if discovered is not None else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,18 +41,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--compiler",
         choices=("reference", "replacement"),
-        default="reference",
-        help="production compiler path; replacement mode consumes only native-resolved artifacts and never falls back",
+        default="replacement",
+        help="compiler path (default: replacement); reference selects the Python oracle explicitly",
     )
     parser.add_argument(
         "--replacement-driver",
         metavar="EXECUTABLE",
-        help="native replacement frontend executable for prepare-replacement; source is supplied on stdin",
+        help="native replacement frontend executable (also MERIT_REPLACEMENT_DRIVER or merit-replacement-frontend on PATH)",
     )
     parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
     try:
-        project = load_project(_manifest(args.path))
+        replacement_mode = args.compiler == "replacement" or args.command == "prepare-replacement"
+        project = load_replacement_project(_manifest(args.path)) if replacement_mode else load_project(_manifest(args.path))
         if args.command == "prepare-replacement":
             if not args.replacement_driver:
                 raise ReplacementBuildError(
@@ -58,12 +68,27 @@ def main(argv: list[str] | None = None) -> int:
                 imports = ", ".join(unit.imports) or "(none)"
                 print(f"{unit.module}: {imports}")
             return 0
+        if args.compiler == "replacement" and args.command in {"layout", "audit", "verify"}:
+            raise ReplacementBuildError(
+                f"{args.command!r} is a Python reference/oracle command; rerun with --compiler reference"
+            )
         if args.command == "layout":
             print(json.dumps(LayoutEngine(project.program).all(), indent=2))
             return 0
         if args.command == "audit":
             checker = check(project)
             print(json.dumps(audit_payload(project.program, checker), indent=2))
+            return 0
+        if args.command == "check" and args.compiler == "replacement":
+            driver_path = _replacement_driver_path(args.replacement_driver)
+            if driver_path is None:
+                raise ReplacementBuildError(
+                    "replacement frontend is not configured; use --replacement-driver, "
+                    "MERIT_REPLACEMENT_DRIVER, or install merit-replacement-frontend on PATH"
+                )
+            prepared = prepare_replacement_artifacts(project, NativeReplacementDriver(driver_path))
+            print(f"checked {len(project.units)} modules through the native replacement frontend")
+            print(prepared.manifest_path)
             return 0
         if args.command == "check":
             checker = check(project)
@@ -72,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         output = Path(args.output) if args.output else project.manifest.root / "build" / project.manifest.name
         if args.compiler == "replacement" and args.command in {"build", "build-shared", "run"}:
+            driver_path = _replacement_driver_path(args.replacement_driver)
+            if driver_path is not None:
+                prepare_replacement_artifacts(project, NativeReplacementDriver(driver_path))
             if args.command == "build-shared":
                 replacement_shared = build_replacement_shared(project, output)
                 print(replacement_shared.library)

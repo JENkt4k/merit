@@ -4,6 +4,7 @@ import ctypes
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 from lark.exceptions import UnexpectedInput
@@ -16,6 +17,7 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 from merit.compiler import Checker, CompileError, parse
 from merit.project.build import build
+from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     ReplacementProjectError,
@@ -1088,6 +1090,23 @@ def test_build_concrete_native_driver_reaches_replacement_executable_without_pyt
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
+def test_project_cli_defaults_to_fresh_native_replacement_compilation(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    root = _project(tmp_path)
+    output = root / "build" / "production-default"
+
+    status = project_cli_main([
+        "build", str(root), "--replacement-driver", str(driver.executable), "-o", str(output),
+    ])
+
+    expected_output = output.with_suffix(".exe") if sys.platform.startswith("win") else output
+    assert status == 0
+    assert expected_output.is_file()
+    assert subprocess.run([str(expected_output)]).returncode == 7
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
 def test_concrete_native_driver_compiles_qualified_multimodule_project_as_one_bundle(
     tmp_path: Path, driver: NativeReplacementDriver,
 ) -> None:
@@ -1098,11 +1117,14 @@ def test_concrete_native_driver_compiles_qualified_multimodule_project_as_one_bu
         [str(reference_executable)], text=True, capture_output=True, check=True,
     )
 
-    prepared = prepare_replacement_artifacts(project, driver)
-    assert len(prepared.snapshot_paths) == 4
-    artifact = build_replacement_project(project, root / "build" / "replacement")
+    replacement_output = root / "build" / "replacement"
+    assert project_cli_main([
+        "build", str(root), "--replacement-driver", str(driver.executable),
+        "-o", str(replacement_output),
+    ]) == 0
+    assert len(load_replacement_inputs(project)) == 4
     replacement = subprocess.run(
-        [str(artifact.executable)], text=True, capture_output=True, check=True,
+        [str(replacement_output)], text=True, capture_output=True, check=True,
     )
 
     assert (replacement.returncode, replacement.stdout, replacement.stderr) == (

@@ -73,9 +73,9 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | cross-module imports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | visibility/qualified names | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
 | stable exports/shared libraries | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | CLOSED |
-| all alpha accepted corpus | ✓ | OPEN | OPEN | OPEN | — | — | OPEN |
-| all alpha rejected corpus | ✓ | OPEN | OPEN | — | OPEN | — | OPEN |
-| all nine acceptance projects | ✓ | OPEN | OPEN | OPEN | — | OPEN | OPEN |
+| all alpha accepted corpus | ✓ | ✓ | ✓ | ✓ | — | indirect | CLOSED |
+| all alpha rejected corpus | ✓ | ✓ | ✓ | — | ✓ | indirect | CLOSED |
+| all ten acceptance projects | ✓ | ✓ | ✓ | ✓ | — | ✓ | CLOSED |
 | replacement default compiler path | — | OPEN | — | OPEN | OPEN | OPEN | OPEN |
 | Python semantic authority removed | — | OPEN | — | — | — | — | OPEN |
 | stage-0/stage-1 equivalence | — | OPEN | OPEN | OPEN | — | — | OPEN |
@@ -506,10 +506,9 @@ Output should be an executable/generated coverage report where practical.
 
 The exact-decimal ledger is mandatory evidence.
 
-#### In-progress closure checkpoint (2026-09-10)
+#### Closure evidence (2026-09-10)
 
-M7 remains **OPEN** pending the dedicated and cross-platform authoritative
-gates. On the current candidate, all ten canonical applications pass the
+M7 is **CLOSED** by PR #113. All ten canonical applications pass the
 production replacement acceptance harness. The nine smaller applications plus
 the exact inventory check passed in 20.33 seconds; `bootstrap_lexer` passed in
 970.85 seconds. The harness compares reference and replacement exit status,
@@ -523,8 +522,10 @@ in 1023.26 seconds and emitted machine-readable evidence for 10/10 projects with
 also passed 406 tests with one intentional skip in 1033.83 seconds. The
 authoritative local full gate then passed 1132 tests with one intentional skip,
 the explicit 10/10 replacement-acceptance phase, and the established 10/10
-reference acceptance phase in 2135.286 seconds. M7 remains open only for the
-canonical Ubuntu and native-Windows full-gate evidence.
+reference acceptance phase in 2135.286 seconds. The PR #113 Ubuntu Alpha.1
+corpus, Ubuntu M7 acceptance, Ubuntu full, and native-Windows full checks all
+passed before merge commit `551a6bcf3c00967b9f19b89b79277bb031822b45`
+reached `main`.
 
 A bounded native diagnostic on the current candidate identifies repeated type
 and callable analysis, not generic expansion, as expensive work. Vector type
@@ -555,19 +556,17 @@ profiling observations, **not** acceptance or gate passes. Remaining work:
   the replacement scope assertion rejected a live non-Copy binding. Typed
   lowering now distinguishes a trivial scope exit from a resource scope exit;
   the latter retains the existing explicit-cleanup requirement and strict
-  end-scope assertion. Full acceptance validation remains pending.
+  end-scope assertion.
 - MRBF v2 source sharing now survives prepared-artifact publication. The
   decoder hydrates its in-memory function views for consumers while retaining
   compact encoded snapshots for persistence; project materialization supplies
   the already-validated canonical unit source. Focused bundle/preparation tests
   prove later snapshot files omit the shared UTF-8 source without weakening
   their materialization input. This removes a potentially source-size times
-  function-count artifact expansion, but bootstrap-lexer acceptance must still
-  be rerun before attributing the full timeout to that expansion.
+  function-count artifact expansion.
 - All ten applications and their deterministic artifacts have now been
   revalidated on the current candidate. The dedicated M7 and affected subsystem
-  gates are green; authoritative Ubuntu/Windows full gates remain required
-  before claiming M7 closure.
+  gates and authoritative Ubuntu/Windows full gates are green.
 
 Focused vector evidence also exposed a lifecycle classification regression:
 general aggregate structs were absent from the ownership-transfer classifier.
@@ -610,6 +609,33 @@ branch and separately requires rejection when resource cleanup is absent.
 Python becomes explicitly reference/oracle-only.
 
 No silent fallback.
+
+#### Candidate cutover
+
+`merit-project` now selects replacement compilation by default. Its production
+loader performs only manifest/source transport and does not invoke the Python
+parser, checker, interpreter, or C generator. A native frontend configured by
+`--replacement-driver`, `MERIT_REPLACEMENT_DRIVER`, or the
+`merit-replacement-frontend` executable on `PATH` prepares fresh artifacts in
+the same `check`, `build`, `build-shared`, or `run` invocation; already prepared
+artifacts remain consumable and source-digest validation remains fail-closed.
+
+`verify`, `layout`, and `audit` are deliberately reference/oracle operations and
+require explicit `--compiler reference`. The legacy single-file `merit` command
+is likewise documented as a reference interface during the transition. A
+focused default-path regression proves source-to-native compilation without the
+reference project loader, and the existing qualified multi-module parity case
+now traverses the same default production CLI path.
+
+M8 remains **OPEN** until affected focused/subsystem validation and the
+authoritative cross-platform full gates pass on the PR.
+
+Current focused evidence is 259 replacement snapshot/bundle/preparation/CLI,
+MIR ABI/backend, and concrete-native-driver tests passing in 76.05 seconds.
+The default single-project production path passed independently in 16.91
+seconds and the qualified multi-module default path in 16.57 seconds. The
+canonical subsystem gate passed 414 tests with one intentional skip in
+1042.34 seconds (`MERIT_GATE_RESULT=PASS`, 1044.937 seconds total).
 
 ### M9 — Trust/reproducibility
 

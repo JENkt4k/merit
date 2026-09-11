@@ -189,7 +189,7 @@ def test_qualified_name_requires_explicit_import(tmp_path, capsys):
     )
     with pytest.raises(ProjectError,match="module main uses qualified name domain.answer without importing domain"):
         load_project(project_root / "Merit.toml")
-    assert project_cli_main(["check",str(project_root),"--diagnostic-format","json"]) == 1
+    assert project_cli_main(["check",str(project_root),"--compiler","reference","--diagnostic-format","json"]) == 1
     payload=json.loads(capsys.readouterr().err)
     assert payload["code"] == "M8000"
     assert payload["path"] == str(project_root / "src" / "main.mrt")
@@ -207,7 +207,7 @@ def test_cycle_is_rejected(tmp_path):
 
 def test_project_layout_command_reports_generated_types(capsys):
     manifest = ROOT / "examples" / "projects" / "generic_collections" / "Merit.toml"
-    assert project_cli_main(["layout", str(manifest)]) == 0
+    assert project_cli_main(["layout", str(manifest), "--compiler", "reference"]) == 0
     out = capsys.readouterr().out
     layouts = {entry["name"]: entry for entry in json.loads(out)}
     assert layouts["Vec__Buffer"]["kind"] == "vector"
@@ -218,7 +218,7 @@ def test_project_layout_command_reports_generated_types(capsys):
 
 def test_project_audit_command_reports_hazards(capsys):
     manifest = ROOT / "examples" / "projects" / "generic_collections" / "Merit.toml"
-    assert project_cli_main(["audit", str(manifest)]) == 0
+    assert project_cli_main(["audit", str(manifest), "--compiler", "reference"]) == 0
     audit = json.loads(capsys.readouterr().out)
     assert audit["declared_capabilities"] == ["allocate"]
     assert audit["sites"] == [{"function": "main", "capability": "allocate"}]
@@ -235,14 +235,14 @@ def test_filesystem_capability_project_verifies_in_temporary_directory(tmp_path,
     executable = tmp_path / "filesystem-capabilities"
     monkeypatch.chdir(tmp_path)
 
-    assert project_cli_main(["verify", str(manifest), "-o", str(executable)]) == 0
+    assert project_cli_main(["verify", str(manifest), "--compiler", "reference", "-o", str(executable)]) == 0
     assert capsys.readouterr().out == "verified 1 modules; output matches (13 bytes)\n"
     assert (tmp_path / "merit-filesystem-capabilities.bin").read_bytes() == b"MRT"
 
 
 def test_filesystem_capability_project_audit_classifies_read_and_write(capsys):
     manifest = ROOT / "examples" / "projects" / "filesystem_capabilities" / "Merit.toml"
-    assert project_cli_main(["audit", str(manifest)]) == 0
+    assert project_cli_main(["audit", str(manifest), "--compiler", "reference"]) == 0
     audit = json.loads(capsys.readouterr().out)
 
     assert audit["declared_capabilities"] == ["allocate", "file_read", "file_write"]

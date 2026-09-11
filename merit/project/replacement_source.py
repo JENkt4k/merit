@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from merit.project.loader import LoadedProject
+from merit.project.replacement_loader import ReplacementLoadedProject
 
 
 _MODULE_LINE = re.compile(
@@ -57,7 +58,7 @@ def _desugar_legacy_i64vec(source: str) -> str:
     return source
 
 
-def _native_unit_source(project: LoadedProject, unit_index: int) -> str:
+def _native_unit_source(project: LoadedProject | ReplacementLoadedProject, unit_index: int) -> str:
     unit = project.units[unit_index]
     source = unit.path.read_text(encoding="utf-8")
     source = _MODULE_LINE.sub(_blank_match, source, count=1)
@@ -101,7 +102,7 @@ def _deduplicate_project_capabilities(source: str, seen: set[str]) -> str:
     return _CAPABILITY_LINE.sub(normalize, source)
 
 
-def canonical_replacement_project_source(project: LoadedProject) -> str:
+def canonical_replacement_project_source(project: LoadedProject | ReplacementLoadedProject) -> str:
     """Join validated units without invoking reference semantic lowering.
 
     Unit order is the manifest loader's deterministic source-path order. Module

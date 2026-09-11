@@ -96,7 +96,15 @@ def pytest(
 
 
 def verify_project(name: str, path: Path, output: Path | None = None, cwd: Path = REPOSITORY_ROOT) -> None:
-    command = [sys.executable, "-m", "merit.project.cli", "verify", str(path)]
+    command = [
+        sys.executable,
+        "-m",
+        "merit.project.cli",
+        "verify",
+        str(path),
+        "--compiler",
+        "reference",
+    ]
     if output is not None:
         command.extend(["-o", str(output)])
     with group(f"acceptance: {name}"):
