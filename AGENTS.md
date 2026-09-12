@@ -6,20 +6,21 @@ Continue Merit as a deterministic systems language. Preserve exact numerics,
 explicit allocation, ownership, contracts, capability-gated hazardous operations,
 stable C interoperability, and interpreter/native semantic equivalence.
 
-The active release objective is final closure of `v0.1.0-alpha.2`. Python
-semantic authority is removed from normal production compilation, the
-replacement compiler has qualified as trusted for the documented Alpha.1
-surface, and Python remains an independent oracle.
+`v0.1.0-alpha.2` is released. The active objective is the bounded technical-debt
+campaign in `POST_ALPHA2_CLEANUP.md`, beginning with deliberate migration of
+existing semantic numeric identifiers. Python semantic authority remains absent
+from normal production compilation, and Python remains an independent oracle.
 
-Do not broaden the language during alpha.2 closure.
+Do not broaden the language during post-Alpha.2 cleanup.
 
 ## Start here
 
-1. Read `ALPHA2_CLOSURE.md` first. Treat its open coverage cells and milestone
-   ordering as the authoritative alpha.2 work queue.
+1. Read `POST_ALPHA2_CLEANUP.md` first. Treat its inventory, PR ordering, and
+   exit criteria as the authoritative cleanup work queue. Read
+   `ALPHA2_CLOSURE.md` as the historical release-evidence ledger.
 2. Read `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `CODEX_HANDOFF.md`
-   for architecture/history. When those conflict with `ALPHA2_CLOSURE.md` or
-   current `main`, current `main` and `ALPHA2_CLOSURE.md` win.
+   for architecture/history. When those conflict with the active cleanup ledger
+   or current `main`, current `main` and `POST_ALPHA2_CLEANUP.md` win.
 3. Read `ARCHITECTURE.md`, `EPOCH-III.md`, and relevant files under `spec/`.
 4. Read `docs/DEVELOPMENT_GATES.md` before running broad validation.
 5. Re-anchor on current `main`:
@@ -49,8 +50,8 @@ Do not broaden the language during alpha.2 closure.
 - Python may remain an independent oracle and temporary orchestration layer,
   but must not regain production semantic authority.
 - Do not weaken or delete a valid test merely to make a gate green.
-- Prefer the final alpha.2 representation over temporary compatibility seams
-  when the final representation can reasonably be implemented in the same PR.
+- Preserve the tagged Alpha.2 representation and compatibility contracts while
+  removing technical debt; do not add temporary compatibility seams.
 
 ## Semantic numeric identifiers
 
@@ -74,10 +75,11 @@ definition boundaries when the numeric value itself is part of the contract;
 consumers should use the symbolic representation rather than duplicate the raw
 value.
 
-This rule is forward-looking and does not authorize unrelated cleanup or
-refactoring of existing numeric debt.
+The cleanup campaign explicitly authorizes only the numeric domains and PR
+boundaries selected in `POST_ALPHA2_CLEANUP.md`. It does not authorize unrelated
+cleanup or refactoring.
 
-## Alpha.2 development strategy
+## Trusted replacement architecture
 
 The replacement compiler architecture is established through:
 
@@ -99,7 +101,7 @@ Prefer the largest coherent vertical milestone that can be completely validated.
 A PR may touch many files and contain substantial implementation work if it
 closes one coherent semantic block and the full gate remains authoritative.
 
-Current large milestone sequence:
+The completed Alpha.2 milestone sequence was:
 
 1. accepted-alpha statement/control-flow closure;
 2. resource model and payload-enum lifecycle closure;
@@ -112,14 +114,13 @@ Current large milestone sequence:
 9. stage-0/stage-1 reproducibility and deterministic equivalence;
 10. alpha.2 release audit/documentation closure.
 
-Update `ALPHA2_CLOSURE.md` as evidence changes. Do not mark a surface closed
-because a parser fixture exists; closure requires the vertical replacement path
-defined in that document.
+Do not rewrite `ALPHA2_CLOSURE.md` as a new work queue. New cleanup evidence
+belongs in `POST_ALPHA2_CLEANUP.md`.
 
 ## Development loop
 
 1. Re-anchor on `main` and verify the previous merge/gate.
-2. Read `ALPHA2_CLOSURE.md`.
+2. Read the active cleanup ledger.
 3. Choose the highest-value coherent open milestone.
 4. Create one branch. Do not start parallel autonomous branches.
 5. Analyze the complete affected surface before editing.
@@ -272,7 +273,7 @@ running the full gate after each edit.
 
 `v0.1.0-alpha.1` is complete.
 
-Development is closing `v0.1.0-alpha.2`.
+`v0.1.0-alpha.2` is released and tagged.
 
 The following production replacement boundaries are already established:
 
@@ -294,9 +295,8 @@ The following production replacement boundaries are already established:
 Do not recreate these milestones or introduce older transitional architecture
 because older status documents mention them.
 
-M1-M9 are closed through this pipeline. The active objective is the M10 release
-audit, clean validation, manual merge, and final tag tracked in
-`ALPHA2_CLOSURE.md`.
+M1-M10 are closed through this pipeline. The active objective is the bounded
+post-Alpha.2 cleanup campaign tracked in `POST_ALPHA2_CLEANUP.md`.
 
 Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
 The Alpha.2 compiler has satisfied the trust/reproducibility gate; self-hosting

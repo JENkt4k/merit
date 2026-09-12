@@ -6,14 +6,14 @@ Status date: 2026-09-12
 
 The `v0.1.0-alpha.1` local release gate is complete.
 
-The **Alpha.2 release candidate** targets `v0.1.0-alpha.2`; package metadata
-uses the PEP 440 equivalent `0.1.0a2`. Normal project compilation uses the
+**Alpha.2 is released** as `v0.1.0-alpha.2`; package metadata uses the PEP 440
+equivalent `0.1.0a2`. Normal project compilation uses the
 Merit-native replacement compiler. Python remains the independent semantic and
 diagnostic reference oracle.
 
 The canonical GitHub gates run the full clean suite on Ubuntu and native
-Windows. M1-M9 are closed; M10 is the final release audit and manual-tag
-boundary. `ALPHA2_CLOSURE.md` is authoritative for detailed evidence.
+Windows. M1-M10 are closed. `ALPHA2_CLOSURE.md` is the historical detailed
+release ledger; `POST_ALPHA2_CLEANUP.md` is the active work queue.
 
 ## Proven alpha foundation
 
@@ -58,8 +58,11 @@ three native stages agree on the fixed protocol probe in clean Ubuntu and
 native-Windows environments.
 
 The replacement compiler is trusted for the documented Alpha.1 production
-surface. Alpha.2 is not formally released until M10 validation, manual merge,
-and the `v0.1.0-alpha.2` tag are complete.
+surface, and Alpha.2 completed M10 and was tagged at merge commit `53699f2`.
+The active frontier is the bounded post-Alpha.2 cleanup campaign: first classify
+and migrate existing semantic numeric identifiers without renumbering or
+semantic changes, then address separately tracked bootstrap/test-infrastructure
+defects. Ownership/buffer/tensor expansion belongs to a later Alpha.3 plan.
 
 ## Documentation
 

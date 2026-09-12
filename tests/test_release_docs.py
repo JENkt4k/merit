@@ -13,10 +13,11 @@ def test_release_documents_exist_and_name_the_active_target():
         assert 'v0.1.0-alpha.2' in text
 
 
-def test_status_records_the_alpha2_release_candidate():
+def test_status_records_the_alpha2_release_and_cleanup_frontier():
     status=(ROOT/'STATUS.md').read_text()
-    assert 'Alpha.2 release candidate' in status
-    assert 'M1-M9 are closed' in status
+    assert 'Alpha.2 is released' in status
+    assert 'M1-M10 are closed' in status
+    assert 'POST_ALPHA2_CLEANUP.md' in status
     assert 'independent semantic' in status
     assert 'diagnostic reference oracle' in status
     assert 'No known semantic correctness blocker remains undocumented' in status
@@ -61,3 +62,13 @@ def test_alpha2_release_boundary_keeps_oracle_and_self_hosting_distinct():
     assert 'independent oracle' in limitations
     assert 'Self-hosting' in roadmap
     assert 'post-alpha.2' in roadmap.lower()
+
+
+def test_post_alpha2_cleanup_is_bounded_and_preserves_encodings():
+    cleanup=(ROOT/'POST_ALPHA2_CLEANUP.md').read_text()
+    for inventory_id in range(1,11):
+        assert f'N{inventory_id}' in cleanup
+    assert 'Do not renumber' in cleanup
+    assert 'language semantics' in cleanup
+    assert 'Python and Merit bootstrap mappings have parity evidence' in cleanup
+    assert 'ALPHA3_CLOSURE.md' in cleanup

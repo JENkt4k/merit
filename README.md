@@ -24,6 +24,7 @@ These documents describe design goals and constraints. Claims about performance,
 For continued development, start with:
 
 - `AGENTS.md` — repository rules, invariants, and development loop
+- `POST_ALPHA2_CLEANUP.md` — active bounded technical-debt inventory and queue
 - `STATUS.md` — current project and replacement-compiler state
 - `ROADMAP.md` — active critical path and later work
 - `BOOTSTRAP_STATUS.md` — detailed replacement-compiler checkpoint
@@ -38,8 +39,8 @@ For continued development, start with:
 bash scripts/ci.sh
 ```
 
-The completed `v0.1.0-alpha.1` release is followed by the
-`v0.1.0-alpha.2` release candidate. The authoritative GitHub Local Gate runs
+The completed `v0.1.0-alpha.1` release is followed by the completed and tagged
+`v0.1.0-alpha.2` release. The authoritative GitHub Local Gate runs
 clean Ubuntu and native-Windows corpus, replacement-acceptance,
 reproducibility, and full validation. Exact counts remain checkpoint evidence
 rather than a frozen README promise.
@@ -53,11 +54,12 @@ provenance.
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-The concrete native driver covers M1-M9: the complete accepted/rejected Alpha.1
+The concrete native driver covers M1-M10: the complete accepted/rejected Alpha.1
 corpus, all ten acceptance applications, default production-path cutover, and
-clean stage reproducibility. PR #115 closed the trust gate with authoritative
-Ubuntu and native-Windows evidence. M10 is the final release audit; Alpha.2
-awaits final validation, manual merge, and tagging. See `ALPHA2_CLOSURE.md`.
+clean stage reproducibility. PR #115 closed the trust gate, and PR #116 closed
+the release audit with authoritative Ubuntu and native-Windows evidence before
+the `v0.1.0-alpha.2` tag. See `ALPHA2_CLOSURE.md` for historical evidence and
+`POST_ALPHA2_CLEANUP.md` for current work.
 
 ## Established language surface
 

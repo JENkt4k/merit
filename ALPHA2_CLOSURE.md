@@ -1,5 +1,9 @@
 # Merit v0.1.0-alpha.2 Closure Matrix
 
+**Status:** Complete and tagged as `v0.1.0-alpha.2` at
+`53699f28f0877483081aed81f6b3488d0cf6ffd5`. This is now a historical release
+evidence ledger; active cleanup work is tracked in `POST_ALPHA2_CLEANUP.md`.
+
 ## Objective
 
 `v0.1.0-alpha.2` removes Python semantic authority from normal production compilation for the complete documented alpha.1 language surface.

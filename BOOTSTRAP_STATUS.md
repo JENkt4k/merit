@@ -2,7 +2,7 @@
 
 Checkpoint date: 2026-09-12
 
-Scope: `v0.1.0-alpha.2` release closure after replacement-compiler trust
+Scope: released `v0.1.0-alpha.2` baseline after replacement-compiler trust
 qualification. Python remains the independent oracle. The Merit-native
 replacement compiler is trusted for the documented Alpha.1 production surface
 but is not self-hosted.
@@ -29,9 +29,9 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | HIR differential cases | Proven for measured boundaries; not used as whole-language percentages |
 | Bootstrap/reference parity | Canonical M6 same-source accepted/rejected corpus convergence is closed |
 | Reference compiler source | Python Alpha.1 compiler remains the independent semantic/diagnostic oracle |
-| Merit-native compiler source | Concrete native driver carries M1-M9 production and trust evidence |
+| Merit-native compiler source | Concrete native driver carries M1-M10 production, trust, and release evidence |
 | Generated C size | Tracked as build evidence rather than an optimization target |
-| Known semantic blockers | None for the documented Alpha.1 production surface; M10 is release-process closure |
+| Known semantic blockers | None for the documented Alpha.1 production surface |
 
 ## Replacement architecture evidence
 
@@ -55,13 +55,12 @@ The canonical GitHub gates run the full clean suite on Ubuntu and native Windows
 
 ## Current milestone
 
-**M10 release audit is active.** Stage 0 produces stage 1, stage 1 reproduces
+**Alpha.2 is complete and tagged.** Stage 0 produces stage 1, stage 1 reproduces
 stage 2, and canonical compiler artifacts agree under
-`docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows.
-
-The remaining Alpha.2 boundary is final release validation, manual merge, and
-tagging. Unsupported source must continue to fail deterministically rather than
-silently falling back to the reference compiler.
+`docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows. The current
+bounded technical-debt campaign is tracked in `POST_ALPHA2_CLEANUP.md`.
+Unsupported source must continue to fail deterministically rather than silently
+falling back to the reference compiler.
 
 ## Deliberate non-blocking future work
 
