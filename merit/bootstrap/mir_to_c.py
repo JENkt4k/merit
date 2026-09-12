@@ -982,13 +982,33 @@ def _prototype(function: MirFunction) -> str:
     return f"{_function_return_type(function)} {_function_identifier(function)}({_parameter_list(function)});"
 
 
-def emit_c_header(module: MirModule) -> str:
+def emit_c_header(
+    module: MirModule,
+    *,
+    exported_names: frozenset[str] | None = None,
+) -> str:
     """Emit the represented public C ABI from native-resolved MIR metadata."""
 
-    exported = tuple(function for function in module.functions if function.exported)
+    public = tuple(function for function in module.functions if function.exported)
+    if exported_names is None:
+        exported = public
+    else:
+        available = {function.name for function in public}
+        unknown = sorted(exported_names - available)
+        if unknown:
+            raise MirToCError(
+                f"replacement public ABI selects unknown or private functions: {', '.join(unknown)}"
+            )
+        exported = tuple(function for function in public if function.name in exported_names)
     primitive_c_types = {
         "void", "bool", "int8_t", "int16_t", "int32_t", "int64_t",
         "uint8_t", "uint16_t", "uint32_t", "uint64_t", "__int128",
+    }
+    builtin_abi_types = {
+        "String": (
+            "merit_String",
+            "typedef struct { const uint8_t *data; size_t len; } merit_String;",
+        ),
     }
     represented: list[MirType] = []
     for function in exported:
@@ -1005,6 +1025,9 @@ def emit_c_header(module: MirModule) -> str:
                     f"replacement public ABI type {name!r} must be public and stable"
                 )
             return f"merit_{_identifier(name)}"
+        builtin = builtin_abi_types.get(type_.name) if not type_.arguments else None
+        if builtin is not None:
+            return builtin[0]
         rendered = _type(type_)
         if rendered not in primitive_c_types:
             raise MirToCError(
@@ -1033,6 +1056,14 @@ def emit_c_header(module: MirModule) -> str:
         "#pragma once", "#include <stdbool.h>", "#include <stddef.h>",
         "#include <stdint.h>", "",
     ]
+    represented_builtin_names = {
+        type_.name for type_ in represented
+        if not type_.arguments and type_.name in builtin_abi_types
+    }
+    for name in sorted(represented_builtin_names):
+        lines.append(builtin_abi_types[name][1])
+    if represented_builtin_names:
+        lines.append("")
     emitted: set[str] = set()
     pending = dict(layouts)
     layout_metrics: dict[str, tuple[int, int, tuple[int, ...]]] = {}

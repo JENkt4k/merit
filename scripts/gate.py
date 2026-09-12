@@ -138,6 +138,11 @@ def run_acceptance_replacement() -> None:
         run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "acceptance_replacement_report.py")])
 
 
+def run_reproducibility() -> None:
+    with group("alpha.2 M9 compiler-stage reproducibility"):
+        run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")])
+
+
 def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, object]:
     started = time.monotonic()
     if name == "smoke":
@@ -160,6 +165,8 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         run_acceptance()
     elif name == "acceptance-replacement":
         run_acceptance_replacement()
+    elif name == "reproducibility":
+        run_reproducibility()
     elif name == "full":
         with group("pytest: full"):
             pytest(
@@ -183,6 +190,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full"} else 0,
         "corpus_convergence": name == "corpus",
         "replacement_acceptance": name in {"acceptance-replacement", "full"},
+        "stage_reproducibility": name == "reproducibility",
     }
 
 
@@ -199,7 +207,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Canonical cross-platform Merit validation gates.")
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "acceptance-replacement", "full"),
+        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "full"),
         help="validation level to run",
     )
     parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")
@@ -245,6 +253,8 @@ def main() -> int:
         print("corpus_convergence=PASS")
     if result.get("replacement_acceptance"):
         print("replacement_acceptance=PASS")
+    if result.get("stage_reproducibility"):
+        print("stage_reproducibility=PASS")
     print(f"result={destination}")
     return 0
 

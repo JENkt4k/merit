@@ -47,7 +47,7 @@ Python remains orchestration/transport at current seams and the independent orac
 
 M7 acceptance migration closed in PR #113: all 10 canonical acceptance projects, including the exact-decimal `ledger_app`, passed replacement compilation and native execution, and the canonical Ubuntu and native-Windows gates passed.
 
-M8 production-path cutover is the current frontier. M9 reproducibility/trust and M10 release audit follow. Alpha.2 is therefore not yet complete or trusted.
+M8 production-path cutover closed in PR #114 with replacement compilation as the default project path, explicit reference/oracle selection, and green Ubuntu and native-Windows gates. M9 reproducibility/trust is the current frontier; M10 release audit follows. Alpha.2 is therefore not yet complete or trusted.
 
 ## Documentation
 
