@@ -2,12 +2,17 @@
 
 ## Objective
 
-Normal production compilation will eventually use a compiler written in Merit rather than the Python-hosted reference implementation. Bootstrap work must preserve the accepted alpha semantics and prove each replacement stage differentially before it displaces its Python counterpart.
+Normal production compilation uses the Merit-native replacement compiler rather
+than the Python-hosted reference implementation. Bootstrap work preserves the
+accepted alpha semantics and proves replacement stages differentially before
+they become trusted.
 
 ## Compiler authority
 
 - The Python implementation is the executable reference and semantic/diagnostic oracle during bootstrap.
-- The Merit-native implementation is the bootstrap compiler. Compiling programs does not make it authoritative.
+- The Merit-native implementation began as the bootstrap compiler and is the
+  trusted Alpha.2 production compiler for the documented Alpha.1 surface;
+  later self-hosting remains distinct.
 - A trusted compiler must pass the complete accepted and rejected corpora, defined diagnostic contracts, runtime equivalence, deterministic output, and stage-0/stage-1 gates with no unexplained differences.
 - A self-hosted compiler is a later trusted compiler that reproducibly compiles its own source. Self-hosting alone is not correctness evidence.
 
@@ -67,10 +72,20 @@ Postfix generic application, calls, constructors, and fields bind before multipl
 
 ## Staged replacement gates
 
-The normative implementation order is the 15-step `v0.1.0-alpha.2` list in `ROADMAP.md`. Each stage requires independent accepted/rejected corpora and canonical comparison at the token/span, syntax/diagnostic, AST, HIR, semantic, ownership, capability, contract, numeric, MIR, generated-C, and runtime layers where applicable.
+The completed Alpha.2 milestone order and evidence are recorded in
+`ALPHA2_CLOSURE.md`. Each stage requires independent accepted/rejected corpora
+and canonical comparison at the token/span, syntax/diagnostic, AST, HIR,
+semantic, ownership, capability, contract, numeric, MIR, generated-C, and
+runtime layers where applicable.
 
 Stable diagnostic codes and primary spans must match. Explanatory wording need not match unless a specification explicitly makes it contractual. Parser robustness must eventually cover arbitrary bytes, malformed UTF-8 under the source contract, truncation, deep nesting, repeated operators, malformed generics/contracts/capabilities, huge numerics, and multiple-error recovery without crashes, hangs, or unbounded resource use. Fuzzing remains local and manually invoked.
 
-Bootstrap replacement is complete only when normal compilation no longer invokes Python and the full clean-checkout local gate passes through the Merit-native compiler. Python remains available afterward as an oracle. Trust additionally requires repeated corpus passes, stable serialized IRs, deterministic stage agreement, explicit limitations, successful acceptance projects, and a release cycle. Self-hosting additionally requires reproducible stage-1/stage-2 compiler equivalence and the complete corpus under stage 2.
+Alpha.2 bootstrap replacement and trust qualification require normal
+compilation to avoid Python semantic lowering, complete accepted/rejected
+corpus convergence, stable serialized IRs, deterministic stage agreement,
+explicit limitations, successful acceptance projects, and clean local and
+hosted gates. Python remains available afterward as an oracle. Self-hosting is
+a later milestone that must preserve these guarantees.
 
-Hosted CI, LLVM, and unrelated language expansion remain deferred while these gates are active.
+LLVM and unrelated language expansion remain post-Alpha.2 work. Clean hosted
+Ubuntu and native-Windows gates are part of the release authority.

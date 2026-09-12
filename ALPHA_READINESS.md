@@ -1,4 +1,23 @@
-# Merit `v0.1.0-alpha.1` Readiness
+# Merit Alpha Readiness
+
+## `v0.1.0-alpha.2` release candidate
+
+Assessment date: 2026-09-12
+
+Alpha.2 preserves the established Alpha.1 language while replacing Python
+semantic authority in normal project compilation. M1-M9 are closed with
+accepted/rejected corpus convergence, ten replacement acceptance applications,
+default production-path cutover, deterministic canonical artifacts, and clean
+Ubuntu/native-Windows stage reproducibility. Python remains an independent
+semantic and diagnostic oracle. The replacement compiler is trusted for the
+documented Alpha.1 production surface but is not self-hosted.
+
+The final release boundary is M10: synchronized documentation and limitations,
+package version `0.1.0a2`, clean reproducibility and full gates, authoritative
+hosted checks, manual merge, and the manually reviewed `v0.1.0-alpha.2` tag.
+`ALPHA2_CLOSURE.md` is the detailed evidence ledger.
+
+## Historical `v0.1.0-alpha.1` readiness
 
 Assessment date: 2026-08-04
 

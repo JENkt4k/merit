@@ -1,10 +1,31 @@
 # Changelog
 
-## v0.1.0-alpha.2 development
+## v0.1.0-alpha.2 — release candidate
 
-- Closed replacement milestones M1-M8 through complete Alpha.1 corpus convergence, all ten replacement acceptance applications, and default production-path cutover; PR #114 is merged.
-- Continued with M5 project/module/import/export/visibility closure. Corpus convergence, acceptance migration, production cutover, reproducibility/trust, and release audit remain open; Alpha.2 is not yet complete or trusted.
-- `ALPHA2_CLOSURE.md` remains the authoritative detailed milestone ledger.
+Alpha.2 preserves the documented Alpha.1 language semantics while replacing
+Python semantic authority in normal production compilation. Package version:
+`0.1.0a2`.
+
+- Closed M1-M5 across statements/control flow, ownership/resource lifecycle,
+  exact numerics/aggregates, generics/traits, and module/project/export
+  semantics through the production replacement path.
+- Closed M6 with a canonical same-source accepted/rejected Alpha.1 convergence
+  corpus and deterministic replacement artifacts.
+- Closed M7 with all ten acceptance applications compiling and executing
+  through replacement mode.
+- Closed M8 by making replacement compilation the default project path while
+  retaining explicit reference/oracle commands and fail-closed behavior.
+- Closed M9 with isolated stage-0/stage-1/stage-2 construction, byte-identical
+  stage-1/stage-2 canonical C and public headers, identical native protocol
+  output, and clean Ubuntu/native-Windows reproducibility gates.
+- Retained the Python compiler as an independent semantic and diagnostic oracle;
+  the trusted replacement is not yet self-hosted.
+- Synchronized release documentation, limitations, gate descriptions, package
+  metadata, and release assertions for the M10 candidate.
+
+`ALPHA2_CLOSURE.md` remains the authoritative detailed milestone ledger. The
+release becomes formal only after final gates, manual merge, and the
+`v0.1.0-alpha.2` tag.
 
 ### Replacement lexer foundation
 

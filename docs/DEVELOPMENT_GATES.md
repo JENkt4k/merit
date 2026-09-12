@@ -38,6 +38,9 @@ python scripts/gate.py smoke
 python scripts/gate.py fast
 python scripts/gate.py subsystem
 python scripts/gate.py acceptance
+python scripts/gate.py corpus
+python scripts/gate.py acceptance-replacement
+python scripts/gate.py reproducibility
 python scripts/gate.py full
 ```
 
@@ -49,6 +52,9 @@ The gates have distinct purposes:
 | `fast` | Curated cross-platform development regression | normal local/agent iteration |
 | `subsystem` | Bootstrap and project integration suites | coherent compiler/runtime changes |
 | `acceptance` | Ten interpreter/native acceptance projects | acceptance-only verification |
+| `corpus` | Alpha.1 accepted/rejected reference/replacement convergence | semantic convergence evidence |
+| `acceptance-replacement` | Ten applications compiled and run through replacement | replacement acceptance evidence |
+| `reproducibility` | Isolated stage-0/stage-1/stage-2 canonical agreement | compiler trust/release evidence |
 | `full` | Entire pytest suite plus all acceptance projects | PR readiness / merge authority |
 
 A feature change should still run its directly affected pytest file or test names.
@@ -128,9 +134,11 @@ full gate is stale and must be rerun.
 
 ## GitHub Actions
 
-The Local Gate workflow runs the same canonical full gate on Ubuntu and native
-Windows. Platform-specific workflow steps provision dependencies only; they do
-not implement separate semantic test policies.
+The Local Gate workflow runs canonical corpus, replacement-acceptance,
+reproducibility, and full gates on the platforms assigned by the release
+contract. Full and reproducibility gates run on Ubuntu and native Windows.
+Platform-specific workflow steps provision dependencies only; they do not
+implement separate semantic test policies.
 
 The objective is one validation contract across local humans, WSL, native
 Windows, GitHub-hosted runners, remote Codex, and local Jan agents.

@@ -1,8 +1,13 @@
 # CI Decision Record: Minimal Clean-Environment Gate
 
+> Historical decision record for the original bootstrap gate. Alpha.2 later
+> added native Windows, corpus, replacement-acceptance, reproducibility, and
+> full release jobs. See `DEVELOPMENT_GATES.md` and `LOCAL_GATE.md` for current
+> policy.
+
 ## Status
 
-Accepted for bootstrap development.
+Superseded in scope; retained as the rationale for the original minimal gate.
 
 ## Context
 

@@ -14,9 +14,12 @@ The alpha does not require stored references, lifetime parameters, async, concur
 
 ## After the first alpha
 
-### Active `v0.1.0-alpha.2` replacement compiler
+### `v0.1.0-alpha.2` trusted replacement compiler
 
-The objective is unchanged: eliminate Python semantic authority from normal production compilation while retaining the Python compiler as an independent oracle until the replacement qualifies as trusted. Do not broaden the language to achieve bootstrap.
+Alpha.2 eliminates Python semantic authority from normal production
+compilation while retaining the Python compiler as an independent oracle. The
+replacement compiler has qualified as trusted for the documented Alpha.1
+surface; the final release audit and manual tag remain.
 
 Early bootstrap work established deterministic native lexer/parser records and canonical expression AST/HIR/MIR contracts. Development has since moved vertically through real source-backed functions and projects rather than waiting for every isolated stage fixture to reach whole-language coverage first.
 
@@ -40,11 +43,24 @@ Early bootstrap work established deterministic native lexer/parser records and c
 
 ### Immediate critical path
 
-`ALPHA2_CLOSURE.md` is the authoritative detailed work queue. **M1-M7 are closed.**
+`ALPHA2_CLOSURE.md` is the authoritative detailed evidence ledger. **M1-M9 are
+closed.**
 
-M7 acceptance-project migration closed in PR #113. M8 production-path cutover closed in PR #114 with replacement compilation as the normal project compiler path and Python explicitly reference/oracle-only. The current frontier is **M9 stage reproducibility/trust**, using the stage and canonical comparison contract in `docs/M9_REPRODUCIBILITY.md`.
+M7 acceptance-project migration closed in PR #113. M8 production-path cutover
+closed in PR #114. M9 stage reproducibility/trust closed in PR #115 under the
+canonical comparison contract in `docs/M9_REPRODUCIBILITY.md`.
 
-M9 is followed by M10, the Alpha.2 release audit. Alpha.2 is not complete or trusted, and broader self-hosting work begins only after the trust gate.
+M10 is the final Alpha.2 release audit and manual-tag boundary. Alpha.2 is not
+formally released until that audit is merged and `v0.1.0-alpha.2` is tagged.
+
+### Post-Alpha.2 direction
+
+Self-hosting is the first compiler-engineering frontier after Alpha.2: the
+trusted replacement must reproducibly compile its own source through the normal
+project interface without weakening the independent oracle or stage-agreement
+contract. Separate compilation and dependency-granular caching are the next
+natural infrastructure boundary. Stored references/lifetimes and scientific
+arrays remain later semantic/domain work rather than implicit Alpha.2 scope.
 
 ### Documentation path
 
@@ -52,7 +68,7 @@ The user-facing programming manual lives under `docs/manual/` and should advance
 
 ### Trust criteria
 
-Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, real acceptance behavior, and reproducible stages. M6 satisfies corpus convergence and M7 satisfies acceptance migration; M8-M10 close the remaining production, reproducibility, and release boundaries.
+Trust is based on deterministic typed contracts, accepted/rejected corpus parity, interpreter/native agreement, stable artifact framing, compile-pass/fail coverage, real acceptance behavior, and reproducible stages. M6-M9 satisfy those compiler trust boundaries; M10 closes release documentation and audit.
 
 Persistent hosted CI is a verification aid for the local/reproducibility gates; it does not replace bootstrap trust criteria.
 

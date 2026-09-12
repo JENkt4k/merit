@@ -2,7 +2,10 @@
 
 This manual explains the **user-facing language**. It is intentionally different from the bootstrap/compiler documents: those describe how Merit is implemented; this manual describes how to write Merit programs.
 
-The manual tracks the established `v0.1.0-alpha.1` language surface while `v0.1.0-alpha.2` replaces the compiler implementation. Replacement work must preserve these semantics rather than inventing a second language.
+The manual tracks the established language surface shipped by
+`v0.1.0-alpha.2`. The trusted Merit-native replacement compiler preserves the
+Alpha.1 semantics; the Python implementation remains an independent oracle,
+not a second language definition.
 
 ## Chapters
 

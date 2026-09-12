@@ -1,4 +1,4 @@
-# Merit `v0.1.0-alpha.1` Limitations
+# Merit `v0.1.0-alpha.2` Limitations
 
 These limits are deliberate and enforced. They are not promises of silently approximated behavior.
 
@@ -19,7 +19,10 @@ These limits are deliberate and enforced. They are not promises of silently appr
 ## Compilation and runtime
 
 - Projects merge into one generated C translation unit; the object cache is not dependency-granular.
-- The production path is Python-hosted and lowers to C11. LLVM and self-hosted/replacement compilation are post-alpha work.
+- Normal project builds use the Merit-native replacement compiler by default
+  and lower to C11. Python remains an explicitly selected independent oracle;
+  the trusted compiler is not self-hosted. LLVM remains future work.
 - System and portable allocator identities are distinct, but currently use the same host allocation primitives.
 - There is no async, concurrency, networking, tensor runtime, package registry, formatter, or language server in this alpha.
-- Hosted CI is intentionally deferred; the authoritative release gate is local and deterministic.
+- Clean Ubuntu and native-Windows hosted gates validate the same canonical
+  corpus, replacement acceptance, reproducibility, and full-gate contracts.

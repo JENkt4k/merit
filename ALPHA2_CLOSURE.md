@@ -78,8 +78,8 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | all ten acceptance projects | ✓ | ✓ | ✓ | ✓ | — | ✓ | CLOSED |
 | replacement default compiler path | — | ✓ | — | ✓ | ✓ | ✓ | CLOSED |
 | Python semantic authority removed | — | ✓ | — | ✓ | ✓ | ✓ | CLOSED |
-| stage-0/stage-1 equivalence | — | OPEN | OPEN | OPEN | — | — | OPEN |
-| reproducible alpha.2 release | — | OPEN | OPEN | OPEN | — | ✓ | OPEN |
+| stage-0/stage-1 equivalence | — | ✓ | ✓ | ✓ | — | — | CLOSED |
+| reproducible alpha.2 release | — | ✓ | ✓ | ✓ | — | ✓ | CLOSED |
 
 `PARTIAL` is intentionally conservative. Replace it with concrete evidence rather than assuming coverage from neighboring tests.
 
@@ -669,7 +669,11 @@ The affected bootstrap/project subsystem gate passes 418 tests with one
 intentional skip in 1055.75 seconds (`MERIT_GATE_RESULT=PASS`, 1058.395 seconds
 total).
 
-M9 remains **OPEN** until both clean hosted stage gates pass.
+M9 is **CLOSED** by PR #115 and merge commit
+`12ad01eb6e33b2e1d49f79b634261c5e75d412a6`. The clean hosted stage gates
+passed on Ubuntu in approximately 15 minutes and native Windows in
+approximately 18 minutes. The same commit also passed the Alpha.1 corpus, M7
+replacement acceptance, Ubuntu full, and native-Windows full checks.
 
 ### M10 — Alpha.2 release closure
 
@@ -680,6 +684,19 @@ M9 remains **OPEN** until both clean hosted stage gates pass.
 - complete release gate green;
 - clean-tree reproducibility confirmed;
 - alpha.2 release notes prepared.
+
+The M10 release candidate synchronizes the closure ledger, status, roadmap,
+bootstrap status, architecture, handoff, README, readiness assessment,
+limitations, changelog/release notes, programming manual, package metadata, and
+release-document tests. Package metadata uses the PEP 440 version `0.1.0a2` for
+the `v0.1.0-alpha.2` tag. Python remains the independent reference/oracle;
+trusted replacement and later self-hosting remain explicitly distinct.
+
+The release is formally complete only after this final candidate passes the
+clean reproducibility and full release gates, its authoritative hosted Ubuntu
+and native-Windows checks pass, the M10 PR is manually merged, and the
+`v0.1.0-alpha.2` tag is created following final manual review. No automated
+step creates or merges that tag.
 
 ## PR sizing policy
 

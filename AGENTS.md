@@ -6,9 +6,10 @@ Continue Merit as a deterministic systems language. Preserve exact numerics,
 explicit allocation, ownership, contracts, capability-gated hazardous operations,
 stable C interoperability, and interpreter/native semantic equivalence.
 
-The active release objective is `v0.1.0-alpha.2`: eliminate Python semantic
-authority from normal production compilation while retaining the Python compiler
-as an independent oracle until the replacement compiler qualifies as trusted.
+The active release objective is final closure of `v0.1.0-alpha.2`. Python
+semantic authority is removed from normal production compilation, the
+replacement compiler has qualified as trusted for the documented Alpha.1
+surface, and Python remains an independent oracle.
 
 Do not broaden the language during alpha.2 closure.
 
@@ -293,10 +294,10 @@ The following production replacement boundaries are already established:
 Do not recreate these milestones or introduce older transitional architecture
 because older status documents mention them.
 
-The active objective is to close the remaining alpha.1 semantic surface through
-this already-established replacement pipeline, as tracked in
+M1-M9 are closed through this pipeline. The active objective is the M10 release
+audit, clean validation, manual merge, and final tag tracked in
 `ALPHA2_CLOSURE.md`.
 
 Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
-Self-hosting begins only after the alpha.2 replacement compiler satisfies the
-trust/reproducibility gate.
+The Alpha.2 compiler has satisfied the trust/reproducibility gate; self-hosting
+remains a separate post-Alpha.2 milestone.
