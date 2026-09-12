@@ -113,6 +113,7 @@ def compile_replacement_shared_artifact(
     artifact: ReplacementBuildArtifact,
     output: Path,
     *,
+    header_exports: frozenset[str] | None = None,
     cc: str | None = None,
     c_flags: tuple[str, ...] = ("-O2",),
 ) -> tuple[Path, Path, Path]:
@@ -139,7 +140,11 @@ def compile_replacement_shared_artifact(
     c_path = library.with_suffix(".c")
     header_path = library.with_suffix(".h")
     c_path.write_text(artifact.c_source, encoding="utf-8", newline="\n")
-    header_path.write_text(emit_c_header(artifact.module), encoding="utf-8", newline="\n")
+    header_path.write_text(
+        emit_c_header(artifact.module, exported_names=header_exports),
+        encoding="utf-8",
+        newline="\n",
+    )
     command = [
         compiler, "-std=c11", "-Wall", "-Wextra", *pic_flags, *c_flags,
         str(c_path), *link_flags, "-o", str(library),

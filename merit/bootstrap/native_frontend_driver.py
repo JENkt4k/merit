@@ -16,20 +16,36 @@ internal generated types.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from merit.project.build import NativeBuildError, build_shared
 from merit.project.loader import load_project
+from merit.project.replacement import build_replacement_shared
+from merit.project.replacement_loader import load_replacement_project
 from merit.project.replacement_prepare import NativeReplacementDriver
+from merit.project.replacement_prepare import prepare_replacement_artifacts
 
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_PROJECT = ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml"
+REPLACEMENT_FRONTEND_ENTRYPOINT = "emit_replacement_bundle"
+
+
+@dataclass(frozen=True)
+class ReplacementCompilerStage:
+    """Canonical and native artifacts for one replacement compiler stage."""
+
+    driver: NativeReplacementDriver
+    c_path: Path
+    header_path: Path
+    library: Path
 
 
 def _compiler() -> str:
@@ -98,16 +114,12 @@ int main(void) {
 '''
 
 
-def build_native_replacement_driver(output: Path) -> NativeReplacementDriver:
-    """Build and return the concrete native frontend driver executable."""
-
+def _link_native_replacement_driver(output: Path, header: Path, library: Path) -> NativeReplacementDriver:
     output = output.expanduser().resolve()
     if sys.platform.startswith("win") and output.suffix.lower() != ".exe":
         output = output.with_suffix(".exe")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    project = load_project(BOOTSTRAP_PROJECT)
-    _, header, library = build_shared(project, output.parent / "merit-replacement-frontend")
     host = output.with_suffix(".host.c")
     host.write_text(_host_source(), encoding="utf-8", newline="\n")
 
@@ -147,3 +159,47 @@ def build_native_replacement_driver(output: Path) -> NativeReplacementDriver:
             stderr=completed.stderr,
         )
     return NativeReplacementDriver(output)
+
+
+def build_native_replacement_driver(output: Path) -> NativeReplacementDriver:
+    """Build the stage-0 Python-reference-produced frontend driver."""
+
+    output = output.expanduser().resolve()
+    project = load_project(BOOTSTRAP_PROJECT)
+    _, header, library = build_shared(project, output.parent / "merit-replacement-frontend")
+    return _link_native_replacement_driver(output, header, library)
+
+
+def _copy_isolated_compiler_source(destination: Path) -> None:
+    shutil.copytree(
+        BOOTSTRAP_PROJECT.parent,
+        destination,
+        ignore=shutil.ignore_patterns(".merit", "build", "__pycache__", "*.pyc"),
+    )
+
+
+def build_replacement_compiler_stage(
+    output: Path,
+    producer: NativeReplacementDriver,
+) -> ReplacementCompilerStage:
+    """Use ``producer`` to compile an isolated next-stage frontend driver."""
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="merit-compiler-stage-") as temporary:
+        isolated_root = Path(temporary) / "bootstrap_lexer"
+        _copy_isolated_compiler_source(isolated_root)
+        project = load_replacement_project(isolated_root / "Merit.toml")
+        prepare_replacement_artifacts(project, producer)
+        shared = build_replacement_shared(
+            project,
+            output.parent / f"{output.stem}-frontend",
+            header_exports=frozenset({REPLACEMENT_FRONTEND_ENTRYPOINT}),
+        )
+    driver = _link_native_replacement_driver(output, shared.header_path, shared.library)
+    return ReplacementCompilerStage(
+        driver=driver,
+        c_path=shared.c_path,
+        header_path=shared.header_path,
+        library=shared.library,
+    )

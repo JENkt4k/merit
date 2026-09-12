@@ -42,9 +42,9 @@ Early bootstrap work established deterministic native lexer/parser records and c
 
 `ALPHA2_CLOSURE.md` is the authoritative detailed work queue. **M1-M7 are closed.**
 
-M7 acceptance-project migration closed in PR #113 with all 10 canonical applications, including the exact-decimal `ledger_app`, passing replacement execution and the authoritative Ubuntu and native-Windows gates. The current frontier is **M8 production-path cutover**: replacement compilation becomes the normal project compiler path and Python remains explicitly reference/oracle-only.
+M7 acceptance-project migration closed in PR #113. M8 production-path cutover closed in PR #114 with replacement compilation as the normal project compiler path and Python explicitly reference/oracle-only. The current frontier is **M9 stage reproducibility/trust**, using the stage and canonical comparison contract in `docs/M9_REPRODUCIBILITY.md`.
 
-M8 is followed by M9 stage reproducibility/trust and M10 the Alpha.2 release audit. Alpha.2 is not complete or trusted, and self-hosting begins only after the trust gate.
+M9 is followed by M10, the Alpha.2 release audit. Alpha.2 is not complete or trusted, and broader self-hosting work begins only after the trust gate.
 
 ### Documentation path
 

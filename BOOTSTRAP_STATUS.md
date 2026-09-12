@@ -44,7 +44,7 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | Prepared-artifact freshness | Source digests checked; stale artifacts rejected |
 | Complete accepted/rejected Alpha.1 convergence corpus | CLOSED in M6 |
 | All canonical acceptance projects through replacement | M7 CLOSED (PR #113) |
-| Normal Python-free production compilation | M8 OPEN |
+| Normal Python-free production compilation | M8 CLOSED (PR #114) |
 | Stage reproducibility/trust | M9 OPEN |
 | Trusted/self-hosted replacement | Not yet |
 
@@ -52,7 +52,7 @@ The canonical GitHub gates run the full clean suite on Ubuntu and native Windows
 
 ## Current milestone
 
-**M8 production cutover is active.** Replacement compilation must become the normal project path while Python remains explicitly reference/oracle-only.
+**M9 reproducibility/trust is active.** Stage 0 must produce stage 1, stage 1 must reproduce stage 2, and canonical compiler artifacts must agree under `docs/M9_REPRODUCIBILITY.md`.
 
 M9 reproducibility/trust and M10 release audit follow in that order. Unsupported source must continue to fail deterministically rather than silently falling back to the reference compiler.
 

@@ -76,8 +76,8 @@ A semantic surface is CLOSED when all applicable columns are satisfied:
 | all alpha accepted corpus | ✓ | ✓ | ✓ | ✓ | — | indirect | CLOSED |
 | all alpha rejected corpus | ✓ | ✓ | ✓ | — | ✓ | indirect | CLOSED |
 | all ten acceptance projects | ✓ | ✓ | ✓ | ✓ | — | ✓ | CLOSED |
-| replacement default compiler path | — | OPEN | — | OPEN | OPEN | OPEN | OPEN |
-| Python semantic authority removed | — | OPEN | — | — | — | — | OPEN |
+| replacement default compiler path | — | ✓ | — | ✓ | ✓ | ✓ | CLOSED |
+| Python semantic authority removed | — | ✓ | — | ✓ | ✓ | ✓ | CLOSED |
 | stage-0/stage-1 equivalence | — | OPEN | OPEN | OPEN | — | — | OPEN |
 | reproducible alpha.2 release | — | OPEN | OPEN | OPEN | — | ✓ | OPEN |
 
@@ -627,8 +627,10 @@ focused default-path regression proves source-to-native compilation without the
 reference project loader, and the existing qualified multi-module parity case
 now traverses the same default production CLI path.
 
-M8 remains **OPEN** until affected focused/subsystem validation and the
-authoritative cross-platform full gates pass on the PR.
+M8 is **CLOSED** by PR #114 and merge commit
+`02a9badbd418126568a6fd7cc2dba5e01d427888`. The authoritative Ubuntu Alpha.1
+corpus, Ubuntu M7 acceptance, Ubuntu full, and native-Windows full checks all
+passed before merge.
 
 Current focused evidence is 259 replacement snapshot/bundle/preparation/CLI,
 MIR ABI/backend, and concrete-native-driver tests passing in 76.05 seconds.
@@ -645,6 +647,29 @@ canonical subsystem gate passed 414 tests with one intentional skip in
 - repeated stage builds are deterministic;
 - canonical artifacts are equivalent under the documented comparison rule;
 - clean environment reproduction succeeds.
+
+The stage identities and canonical comparison rule are normative in
+`docs/M9_REPRODUCIBILITY.md`. The M9 candidate constructs stage 1 from the
+stage-0 reference-produced native driver, constructs stage 2 from stage 1, and
+requires stage-1/stage-2 generated C and public headers plus all three stages'
+fixed-probe protocol output to be byte-identical. Native binary bytes are
+execution evidence rather than canonical comparison inputs. Every replacement
+stage copies source into a fresh directory while excluding prior `.merit`,
+build, and cache state. A dedicated machine-readable `reproducibility` gate is
+configured for clean Ubuntu and native Windows.
+
+The complete local stage gate passed on the M9 candidate in 838.457 seconds
+(`M9_REPRODUCIBILITY_RESULT=PASS`, `MERIT_GATE_RESULT=PASS`). It constructed
+stage 0, stage 1, and stage 2, proved byte-identical stage-1/stage-2 canonical C
+and public headers, and proved identical fixed-probe protocol output from all
+three native drivers. Subsequent observational telemetry reports per-stage
+build/probe timings without changing the comparison rule; its focused harness
+coverage passes 8 tests in 1.10 seconds.
+The affected bootstrap/project subsystem gate passes 418 tests with one
+intentional skip in 1055.75 seconds (`MERIT_GATE_RESULT=PASS`, 1058.395 seconds
+total).
+
+M9 remains **OPEN** until both clean hosted stage gates pass.
 
 ### M10 — Alpha.2 release closure
 

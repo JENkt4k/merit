@@ -238,13 +238,19 @@ def build_replacement_project(project: LoadedProject | ReplacementLoadedProject,
 
 
 def build_replacement_shared(
-    project: LoadedProject | ReplacementLoadedProject, output: Path,
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    *,
+    header_exports: frozenset[str] | None = None,
 ) -> ReplacementSharedProjectArtifact:
     """Build a shared library solely from native-resolved replacement artifacts."""
 
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     c_path, header_path, library = compile_replacement_shared_artifact(
-        artifact, output, c_flags=project.manifest.c_flags,
+        artifact,
+        output,
+        header_exports=header_exports,
+        c_flags=project.manifest.c_flags,
     )
     return ReplacementSharedProjectArtifact(c_path, header_path, library)

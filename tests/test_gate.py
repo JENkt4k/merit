@@ -81,3 +81,16 @@ def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
             {"durations": None, "fail_fast": False, "workers": 2},
         )
     ]
+
+
+def test_reproducibility_gate_runs_stage_report_once(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(gate, "run", lambda command: calls.append(command))
+
+    result = gate.run_gate("reproducibility", None, fail_fast=False)
+
+    assert calls == [[
+        sys.executable,
+        str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py"),
+    ]]
+    assert result["stage_reproducibility"] is True

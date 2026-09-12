@@ -3,7 +3,7 @@
 ## Repository state
 This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
 
-Alpha.2 replacement work has closed M1-M7, and PR #113 is merged. M8 production-path cutover is the current frontier; M9-M10 remain open. The replacement compiler is not yet trusted, and `ALPHA2_CLOSURE.md` is the authoritative detailed work queue.
+Alpha.2 replacement work has closed M1-M8, and PR #114 is merged. M9 stage reproducibility/trust is the current frontier; M10 remains open. The replacement compiler is not yet trusted, and `ALPHA2_CLOSURE.md` is the authoritative detailed work queue.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here

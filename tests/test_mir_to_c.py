@@ -101,6 +101,67 @@ def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
         emit_c_header(MirModule("example", (function,)))
 
 
+def test_selected_public_header_ignores_non_abi_module_exports() -> None:
+    internal = MirType(
+        "struct_aggregate_0_destructor_-1__abi_1_496e7465726e616c_76616c7565",
+        (MirType("i32"),),
+    )
+    helper = MirFunction(
+        "helper", MirType("i32"),
+        (MirLocal(0, "value", internal), MirLocal(1, "result", MirType("i32"))),
+        (MirBlock(
+            0, (MirInstruction(0, "const", result=1, value=0),),
+            MirTerminator("return", operands=(1,)),
+        ),),
+        0, parameters=(MirParameter(0),), exported=True,
+    )
+    entry = MirFunction(
+        "entry", MirType("i32"),
+        (MirLocal(0, "result", MirType("i32")),),
+        (MirBlock(
+            0, (MirInstruction(0, "const", result=0, value=0),),
+            MirTerminator("return", operands=(0,)),
+        ),),
+        0, exported=True,
+    )
+
+    header = emit_c_header(
+        MirModule("example", (helper, entry)),
+        exported_names=frozenset({"entry"}),
+    )
+
+    assert "int32_t merit_entry(void);" in header
+    assert "helper" not in header
+    assert "Internal" not in header
+
+
+def test_selected_public_header_rejects_unknown_or_private_function() -> None:
+    function = constant_function("private_helper", 0)
+
+    with pytest.raises(MirToCError, match="unknown or private functions: missing"):
+        emit_c_header(
+            MirModule("example", (function,)),
+            exported_names=frozenset({"missing"}),
+        )
+
+
+def test_public_header_emits_canonical_string_abi() -> None:
+    function = MirFunction(
+        "consume", MirType("i32"),
+        (MirLocal(0, "text", MirType("String")), MirLocal(1, "result", MirType("i32"))),
+        (MirBlock(
+            0, (MirInstruction(0, "const", result=1, value=0),),
+            MirTerminator("return", operands=(1,)),
+        ),),
+        0, parameters=(MirParameter(0),), exported=True,
+    )
+
+    header = emit_c_header(MirModule("example", (function,)))
+
+    assert "typedef struct { const uint8_t *data; size_t len; } merit_String;" in header
+    assert "int32_t merit_consume(merit_String m0);" in header
+
+
 def test_emits_and_runs_ordered_arithmetic(tmp_path):
     function = binary_function("answer", 20, 22, "+", policy="exact")
     generated = emit_c_module(scalar_module(function))

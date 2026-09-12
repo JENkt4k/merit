@@ -46,7 +46,7 @@ The Python-hosted alpha compiler remains the independent semantic oracle, but it
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-The concrete native driver now covers the closed M1-M7 replacement milestones, including the complete accepted/rejected Alpha.1 corpus and all ten acceptance applications. PR #113 is merged with authoritative Ubuntu and native-Windows gates. M8 production-path cutover is the current frontier; M9-M10 remain later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
+The concrete native driver now covers the closed M1-M8 replacement milestones, including the complete accepted/rejected Alpha.1 corpus, all ten acceptance applications, and default production-path cutover. PR #114 is merged with authoritative Ubuntu and native-Windows gates. M9 stage reproducibility/trust is the current frontier; M10 remains later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
 
 ## Established language surface
 
