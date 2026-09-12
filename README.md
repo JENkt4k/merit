@@ -38,15 +38,26 @@ For continued development, start with:
 bash scripts/ci.sh
 ```
 
-The completed `v0.1.0-alpha.1` release gate is followed by `v0.1.0-alpha.2` replacement-compiler development. The authoritative GitHub Local Gate performs the clean Ubuntu/Python 3.11/system-C gate plus a focused Windows/MSYS2 UCRT64 GCC native smoke. Exact historical test counts belong in checkpoint evidence rather than this README because the suite changes continuously.
+The completed `v0.1.0-alpha.1` release is followed by the
+`v0.1.0-alpha.2` release candidate. The authoritative GitHub Local Gate runs
+clean Ubuntu and native-Windows corpus, replacement-acceptance,
+reproducibility, and full validation. Exact counts remain checkpoint evidence
+rather than a frozen README promise.
 
 ## Current replacement checkpoint
 
-The Python-hosted alpha compiler remains the independent semantic oracle, but it is no longer the only path represented in the repository. The Merit-native replacement work has progressed from lexer/parser/AST/HIR fixtures into source-backed resolved functions carrying contracts, ownership/control-flow metadata, capability identities, and source provenance.
+The Python-hosted compiler remains the independent semantic oracle. The trusted
+Merit-native production compiler carries source-backed resolved functions with
+contracts, ownership/control-flow metadata, capability identities, and source
+provenance.
 
 Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
 
-The concrete native driver now covers the closed M1-M8 replacement milestones, including the complete accepted/rejected Alpha.1 corpus, all ten acceptance applications, and default production-path cutover. PR #114 is merged with authoritative Ubuntu and native-Windows gates. M9 stage reproducibility/trust is the current frontier; M10 remains later work. Alpha.2 is not yet complete or trusted. See `ALPHA2_CLOSURE.md` for the authoritative detailed state.
+The concrete native driver covers M1-M9: the complete accepted/rejected Alpha.1
+corpus, all ten acceptance applications, default production-path cutover, and
+clean stage reproducibility. PR #115 closed the trust gate with authoritative
+Ubuntu and native-Windows evidence. M10 is the final release audit; Alpha.2
+awaits final validation, manual merge, and tagging. See `ALPHA2_CLOSURE.md`.
 
 ## Established language surface
 
@@ -71,7 +82,9 @@ fn maximum<T: Ord>(left: T, right: T) -> T {
 }
 ```
 
-The reference compiler currently monomorphizes generic declarations before its established semantic, ownership, MIR, interpreter, and C-backend pipeline. Replacing that implementation path must preserve the same documented meaning rather than inventing parallel semantics.
+Both compiler paths preserve concrete-before-MIR monomorphization and the same
+documented semantic, ownership, and backend contracts rather than defining
+parallel languages.
 
 ## CLI
 
@@ -89,7 +102,7 @@ merit-project prepare-replacement PATH --replacement-driver EXECUTABLE
 merit-project verify PATH --compiler reference
 ```
 
-`merit-project` selects replacement compilation by default. It discovers the native frontend from `--replacement-driver`, `MERIT_REPLACEMENT_DRIVER`, or `merit-replacement-frontend` on `PATH`, and prepares fresh native-resolved artifacts before compiling. Existing prepared artifacts may still be consumed without rediscovery. Replacement mode is deliberately fail-closed and never silently uses Python semantics. `verify`, `layout`, and `audit` are reference/oracle tools and therefore require explicit `--compiler reference`. The single-file `merit` interface is retained as the explicitly documented reference compiler during the Alpha.2 transition.
+`merit-project` selects replacement compilation by default. It discovers the native frontend from `--replacement-driver`, `MERIT_REPLACEMENT_DRIVER`, or `merit-replacement-frontend` on `PATH`, and prepares fresh native-resolved artifacts before compiling. Existing prepared artifacts may still be consumed without rediscovery. Replacement mode is deliberately fail-closed and never silently uses Python semantics. `verify`, `layout`, and `audit` are reference/oracle tools and therefore require explicit `--compiler reference`. The single-file `merit` interface remains the explicitly documented independent reference compiler; it is not the normal production compiler path.
 
 ---
 

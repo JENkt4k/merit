@@ -12,4 +12,8 @@ An expansion is justified only when all answers are yes:
 6. Are AST, HIR, and MIR contracts sufficiently stable for the matrix to provide durable evidence?
 7. Is the result actionable rather than merely informational?
 
-During the Python-hosted bootstrap phase, the expected answer for broad matrices, sanitizers, hosted fuzzing, benchmarks, and release automation is normally no.
+The original Python-hosted bootstrap phase has ended. Alpha.2 adds only the
+Ubuntu/native-Windows jobs required to prove corpus convergence, replacement
+acceptance, stage reproducibility, and full-gate portability. Broader matrices,
+sanitizers, hosted fuzzing, benchmarks, and release automation still require a
+specific actionable justification under this checklist.

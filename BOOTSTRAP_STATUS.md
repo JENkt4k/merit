@@ -1,8 +1,11 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-09-10
+Checkpoint date: 2026-09-12
 
-Scope: `v0.1.0-alpha.2` replacement-compiler development after the stable alpha reference compiler. Python remains the independent oracle; the Merit-native replacement compiler is not yet trusted or self-hosted.
+Scope: `v0.1.0-alpha.2` release closure after replacement-compiler trust
+qualification. Python remains the independent oracle. The Merit-native
+replacement compiler is trusted for the documented Alpha.1 production surface
+but is not self-hosted.
 
 ## Current verified architecture
 
@@ -26,9 +29,9 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | HIR differential cases | Proven for measured boundaries; not used as whole-language percentages |
 | Bootstrap/reference parity | Canonical M6 same-source accepted/rejected corpus convergence is closed |
 | Reference compiler source | Python Alpha.1 compiler remains the independent semantic/diagnostic oracle |
-| Merit-native compiler source | Concrete native driver carries M1-M7 replacement evidence |
+| Merit-native compiler source | Concrete native driver carries M1-M9 production and trust evidence |
 | Generated C size | Tracked as build evidence rather than an optimization target |
-| Known semantic blockers | No unexplained M6 corpus or M7 acceptance discrepancy remains; M8-M10 remain open |
+| Known semantic blockers | None for the documented Alpha.1 production surface; M10 is release-process closure |
 
 ## Replacement architecture evidence
 
@@ -45,16 +48,20 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | Complete accepted/rejected Alpha.1 convergence corpus | CLOSED in M6 |
 | All canonical acceptance projects through replacement | M7 CLOSED (PR #113) |
 | Normal Python-free production compilation | M8 CLOSED (PR #114) |
-| Stage reproducibility/trust | M9 OPEN |
-| Trusted/self-hosted replacement | Not yet |
+| Stage reproducibility/trust | M9 CLOSED (PR #115) |
+| Trusted/self-hosted replacement | Trusted for the documented Alpha.1 production surface; not self-hosted |
 
 The canonical GitHub gates run the full clean suite on Ubuntu and native Windows.
 
 ## Current milestone
 
-**M9 reproducibility/trust is active.** Stage 0 must produce stage 1, stage 1 must reproduce stage 2, and canonical compiler artifacts must agree under `docs/M9_REPRODUCIBILITY.md`.
+**M10 release audit is active.** Stage 0 produces stage 1, stage 1 reproduces
+stage 2, and canonical compiler artifacts agree under
+`docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows.
 
-M9 reproducibility/trust and M10 release audit follow in that order. Unsupported source must continue to fail deterministically rather than silently falling back to the reference compiler.
+The remaining Alpha.2 boundary is final release validation, manual merge, and
+tagging. Unsupported source must continue to fail deterministically rather than
+silently falling back to the reference compiler.
 
 ## Deliberate non-blocking future work
 

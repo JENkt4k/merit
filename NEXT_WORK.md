@@ -1,5 +1,9 @@
 # Next Work - Roadmap Status
 
+> Historical implementation journal. This file records earlier epic slices and
+> is not the current work queue. Use `ALPHA2_CLOSURE.md`, `STATUS.md`, and
+> `ROADMAP.md` for current release state and post-Alpha.2 priorities.
+
 ## Goal
 Advance the core Merit feature set in complete, testable epic slices while preserving interpreter/native parity.
 

@@ -96,4 +96,7 @@ Merit includes exact fixed-scale decimals and bounded/checked integer facilities
 
 ## Reference compiler versus replacement compiler
 
-During `v0.1.0-alpha.2`, `merit-project` uses the Merit-native replacement compiler by default. The Python-hosted compiler remains available only when explicitly selected as the reference/oracle. This is an implementation transition, not a language fork. Programs should target the documented language semantics, not implementation quirks of either compiler path.
+In `v0.1.0-alpha.2`, `merit-project` uses the trusted Merit-native replacement
+compiler by default. The Python-hosted compiler remains available only when
+explicitly selected as the reference/oracle. Programs should target the
+documented language semantics, not implementation quirks of either compiler.

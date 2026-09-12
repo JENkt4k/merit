@@ -1,14 +1,19 @@
 # Merit Status
 
-Status date: 2026-09-10
+Status date: 2026-09-12
 
 ## Release target
 
-The `v0.1.0-alpha.1` local release gate is complete. Package metadata uses the PEP 440 equivalent version `0.1.0a1`.
+The `v0.1.0-alpha.1` local release gate is complete.
 
-Development is on `v0.1.0-alpha.2`: remove Python from the normal compiler path without broadening the language. Python remains an independent semantic/diagnostic oracle until the replacement compiler qualifies as trusted.
+The **Alpha.2 release candidate** targets `v0.1.0-alpha.2`; package metadata
+uses the PEP 440 equivalent `0.1.0a2`. Normal project compilation uses the
+Merit-native replacement compiler. Python remains the independent semantic and
+diagnostic reference oracle.
 
-The canonical GitHub gates run the full clean suite on Ubuntu and native Windows. Alpha.2 milestones M1-M7 are closed. `ALPHA2_CLOSURE.md` is the authoritative source for detailed replacement-coverage and milestone state.
+The canonical GitHub gates run the full clean suite on Ubuntu and native
+Windows. M1-M9 are closed; M10 is the final release audit and manual-tag
+boundary. `ALPHA2_CLOSURE.md` is authoritative for detailed evidence.
 
 ## Proven alpha foundation
 
@@ -45,9 +50,16 @@ Python remains orchestration/transport at current seams and the independent orac
 
 ## Current frontier
 
-M7 acceptance migration closed in PR #113: all 10 canonical acceptance projects, including the exact-decimal `ledger_app`, passed replacement compilation and native execution, and the canonical Ubuntu and native-Windows gates passed.
+M7 acceptance migration closed in PR #113, M8 production-path cutover closed in
+PR #114, and M9 reproducibility/trust closed in PR #115. All ten acceptance
+projects pass replacement compilation and native execution. Stage 1 and stage
+2 reproduce canonical generated C and public headers byte-for-byte, and all
+three native stages agree on the fixed protocol probe in clean Ubuntu and
+native-Windows environments.
 
-M8 production-path cutover closed in PR #114 with replacement compilation as the default project path, explicit reference/oracle selection, and green Ubuntu and native-Windows gates. M9 reproducibility/trust is the current frontier; M10 release audit follows. Alpha.2 is therefore not yet complete or trusted.
+The replacement compiler is trusted for the documented Alpha.1 production
+surface. Alpha.2 is not formally released until M10 validation, manual merge,
+and the `v0.1.0-alpha.2` tag are complete.
 
 ## Documentation
 
@@ -55,6 +67,9 @@ A user-facing programming manual lives under `docs/manual/`. It is distinct from
 
 ## Trust boundary
 
-Python remains the independent semantic and diagnostic reference oracle. The Merit-native replacement compiler is not yet trusted or self-hosted. M6 establishes accepted/rejected semantic corpus convergence, but trust additionally requires real acceptance-application migration, production-path cutover, stable typed stage contracts, deterministic stage agreement, and a clean reproducible release cycle. Self-hosting begins only after that trust gate and requires reproducible stage equivalence.
+Python remains the independent semantic and diagnostic reference oracle; it is
+not production semantic authority. The Merit-native replacement compiler has
+satisfied the Alpha.2 trust criteria but is not self-hosted. Self-hosting is a
+post-Alpha.2 milestone and must preserve reproducible stage equivalence.
 
 Do not describe isolated parser/HIR/MIR corpus counts as whole-language replacement percentages. The useful progress metric is vertical removal of Python semantic authority from real production compilation boundaries.

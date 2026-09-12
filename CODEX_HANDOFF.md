@@ -1,9 +1,13 @@
 # Merit Codex Handoff
 
 ## Repository state
-This repository contains the completed **`v0.1.0-alpha.1` local release gate** of Merit.
+This repository contains the completed `v0.1.0-alpha.1` release and the
+**`v0.1.0-alpha.2` release candidate**.
 
-Alpha.2 replacement work has closed M1-M8, and PR #114 is merged. M9 stage reproducibility/trust is the current frontier; M10 remains open. The replacement compiler is not yet trusted, and `ALPHA2_CLOSURE.md` is the authoritative detailed work queue.
+Alpha.2 replacement work has closed M1-M9 through PR #115. The replacement
+compiler is trusted for the documented Alpha.1 production surface but is not
+self-hosted. M10 release audit/manual tagging remains; `ALPHA2_CLOSURE.md` is
+the authoritative evidence ledger.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here
