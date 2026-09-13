@@ -47,7 +47,7 @@ because they contain numbers.
 
 | ID | Domain and canonical owner | Concrete existing consumers | Classification | Migration boundary |
 |---|---|---|---|---|
-| N1 | Lexer token kinds and character bytes; `tokens.mrt` / `lexer.mrt` | `native_replacement_driver.mrt` compares token kinds `1`/`4`, bytes `102`/`110` for `fn`, and braces `123`/`125`; `lexer.mrt` contains the corresponding scanner values | Partly symbolic definition, raw native consumers | Introduce/use token and byte symbols in native lexer/discovery; retain explicit ASCII values only at the canonical encoding definition and lock parity |
+| N1 | Lexer token kinds and character bytes; `tokens.mrt` / `lexer.mrt` | `tokens.mrt` owns all five token-kind values and the structural ASCII alphabet; `lexer.mrt` consumes those symbols throughout scanning/parsing, while `native_replacement_driver.mrt` uses the symbols and shared keyword predicates | Closed: canonical numeric definitions plus interpreter/native representation and production-driver evidence | Explicit values remain only in `tokens.mrt`, canonical keyword spelling/packed-ASCII definitions, and representation-locking tests; N2 owns syntax kinds and packed keyword classification |
 | N2 | CST/AST expression and declaration kinds; `syntax.mrt` | `syntax.mrt` uses raw kind sets/ranges including `30..45`, `50`, `51`, `60`, `61`, `70`; `merit/bootstrap/ast_contract.py` still has a raw `kind == 33` consumer | Shared semantic discriminants duplicated across Merit/Python | Establish named canonical kind functions/constants and representation tests, then migrate semantic predicates without changing values |
 | N3 | HIR node kinds, type codes, and numeric policies; `hir.mrt` | `hir.mrt` has the densest raw kind comparisons (43 heuristic matches); `merit/bootstrap/hir_parity.py` has named local constants while native consumers such as `mir_source_ownership_expression.mrt` still compare raw HIR kinds | Canonical mapping exists only in pieces | Consolidate domain-owned HIR symbols and prove Python/native parity before consumer migration |
 | N4 | MIR expression/function/instruction kinds; `mir*.mrt` | Raw comparisons occur in `mir.mrt`, `mir_composite.mrt`, `mir_functions.mrt`, `mir_statement_lowering.mrt`, and `merit/bootstrap/mir_function_assembly_parity.py`; some later kinds already use helpers such as `function_mir_kind_struct_construct()` | Mixed symbolic and raw semantic discriminants | Complete the existing symbolic pattern by MIR subdomain; preserve snapshot encodings and source order |
@@ -72,12 +72,45 @@ meaning.
 | D3 | Pytest cache permission warnings on the WSL checkout | Local focused and full gates repeatedly report inability to write `.pytest_cache` | Environment/test-infrastructure fix; do not weaken tests |
 | D4 | Stale transition documentation | Alpha.2 was tagged after its candidate documentation merged | This inventory PR performs only the factual post-release handoff; historical ledgers remain historical |
 
+## Completed evidence
+
+### N1 lexer/token/character identifiers
+
+- Canonical owner: `examples/projects/bootstrap_lexer/src/tokens.mrt`.
+- Migrated consumers: the complete scanner and parser token-kind/structural-byte
+  use in `lexer.mrt`, plus function, enum, capability, and brace discovery in
+  `native_replacement_driver.mrt`.
+- Shared keyword predicates now prevent the production driver from duplicating
+  the ASCII spellings for `fn`, `enum`, and `capability`.
+- `test_bootstrap_token_and_character_representation_is_stable` locks all five
+  token kinds and the structural ASCII values through both the interpreter and
+  generated native C (1 passed in 16.83s).
+- `test_bootstrap_lexer_matches_interpreter_native_and_ordered_c` and
+  `test_build_concrete_native_driver_reaches_replacement_executable_without_python_semantic_lowering`
+  preserve lexer oracle parity and the production replacement path (2 passed in
+  34.92s).
+- Focused multi-function, capability-catalog, and payload-free-enum catalog
+  driver cases preserve all three shared keyword-discovery paths (3 passed in
+  17.09s).
+- The complete bootstrap lexer file preserves accepted/rejected corpus,
+  expression precedence, allocation capability checks, interpreter behavior,
+  and native C parity (29 passed in 411.72s).
+- The bootstrap/project subsystem gate passes with the N1 migration (419 passed,
+  1 skipped in 1087.38s; gate duration 1089.86s).
+- The authoritative local full gate passes with 1152 tests passed, 1 skipped,
+  all 10 replacement acceptance projects verified, and a total duration of
+  2285.551s.
+- Retained raw values in packed keyword matching are canonical encoding
+  definitions; syntax node kinds, diagnostics/statuses, and their consumers are
+  intentionally assigned to N2 and N6 rather than expanded into this PR.
+
 ## Ordered PR queue
 
 1. **Inventory and handoff** — establish this ledger and mark Alpha.2 released;
    no semantic literal migration.
-2. **Lexer/token/character identifiers (N1)** — smallest end-to-end domain with
-   direct Python/native corpus parity.
+2. **Lexer/token/character identifiers (N1, closed)** — canonical token and
+   character definitions with direct Python/native and replacement-driver
+   parity.
 3. **CST/AST and HIR identifiers (N2-N3)** — canonical definitions plus parity,
    split only if one combined review cannot remain coherent.
 4. **MIR identifiers (N4)** — migrate expression/function/instruction consumers

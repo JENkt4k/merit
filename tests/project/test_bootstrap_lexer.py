@@ -307,6 +307,83 @@ def reference_expression(source):
 
 EXPECTED = expected_output(DEFAULT_SOURCE)
 
+TOKEN_REPRESENTATION = (
+    ("token_identifier_kind", 1),
+    ("token_number_kind", 2),
+    ("token_string_kind", 3),
+    ("token_punctuation_kind", 4),
+    ("token_invalid_string_kind", 5),
+    ("token_horizontal_tab_byte", 9),
+    ("token_line_feed_byte", 10),
+    ("token_carriage_return_byte", 13),
+    ("token_space_byte", 32),
+    ("token_exclamation_byte", 33),
+    ("token_quote_byte", 34),
+    ("token_open_paren_byte", 40),
+    ("token_close_paren_byte", 41),
+    ("token_asterisk_byte", 42),
+    ("token_plus_byte", 43),
+    ("token_comma_byte", 44),
+    ("token_minus_byte", 45),
+    ("token_dot_byte", 46),
+    ("token_slash_byte", 47),
+    ("token_digit_zero_byte", 48),
+    ("token_digit_nine_byte", 57),
+    ("token_colon_byte", 58),
+    ("token_semicolon_byte", 59),
+    ("token_less_than_byte", 60),
+    ("token_equals_byte", 61),
+    ("token_greater_than_byte", 62),
+    ("token_uppercase_a_byte", 65),
+    ("token_uppercase_e_byte", 69),
+    ("token_uppercase_z_byte", 90),
+    ("token_backslash_byte", 92),
+    ("token_underscore_byte", 95),
+    ("token_lowercase_a_byte", 97),
+    ("token_lowercase_e_byte", 101),
+    ("token_lowercase_z_byte", 122),
+    ("token_open_brace_byte", 123),
+    ("token_close_brace_byte", 125),
+)
+
+
+def token_representation_project(tmp_path):
+    project_root = tmp_path / "bootstrap_token_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{",
+        "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(),
+        count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(f"print({name}());" for name, _ in TOKEN_REPRESENTATION)
+    (project_root / "src/token_representation_probe.mrt").write_text(
+        "module token_representation_probe\n"
+        "import bootstrap_tokens;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_source = manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/token_representation_probe.mrt"',
+    )
+    manifest_path.write_text(manifest_source)
+    return load_project(manifest_path), project_root
+
+
+def test_bootstrap_token_and_character_representation_is_stable(tmp_path):
+    project, project_root = token_representation_project(tmp_path)
+    expected = "".join(f"{value}\n" for _, value in TOKEN_REPRESENTATION)
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
 
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
