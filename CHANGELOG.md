@@ -1,6 +1,13 @@
 # Changelog
 
-## v0.1.0-alpha.2 — release candidate
+## Unreleased — post-Alpha.2 cleanup
+
+- Added the bounded post-Alpha.2 technical-debt ledger and semantic numeric
+  identifier inventory; no existing discriminants or semantics changed.
+- Recorded the deferred bootstrap large-call/status-corruption defect and test
+  infrastructure debt as independent workstreams.
+
+## v0.1.0-alpha.2 — 2026-09-12
 
 Alpha.2 preserves the documented Alpha.1 language semantics while replacing
 Python semantic authority in normal production compilation. Package version:
@@ -21,11 +28,11 @@ Python semantic authority in normal production compilation. Package version:
 - Retained the Python compiler as an independent semantic and diagnostic oracle;
   the trusted replacement is not yet self-hosted.
 - Synchronized release documentation, limitations, gate descriptions, package
-  metadata, and release assertions for the M10 candidate.
+  metadata, and release assertions for M10.
 
-`ALPHA2_CLOSURE.md` remains the authoritative detailed milestone ledger. The
-release becomes formal only after final gates, manual merge, and the
-`v0.1.0-alpha.2` tag.
+`ALPHA2_CLOSURE.md` remains the historical detailed milestone ledger. The
+release passed final gates, merged in PR #116, and is tagged
+`v0.1.0-alpha.2` at `53699f2`.
 
 ### Replacement lexer foundation
 

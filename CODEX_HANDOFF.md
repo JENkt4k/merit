@@ -2,12 +2,12 @@
 
 ## Repository state
 This repository contains the completed `v0.1.0-alpha.1` release and the
-**`v0.1.0-alpha.2` release candidate**.
+completed, tagged **`v0.1.0-alpha.2` release**.
 
-Alpha.2 replacement work has closed M1-M9 through PR #115. The replacement
+Alpha.2 replacement work closed M1-M10 through PR #116. The replacement
 compiler is trusted for the documented Alpha.1 production surface but is not
-self-hosted. M10 release audit/manual tagging remains; `ALPHA2_CLOSURE.md` is
-the authoritative evidence ledger.
+self-hosted. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
+`POST_ALPHA2_CLEANUP.md` is the active bounded cleanup queue.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here

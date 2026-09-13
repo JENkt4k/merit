@@ -18,8 +18,8 @@ The alpha does not require stored references, lifetime parameters, async, concur
 
 Alpha.2 eliminates Python semantic authority from normal production
 compilation while retaining the Python compiler as an independent oracle. The
-replacement compiler has qualified as trusted for the documented Alpha.1
-surface; the final release audit and manual tag remain.
+replacement compiler qualified as trusted for the documented Alpha.1 surface.
+M1-M10 are complete and the release is tagged.
 
 Early bootstrap work established deterministic native lexer/parser records and canonical expression AST/HIR/MIR contracts. Development has since moved vertically through real source-backed functions and projects rather than waiting for every isolated stage fixture to reach whole-language coverage first.
 
@@ -43,19 +43,23 @@ Early bootstrap work established deterministic native lexer/parser records and c
 
 ### Immediate critical path
 
-`ALPHA2_CLOSURE.md` is the authoritative detailed evidence ledger. **M1-M9 are
+`ALPHA2_CLOSURE.md` is the historical detailed evidence ledger. **M1-M10 are
 closed.**
 
 M7 acceptance-project migration closed in PR #113. M8 production-path cutover
 closed in PR #114. M9 stage reproducibility/trust closed in PR #115 under the
 canonical comparison contract in `docs/M9_REPRODUCIBILITY.md`.
 
-M10 is the final Alpha.2 release audit and manual-tag boundary. Alpha.2 is not
-formally released until that audit is merged and `v0.1.0-alpha.2` is tagged.
+M10 closed the release audit, and `v0.1.0-alpha.2` is tagged at `53699f2`.
 
 ### Post-Alpha.2 direction
 
-Self-hosting is the first compiler-engineering frontier after Alpha.2: the
+`POST_ALPHA2_CLEANUP.md` is the active bounded work queue. It first migrates
+existing semantic numeric identifiers without renumbering or changing language
+semantics, then isolates the deferred bootstrap call-ABI and validation/test
+infrastructure defects.
+
+After that cleanup, **Self-hosting** is the first compiler-engineering frontier: the
 trusted replacement must reproducibly compile its own source through the normal
 project interface without weakening the independent oracle or stage-agreement
 contract. Separate compilation and dependency-granular caching are the next
