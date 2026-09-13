@@ -5,26 +5,26 @@ import bootstrap_syntax;
 capability allocate;
 
 fn is_space(byte: i64) -> i32 {
-    if byte == 32 { return 1; }
-    if byte == 9 { return 1; }
-    if byte == 10 { return 1; }
-    if byte == 13 { return 1; }
+    if byte == token_space_byte() { return 1; }
+    if byte == token_horizontal_tab_byte() { return 1; }
+    if byte == token_line_feed_byte() { return 1; }
+    if byte == token_carriage_return_byte() { return 1; }
     return 0;
 }
 
 fn is_digit(byte: i64) -> i32 {
-    if byte < 48 { return 0; }
-    if byte > 57 { return 0; }
+    if byte < token_digit_zero_byte() { return 0; }
+    if byte > token_digit_nine_byte() { return 0; }
     return 1;
 }
 
 fn is_identifier_start(byte: i64) -> i32 {
-    if byte == 95 { return 1; }
-    if byte >= 65 {
-        if byte <= 90 { return 1; }
+    if byte == token_underscore_byte() { return 1; }
+    if byte >= token_uppercase_a_byte() {
+        if byte <= token_uppercase_z_byte() { return 1; }
     }
-    if byte >= 97 {
-        if byte <= 122 { return 1; }
+    if byte >= token_lowercase_a_byte() {
+        if byte <= token_lowercase_z_byte() { return 1; }
     }
     return 0;
 }
@@ -61,21 +61,21 @@ fn scan_digits(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
 fn scan_number(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
     var cursor: i64 = scan_digits(source, start, source_length);
     if (cursor < source_length) {
-        if buffer_get(source, cursor) == 46 {
+        if buffer_get(source, cursor) == token_dot_byte() {
             cursor = scan_digits(source, checked_add(cursor, 1), source_length);
         }
     }
     if (cursor < source_length) {
         let exponent: i64 = buffer_get(source, cursor);
         var has_exponent: i32 = 0;
-        if exponent == 69 { has_exponent = 1; }
-        if exponent == 101 { has_exponent = 1; }
+        if exponent == token_uppercase_e_byte() { has_exponent = 1; }
+        if exponent == token_lowercase_e_byte() { has_exponent = 1; }
         if (has_exponent) {
             cursor = checked_add(cursor, 1);
             if (cursor < source_length) {
                 let sign: i64 = buffer_get(source, cursor);
-                if sign == 43 { cursor = checked_add(cursor, 1); }
-                else { if sign == 45 { cursor = checked_add(cursor, 1); } }
+                if sign == token_plus_byte() { cursor = checked_add(cursor, 1); }
+                else { if sign == token_minus_byte() { cursor = checked_add(cursor, 1); } }
             }
             cursor = scan_digits(source, cursor, source_length);
         }
@@ -87,10 +87,10 @@ fn scan_string(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
     var cursor: i64 = checked_add(start, 1);
     while (cursor < source_length) {
         let current: i64 = buffer_get(source, cursor);
-        if current == 34 {
+        if current == token_quote_byte() {
             return checked_add(cursor, 1);
         }
-        if current == 92 {
+        if current == token_backslash_byte() {
             let after_escape: i64 = checked_add(cursor, 1);
             if (after_escape < source_length) {
                 cursor = checked_add(cursor, 2);
@@ -105,17 +105,17 @@ fn scan_string(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
 }
 
 fn starts_comment(borrow source: Buffer, cursor: i64, source_length: i64) -> i32 {
-    if buffer_get(source, cursor) != 47 { return 0; }
+    if buffer_get(source, cursor) != token_slash_byte() { return 0; }
     let next: i64 = checked_add(cursor, 1);
     if (next >= source_length) { return 0; }
-    if buffer_get(source, next) != 47 { return 0; }
+    if buffer_get(source, next) != token_slash_byte() { return 0; }
     return 1;
 }
 
 fn scan_comment(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
     var cursor: i64 = checked_add(start, 2);
     while (cursor < source_length) {
-        if buffer_get(source, cursor) == 10 { return cursor; }
+        if buffer_get(source, cursor) == token_line_feed_byte() { return cursor; }
         cursor = checked_add(cursor, 1);
     }
     return cursor;
@@ -123,7 +123,7 @@ fn scan_comment(borrow source: Buffer, start: i64, source_length: i64) -> i64 {
 
 fn string_is_closed(borrow source: Buffer, start: i64, end: i64) -> i32 {
     if end <= checked_add(start, 1) { return 0; }
-    if buffer_get(source, checked_sub(end, 1)) == 34 { return 1; }
+    if buffer_get(source, checked_sub(end, 1)) == token_quote_byte() { return 1; }
     return 0;
 }
 
@@ -132,12 +132,12 @@ fn punctuation_length(borrow source: Buffer, start: i64, source_length: i64) -> 
     if (next_index >= source_length) { return 1; }
     let first: i64 = buffer_get(source, start);
     let second: i64 = buffer_get(source, next_index);
-    if first == 45 { if second == 62 { return 2; } }
-    if first == 61 { if second == 62 { return 2; } if second == 61 { return 2; } }
-    if first == 33 { if second == 61 { return 2; } }
-    if first == 62 { if second == 61 { return 2; } }
-    if first == 60 { if second == 61 { return 2; } }
-    if first == 58 { if second == 58 { return 2; } }
+    if first == token_minus_byte() { if second == token_greater_than_byte() { return 2; } }
+    if first == token_equals_byte() { if second == token_greater_than_byte() { return 2; } if second == token_equals_byte() { return 2; } }
+    if first == token_exclamation_byte() { if second == token_equals_byte() { return 2; } }
+    if first == token_greater_than_byte() { if second == token_equals_byte() { return 2; } }
+    if first == token_less_than_byte() { if second == token_equals_byte() { return 2; } }
+    if first == token_colon_byte() { if second == token_colon_byte() { return 2; } }
     return 1;
 }
 
@@ -156,20 +156,20 @@ requires_caps [allocate]
                 cursor = scan_comment(source, cursor, source_length);
             } else {
                 let start: i64 = cursor;
-                var kind: i32 = 4;
+                var kind: i32 = token_punctuation_kind();
                 if (is_identifier_start(byte)) {
-                    kind = 1;
+                    kind = token_identifier_kind();
                     cursor = scan_identifier(source, cursor, source_length);
                 } else {
                     if (is_digit(byte)) {
-                        kind = 2;
+                        kind = token_number_kind();
                         cursor = scan_number(source, cursor, source_length);
                     } else {
-                        if byte == 34 {
-                            kind = 3;
+                        if byte == token_quote_byte() {
+                            kind = token_string_kind();
                             cursor = scan_string(source, cursor, source_length);
                             if string_is_closed(source, start, cursor) == 0 {
-                                kind = 5;
+                                kind = token_invalid_string_kind();
                             }
                         } else {
                             cursor = checked_add(cursor, punctuation_length(source, cursor, source_length));
@@ -199,7 +199,7 @@ fn matches_module(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
-fn matches_fn(borrow source: Buffer, borrow token: Token) -> i32 {
+pub fn matches_fn(borrow source: Buffer, borrow token: Token) -> i32 {
     if token.length != 2 { return 0; }
     if token_byte(source, token, 0) != 102 { return 0; }
     if token_byte(source, token, 1) != 110 { return 0; }
@@ -217,7 +217,7 @@ fn matches_struct(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
-fn matches_enum(borrow source: Buffer, borrow token: Token) -> i32 {
+pub fn matches_enum(borrow source: Buffer, borrow token: Token) -> i32 {
     if token.length != 4 { return 0; }
     if token_byte(source, token, 0) != 101 { return 0; }
     if token_byte(source, token, 1) != 110 { return 0; }
@@ -226,7 +226,7 @@ fn matches_enum(borrow source: Buffer, borrow token: Token) -> i32 {
     return 1;
 }
 
-fn matches_capability(borrow source: Buffer, borrow token: Token) -> i32 {
+pub fn matches_capability(borrow source: Buffer, borrow token: Token) -> i32 {
     if token.length != 10 { return 0; }
     if token_byte(source, token, 0) != 99 { return 0; }
     if token_byte(source, token, 1) != 97 { return 0; }
@@ -408,14 +408,14 @@ fn statement_span_end(borrow source: Buffer, borrow tokens: Vec<Token>, start_in
     var index: i64 = checked_add(start_index, 1);
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
             if kind >= 25 {
                 if kind <= 28 {
-                    if punctuation == 123 { return checked_add(token.start, token.length); }
+                    if punctuation == token_open_brace_byte() { return checked_add(token.start, token.length); }
                 }
             }
-            if punctuation == 59 { return checked_add(token.start, token.length); }
+            if punctuation == token_semicolon_byte() { return checked_add(token.start, token.length); }
         }
         index = checked_add(index, 1);
     }
@@ -430,9 +430,9 @@ requires_caps [allocate]
     var brace_depth: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if punctuation == 125 {
+            if punctuation == token_close_brace_byte() {
                 if brace_depth > 0 { brace_depth = checked_sub(brace_depth, 1); }
             }
         }
@@ -445,7 +445,7 @@ requires_caps [allocate]
                     let name_index: i64 = checked_add(index, 1);
                     if (name_index < vec_len<Token>(tokens)) {
                         let name: Token = vec_get<Token>(tokens, name_index);
-                        if name.kind == 1 { end = checked_add(name.start, name.length); }
+                        if name.kind == token_identifier_kind() { end = checked_add(name.start, name.length); }
                     }
                 }
                 let node: SyntaxNode = SyntaxNode { kind: kind, start: token.start, length: end - token.start };
@@ -459,9 +459,9 @@ requires_caps [allocate]
                 vec_push<SyntaxNode>(nodes, node);
             }
         }
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if punctuation == 123 { brace_depth = checked_add(brace_depth, 1); }
+            if punctuation == token_open_brace_byte() { brace_depth = checked_add(brace_depth, 1); }
         }
         index = checked_add(index, 1);
     }
@@ -476,13 +476,13 @@ requires_caps [allocate]
     var brace_depth: i64 = 0;
     while (index < vec_len<Token>(tokens)) {
         let token: Token = vec_get<Token>(tokens, index);
-        if token.kind == 5 {
+        if token.kind == token_invalid_string_kind() {
             let invalid: ParseDiagnostic = ParseDiagnostic { code: 4, start: token.start, length: token.length };
             vec_push<ParseDiagnostic>(diagnostics, invalid);
         }
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if punctuation == 125 {
+            if punctuation == token_close_brace_byte() {
                 if brace_depth == 0 {
                     let unexpected: ParseDiagnostic = ParseDiagnostic { code: 2, start: token.start, length: token.length };
                     vec_push<ParseDiagnostic>(diagnostics, unexpected);
@@ -498,7 +498,7 @@ requires_caps [allocate]
                 var has_name: i32 = 0;
                 if (name_index < vec_len<Token>(tokens)) {
                     let name: Token = vec_get<Token>(tokens, name_index);
-                    if name.kind == 1 { has_name = 1; }
+                    if name.kind == token_identifier_kind() { has_name = 1; }
                 }
                 if has_name == 0 {
                     let missing: ParseDiagnostic = ParseDiagnostic { code: 1, start: token.start, length: token.length };
@@ -506,9 +506,9 @@ requires_caps [allocate]
                 }
             }
         }
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if punctuation == 123 { brace_depth = checked_add(brace_depth, 1); }
+            if punctuation == token_open_brace_byte() { brace_depth = checked_add(brace_depth, 1); }
         }
         index = checked_add(index, 1);
     }
@@ -520,22 +520,22 @@ requires_caps [allocate]
 }
 
 fn expression_operator_kind(borrow source: Buffer, borrow token: Token) -> i32 {
-    if token.kind != 4 { return 0; }
+    if token.kind != token_punctuation_kind() { return 0; }
     let first: i64 = buffer_get(source, token.start);
     if token.length == 1 {
-        if first == 43 { return 50; }
-        if first == 45 { return 51; }
-        if first == 42 { return 60; }
-        if first == 47 { return 61; }
-        if first == 62 { return 44; }
-        if first == 60 { return 45; }
+        if first == token_plus_byte() { return 50; }
+        if first == token_minus_byte() { return 51; }
+        if first == token_asterisk_byte() { return 60; }
+        if first == token_slash_byte() { return 61; }
+        if first == token_greater_than_byte() { return 44; }
+        if first == token_less_than_byte() { return 45; }
     }
     if token.length == 2 {
         let second: i64 = buffer_get(source, checked_add(token.start, 1));
-        if first == 61 { if second == 61 { return 40; } }
-        if first == 33 { if second == 61 { return 41; } }
-        if first == 62 { if second == 61 { return 42; } }
-        if first == 60 { if second == 61 { return 43; } }
+        if first == token_equals_byte() { if second == token_equals_byte() { return 40; } }
+        if first == token_exclamation_byte() { if second == token_equals_byte() { return 41; } }
+        if first == token_greater_than_byte() { if second == token_equals_byte() { return 42; } }
+        if first == token_less_than_byte() { if second == token_equals_byte() { return 43; } }
     }
     return 0;
 }
@@ -557,9 +557,9 @@ requires_caps [allocate]
         if cursor.index >= vec_len<Token>(tokens) { return left; }
         let token: Token = vec_get<Token>(tokens, cursor.index);
         var handled: i32 = 0;
-        if token.kind == 4 {
+        if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if punctuation == 60 {
+            if punctuation == token_less_than_byte() {
                 let type_index: i64 = checked_add(cursor.index, 1);
                 let close_index: i64 = checked_add(cursor.index, 2);
                 let call_index: i64 = checked_add(cursor.index, 3);
@@ -567,11 +567,11 @@ requires_caps [allocate]
                     let type_token: Token = vec_get<Token>(tokens, type_index);
                     let close_token: Token = vec_get<Token>(tokens, close_index);
                     let call_token: Token = vec_get<Token>(tokens, call_index);
-                    if type_token.kind == 1 {
-                        if close_token.kind == 4 {
-                            if buffer_get(source, close_token.start) == 62 {
-                                if call_token.kind == 4 {
-                                    if buffer_get(source, call_token.start) == 40 {
+                    if type_token.kind == token_identifier_kind() {
+                        if close_token.kind == token_punctuation_kind() {
+                            if buffer_get(source, close_token.start) == token_greater_than_byte() {
+                                if call_token.kind == token_punctuation_kind() {
+                                    if buffer_get(source, call_token.start) == token_open_paren_byte() {
                                         handled = 1;
                                         let type_node: ExpressionNode = ExpressionNode { kind: 30, start: type_token.start, length: type_token.length, left: -1, right: -1 };
                                         let type_node_index: i64 = push_expression(nodes, type_node);
@@ -587,15 +587,15 @@ requires_caps [allocate]
                     }
                 }
             }
-            if punctuation == 40 {
+            if punctuation == token_open_paren_byte() {
                 handled = 1;
                 cursor.index = checked_add(cursor.index, 1);
                 var arguments: i64 = -1;
                 var has_arguments: i32 = 1;
                 if cursor.index < vec_len<Token>(tokens) {
                     let possible_closing: Token = vec_get<Token>(tokens, cursor.index);
-                    if possible_closing.kind == 4 {
-                        if buffer_get(source, possible_closing.start) == 41 { has_arguments = 0; }
+                    if possible_closing.kind == token_punctuation_kind() {
+                        if buffer_get(source, possible_closing.start) == token_close_paren_byte() { has_arguments = 0; }
                     }
                 }
                 if (has_arguments) {
@@ -605,8 +605,8 @@ requires_caps [allocate]
                         if cursor.index >= vec_len<Token>(tokens) { reading_arguments = 0; }
                         else {
                             let separator: Token = vec_get<Token>(tokens, cursor.index);
-                            if separator.kind == 4 {
-                                if buffer_get(source, separator.start) == 44 {
+                            if separator.kind == token_punctuation_kind() {
+                                if buffer_get(source, separator.start) == token_comma_byte() {
                                     cursor.index = checked_add(cursor.index, 1);
                                     let next_argument: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
                                     let first_argument: ExpressionNode = vec_get<ExpressionNode>(nodes, arguments);
@@ -623,8 +623,8 @@ requires_caps [allocate]
                 var end: i64 = checked_add(token.start, token.length);
                 if cursor.index < vec_len<Token>(tokens) {
                     let closing: Token = vec_get<Token>(tokens, cursor.index);
-                    if closing.kind == 4 {
-                        if buffer_get(source, closing.start) == 41 {
+                    if closing.kind == token_punctuation_kind() {
+                        if buffer_get(source, closing.start) == token_close_paren_byte() {
                             end = checked_add(closing.start, closing.length);
                             cursor.index = checked_add(cursor.index, 1);
                         }
@@ -633,7 +633,7 @@ requires_caps [allocate]
                 let call: ExpressionNode = ExpressionNode { kind: 34, start: callee.start, length: end - callee.start, left: left, right: arguments };
                 left = push_expression(nodes, call);
             }
-            if punctuation == 123 {
+            if punctuation == token_open_brace_byte() {
                 handled = 1;
                 cursor.index = checked_add(cursor.index, 1);
                 var initializers: i64 = -1;
@@ -642,8 +642,8 @@ requires_caps [allocate]
                     if cursor.index >= vec_len<Token>(tokens) { reading_fields = 0; }
                     else {
                         let possible_field: Token = vec_get<Token>(tokens, cursor.index);
-                        if possible_field.kind == 4 {
-                            if buffer_get(source, possible_field.start) == 125 { reading_fields = 0; }
+                        if possible_field.kind == token_punctuation_kind() {
+                            if buffer_get(source, possible_field.start) == token_close_brace_byte() { reading_fields = 0; }
                         }
                         if (reading_fields) {
                             let field_node: ExpressionNode = ExpressionNode { kind: 30, start: possible_field.start, length: possible_field.length, left: -1, right: -1 };
@@ -663,8 +663,8 @@ requires_caps [allocate]
                             }
                             if cursor.index < vec_len<Token>(tokens) {
                                 let separator: Token = vec_get<Token>(tokens, cursor.index);
-                                if separator.kind == 4 {
-                                    if buffer_get(source, separator.start) == 44 { cursor.index = checked_add(cursor.index, 1); }
+                                if separator.kind == token_punctuation_kind() {
+                                    if buffer_get(source, separator.start) == token_comma_byte() { cursor.index = checked_add(cursor.index, 1); }
                                     else { reading_fields = 0; }
                                 } else { reading_fields = 0; }
                             } else { reading_fields = 0; }
@@ -675,8 +675,8 @@ requires_caps [allocate]
                 var constructor_end: i64 = checked_add(token.start, token.length);
                 if cursor.index < vec_len<Token>(tokens) {
                     let closing: Token = vec_get<Token>(tokens, cursor.index);
-                    if closing.kind == 4 {
-                        if buffer_get(source, closing.start) == 125 {
+                    if closing.kind == token_punctuation_kind() {
+                        if buffer_get(source, closing.start) == token_close_brace_byte() {
                             constructor_end = checked_add(closing.start, closing.length);
                             cursor.index = checked_add(cursor.index, 1);
                         }
@@ -685,14 +685,14 @@ requires_caps [allocate]
                 let constructor: ExpressionNode = ExpressionNode { kind: 70, start: type_node.start, length: constructor_end - type_node.start, left: left, right: initializers };
                 left = push_expression(nodes, constructor);
             }
-            if punctuation == 46 {
+            if punctuation == token_dot_byte() {
                 handled = 1;
                 cursor.index = checked_add(cursor.index, 1);
                 var field_index: i64 = -1;
                 var end: i64 = checked_add(token.start, token.length);
                 if cursor.index < vec_len<Token>(tokens) {
                     let field: Token = vec_get<Token>(tokens, cursor.index);
-                    if field.kind == 1 {
+                    if field.kind == token_identifier_kind() {
                         let field_node: ExpressionNode = ExpressionNode { kind: 30, start: field.start, length: field.length, left: -1, right: -1 };
                         field_index = push_expression(nodes, field_node);
                         end = checked_add(field.start, field.length);
@@ -717,12 +717,12 @@ requires_caps [allocate]
         return push_expression(nodes, invalid);
     }
     let token: Token = vec_get<Token>(tokens, cursor.index);
-    if token.kind == 4 {
-        if buffer_get(source, token.start) == 45 {
+    if token.kind == token_punctuation_kind() {
+        if buffer_get(source, token.start) == token_minus_byte() {
             let value_index: i64 = checked_add(cursor.index, 1);
             if value_index < vec_len<Token>(tokens) {
                 let value: Token = vec_get<Token>(tokens, value_index);
-                if value.kind == 2 {
+                if value.kind == token_number_kind() {
                     cursor.index = checked_add(value_index, 1);
                     let end: i64 = checked_add(value.start, value.length);
                     let negative: ExpressionNode = ExpressionNode {
@@ -734,14 +734,14 @@ requires_caps [allocate]
                 }
             }
         }
-        if buffer_get(source, token.start) == 40 {
+        if buffer_get(source, token.start) == token_open_paren_byte() {
             cursor.index = checked_add(cursor.index, 1);
             let child: i64 = parse_comparison_expression(source, tokens, cursor, nodes);
             var end: i64 = checked_add(token.start, token.length);
             if cursor.index < vec_len<Token>(tokens) {
                 let closing: Token = vec_get<Token>(tokens, cursor.index);
-                if closing.kind == 4 {
-                    if buffer_get(source, closing.start) == 41 {
+                if closing.kind == token_punctuation_kind() {
+                    if buffer_get(source, closing.start) == token_close_paren_byte() {
                         end = checked_add(closing.start, closing.length);
                         cursor.index = checked_add(cursor.index, 1);
                     }
@@ -753,9 +753,9 @@ requires_caps [allocate]
         }
     }
     var kind: i32 = 39;
-    if token.kind == 1 { kind = 30; }
-    if token.kind == 2 { kind = 31; }
-    if token.kind == 3 { kind = 32; }
+    if token.kind == token_identifier_kind() { kind = 30; }
+    if token.kind == token_number_kind() { kind = 31; }
+    if token.kind == token_string_kind() { kind = 32; }
     cursor.index = checked_add(cursor.index, 1);
     let atom: ExpressionNode = ExpressionNode { kind: kind, start: token.start, length: token.length, left: -1, right: -1 };
     let primary: i64 = push_expression(nodes, atom);
