@@ -26,13 +26,23 @@ NativeMirFunctionRecord = tuple[
     int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int
 ]
 
-_KIND_FUNCTION = 1
-_KIND_SOURCE_LOCAL = 2
-_KIND_TEMPORARY = 3
-_KIND_CONST = 4
-_KIND_BINARY = 5
-_KIND_COPY = 6
-_KIND_RETURN = 7
+MIR_FUNCTION_KIND_FUNCTION = 1
+MIR_FUNCTION_KIND_SOURCE_LOCAL = 2
+MIR_FUNCTION_KIND_TEMPORARY = 3
+MIR_FUNCTION_KIND_CONST = 4
+MIR_FUNCTION_KIND_BINARY = 5
+MIR_FUNCTION_KIND_COPY_TO_BINDING = 6
+MIR_FUNCTION_KIND_RETURN = 7
+MIR_FUNCTION_KIND_PRINT = 8
+MIR_FUNCTION_KIND_ENUM_CONSTRUCT = 9
+MIR_FUNCTION_KIND_ENUM_TAG_LOAD = 10
+MIR_FUNCTION_KIND_ENUM_PAYLOAD_LOAD = 11
+MIR_FUNCTION_KIND_STRUCT_CONSTRUCT = 12
+MIR_FUNCTION_KIND_STRUCT_FIELD_LOAD = 13
+MIR_FUNCTION_KIND_STRUCT_FIELD_STORE = 14
+MIR_FUNCTION_KIND_PARAMETER = 15
+MIR_FUNCTION_KIND_CALL = 16
+MIR_FUNCTION_KIND_CALL_ARGUMENT = 17
 _SYMBOLS = {
     1: "+", 2: "-", 3: "*", 4: "/",
     5: "==", 6: "!=", 7: ">=", 8: "<=", 9: ">", 10: "<",
@@ -83,7 +93,7 @@ def lower_native_function_mir_records(
         symbol_start, symbol_length, symbol_code, type_code, policy_code,
         binding_id, mutable, hir_node_id, ordinal,
     ) = materialized[0]
-    if kind != _KIND_FUNCTION:
+    if kind != MIR_FUNCTION_KIND_FUNCTION:
         raise NativeMirFunctionError("first native function MIR record must be the function header")
     checked_span(start, length, "function")
     checked_span(symbol_start, symbol_length, "function symbol")
@@ -116,7 +126,7 @@ def lower_native_function_mir_records(
         if return_terminator is not None:
             raise NativeMirFunctionError(f"record {index} appears after return")
 
-        if kind == _KIND_SOURCE_LOCAL:
+        if kind == MIR_FUNCTION_KIND_SOURCE_LOCAL:
             span = checked_span(start, length, f"source local {index}")
             if record_id != next_local or ordinal != record_id:
                 raise NativeMirFunctionError("source local IDs must be dense and ordered")
@@ -142,7 +152,7 @@ def lower_native_function_mir_records(
             next_local += 1
             continue
 
-        if kind == _KIND_TEMPORARY:
+        if kind == MIR_FUNCTION_KIND_TEMPORARY:
             if record_id != next_local or ordinal != record_id:
                 raise NativeMirFunctionError("temporary local IDs must follow source locals densely")
             if hir_node_id < 0:
@@ -161,7 +171,7 @@ def lower_native_function_mir_records(
             next_local += 1
             continue
 
-        if kind == _KIND_RETURN:
+        if kind == MIR_FUNCTION_KIND_RETURN:
             span = checked_span(start, length, "return")
             if record_id != 0 or result != -1 or right != -1:
                 raise NativeMirFunctionError("return record has invalid result/id fields")
@@ -179,7 +189,11 @@ def lower_native_function_mir_records(
             return_terminator = MirTerminator("return", operands=operands, span=span)
             continue
 
-        if kind not in {_KIND_CONST, _KIND_BINARY, _KIND_COPY}:
+        if kind not in {
+            MIR_FUNCTION_KIND_CONST,
+            MIR_FUNCTION_KIND_BINARY,
+            MIR_FUNCTION_KIND_COPY_TO_BINDING,
+        }:
             raise NativeMirFunctionError(f"record {index} has unsupported kind {kind}")
         span = checked_span(start, length, f"instruction {index}")
         if record_id != next_instruction or ordinal != record_id:
@@ -189,7 +203,7 @@ def lower_native_function_mir_records(
         if hir_node_id < 0:
             raise NativeMirFunctionError(f"instruction {index} has invalid HIR identity")
 
-        if kind == _KIND_CONST:
+        if kind == MIR_FUNCTION_KIND_CONST:
             if any(value != -1 for value in (left, right, binding_id)):
                 raise NativeMirFunctionError(f"const {index} has invalid references")
             if symbol_start != -1 or symbol_length != 0 or symbol_code != 0 or policy_code != 0:
@@ -205,7 +219,7 @@ def lower_native_function_mir_records(
                 span=span,
                 ownership="value",
             ))
-        elif kind == _KIND_BINARY:
+        elif kind == MIR_FUNCTION_KIND_BINARY:
             if left not in locals_by_id or right not in locals_by_id:
                 raise NativeMirFunctionError(
                     f"binary {index} references unknown operand locals {(left, right)}"

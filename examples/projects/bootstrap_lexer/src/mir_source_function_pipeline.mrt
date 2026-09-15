@@ -78,7 +78,7 @@ fn finish_source_function_semantics(
     while (index < vec_len<MirFunctionRecord>(body_records)) {
         let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, index);
         var named_binding: i32 = 0;
-        if (function_mir_kind(record) == 2) { named_binding = 1; }
+        if (function_mir_kind(record) == function_mir_kind_source_local()) { named_binding = 1; }
         if (function_mir_kind(record) == function_mir_kind_parameter()) { named_binding = 1; }
         if (named_binding != 0) {
             let expected_binding: i64 = vec_len<i64>(binding_starts);

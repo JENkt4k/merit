@@ -158,6 +158,17 @@ pub fn function_mir_binding_id(borrow node: MirFunctionRecord) -> i64 { return n
 pub fn function_mir_mutable(borrow node: MirFunctionRecord) -> i32 { return node.mutable; }
 pub fn function_mir_hir_node_id(borrow node: MirFunctionRecord) -> i64 { return node.hir_node_id; }
 pub fn function_mir_ordinal(borrow node: MirFunctionRecord) -> i64 { return node.ordinal; }
+pub fn function_mir_kind_function() -> i32 { return 1; }
+pub fn function_mir_kind_source_local() -> i32 { return 2; }
+pub fn function_mir_kind_temporary_local() -> i32 { return 3; }
+pub fn function_mir_kind_const() -> i32 { return 4; }
+pub fn function_mir_kind_binary() -> i32 { return 5; }
+pub fn function_mir_kind_copy_to_binding() -> i32 { return 6; }
+pub fn function_mir_kind_return() -> i32 { return 7; }
+pub fn function_mir_kind_print() -> i32 { return 8; }
+pub fn function_mir_kind_enum_construct() -> i32 { return 9; }
+pub fn function_mir_kind_enum_tag_load() -> i32 { return 10; }
+pub fn function_mir_kind_enum_payload_load() -> i32 { return 11; }
 pub fn function_mir_kind_struct_construct() -> i32 { return 12; }
 pub fn function_mir_kind_struct_field_load() -> i32 { return 13; }
 pub fn function_mir_kind_struct_field_store() -> i32 { return 14; }
@@ -187,9 +198,9 @@ pub fn function_mir_destructor_unclosed_body_error() -> i32 { return 994; }
 pub fn function_mir_destructor_statement_error() -> i32 { return 995; }
 pub fn function_mir_destructor_body_error(status: i32) -> i32 { return checked_add(996, status); }
 pub fn function_mir_destructor_cfg_error(status: i32) -> i32 { return checked_add(1100, status); }
-pub fn function_mir_is_construct(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 9) { return 1; } return 0; }
-pub fn function_mir_is_enum_tag_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 10) { return 1; } return 0; }
-pub fn function_mir_is_enum_payload_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == 11) { return 1; } return 0; }
+pub fn function_mir_is_construct(borrow node: MirFunctionRecord) -> i32 { if (node.kind == function_mir_kind_enum_construct()) { return 1; } return 0; }
+pub fn function_mir_is_enum_tag_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == function_mir_kind_enum_tag_load()) { return 1; } return 0; }
+pub fn function_mir_is_enum_payload_load(borrow node: MirFunctionRecord) -> i32 { if (node.kind == function_mir_kind_enum_payload_load()) { return 1; } return 0; }
 pub fn function_mir_is_enum_instruction(borrow node: MirFunctionRecord) -> i32 {
     if (function_mir_is_construct(node) != 0) { return 1; }
     if (function_mir_is_enum_tag_load(node) != 0) { return 1; }
@@ -295,7 +306,7 @@ pub fn function_mir_type_uses_ownership_transfer(type_code: i32) -> i32 {
 
 pub fn function_mir_header(start: i64, length: i64, symbol_start: i64, symbol_length: i64, result_type_code: i32) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 1, start: start, length: length, id: 0, result: -1, left: -1, right: -1,
+        kind: function_mir_kind_function(), start: start, length: length, id: 0, result: -1, left: -1, right: -1,
         symbol_start: symbol_start, symbol_length: symbol_length, symbol_code: 0,
         type_code: result_type_code, numeric_policy: 0, binding_id: -1, mutable: 0,
         hir_node_id: -1, ordinal: 0
@@ -308,7 +319,7 @@ pub fn function_mir_callable_header(
     exported: i32
 ) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 1, start:start, length:length, id:0, result:-1,
+        kind: function_mir_kind_function(), start:start, length:length, id:0, result:-1,
         left:borrowed_origin, right:-1, symbol_start:symbol_start,
         symbol_length:symbol_length, symbol_code:return_mode,
         type_code:result_type_code, numeric_policy:0, binding_id:-1, mutable:exported,
@@ -358,7 +369,7 @@ pub fn function_mir_call_argument(
 
 pub fn function_mir_source_local(start: i64, length: i64, local_id: i64, type_code: i32, binding_id: i64, mutable: i32) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 2, start: start, length: length, id: local_id, result: -1, left: -1, right: -1,
+        kind: function_mir_kind_source_local(), start: start, length: length, id: local_id, result: -1, left: -1, right: -1,
         symbol_start: start, symbol_length: length, symbol_code: 0, type_code: type_code,
         numeric_policy: 0, binding_id: binding_id, mutable: mutable, hir_node_id: -1,
         ordinal: local_id
@@ -371,7 +382,7 @@ pub fn function_mir_temporary(local_id: i64, type_code: i32, hir_node_id: i64) -
 
 pub fn function_mir_temporary_mode(local_id:i64,type_code:i32,hir_node_id:i64,mode:i32)->MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 3, start: 0, length: 0, id: local_id, result: -1, left: -1, right: -1,
+        kind: function_mir_kind_temporary_local(), start: 0, length: 0, id: local_id, result: -1, left: -1, right: -1,
         symbol_start: -1, symbol_length: 0, symbol_code: 0, type_code: type_code,
         numeric_policy: mode, binding_id: -1, mutable: 0, hir_node_id: hir_node_id,
         ordinal: local_id
@@ -380,7 +391,7 @@ pub fn function_mir_temporary_mode(local_id:i64,type_code:i32,hir_node_id:i64,mo
 
 pub fn function_mir_const(start: i64, length: i64, instruction_id: i64, result_local: i64, type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 4, start: start, length: length, id: instruction_id, result: result_local,
+        kind: function_mir_kind_const(), start: start, length: length, id: instruction_id, result: result_local,
         left: -1, right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0,
         type_code: type_code, numeric_policy: 0, binding_id: -1, mutable: 0,
         hir_node_id: hir_node_id, ordinal: instruction_id
@@ -389,7 +400,7 @@ pub fn function_mir_const(start: i64, length: i64, instruction_id: i64, result_l
 
 pub fn function_mir_binary(start: i64, length: i64, instruction_id: i64, result_local: i64, left_local: i64, right_local: i64, symbol_code: i32, type_code: i32, numeric_policy: i32, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 5, start: start, length: length, id: instruction_id, result: result_local,
+        kind: function_mir_kind_binary(), start: start, length: length, id: instruction_id, result: result_local,
         left: left_local, right: right_local, symbol_start: -1, symbol_length: 0,
         symbol_code: symbol_code, type_code: type_code, numeric_policy: numeric_policy,
         binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
@@ -398,7 +409,7 @@ pub fn function_mir_binary(start: i64, length: i64, instruction_id: i64, result_
 
 pub fn function_mir_copy(start: i64, length: i64, instruction_id: i64, destination_local: i64, source_local: i64, binding_id: i64, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 6, start: start, length: length, id: instruction_id, result: destination_local,
+        kind: function_mir_kind_copy_to_binding(), start: start, length: length, id: instruction_id, result: destination_local,
         left: source_local, right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0,
         type_code: 0, numeric_policy: 0, binding_id: binding_id, mutable: 0,
         hir_node_id: hir_node_id, ordinal: instruction_id
@@ -407,7 +418,7 @@ pub fn function_mir_copy(start: i64, length: i64, instruction_id: i64, destinati
 
 pub fn function_mir_return(start: i64, length: i64, operand_local: i64, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 7, start: start, length: length, id: 0, result: -1, left: operand_local,
+        kind: function_mir_kind_return(), start: start, length: length, id: 0, result: -1, left: operand_local,
         right: -1, symbol_start: -1, symbol_length: 0, symbol_code: 0, type_code: 0,
         numeric_policy: 0, binding_id: -1, mutable: 0, hir_node_id: hir_node_id,
         ordinal: 0
@@ -416,7 +427,7 @@ pub fn function_mir_return(start: i64, length: i64, operand_local: i64, hir_node
 
 pub fn function_mir_print(start: i64, length: i64, instruction_id: i64, operand_local: i64, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 8, start: start, length: length, id: instruction_id, result: -1,
+        kind: function_mir_kind_print(), start: start, length: length, id: instruction_id, result: -1,
         left: operand_local, right: -1, symbol_start: -1, symbol_length: 0,
         symbol_code: 0, type_code: 0, numeric_policy: 0, binding_id: -1,
         mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
@@ -425,7 +436,7 @@ pub fn function_mir_print(start: i64, length: i64, instruction_id: i64, operand_
 
 pub fn function_mir_construct(start: i64, length: i64, instruction_id: i64, result_local: i64, payload_local: i64, variant_ordinal: i32, type_code: i32, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 9, start: start, length: length, id: instruction_id, result: result_local,
+        kind: function_mir_kind_enum_construct(), start: start, length: length, id: instruction_id, result: result_local,
         left: payload_local, right: -1, symbol_start: -1, symbol_length: 0,
         symbol_code: variant_ordinal, type_code: type_code, numeric_policy: 0,
         binding_id: -1, mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
@@ -434,7 +445,7 @@ pub fn function_mir_construct(start: i64, length: i64, instruction_id: i64, resu
 
 pub fn function_mir_enum_tag_load(start: i64, length: i64, instruction_id: i64, result_local: i64, enum_local: i64, hir_node_id: i64) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 10, start: start, length: length, id: instruction_id, result: result_local,
+        kind: function_mir_kind_enum_tag_load(), start: start, length: length, id: instruction_id, result: result_local,
         left: enum_local, right: -1, symbol_start: -1, symbol_length: 0,
         symbol_code: 0, type_code: 1, numeric_policy: 0, binding_id: -1,
         mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
@@ -446,7 +457,7 @@ pub fn function_mir_enum_payload_load(
     enum_local: i64, variant_ordinal: i64, hir_node_id: i64
 ) -> MirFunctionRecord {
     return MirFunctionRecord {
-        kind: 11, start: start, length: length, id: instruction_id, result: result_local,
+        kind: function_mir_kind_enum_payload_load(), start: start, length: length, id: instruction_id, result: result_local,
         left: enum_local, right: variant_ordinal, symbol_start: -1, symbol_length: 0,
         symbol_code: 0, type_code: 1, numeric_policy: 0, binding_id: -1,
         mutable: 0, hir_node_id: hir_node_id, ordinal: instruction_id
@@ -495,7 +506,7 @@ pub fn function_mir_struct_field_replace(start: i64, length: i64, instruction_id
 pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
     if (vec_len<MirFunctionRecord>(nodes) < 2) { return 1; }
     let header: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, 0);
-    if (header.kind != 1) { return 2; }
+    if (header.kind != function_mir_kind_function()) { return 2; }
     if (header.start < 0) { return 3; }
     if (header.length <= 0) { return 3; }
     if (header.symbol_start < 0) { return 4; }
@@ -518,7 +529,7 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
     while (index < vec_len<MirFunctionRecord>(nodes)) {
         let node: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, index);
         if (saw_return != 0) { return 6; }
-        if (node.kind == 2) {
+        if (node.kind == function_mir_kind_source_local()) {
             if (node.id != next_local) { return 7; }
             if (node.start < 0) { return 8; }
             if (node.length <= 0) { return 8; }
@@ -540,13 +551,13 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                 next_parameter = checked_add(next_parameter, 1);
                 next_local = checked_add(next_local, 1);
             } else {
-            if (node.kind == 3) {
+            if (node.kind == function_mir_kind_temporary_local()) {
                 if (node.id != next_local) { return 12; }
                 if (node.type_code <= 0) { return 13; }
                 if (node.hir_node_id < 0) { return 14; }
                 next_local = checked_add(next_local, 1);
             } else {
-                if (node.kind == 4) {
+                if (node.kind == function_mir_kind_const()) {
                     if (node.id != next_instruction) { return 15; }
                     if (node.result < 0) { return 16; }
                     if (node.start < 0) { return 17; }
@@ -555,7 +566,7 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                     if (node.hir_node_id < 0) { return 19; }
                     next_instruction = checked_add(next_instruction, 1);
                 } else {
-                    if (node.kind == 5) {
+                    if (node.kind == function_mir_kind_binary()) {
                         if (node.id != next_instruction) { return 20; }
                         if (node.result < 0) { return 21; }
                         if (node.left < 0) { return 21; }
@@ -567,7 +578,7 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                         if (node.hir_node_id < 0) { return 25; }
                         next_instruction = checked_add(next_instruction, 1);
                     } else {
-                        if (node.kind == 6) {
+                        if (node.kind == function_mir_kind_copy_to_binding()) {
                             if (node.id != next_instruction) { return 26; }
                             if (node.result < 0) { return 27; }
                             if (node.left < 0) { return 27; }
@@ -575,12 +586,12 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                             if (node.hir_node_id < 0) { return 29; }
                             next_instruction = checked_add(next_instruction, 1);
                         } else {
-                            if (node.kind == 7) {
+                            if (node.kind == function_mir_kind_return()) {
                                 if (node.left < -1) { return 30; }
                                 if (node.hir_node_id < 0) { return 31; }
                                 saw_return = 1;
                             } else {
-                                if (node.kind == 8) {
+                                if (node.kind == function_mir_kind_print()) {
                                     if (node.id != next_instruction) { return 34; }
                                     if (node.left < 0) { return 35; }
                                     if (node.hir_node_id < 0) { return 36; }

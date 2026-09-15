@@ -29,12 +29,15 @@ pub fn generic_specialization_type_code(borrow node: MirGenericRecord) -> i32 { 
 pub fn generic_hir_node_id(borrow node: MirGenericRecord) -> i64 { return node.hir_node_id; }
 pub fn generic_owner_hir_id(borrow node: MirGenericRecord) -> i64 { return node.owner_hir_id; }
 pub fn generic_ordinal(borrow node: MirGenericRecord) -> i64 { return node.ordinal; }
+pub fn generic_const_kind() -> i32 { return 1; }
+pub fn generic_call_kind() -> i32 { return 2; }
+pub fn generic_operand_kind() -> i32 { return 3; }
 
 pub fn generic_const(
     start: i64, length: i64, result: i64, type_code: i32, hir_node_id: i64
 ) -> MirGenericRecord {
     return MirGenericRecord {
-        kind: 1, start: start, length: length, result: result, operand: -1,
+        kind: generic_const_kind(), start: start, length: length, result: result, operand: -1,
         symbol_start: -1, symbol_length: 0, type_code: type_code,
         specialization_type_code: 0, hir_node_id: hir_node_id,
         owner_hir_id: -1, ordinal: -1
@@ -43,7 +46,7 @@ pub fn generic_const(
 
 pub fn generic_operand_marker(result: i64, owner_hir_id: i64, ordinal: i64) -> MirGenericRecord {
     return MirGenericRecord {
-        kind: 3, start: 0, length: 0, result: result, operand: -1,
+        kind: generic_operand_kind(), start: 0, length: 0, result: result, operand: -1,
         symbol_start: -1, symbol_length: 0, type_code: 0,
         specialization_type_code: 0, hir_node_id: -1,
         owner_hir_id: owner_hir_id, ordinal: ordinal
@@ -56,7 +59,7 @@ pub fn generic_call(
     type_code: i32, specialization_type_code: i32, hir_node_id: i64
 ) -> MirGenericRecord {
     return MirGenericRecord {
-        kind: 2, start: start, length: length, result: result, operand: -1,
+        kind: generic_call_kind(), start: start, length: length, result: result, operand: -1,
         symbol_start: symbol_start, symbol_length: symbol_length,
         type_code: type_code, specialization_type_code: specialization_type_code,
         hir_node_id: hir_node_id, owner_hir_id: -1, ordinal: -1
@@ -68,11 +71,11 @@ pub fn validate_generic_mir_records(borrow nodes: Vec<MirGenericRecord>) -> i32 
     var index: i64 = 0;
     while (index < vec_len<MirGenericRecord>(nodes)) {
         let node: MirGenericRecord = vec_get<MirGenericRecord>(nodes, index);
-        if (node.kind < 1) { return 2; }
-        if (node.kind > 3) { return 2; }
+        if (node.kind < generic_const_kind()) { return 2; }
+        if (node.kind > generic_operand_kind()) { return 2; }
         if (node.start < 0) { return 3; }
         if (node.length < 0) { return 3; }
-        if (node.kind == 3) {
+        if (node.kind == generic_operand_kind()) {
             if (node.result < 0) { return 4; }
             if (node.owner_hir_id < 0) { return 4; }
             if (node.ordinal < 0) { return 4; }
@@ -83,10 +86,10 @@ pub fn validate_generic_mir_records(borrow nodes: Vec<MirGenericRecord>) -> i32 
             if (node.type_code <= 0) { return 5; }
             if (node.hir_node_id < 0) { return 5; }
         }
-        if (node.kind == 1) {
+        if (node.kind == generic_const_kind()) {
             if (node.specialization_type_code != 0) { return 6; }
         }
-        if (node.kind == 2) {
+        if (node.kind == generic_call_kind()) {
             if (node.symbol_start < 0) { return 7; }
             if (node.symbol_length <= 0) { return 7; }
             if (node.specialization_type_code <= 0) { return 8; }

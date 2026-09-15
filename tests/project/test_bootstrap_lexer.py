@@ -460,6 +460,80 @@ def test_bootstrap_ast_hir_identifier_representation_is_stable(tmp_path):
     assert native == expected
 
 
+MIR_KIND_REPRESENTATION = (
+    ("mir_const_kind", 1), ("mir_binary_kind", 2),
+    ("mir_group_alias_kind", 3), ("mir_binding_kind", 4),
+    ("composite_const_kind", 1), ("composite_binary_kind", 2),
+    ("composite_binding_kind", 3), ("composite_call_kind", 4),
+    ("composite_field_kind", 5), ("composite_construct_kind", 6),
+    ("composite_operand_kind", 7),
+    ("function_mir_kind_function", 1),
+    ("function_mir_kind_source_local", 2),
+    ("function_mir_kind_temporary_local", 3),
+    ("function_mir_kind_const", 4), ("function_mir_kind_binary", 5),
+    ("function_mir_kind_copy_to_binding", 6),
+    ("function_mir_kind_return", 7), ("function_mir_kind_print", 8),
+    ("function_mir_kind_enum_construct", 9),
+    ("function_mir_kind_enum_tag_load", 10),
+    ("function_mir_kind_enum_payload_load", 11),
+    ("function_mir_kind_struct_construct", 12),
+    ("function_mir_kind_struct_field_load", 13),
+    ("function_mir_kind_struct_field_store", 14),
+    ("function_mir_kind_parameter", 15), ("function_mir_kind_call", 16),
+    ("function_mir_kind_call_argument", 17),
+    ("generic_const_kind", 1), ("generic_call_kind", 2),
+    ("generic_operand_kind", 3),
+    ("function_contract_temporary_local_kind", 1),
+    ("function_contract_const_kind", 2),
+    ("function_contract_binary_kind", 3),
+    ("function_contract_check_kind", 4),
+    ("function_contract_call_kind", 5),
+    ("function_contract_result_capture_kind", 6),
+    ("function_contract_field_load_kind", 7),
+    ("function_contract_old_snapshot_kind", 8),
+    ("assembly_source_contract_record_kind", 1),
+    ("assembly_source_body_kind", 2),
+    ("assembly_source_ownership_kind", 3),
+    ("function_contract_precondition_phase", 1),
+    ("function_contract_postcondition_phase", 2),
+    ("function_contract_entry_snapshot_phase", 3),
+)
+
+
+def test_bootstrap_mir_kind_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_mir_kind_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(f"print({name}());" for name, _ in MIR_KIND_REPRESENTATION)
+    (project_root / "src/mir_kind_representation_probe.mrt").write_text(
+        "module mir_kind_representation_probe\n"
+        "import bootstrap_mir;\nimport bootstrap_mir_composite;\n"
+        "import bootstrap_mir_functions;\nimport bootstrap_mir_generics;\n"
+        "import bootstrap_mir_function_contracts;\n"
+        "import bootstrap_mir_function_instruction_source;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/mir_kind_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(f"{value}\n" for _, value in MIR_KIND_REPRESENTATION)
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
     checker = check(project)

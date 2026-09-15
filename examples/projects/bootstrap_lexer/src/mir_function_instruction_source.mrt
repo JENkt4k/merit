@@ -1,4 +1,5 @@
 module bootstrap_mir_function_instruction_source
+import bootstrap_mir_function_contracts;
 
 // source_kind:
 //   1 contract MIR record
@@ -24,21 +25,25 @@ pub fn assembly_source_clause(borrow value: MirFunctionInstructionSource) -> i64
 pub fn assembly_source_result(borrow value: MirFunctionInstructionSource) -> i64 { return value.result; }
 pub fn assembly_source_left(borrow value: MirFunctionInstructionSource) -> i64 { return value.left; }
 pub fn assembly_source_right(borrow value: MirFunctionInstructionSource) -> i64 { return value.right; }
+pub fn assembly_source_contract_record_kind() -> i32 { return 1; }
+pub fn assembly_source_body_kind() -> i32 { return 2; }
+pub fn assembly_source_ownership_kind() -> i32 { return 3; }
+pub fn assembly_source_no_contract_phase() -> i32 { return 0; }
 
 pub fn validate_function_assembly_sources(borrow sources: Vec<MirFunctionInstructionSource>) -> i32 {
     var index: i64 = 0;
     while (index < vec_len<MirFunctionInstructionSource>(sources)) {
         let value: MirFunctionInstructionSource = vec_get<MirFunctionInstructionSource>(sources, index);
         if (value.global_id != index) { return 1; }
-        if (value.source_kind < 1) { return 2; }
-        if (value.source_kind > 3) { return 2; }
+        if (value.source_kind < assembly_source_contract_record_kind()) { return 2; }
+        if (value.source_kind > assembly_source_ownership_kind()) { return 2; }
         if (value.source_id < 0) { return 3; }
-        if (value.source_kind == 1) {
-            if (value.contract_kind < 1) { return 4; }
-            if (value.contract_kind > 3) { return 4; }
+        if (value.source_kind == assembly_source_contract_record_kind()) {
+            if (value.contract_kind < function_contract_precondition_phase()) { return 4; }
+            if (value.contract_kind > function_contract_entry_snapshot_phase()) { return 4; }
             if (value.clause_ordinal < 0) { return 5; }
         } else {
-            if (value.contract_kind != 0) { return 6; }
+            if (value.contract_kind != assembly_source_no_contract_phase()) { return 6; }
             if (value.clause_ordinal != -1) { return 6; }
         }
         index = checked_add(index, 1);

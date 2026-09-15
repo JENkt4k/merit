@@ -20,13 +20,13 @@ requires_caps [allocate]
         let record: MirFunctionContractRecord = vec_get<MirFunctionContractRecord>(contracts, index);
         if (function_contract_contract_kind(record) == wanted_kind) {
             let kind: i32 = function_contract_kind(record);
-            if (kind >= 2) {
-                if (kind > 4) { return 30; }
+            if (kind >= function_contract_const_kind()) {
+                if (kind > function_contract_check_kind()) { return 30; }
                 let global_id: i64 = vec_get<i64>(next_instruction, 0);
                 vec_push<MirLowerEvent>(events, mir_event_place(global_id));
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
                     global_id: global_id,
-                    source_kind: 1,
+                    source_kind: assembly_source_contract_record_kind(),
                     source_id: function_contract_id(record),
                     contract_kind: wanted_kind,
                     clause_ordinal: function_contract_clause(record),
@@ -61,7 +61,7 @@ requires_caps [allocate]
     var next_instruction: Vec<i64> = vec_new<i64>(allocator, 1);
     vec_push<i64>(next_instruction, 0);
     let pre_status: i32 = emit_contract_records(
-        contracts, 1, binding_count, body_local_count,
+        contracts, function_contract_precondition_phase(), binding_count, body_local_count,
         next_instruction, events, sources
     );
     if (pre_status != 0) { return pre_status; }
@@ -76,8 +76,8 @@ requires_caps [allocate]
             let global_id: i64 = vec_get<i64>(next_instruction, 0);
             vec_push<MirLowerEvent>(events, mir_event_place(global_id));
             vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                global_id: global_id, source_kind: 2, source_id: expected_body_instruction,
-                contract_kind: 0, clause_ordinal: -1,
+                global_id: global_id, source_kind: assembly_source_body_kind(), source_id: expected_body_instruction,
+                contract_kind: assembly_source_no_contract_phase(), clause_ordinal: -1,
                 result: -1, left: -1, right: -1
             });
             expected_body_instruction = checked_add(expected_body_instruction, 1);
@@ -86,7 +86,7 @@ requires_caps [allocate]
         } else {
             if (kind == 2) {
                 let post_status: i32 = emit_contract_records(
-                    contracts, 2, binding_count, body_local_count,
+                    contracts, function_contract_postcondition_phase(), binding_count, body_local_count,
                     next_instruction, events, sources
                 );
                 if (post_status != 0) { return post_status; }
