@@ -385,6 +385,81 @@ def test_bootstrap_token_and_character_representation_is_stable(tmp_path):
     assert native == expected
 
 
+AST_HIR_REPRESENTATION = (
+    ("syntax_module_kind", 1), ("syntax_function_kind", 2),
+    ("syntax_struct_kind", 3), ("syntax_enum_kind", 4),
+    ("syntax_capability_kind", 5), ("syntax_decimal_kind", 6),
+    ("syntax_bounded_kind", 7), ("syntax_trait_kind", 8),
+    ("syntax_impl_kind", 9), ("syntax_destructor_kind", 10),
+    ("syntax_effects_clause_kind", 11),
+    ("syntax_requires_caps_clause_kind", 12),
+    ("syntax_requires_clause_kind", 13), ("syntax_ensures_clause_kind", 14),
+    ("syntax_let_statement_kind", 20), ("syntax_var_statement_kind", 21),
+    ("syntax_return_statement_kind", 22), ("syntax_print_statement_kind", 23),
+    ("syntax_drop_statement_kind", 24), ("syntax_if_statement_kind", 25),
+    ("syntax_while_statement_kind", 26), ("syntax_match_statement_kind", 27),
+    ("syntax_with_statement_kind", 28), ("syntax_replace_statement_kind", 29),
+    ("ast_identifier_kind", 30), ("ast_exact_numeric_kind", 31),
+    ("ast_string_literal_kind", 32), ("ast_group_kind", 33),
+    ("ast_call_kind", 34), ("ast_field_kind", 35),
+    ("ast_generic_apply_kind", 36), ("ast_sequence_kind", 37),
+    ("ast_field_initializer_kind", 38), ("ast_invalid_kind", 39),
+    ("ast_equal_kind", 40), ("ast_not_equal_kind", 41),
+    ("ast_greater_equal_kind", 42), ("ast_less_equal_kind", 43),
+    ("ast_greater_kind", 44), ("ast_less_kind", 45),
+    ("ast_add_kind", 50), ("ast_subtract_kind", 51),
+    ("ast_multiply_kind", 60), ("ast_divide_kind", 61),
+    ("ast_constructor_kind", 70),
+    ("hir_invalid_kind", 0), ("hir_literal_kind", 1),
+    ("hir_arithmetic_kind", 2),
+    ("hir_group_alias_kind", 3), ("hir_identifier_kind", 4),
+    ("hir_comparison_kind", 5), ("hir_call_kind", 6),
+    ("hir_field_kind", 7), ("hir_argument_sequence_kind", 8),
+    ("hir_symbol_reference_kind", 9), ("hir_constructor_kind", 10),
+    ("hir_field_initializer_kind", 11), ("hir_string_literal_kind", 12),
+    ("hir_type_unresolved", 0), ("hir_type_i64", 1), ("hir_type_bool", 2),
+    ("hir_numeric_policy_none", 0), ("hir_numeric_policy_exact", 1),
+    ("hir_numeric_policy_checked", 2),
+    ("hir_symbol_none", 0), ("hir_symbol_add", 1),
+    ("hir_symbol_subtract", 2), ("hir_symbol_multiply", 3),
+    ("hir_symbol_divide", 4), ("hir_symbol_equal", 5),
+    ("hir_symbol_not_equal", 6), ("hir_symbol_greater_equal", 7),
+    ("hir_symbol_less_equal", 8), ("hir_symbol_greater", 9),
+    ("hir_symbol_less", 10),
+)
+
+
+def test_bootstrap_ast_hir_identifier_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_ast_hir_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(f"print({name}());" for name, _ in AST_HIR_REPRESENTATION)
+    (project_root / "src/ast_hir_representation_probe.mrt").write_text(
+        "module ast_hir_representation_probe\n"
+        "import bootstrap_syntax;\nimport bootstrap_hir;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/ast_hir_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(f"{value}\n" for _, value in AST_HIR_REPRESENTATION)
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
     checker = check(project)

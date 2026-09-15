@@ -75,8 +75,8 @@ fn validate_typed_contract_hir(borrow nodes:Vec<HirExpressionRecord>)->i32{
  var index:i64=0;while(index<vec_len<HirExpressionRecord>(nodes)){
   let node:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,index);let kind:i32=hir_kind(node);
   if(kind<1){return 1;}if(kind>9){return 1;}if(hir_start(node)<0){return 2;}if(hir_length(node)<=0){return 2;}
-  if(kind==2){if(hir_left(node)<0){return 3;}if(hir_right(node)<0){return 3;}if(hir_left(node)>=index){return 3;}if(hir_right(node)>=index){return 3;}}
-  if(kind==3){if(hir_left(node)<0){return 4;}if(hir_left(node)>=index){return 4;}}
+  if(kind==hir_arithmetic_kind()){if(hir_left(node)<0){return 3;}if(hir_right(node)<0){return 3;}if(hir_left(node)>=index){return 3;}if(hir_right(node)>=index){return 3;}}
+  if(kind==hir_group_alias_kind()){if(hir_left(node)<0){return 4;}if(hir_left(node)>=index){return 4;}}
   if(hir_is_call(node)!=0){if(hir_left(node)<0){return 5;}if(hir_left(node)>=index){return 5;}}
   if(hir_is_field_access(node)!=0){if(hir_left(node)<0){return 6;}if(hir_right(node)<0){return 6;}if(hir_left(node)>=index){return 6;}if(hir_right(node)>=index){return 6;}}
   index=checked_add(index,1);
@@ -99,12 +99,12 @@ fn function_contract_emit(
  var index:i64=0;
  while(index<vec_len<AstNodeRecord>(ast_nodes)){
   let ast:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,index); var binding_id:i64=-1;
-  if(ast_kind(ast)==30){
+  if(ast_kind(ast)==ast_identifier_kind()){
    var is_symbol:i32=0;var parent_index:i64=0;
    while(parent_index<vec_len<AstNodeRecord>(ast_nodes)){
     let parent:AstNodeRecord=vec_get<AstNodeRecord>(ast_nodes,parent_index);
     if(ast_is_call(parent)!=0){if(ast_left(parent)==index){is_symbol=1;}}
-    if(ast_kind(parent)==35){if(ast_right(parent)==index){is_symbol=1;}}
+    if(ast_kind(parent)==ast_field_kind()){if(ast_right(parent)==index){is_symbol=1;}}
     parent_index=checked_add(parent_index,1);
    }
    if(is_symbol!=0){binding_id=hir_symbol_reference_binding_id();}
@@ -118,7 +118,7 @@ fn function_contract_emit(
   if(typed!=0){
    if(binding_id>=0){let binding_type:i32=sfr_local_type_code(body_records,binding_id);if(binding_type!=function_mir_unresolved_type_code()){resolved_type=binding_type;}}
    if(binding_id==hir_result_reference_binding_id()){resolved_type=function_contract_result_type(body_records);if(resolved_type==function_mir_unresolved_type_code()){return 30;}}
-   if(ast_kind(ast)==35){
+   if(ast_kind(ast)==ast_field_kind()){
     let receiver:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_left(ast));
     let field:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_right(ast));
     let ordinal:i32=sfr_i64_struct_field_ordinal(source,struct_catalog,hir_type_code(receiver),hir_start(field),hir_length(field));
@@ -143,7 +143,7 @@ fn function_contract_emit(
   index=0;while(index<vec_len<HirExpressionRecord>(hir_nodes)){
    let numeric_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,index);
    let numeric_kind:i32=hir_kind(numeric_node);
-   if(numeric_kind==2){
+   if(numeric_kind==hir_arithmetic_kind()){
     let left_index:i64=hir_left(numeric_node);let right_index:i64=hir_right(numeric_node);
     let left_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,left_index);
     let right_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,right_index);
@@ -154,12 +154,12 @@ fn function_contract_emit(
      numeric_type=hir_type_code(right_node);
     }
     if(numeric_type!=function_mir_unresolved_type_code()){
-     if(hir_kind(left_node)==1){vec_set<HirExpressionRecord>(hir_nodes,left_index,hir_with_type(left_node,numeric_type));}
-     if(hir_kind(right_node)==1){vec_set<HirExpressionRecord>(hir_nodes,right_index,hir_with_type(right_node,numeric_type));}
+     if(hir_is_numeric_literal(left_node)!=0){vec_set<HirExpressionRecord>(hir_nodes,left_index,hir_with_type(left_node,numeric_type));}
+     if(hir_is_numeric_literal(right_node)!=0){vec_set<HirExpressionRecord>(hir_nodes,right_index,hir_with_type(right_node,numeric_type));}
      vec_set<HirExpressionRecord>(hir_nodes,index,hir_with_type(numeric_node,numeric_type));
     }
    }
-   if(numeric_kind==5){
+   if(numeric_kind==hir_comparison_kind()){
     let left_index:i64=hir_left(numeric_node);let right_index:i64=hir_right(numeric_node);
     let left_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,left_index);
     let right_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,right_index);
@@ -170,8 +170,8 @@ fn function_contract_emit(
      numeric_type=hir_type_code(right_node);
     }
     if(numeric_type!=function_mir_unresolved_type_code()){
-     if(hir_kind(left_node)==1){vec_set<HirExpressionRecord>(hir_nodes,left_index,hir_with_type(left_node,numeric_type));}
-     if(hir_kind(right_node)==1){vec_set<HirExpressionRecord>(hir_nodes,right_index,hir_with_type(right_node,numeric_type));}
+     if(hir_is_numeric_literal(left_node)!=0){vec_set<HirExpressionRecord>(hir_nodes,left_index,hir_with_type(left_node,numeric_type));}
+     if(hir_is_numeric_literal(right_node)!=0){vec_set<HirExpressionRecord>(hir_nodes,right_index,hir_with_type(right_node,numeric_type));}
     }
    }
    index=checked_add(index,1);
@@ -191,8 +191,8 @@ fn function_contract_emit(
     var phase_stack:Vec<i64>=vec_new<i64>(allocator,4);vec_push<i64>(phase_stack,hir_right(candidate));
     while(vec_len<i64>(phase_stack)>0){let phase_index:i64=vec_pop<i64>(phase_stack);vec_set<i32>(phases,phase_index,function_contract_entry_snapshot_phase());
      let phase_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,phase_index);let phase_kind:i32=hir_kind(phase_node);
-     if(phase_kind==2){vec_push<i64>(phase_stack,hir_right(phase_node));vec_push<i64>(phase_stack,hir_left(phase_node));}
-     if(phase_kind==3){vec_push<i64>(phase_stack,hir_left(phase_node));}
+     if(phase_kind==hir_arithmetic_kind()){vec_push<i64>(phase_stack,hir_right(phase_node));vec_push<i64>(phase_stack,hir_left(phase_node));}
+     if(phase_kind==hir_group_alias_kind()){vec_push<i64>(phase_stack,hir_left(phase_node));}
      if(hir_is_call(phase_node)!=0){if(hir_right(phase_node)>=0){vec_push<i64>(phase_stack,hir_right(phase_node));}}
      if(hir_is_field_access(phase_node)!=0){vec_push<i64>(phase_stack,hir_right(phase_node));vec_push<i64>(phase_stack,hir_left(phase_node));}
     }drop(phase_stack);
@@ -202,8 +202,8 @@ fn function_contract_emit(
  var stack:Vec<i64>=vec_new<i64>(allocator,count); vec_push<i64>(stack,checked_sub(count,1));
  while(vec_len<i64>(stack)>0){
   let current:i64=vec_pop<i64>(stack); let hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,current); let kind:i32=hir_kind(hir);
-  if(hir_is_symbol_reference(hir)!=0){}else{if(kind==3){vec_push<i64>(stack,hir_left(hir));}else{
-   if(kind==4){
+  if(hir_is_symbol_reference(hir)!=0){}else{if(kind==hir_group_alias_kind()){vec_push<i64>(stack,hir_left(hir));}else{
+   if(kind==hir_identifier_kind()){
     if(hir_binding_id(hir)==hir_result_reference_binding_id()){
      let result_local:i64=vec_get<i64>(counters,0);vec_set<i64>(local_ids,current,result_local);
      vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:1,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:result_local,result:-1,left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:0});
@@ -215,8 +215,8 @@ fn function_contract_emit(
      vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:1,clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:local_id,result:-1,left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:0});
      vec_set<i64>(counters,0,checked_add(local_id,1));
     }
-    if(kind==2){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
-    if(kind==5){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
+    if(kind==hir_arithmetic_kind()){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
+    if(kind==hir_comparison_kind()){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
     if(hir_is_call(hir)!=0){if(hir_right(hir)<0){return function_contract_missing_call_argument_status();}vec_push<i64>(stack,hir_right(hir));}
     if(hir_is_field_access(hir)!=0){vec_push<i64>(stack,hir_right(hir));vec_push<i64>(stack,hir_left(hir));}
    }
@@ -225,16 +225,16 @@ fn function_contract_emit(
  index=0;
  while(index<count){
   let hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,index); let kind:i32=hir_kind(hir);
-  if(kind==1){
+  if(kind==hir_literal_kind()){
    let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:2,clause_ordinal:clause_ordinal,contract_kind:vec_get<i32>(phases,index),start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
   }
-  if(kind==2){
+  if(kind==hir_arithmetic_kind()){
    let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:3,clause_ordinal:clause_ordinal,contract_kind:vec_get<i32>(phases,index),start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:vec_get<i64>(local_ids,hir_left(hir)),right:vec_get<i64>(local_ids,hir_right(hir)),symbol:hir_symbol(hir),type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
   }
-  if(kind==5){
+  if(kind==hir_comparison_kind()){
    let iid:i64=vec_get<i64>(counters,1); vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:3,clause_ordinal:clause_ordinal,contract_kind:vec_get<i32>(phases,index),start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:vec_get<i64>(local_ids,hir_left(hir)),right:vec_get<i64>(local_ids,hir_right(hir)),symbol:hir_symbol(hir),type_code:hir_type_code(hir),numeric_policy:hir_numeric_policy(hir)}); vec_set<i64>(counters,1,checked_add(iid,1));
   }
-  if(kind==4){if(hir_binding_id(hir)==hir_result_reference_binding_id()){
+  if(kind==hir_identifier_kind()){if(hir_binding_id(hir)==hir_result_reference_binding_id()){
    let iid:i64=vec_get<i64>(counters,1);
    vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:function_contract_result_capture_kind(),clause_ordinal:clause_ordinal,contract_kind:contract_kind,start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:-1,right:-1,symbol:0,type_code:hir_type_code(hir),numeric_policy:0});
    vec_set<i64>(counters,1,checked_add(iid,1));

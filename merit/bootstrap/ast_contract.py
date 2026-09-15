@@ -17,33 +17,47 @@ class AstContractError(ValueError):
     """Raised when parser records violate the versioned expression contract."""
 
 
+KIND_IDENTIFIER = 30
+KIND_EXACT_NUMERIC = 31
+KIND_STRING = 32
+KIND_GROUP = 33
+KIND_CALL = 34
+KIND_FIELD = 35
+KIND_GENERIC_APPLY = 36
+KIND_SEQUENCE = 37
+KIND_FIELD_INITIALIZER = 38
+KIND_INVALID = 39
+KIND_EQUAL = 40
+KIND_NOT_EQUAL = 41
+KIND_GREATER_EQUAL = 42
+KIND_LESS_EQUAL = 43
+KIND_GREATER = 44
+KIND_LESS = 45
+KIND_ADD = 50
+KIND_SUBTRACT = 51
+KIND_MULTIPLY = 60
+KIND_DIVIDE = 61
+KIND_CONSTRUCTOR = 70
+
 _KIND_NAMES = {
-    30: "identifier",
-    31: "exact_numeric",
-    32: "string",
-    34: "call",
-    35: "field",
-    36: "generic_apply",
-    37: "sequence",
-    38: "field_initializer",
-    39: "invalid",
-    40: "equal",
-    41: "not_equal",
-    42: "greater_equal",
-    43: "less_equal",
-    44: "greater",
-    45: "less",
-    50: "add",
-    51: "subtract",
-    60: "multiply",
-    61: "divide",
-    70: "constructor",
+    KIND_IDENTIFIER: "identifier", KIND_EXACT_NUMERIC: "exact_numeric",
+    KIND_STRING: "string", KIND_CALL: "call", KIND_FIELD: "field",
+    KIND_GENERIC_APPLY: "generic_apply", KIND_SEQUENCE: "sequence",
+    KIND_FIELD_INITIALIZER: "field_initializer", KIND_INVALID: "invalid",
+    KIND_EQUAL: "equal", KIND_NOT_EQUAL: "not_equal",
+    KIND_GREATER_EQUAL: "greater_equal", KIND_LESS_EQUAL: "less_equal",
+    KIND_GREATER: "greater", KIND_LESS: "less", KIND_ADD: "add",
+    KIND_SUBTRACT: "subtract", KIND_MULTIPLY: "multiply",
+    KIND_DIVIDE: "divide", KIND_CONSTRUCTOR: "constructor",
 }
 
-_ATOMS = {30, 31, 32, 39}
-_BINARY = {40, 41, 42, 43, 44, 45, 50, 51, 60, 61}
-_OPTIONAL_RIGHT = {34, 36, 37, 38, 70}
-_REQUIRED_PAIR = _BINARY | {35}
+_ATOMS = {KIND_IDENTIFIER, KIND_EXACT_NUMERIC, KIND_STRING, KIND_INVALID}
+_BINARY = {KIND_EQUAL, KIND_NOT_EQUAL, KIND_GREATER_EQUAL, KIND_LESS_EQUAL,
+           KIND_GREATER, KIND_LESS, KIND_ADD, KIND_SUBTRACT, KIND_MULTIPLY,
+           KIND_DIVIDE}
+_OPTIONAL_RIGHT = {KIND_CALL, KIND_GENERIC_APPLY, KIND_SEQUENCE,
+                   KIND_FIELD_INITIALIZER, KIND_CONSTRUCTOR}
+_REQUIRED_PAIR = _BINARY | {KIND_FIELD}
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +122,7 @@ def lower_expression_ast(
         kind, start, length, left, right = record
         _validate_span(start, length)
 
-        if kind == 33:
+        if kind == KIND_GROUP:
             child = _child(lowered, left, index)
             lowered.append(
                 replace(

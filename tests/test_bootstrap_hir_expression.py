@@ -16,12 +16,26 @@ from merit.bootstrap.hir_parity import (
     NativeHirContractError,
     lower_native_primitive_hir_records,
 )
+from merit.bootstrap import hir_parity
 
 
 I64 = HirType("i64")
 BOOL = HirType("bool")
 ACCOUNT = HirType("Account")
 RECORD = HirType("Record")
+
+
+def test_bootstrap_hir_identifier_representation_is_stable():
+    assert tuple(getattr(hir_parity, name) for name in (
+        "_KIND_LITERAL", "_KIND_ARITHMETIC", "_KIND_GROUP_ALIAS",
+        "_KIND_IDENTIFIER", "_KIND_COMPARISON", "_KIND_CALL", "_KIND_FIELD",
+        "_KIND_ARGUMENT_SEQUENCE", "_KIND_SYMBOL_REFERENCE", "_KIND_CONSTRUCTOR",
+        "_KIND_FIELD_INITIALIZER", "_KIND_STRING_LITERAL",
+    )) == tuple(range(1, 13))
+    assert (hir_parity._TYPE_I64, hir_parity._TYPE_BOOL) == (1, 2)
+    assert (hir_parity._POLICY_NONE, hir_parity._POLICY_EXACT,
+            hir_parity._POLICY_CHECKED) == (0, 1, 2)
+    assert tuple(hir_parity._SYMBOLS) == tuple(range(1, 11))
 
 
 def _precedence_ast() -> AstNode:

@@ -12,14 +12,14 @@ pub fn lower_generic_apply_hir_record(
 ) -> HirExpressionRecord
 {
     return HirExpressionRecord {
-        kind: 9,
+        kind: hir_symbol_reference_kind(),
         start: ast_start_value,
         length: ast_length_value,
         left: -1,
         right: -1,
-        symbol: 0,
-        type_code: 0,
-        numeric_policy: 0,
+        symbol: hir_symbol_none(),
+        type_code: hir_type_unresolved(),
+        numeric_policy: hir_numeric_policy_none(),
         binding_id: -2
     };
 }

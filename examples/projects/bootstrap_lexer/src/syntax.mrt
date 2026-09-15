@@ -63,16 +63,60 @@ pub fn diagnostic_length(borrow diagnostic: ParseDiagnostic) -> i64 {
     return diagnostic.length;
 }
 
+pub fn syntax_module_kind() -> i32 { return 1; }
+pub fn syntax_function_kind() -> i32 { return 2; }
+pub fn syntax_struct_kind() -> i32 { return 3; }
+pub fn syntax_enum_kind() -> i32 { return 4; }
+pub fn syntax_capability_kind() -> i32 { return 5; }
+pub fn syntax_decimal_kind() -> i32 { return 6; }
+pub fn syntax_bounded_kind() -> i32 { return 7; }
+pub fn syntax_trait_kind() -> i32 { return 8; }
+pub fn syntax_impl_kind() -> i32 { return 9; }
+pub fn syntax_destructor_kind() -> i32 { return 10; }
+pub fn syntax_effects_clause_kind() -> i32 { return 11; }
+pub fn syntax_requires_caps_clause_kind() -> i32 { return 12; }
+pub fn syntax_requires_clause_kind() -> i32 { return 13; }
+pub fn syntax_ensures_clause_kind() -> i32 { return 14; }
+pub fn syntax_let_statement_kind() -> i32 { return 20; }
+pub fn syntax_var_statement_kind() -> i32 { return 21; }
+pub fn syntax_return_statement_kind() -> i32 { return 22; }
+pub fn syntax_print_statement_kind() -> i32 { return 23; }
+pub fn syntax_drop_statement_kind() -> i32 { return 24; }
+pub fn syntax_if_statement_kind() -> i32 { return 25; }
+pub fn syntax_while_statement_kind() -> i32 { return 26; }
+pub fn syntax_match_statement_kind() -> i32 { return 27; }
+pub fn syntax_with_statement_kind() -> i32 { return 28; }
+pub fn syntax_replace_statement_kind() -> i32 { return 29; }
+
 pub fn expression_kind(borrow node: ExpressionNode) -> i32 { return node.kind; }
-pub fn ast_field_initializer_kind() -> i32 { return 38; }
+pub fn ast_identifier_kind() -> i32 { return 30; }
+pub fn ast_exact_numeric_kind() -> i32 { return 31; }
 pub fn ast_string_literal_kind() -> i32 { return 32; }
+pub fn ast_group_kind() -> i32 { return 33; }
+pub fn ast_call_kind() -> i32 { return 34; }
+pub fn ast_field_kind() -> i32 { return 35; }
+pub fn ast_generic_apply_kind() -> i32 { return 36; }
+pub fn ast_sequence_kind() -> i32 { return 37; }
+pub fn ast_field_initializer_kind() -> i32 { return 38; }
+pub fn ast_invalid_kind() -> i32 { return 39; }
+pub fn ast_equal_kind() -> i32 { return 40; }
+pub fn ast_not_equal_kind() -> i32 { return 41; }
+pub fn ast_greater_equal_kind() -> i32 { return 42; }
+pub fn ast_less_equal_kind() -> i32 { return 43; }
+pub fn ast_greater_kind() -> i32 { return 44; }
+pub fn ast_less_kind() -> i32 { return 45; }
+pub fn ast_add_kind() -> i32 { return 50; }
+pub fn ast_subtract_kind() -> i32 { return 51; }
+pub fn ast_multiply_kind() -> i32 { return 60; }
+pub fn ast_divide_kind() -> i32 { return 61; }
+pub fn ast_constructor_kind() -> i32 { return 70; }
 pub fn expression_start(borrow node: ExpressionNode) -> i64 { return node.start; }
 pub fn expression_length(borrow node: ExpressionNode) -> i64 { return node.length; }
 pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }
 pub fn expression_right(borrow node: ExpressionNode) -> i64 { return node.right; }
 
 pub fn ast_kind(borrow node: AstNodeRecord) -> i32 { return node.kind; }
-pub fn ast_is_call(borrow node: AstNodeRecord) -> i32 { if (node.kind == 34) { return 1; } return 0; }
+pub fn ast_is_call(borrow node: AstNodeRecord) -> i32 { if (node.kind == ast_call_kind()) { return 1; } return 0; }
 pub fn ast_start(borrow node: AstNodeRecord) -> i64 { return node.start; }
 pub fn ast_length(borrow node: AstNodeRecord) -> i64 { return node.length; }
 pub fn ast_left(borrow node: AstNodeRecord) -> i64 { return node.left; }
@@ -82,49 +126,49 @@ pub fn ast_group_length(borrow node: AstNodeRecord) -> i64 { return node.group_l
 pub fn ast_group_parent(borrow node: AstNodeRecord) -> i64 { return node.group_parent; }
 
 fn ast_known_kind(kind: i32) -> i32 {
-    if kind == 30 { return 1; }
-    if kind == 31 { return 1; }
-    if kind == 32 { return 1; }
-    if kind == 33 { return 1; }
-    if kind == 34 { return 1; }
-    if kind == 35 { return 1; }
-    if kind == 36 { return 1; }
-    if kind == 37 { return 1; }
-    if kind == 38 { return 1; }
-    if kind == 39 { return 1; }
-    if kind >= 40 { if kind <= 45 { return 1; } }
-    if kind == 50 { return 1; }
-    if kind == 51 { return 1; }
-    if kind == 60 { return 1; }
-    if kind == 61 { return 1; }
-    if kind == 70 { return 1; }
+    if kind == ast_identifier_kind() { return 1; }
+    if kind == ast_exact_numeric_kind() { return 1; }
+    if kind == ast_string_literal_kind() { return 1; }
+    if kind == ast_group_kind() { return 1; }
+    if kind == ast_call_kind() { return 1; }
+    if kind == ast_field_kind() { return 1; }
+    if kind == ast_generic_apply_kind() { return 1; }
+    if kind == ast_sequence_kind() { return 1; }
+    if kind == ast_field_initializer_kind() { return 1; }
+    if kind == ast_invalid_kind() { return 1; }
+    if kind >= ast_equal_kind() { if kind <= ast_less_kind() { return 1; } }
+    if kind == ast_add_kind() { return 1; }
+    if kind == ast_subtract_kind() { return 1; }
+    if kind == ast_multiply_kind() { return 1; }
+    if kind == ast_divide_kind() { return 1; }
+    if kind == ast_constructor_kind() { return 1; }
     return 0;
 }
 
 fn ast_atom_kind(kind: i32) -> i32 {
-    if kind == 30 { return 1; }
-    if kind == 31 { return 1; }
-    if kind == 32 { return 1; }
-    if kind == 39 { return 1; }
+    if kind == ast_identifier_kind() { return 1; }
+    if kind == ast_exact_numeric_kind() { return 1; }
+    if kind == ast_string_literal_kind() { return 1; }
+    if kind == ast_invalid_kind() { return 1; }
     return 0;
 }
 
 fn ast_required_pair_kind(kind: i32) -> i32 {
-    if kind == 35 { return 1; }
-    if kind >= 40 { if kind <= 45 { return 1; } }
-    if kind == 50 { return 1; }
-    if kind == 51 { return 1; }
-    if kind == 60 { return 1; }
-    if kind == 61 { return 1; }
+    if kind == ast_field_kind() { return 1; }
+    if kind >= ast_equal_kind() { if kind <= ast_less_kind() { return 1; } }
+    if kind == ast_add_kind() { return 1; }
+    if kind == ast_subtract_kind() { return 1; }
+    if kind == ast_multiply_kind() { return 1; }
+    if kind == ast_divide_kind() { return 1; }
     return 0;
 }
 
 fn ast_optional_right_kind(kind: i32) -> i32 {
-    if kind == 34 { return 1; }
-    if kind == 36 { return 1; }
-    if kind == 37 { return 1; }
-    if kind == 38 { return 1; }
-    if kind == 70 { return 1; }
+    if kind == ast_call_kind() { return 1; }
+    if kind == ast_generic_apply_kind() { return 1; }
+    if kind == ast_sequence_kind() { return 1; }
+    if kind == ast_field_initializer_kind() { return 1; }
+    if kind == ast_constructor_kind() { return 1; }
     return 0;
 }
 
@@ -147,7 +191,7 @@ pub fn validate_expression_ast_records(borrow expressions: Vec<ExpressionNode>) 
         if expression.start < 0 { return 1; }
         if expression.length < 0 { return 1; }
         if ast_known_kind(expression.kind) == 0 { return 2; }
-        if expression.kind == 33 {
+        if expression.kind == ast_group_kind() {
             if ast_child_is_before(expression.left, index) == 0 { return 3; }
             if expression.right != -1 { return 3; }
         } else {
@@ -180,7 +224,7 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < vec_len<ExpressionNode>(expressions)) {
         let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
-        if expression.kind == 33 {
+        if expression.kind == ast_group_kind() {
             let child: AstNodeRecord = vec_get<AstNodeRecord>(nodes, expression.left);
             let grouped: AstNodeRecord = AstNodeRecord {
                 kind: child.kind,

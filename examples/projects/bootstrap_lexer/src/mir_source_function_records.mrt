@@ -2802,9 +2802,9 @@ requires_caps [allocate]
     if(node_index<0){return -1;}
     let node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,node_index);
     let kind:i32=hir_kind(node);
-    if(kind==3){return sfr_hir_borrow_root(source,hir_nodes,signatures,hir_left(node),allocator);}
-    if(kind==4){return hir_binding_id(node);}
-    if(kind==7){return sfr_hir_borrow_root(source,hir_nodes,signatures,hir_left(node),allocator);}
+    if(kind==hir_group_alias_kind()){return sfr_hir_borrow_root(source,hir_nodes,signatures,hir_left(node),allocator);}
+    if(kind==hir_identifier_kind()){return hir_binding_id(node);}
+    if(kind==hir_field_kind()){return sfr_hir_borrow_root(source,hir_nodes,signatures,hir_left(node),allocator);}
     if(hir_is_call(node)!=0){
         let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(node));
         let signature_index:i64=sfr_find_function_signature(source,signatures,hir_start(callee),hir_length(callee));
@@ -2818,7 +2818,7 @@ requires_caps [allocate]
         while(vec_len<i64>(stack)>0){
             let argument_index:i64=vec_pop<i64>(stack);
             let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
-            if(hir_kind(argument)==8){
+            if(hir_is_pair(argument)!=0){
                 vec_push<i64>(stack,hir_right(argument));vec_push<i64>(stack,hir_left(argument));
             } else {vec_push<i64>(arguments,argument_index);}
         }
@@ -3025,7 +3025,7 @@ requires_caps [allocate]
     while (ast_index < count) {
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
         var binding_id: i64 = -1;
-        if (ast_kind(ast) == 30) {
+        if (ast_kind(ast) == ast_identifier_kind()) {
             if (sfr_ast_identifier_is_field_label(ast_nodes, ast_index) == 0) {
                 binding_id = hir_find_scoped_binding_id(
                     source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
@@ -3034,21 +3034,21 @@ requires_caps [allocate]
             if (binding_id < 0) { binding_id = -2; }
         }
         var resolved_type: i32 = 1;
-        if(ast_kind(ast)==30){
+        if(ast_kind(ast)==ast_identifier_kind()){
             if(binding_id>=0){resolved_type=sfr_local_type_code(output,binding_id);}
         }
-        if(ast_kind(ast)==35){
+        if(ast_kind(ast)==ast_field_kind()){
             if(ast_left(ast)>=0){
                 if(ast_right(ast)>=0){
                     var receiver_index:i64=ast_left(ast);
                     var receiver_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,receiver_index);
-                    while(hir_kind(receiver_hir)==3){
+                    while(hir_kind(receiver_hir)==hir_group_alias_kind()){
                         receiver_index=hir_left(receiver_hir);
                         receiver_hir=vec_get<HirExpressionRecord>(hir_nodes,receiver_index);
                     }
                     var field_index:i64=ast_right(ast);
                     var field_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,field_index);
-                    while(hir_kind(field_hir)==3){
+                    while(hir_kind(field_hir)==hir_group_alias_kind()){
                         field_index=hir_left(field_hir);
                         field_hir=vec_get<HirExpressionRecord>(hir_nodes,field_index);
                     }
@@ -3090,35 +3090,35 @@ requires_caps [allocate]
         // already-resolved nominal type. This is the native equivalent of the
         // alpha.1 destination-typing rule and prevents narrow/unsigned values
         // from silently falling back to the legacy i64 bootstrap identity.
-        if (ast_kind(ast) == 31) {
+        if (ast_kind(ast) == ast_exact_numeric_kind()) {
             if (ast_index == checked_sub(count, 1)) { resolved_type = expected_type_code; }
         }
         if(ast_kind(ast)==ast_string_literal_kind()){resolved_type=function_mir_string_type_code();}
-        if (ast_kind(ast) == 50) { resolved_type = expected_type_code; }
-        if (ast_kind(ast) == 51) { resolved_type = expected_type_code; }
-        if (ast_kind(ast) == 60) { resolved_type = expected_type_code; }
-        if (ast_kind(ast) == 61) { resolved_type = expected_type_code; }
-        if (ast_kind(ast) == 50) {
+        if (ast_kind(ast) == ast_add_kind()) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == ast_subtract_kind()) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == ast_multiply_kind()) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == ast_divide_kind()) { resolved_type = expected_type_code; }
+        if (ast_kind(ast) == ast_add_kind()) {
             let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
             let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
             if (left_type == right_type) { resolved_type = left_type; }
         }
-        if (ast_kind(ast) == 51) {
+        if (ast_kind(ast) == ast_subtract_kind()) {
             let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
             let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
             if (left_type == right_type) { resolved_type = left_type; }
         }
-        if (ast_kind(ast) == 60) {
+        if (ast_kind(ast) == ast_multiply_kind()) {
             let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
             let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
             if (left_type == right_type) { resolved_type = left_type; }
         }
-        if (ast_kind(ast) == 61) {
+        if (ast_kind(ast) == ast_divide_kind()) {
             let left_type: i32 = sfr_hir_type_at(hir_nodes, ast_left(ast));
             let right_type: i32 = sfr_hir_type_at(hir_nodes, ast_right(ast));
             if (left_type == right_type) { resolved_type = left_type; }
         }
-        if (ast_kind(ast) == 70) {
+        if (ast_kind(ast) == ast_constructor_kind()) {
             resolved_type = expected_type_code;
             if (ast_left(ast) >= 0) {
                 let constructor_ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_left(ast));
@@ -3165,7 +3165,7 @@ requires_caps [allocate]
                     while(vec_len<i64>(argument_stack)>0){
                         let argument_index:i64=vec_pop<i64>(argument_stack);
                         let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
-                        if(hir_kind(argument)==8){
+                        if(hir_is_pair(argument)!=0){
                             vec_push<i64>(argument_stack,hir_right(argument));
                             vec_push<i64>(argument_stack,hir_left(argument));
                         } else {vec_push<i64>(argument_nodes,argument_index);}
@@ -3186,11 +3186,11 @@ requires_caps [allocate]
                             }
                             var literal_index:i64=vec_get<i64>(argument_nodes,argument_ordinal);
                             var literal:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,literal_index);
-                            while(hir_kind(literal)==3){
+                            while(hir_kind(literal)==hir_group_alias_kind()){
                                 literal_index=hir_left(literal);
                                 literal=vec_get<HirExpressionRecord>(hir_nodes,literal_index);
                             }
-                            if(hir_kind(literal)==1){
+                            if(hir_is_numeric_literal(literal)!=0){
                                 if(expected_argument_type!=function_mir_unresolved_type_code()){
                                     vec_set<HirExpressionRecord>(
                                         hir_nodes,literal_index,hir_with_type(literal,expected_argument_type)
@@ -3217,7 +3217,7 @@ requires_caps [allocate]
     var initializer_index:i64=0;
     while(initializer_index<vec_len<HirExpressionRecord>(hir_nodes)){
         let initializer:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,initializer_index);
-        if(hir_kind(initializer)==11){
+        if(hir_is_field_initializer(initializer)!=0){
             let initializer_struct_type:i32=sfr_enclosing_struct_initializer_type(
                 hir_nodes,initializer_index,expected_type_code
             );
@@ -3258,13 +3258,13 @@ requires_caps [allocate]
     var canonical_index: i64 = 0;
     while (canonical_index < count) {
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, canonical_index);
-        if (hir_kind(hir) == 3) {
+        if (hir_is_group(hir) != 0) {
             vec_set<i64>(canonical_ids, canonical_index, vec_get<i64>(canonical_ids, hir_left(hir)));
         } else {
             let canonical_kind: i32 = hir_kind(hir);
-            if (canonical_kind != 8) {
-                if (canonical_kind != 9) {
-                    if (canonical_kind != 11) {
+            if (canonical_kind != hir_argument_sequence_kind()) {
+                if (canonical_kind != hir_symbol_reference_kind()) {
+                    if (canonical_kind != hir_field_initializer_kind()) {
                         vec_set<i64>(canonical_ids, canonical_index, next_hir);
                         next_hir = checked_add(next_hir, 1);
                     }
@@ -3281,20 +3281,20 @@ requires_caps [allocate]
         let current_index: i64 = vec_pop<i64>(stack);
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, current_index);
         let kind: i32 = hir_kind(hir);
-        if (kind == 3) {
+        if (kind == hir_group_alias_kind()) {
             vec_push<i64>(stack, hir_left(hir));
         } else {
-            if (kind == 4) {
+            if (kind == hir_identifier_kind()) {
                 vec_set<i64>(local_ids, current_index, hir_binding_id(hir));
             } else {
                 if (hir_is_symbol_reference(hir) != 0) {
                     vec_set<i64>(local_ids, current_index, -1);
                 } else {
-                if (kind == 8) {
+                if (kind == hir_argument_sequence_kind()) {
                     vec_push<i64>(stack, hir_right(hir));
                     vec_push<i64>(stack, hir_left(hir));
                 } else {
-                if (kind == 11) {
+                if (kind == hir_field_initializer_kind()) {
                     vec_push<i64>(stack, hir_right(hir));
                 } else {
                 if (vec_get<i64>(local_ids, current_index) < 0) {
@@ -3318,19 +3318,19 @@ requires_caps [allocate]
                     vec_set<i64>(counters, 0, checked_add(next_local, 1));
                     }
                 }
-                if (kind == 2) {
+                if (kind == hir_arithmetic_kind()) {
                     vec_push<i64>(stack, hir_right(hir));
                     vec_push<i64>(stack, hir_left(hir));
                 }
-                if (kind == 5) {
+                if (kind == hir_comparison_kind()) {
                     vec_push<i64>(stack, hir_right(hir));
                     vec_push<i64>(stack, hir_left(hir));
                 }
                 if (hir_is_call(hir) != 0) {
                     if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); }
                 }
-                if (kind == 7) { vec_push<i64>(stack, hir_left(hir)); }
-                if (kind == 10) { if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); } }
+            if (kind == hir_field_kind()) { vec_push<i64>(stack, hir_left(hir)); }
+            if (kind == hir_constructor_kind()) { if (hir_right(hir) >= 0) { vec_push<i64>(stack, hir_right(hir)); } }
                 }
                 }
                 }
@@ -3341,7 +3341,7 @@ requires_caps [allocate]
     var alias_index: i64 = 0;
     while (alias_index < count) {
         let alias: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, alias_index);
-        if (hir_kind(alias) == 3) {
+        if (hir_is_group(alias) != 0) {
             vec_set<i64>(local_ids, alias_index, vec_get<i64>(local_ids, hir_left(alias)));
         }
         alias_index = checked_add(alias_index, 1);
@@ -3351,7 +3351,7 @@ requires_caps [allocate]
     while (hir_index < count) {
         let hir: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_index);
         let kind: i32 = hir_kind(hir);
-        if (kind == 1) {
+        if (kind == hir_literal_kind()) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(output, function_mir_const(
                 hir_start(hir), hir_length(hir), instruction_id,
@@ -3369,7 +3369,7 @@ requires_caps [allocate]
             ));
             vec_set<i64>(counters,1,checked_add(instruction_id,1));
         }
-        if (kind == 2) {
+        if (kind == hir_arithmetic_kind()) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(output, function_mir_binary(
                 hir_start(hir), hir_length(hir), instruction_id,
@@ -3380,7 +3380,7 @@ requires_caps [allocate]
             ));
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
-        if (kind == 5) {
+        if (kind == hir_comparison_kind()) {
             let instruction_id: i64 = vec_get<i64>(counters, 1);
             vec_push<MirFunctionRecord>(output, function_mir_binary(
                 hir_start(hir), hir_length(hir), instruction_id,
@@ -3426,7 +3426,7 @@ requires_caps [allocate]
                     while(vec_len<i64>(argument_stack)>0){
                         let argument_index:i64=vec_pop<i64>(argument_stack);
                         let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
-                        if(hir_kind(argument)==8){
+                        if(hir_is_pair(argument)!=0){
                             vec_push<i64>(argument_stack,hir_right(argument));
                             vec_push<i64>(argument_stack,hir_left(argument));
                         } else {vec_push<i64>(argument_nodes,argument_index);}
@@ -3506,7 +3506,7 @@ requires_caps [allocate]
                     while(vec_len<i64>(builtin_stack)>0){
                         let argument_index:i64=vec_pop<i64>(builtin_stack);
                         let argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,argument_index);
-                        if(hir_kind(argument)==8){
+                        if(hir_is_pair(argument)!=0){
                             vec_push<i64>(builtin_stack,hir_right(argument));
                             vec_push<i64>(builtin_stack,hir_left(argument));
                         } else {vec_push<i64>(builtin_arguments,argument_index);}
@@ -3544,7 +3544,7 @@ requires_caps [allocate]
             }
             vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
         }
-        if (kind == 10) {
+        if (kind == hir_constructor_kind()) {
             let constructor_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(hir));
             if (hir_is_symbol_reference(constructor_symbol) == 0) { return sfr_invalid_struct_symbol_error(); }
             if (source_i64_struct_type_code(
@@ -3560,11 +3560,11 @@ requires_caps [allocate]
             while (vec_len<i64>(initializer_stack) > 0) {
                 let initializer_index: i64 = vec_pop<i64>(initializer_stack);
                 let initializer: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, initializer_index);
-                if (hir_kind(initializer) == 8) {
+                if (hir_is_pair(initializer) != 0) {
                     vec_push<i64>(initializer_stack, hir_right(initializer));
                     vec_push<i64>(initializer_stack, hir_left(initializer));
                 } else {
-                    if (hir_kind(initializer) != 11) { return sfr_invalid_struct_initializer_error(); }
+                    if (hir_is_field_initializer(initializer) == 0) { return sfr_invalid_struct_initializer_error(); }
                     let initializer_symbol: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, hir_left(initializer));
                     if (hir_is_symbol_reference(initializer_symbol) == 0) { return sfr_invalid_struct_initializer_error(); }
                     let field_ordinal: i32 = sfr_i64_struct_field_ordinal(
@@ -3600,10 +3600,10 @@ requires_caps [allocate]
             drop(initializer_stack); drop(seen);
             if (emitted_fields != field_count) { return sfr_invalid_struct_initializer_error(); }
         }
-        if (kind == 7) {
+        if (kind == hir_field_kind()) {
             var receiver_index:i64=hir_left(hir);
             var receiver_hir:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,receiver_index);
-            while(hir_kind(receiver_hir)==3){
+            while(hir_kind(receiver_hir)==hir_group_alias_kind()){
                 receiver_index=hir_left(receiver_hir);
                 receiver_hir=vec_get<HirExpressionRecord>(hir_nodes,receiver_index);
             }
@@ -3613,7 +3613,7 @@ requires_caps [allocate]
             if (receiver_type_code < function_mir_i64_struct_type_code(0)) { return sfr_unresolved_struct_receiver_error(); }
             var field_index:i64=hir_right(hir);
             var field_symbol:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,field_index);
-            while(hir_kind(field_symbol)==3){
+            while(hir_kind(field_symbol)==hir_group_alias_kind()){
                 field_index=hir_left(field_symbol);
                 field_symbol=vec_get<HirExpressionRecord>(hir_nodes,field_index);
             }
