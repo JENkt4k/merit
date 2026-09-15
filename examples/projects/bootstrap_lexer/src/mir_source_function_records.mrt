@@ -2765,8 +2765,8 @@ fn sfr_local_mode(borrow records:Vec<MirFunctionRecord>,local_id:i64)->i32 {
         let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
         if(function_mir_id(record)==local_id){
             if(function_mir_kind(record)==function_mir_kind_parameter()){return function_mir_symbol_code(record);}
-            if(function_mir_kind(record)==3){return function_mir_numeric_policy(record);}
-            if(function_mir_kind(record)==2){return function_mir_mode_value();}
+            if(function_mir_kind(record)==function_mir_kind_temporary_local()){return function_mir_numeric_policy(record);}
+            if(function_mir_kind(record)==function_mir_kind_source_local()){return function_mir_mode_value();}
         }
         index=checked_add(index,1);
     }
@@ -4229,7 +4229,7 @@ pub fn lower_source_function_body_records_from_catalog(
             while(event_record_index<vec_len<MirFunctionRecord>(records)){
                 let event_record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,event_record_index);
                 var event_named_binding:i32=0;
-                if(function_mir_kind(event_record)==2){event_named_binding=1;}
+                if(function_mir_kind(event_record)==function_mir_kind_source_local()){event_named_binding=1;}
                 if(function_mir_kind(event_record)==function_mir_kind_parameter()){event_named_binding=1;}
                 if(event_named_binding!=0){
                     if(function_mir_binding_id(event_record)!=vec_len<i64>(event_binding_starts)){return 82;}

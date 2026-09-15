@@ -16,7 +16,7 @@ requires_caps [allocate]
 {
     if (vec_len<MirFunctionRecord>(records) == 0) { return 1; }
     let header: MirFunctionRecord = vec_get<MirFunctionRecord>(records, 0);
-    if (function_mir_kind(header) != 1) { return 2; }
+    if (function_mir_kind(header) != function_mir_kind_function()) { return 2; }
     var bindings: i64 = 0;
     var locals: i64 = 0;
     var instructions: i64 = 0;

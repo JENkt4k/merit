@@ -109,7 +109,7 @@ meaning.
   definitions; syntax node kinds, diagnostics/statuses, and their consumers are
   intentionally assigned to N2 and N6 rather than expanded into this PR.
 
-### N2-N3 CST/AST and HIR identifiers (candidate)
+### N2-N3 CST/AST and HIR identifiers (closed by PR #119)
 
 - Canonical owners: `bootstrap_syntax` now defines every top-level declaration,
   clause, statement-envelope, and expression AST kind; `bootstrap_hir` defines
@@ -136,8 +136,42 @@ meaning.
 - The authoritative local full gate passes with 1155 tests passed, 1 skipped,
   all 10 replacement acceptance projects verified, and a total gate duration of
   2297.298s.
-- Hosted Ubuntu/native-Windows evidence and merge remain pending; the checklist
-  stays open until the PR is merged with those gates green.
+- PR #119 merged as `c1e7fcbdb4c0afe7aebd98e9593805f7e3bb0461`
+  after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
+  convergence, and replacement acceptance all passed.
+
+### N4 MIR identifiers (candidate)
+
+- Canonical Merit owners now name the established expression, composite,
+  whole-function, generic-call, function-contract, and assembled-instruction
+  source kinds in their corresponding `bootstrap_mir*` modules.
+- Constructors, validators, source-function consumers, contract assembly, and
+  Python reconstruction use those symbols instead of duplicating raw semantic
+  discriminants. CFG terminator kinds and structured-control/ownership frame
+  kinds remain assigned to N5; statuses and sentinels remain assigned to N6-N7.
+- Python mirror constants provide one named representation surface for the
+  expression, composite, generic, whole-function, contract, and instruction
+  source record families. `test_python_mir_kind_mirrors_preserve_bootstrap_encodings`
+  locks their existing numeric assignments (included in 127 focused tests that
+  passed in 7.71s).
+- `test_bootstrap_mir_kind_representation_is_stable` locks the same Merit-side
+  assignments through both the interpreter and generated native C (1 passed in
+  16.49s).
+- Primitive, composite, generic, and straight-line function production parity
+  each pass independently (1 test each in 16.71s, 16.96s, 17.18s, and 17.60s).
+  Real source-function contract/CFG assembly also passes (1 test in 22.05s),
+  and the focused contract suite passes (44 tests across direct and native
+  project evidence).
+- No record value, source order, serialization, ABI value, or language semantic
+  behavior changed. Raw values remain only at canonical representation
+  definitions, representation-locking fixtures, or domains reserved for N5-N10.
+- The bootstrap/project subsystem gate passes with 421 tests passed and 1
+  skipped in 1116.66s (gate duration 1119.946s).
+- The authoritative local full gate passes with 1157 tests passed, 1 skipped,
+  all 10 replacement acceptance projects verified, and a total gate duration
+  of 2392.375s.
+- Hosted cross-platform and merge evidence remain pending; the checklist stays
+  open until the PR is merged with authoritative gates green.
 
 ## Ordered PR checklist
 
@@ -146,9 +180,9 @@ meaning.
 - [x] **Lexer/token/character identifiers (N1, PR #118)** — canonical token and
   character definitions with direct Python/native and replacement-driver
   parity.
-- [ ] **CST/AST and HIR identifiers (N2-N3, active)** — canonical definitions
-  plus parity; split only if one combined review cannot remain coherent.
-- [ ] **MIR identifiers (N4)** — migrate expression/function/instruction
+- [x] **CST/AST and HIR identifiers (N2-N3, PR #119)** — canonical definitions
+  plus Python/native representation and production-path parity.
+- [ ] **MIR identifiers (N4, active)** — migrate expression/function/instruction
   consumers while locking snapshot values.
 - [ ] **CFG and ownership identifiers (N5)** — preserve source order, cleanup,
   move, drop, and control-flow semantics.

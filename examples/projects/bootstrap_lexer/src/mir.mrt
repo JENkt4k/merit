@@ -32,6 +32,11 @@ pub fn mir_type_code(borrow node: MirExpressionRecord) -> i32 { return node.type
 pub fn mir_numeric_policy(borrow node: MirExpressionRecord) -> i32 { return node.numeric_policy; }
 pub fn mir_binding_id(borrow node: MirExpressionRecord) -> i64 { return node.binding_id; }
 pub fn mir_hir_node_id(borrow node: MirExpressionRecord) -> i64 { return node.hir_node_id; }
+pub fn mir_invalid_kind() -> i32 { return 0; }
+pub fn mir_const_kind() -> i32 { return 1; }
+pub fn mir_binary_kind() -> i32 { return 2; }
+pub fn mir_group_alias_kind() -> i32 { return 3; }
+pub fn mir_binding_kind() -> i32 { return 4; }
 
 pub fn lower_expression_mir_record(
     borrow hir: HirExpressionRecord,
@@ -41,18 +46,17 @@ pub fn lower_expression_mir_record(
     canonical_hir_id: i64
 ) -> MirExpressionRecord
 {
-    let kind: i32 = hir_kind(hir);
-    if (kind == 1) {
+    if (hir_is_numeric_literal(hir) != 0) {
         return MirExpressionRecord {
-            kind: 1,
+            kind: mir_const_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: result_local,
             left: -1,
             right: -1,
-            symbol: 0,
+            symbol: hir_symbol_none(),
             type_code: hir_type_code(hir),
-            numeric_policy: 0,
+            numeric_policy: hir_numeric_policy_none(),
             binding_id: -1,
             hir_node_id: canonical_hir_id
         };
@@ -60,24 +64,24 @@ pub fn lower_expression_mir_record(
     // Typed non-numeric string literals are operational constants too. Their
     // semantic type is already resolved in HIR and they intentionally carry no
     // numeric policy, so MIR preserves the same source spelling and type code.
-    if (kind == 12) {
+    if (hir_is_string_literal(hir) != 0) {
         return MirExpressionRecord {
-            kind: 1,
+            kind: mir_const_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: result_local,
             left: -1,
             right: -1,
-            symbol: 0,
+            symbol: hir_symbol_none(),
             type_code: hir_type_code(hir),
-            numeric_policy: 0,
+            numeric_policy: hir_numeric_policy_none(),
             binding_id: -1,
             hir_node_id: canonical_hir_id
         };
     }
-    if (kind == 2) {
+    if (hir_is_binary(hir) != 0) {
         return MirExpressionRecord {
-            kind: 2,
+            kind: mir_binary_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: result_local,
@@ -90,39 +94,39 @@ pub fn lower_expression_mir_record(
             hir_node_id: canonical_hir_id
         };
     }
-    if (kind == 3) {
+    if (hir_is_group(hir) != 0) {
         return MirExpressionRecord {
-            kind: 3,
+            kind: mir_group_alias_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: left_local,
             left: left_local,
             right: -1,
-            symbol: 0,
+            symbol: hir_symbol_none(),
             type_code: hir_type_code(hir),
-            numeric_policy: 0,
+            numeric_policy: hir_numeric_policy_none(),
             binding_id: -1,
             hir_node_id: canonical_hir_id
         };
     }
-    if (kind == 4) {
+    if (hir_is_identifier(hir) != 0) {
         return MirExpressionRecord {
-            kind: 4,
+            kind: mir_binding_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: hir_binding_id(hir),
             left: -1,
             right: -1,
-            symbol: 0,
+            symbol: hir_symbol_none(),
             type_code: hir_type_code(hir),
-            numeric_policy: 0,
+            numeric_policy: hir_numeric_policy_none(),
             binding_id: hir_binding_id(hir),
             hir_node_id: canonical_hir_id
         };
     }
-    if (kind == 5) {
+    if (hir_is_comparison(hir) != 0) {
         return MirExpressionRecord {
-            kind: 2,
+            kind: mir_binary_kind(),
             start: hir_start(hir),
             length: hir_length(hir),
             result: result_local,
@@ -136,15 +140,15 @@ pub fn lower_expression_mir_record(
         };
     }
     return MirExpressionRecord {
-        kind: 0,
+        kind: mir_invalid_kind(),
         start: hir_start(hir),
         length: hir_length(hir),
         result: -1,
         left: -1,
         right: -1,
-        symbol: 0,
-        type_code: 0,
-        numeric_policy: 0,
+        symbol: hir_symbol_none(),
+        type_code: hir_type_unresolved(),
+        numeric_policy: hir_numeric_policy_none(),
         binding_id: -1,
         hir_node_id: canonical_hir_id
     };
@@ -155,50 +159,50 @@ pub fn validate_expression_mir_records(borrow nodes: Vec<MirExpressionRecord>) -
     var index: i64 = 0;
     while (index < vec_len<MirExpressionRecord>(nodes)) {
         let node: MirExpressionRecord = vec_get<MirExpressionRecord>(nodes, index);
-        if (node.kind < 1) { return 2; }
-        if (node.kind > 4) { return 2; }
+        if (node.kind < mir_const_kind()) { return 2; }
+        if (node.kind > mir_binding_kind()) { return 2; }
         if (node.start < 0) { return 3; }
         if (node.length < 0) { return 3; }
         if (node.hir_node_id < 0) { return 4; }
-        if (node.kind == 1) {
+        if (node.kind == mir_const_kind()) {
             if (node.result < 0) { return 5; }
             if (node.left != -1) { return 5; }
             if (node.right != -1) { return 5; }
-            if (node.symbol != 0) { return 5; }
+            if (node.symbol != hir_symbol_none()) { return 5; }
             if (node.type_code <= 0) { return 5; }
-            if (node.numeric_policy != 0) { return 5; }
+            if (node.numeric_policy != hir_numeric_policy_none()) { return 5; }
             if (node.binding_id != -1) { return 5; }
         }
-        if (node.kind == 2) {
+        if (node.kind == mir_binary_kind()) {
             if (node.result < 0) { return 6; }
             if (node.left < 0) { return 6; }
             if (node.right < 0) { return 6; }
-            if (node.symbol < 1) { return 6; }
-            if (node.symbol > 10) { return 6; }
+            if (node.symbol < hir_symbol_add()) { return 6; }
+            if (node.symbol > hir_symbol_less()) { return 6; }
             if (node.type_code <= 0) { return 6; }
-            if (node.symbol <= 4) {
-                if (node.numeric_policy != 2) { return 6; }
+            if (node.symbol <= hir_symbol_divide()) {
+                if (node.numeric_policy != hir_numeric_policy_checked()) { return 6; }
             } else {
-                if (node.numeric_policy != 1) { return 6; }
+                if (node.numeric_policy != hir_numeric_policy_exact()) { return 6; }
             }
             if (node.binding_id != -1) { return 6; }
         }
-        if (node.kind == 3) {
+        if (node.kind == mir_group_alias_kind()) {
             if (node.result < 0) { return 7; }
             if (node.left != node.result) { return 7; }
             if (node.right != -1) { return 7; }
-            if (node.symbol != 0) { return 7; }
-            if (node.numeric_policy != 0) { return 7; }
+            if (node.symbol != hir_symbol_none()) { return 7; }
+            if (node.numeric_policy != hir_numeric_policy_none()) { return 7; }
             if (node.binding_id != -1) { return 7; }
         }
-        if (node.kind == 4) {
+        if (node.kind == mir_binding_kind()) {
             if (node.binding_id < 0) { return 8; }
             if (node.result != node.binding_id) { return 8; }
             if (node.left != -1) { return 8; }
             if (node.right != -1) { return 8; }
-            if (node.symbol != 0) { return 8; }
+            if (node.symbol != hir_symbol_none()) { return 8; }
             if (node.type_code <= 0) { return 8; }
-            if (node.numeric_policy != 0) { return 8; }
+            if (node.numeric_policy != hir_numeric_policy_none()) { return 8; }
         }
         index = checked_add(index, 1);
     }

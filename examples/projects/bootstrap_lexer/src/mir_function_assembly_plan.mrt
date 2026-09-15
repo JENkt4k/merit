@@ -66,7 +66,7 @@ requires_caps [allocate]
     index = 0;
     while (index < vec_len<MirFunctionContractRecord>(contracts)) {
         let record: MirFunctionContractRecord = vec_get<MirFunctionContractRecord>(contracts, index);
-        if (function_contract_kind(record) == 1) {
+        if (function_contract_kind(record) == function_contract_temporary_local_kind()) {
             let source_local: i64 = function_contract_id(record);
             if (source_local < binding_count) { return 20; }
             vec_push<MirFunctionContractLocal>(locals, MirFunctionContractLocal {
