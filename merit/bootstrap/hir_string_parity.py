@@ -6,12 +6,8 @@ from collections.abc import Mapping, Sequence
 
 from .hir_contract import HirModule, HirNode, HirType, SourceSpan, canonical_hir_json
 from .hir_generic_parity import lower_native_generic_hir_records
-from .hir_parity import NativeHirRecord
+from .hir_parity import NativeHirRecord, _KIND_STRING_LITERAL, _POLICY_NONE
 from .parity import StageObservation, observe
-
-_KIND_STRING_LITERAL = 12
-_POLICY_NONE = 0
-
 
 class NativeStringHirError(ValueError):
     """Raised when a native string literal violates the additive HIR contract."""

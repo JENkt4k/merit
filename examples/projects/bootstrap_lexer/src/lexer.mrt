@@ -355,24 +355,24 @@ fn matches_ensures(borrow source: Buffer, borrow token: Token) -> i32 {
 }
 
 fn declaration_kind(borrow source: Buffer, borrow token: Token) -> i32 {
-    if (matches_module(source, token)) { return 1; }
-    if (matches_fn(source, token)) { return 2; }
-    if (matches_struct(source, token)) { return 3; }
-    if (matches_enum(source, token)) { return 4; }
-    if (matches_capability(source, token)) { return 5; }
-    if (matches_decimal(source, token)) { return 6; }
-    if (matches_bounded(source, token)) { return 7; }
-    if (matches_trait(source, token)) { return 8; }
-    if (matches_impl(source, token)) { return 9; }
-    if (matches_destructor(source, token)) { return 10; }
+    if (matches_module(source, token)) { return syntax_module_kind(); }
+    if (matches_fn(source, token)) { return syntax_function_kind(); }
+    if (matches_struct(source, token)) { return syntax_struct_kind(); }
+    if (matches_enum(source, token)) { return syntax_enum_kind(); }
+    if (matches_capability(source, token)) { return syntax_capability_kind(); }
+    if (matches_decimal(source, token)) { return syntax_decimal_kind(); }
+    if (matches_bounded(source, token)) { return syntax_bounded_kind(); }
+    if (matches_trait(source, token)) { return syntax_trait_kind(); }
+    if (matches_impl(source, token)) { return syntax_impl_kind(); }
+    if (matches_destructor(source, token)) { return syntax_destructor_kind(); }
     return 0;
 }
 
 fn clause_kind(borrow source: Buffer, borrow token: Token) -> i32 {
-    if (matches_effects(source, token)) { return 11; }
-    if (matches_requires_caps(source, token)) { return 12; }
-    if (matches_requires(source, token)) { return 13; }
-    if (matches_ensures(source, token)) { return 14; }
+    if (matches_effects(source, token)) { return syntax_effects_clause_kind(); }
+    if (matches_requires_caps(source, token)) { return syntax_requires_caps_clause_kind(); }
+    if (matches_requires(source, token)) { return syntax_requires_clause_kind(); }
+    if (matches_ensures(source, token)) { return syntax_ensures_clause_kind(); }
     return 0;
 }
 
@@ -391,16 +391,16 @@ fn matches_packed_ascii(borrow source: Buffer, borrow token: Token, packed: i64,
 }
 
 fn statement_kind(borrow source: Buffer, borrow token: Token) -> i32 {
-    if (matches_packed_ascii(source, token, 7628140, 3)) { return 20; }
-    if (matches_packed_ascii(source, token, 7496054, 3)) { return 21; }
-    if (matches_packed_ascii(source, token, 121437875889522, 6)) { return 22; }
-    if (matches_packed_ascii(source, token, 500068610672, 5)) { return 23; }
-    if (matches_packed_ascii(source, token, 1886351972, 4)) { return 24; }
-    if (matches_packed_ascii(source, token, 26217, 2)) { return 25; }
-    if (matches_packed_ascii(source, token, 435610544247, 5)) { return 26; }
-    if (matches_packed_ascii(source, token, 448345170285, 5)) { return 27; }
-    if (matches_packed_ascii(source, token, 1752459639, 4)) { return 28; }
-    if (matches_packed_ascii(source, token, 28538242730059122, 7)) { return 29; }
+    if (matches_packed_ascii(source, token, 7628140, 3)) { return syntax_let_statement_kind(); }
+    if (matches_packed_ascii(source, token, 7496054, 3)) { return syntax_var_statement_kind(); }
+    if (matches_packed_ascii(source, token, 121437875889522, 6)) { return syntax_return_statement_kind(); }
+    if (matches_packed_ascii(source, token, 500068610672, 5)) { return syntax_print_statement_kind(); }
+    if (matches_packed_ascii(source, token, 1886351972, 4)) { return syntax_drop_statement_kind(); }
+    if (matches_packed_ascii(source, token, 26217, 2)) { return syntax_if_statement_kind(); }
+    if (matches_packed_ascii(source, token, 435610544247, 5)) { return syntax_while_statement_kind(); }
+    if (matches_packed_ascii(source, token, 448345170285, 5)) { return syntax_match_statement_kind(); }
+    if (matches_packed_ascii(source, token, 1752459639, 4)) { return syntax_with_statement_kind(); }
+    if (matches_packed_ascii(source, token, 28538242730059122, 7)) { return syntax_replace_statement_kind(); }
     return 0;
 }
 
@@ -410,8 +410,8 @@ fn statement_span_end(borrow source: Buffer, borrow tokens: Vec<Token>, start_in
         let token: Token = vec_get<Token>(tokens, index);
         if token.kind == token_punctuation_kind() {
             let punctuation: i64 = buffer_get(source, token.start);
-            if kind >= 25 {
-                if kind <= 28 {
+            if kind >= syntax_if_statement_kind() {
+                if kind <= syntax_with_statement_kind() {
                     if punctuation == token_open_brace_byte() { return checked_add(token.start, token.length); }
                 }
             }
@@ -441,7 +441,7 @@ requires_caps [allocate]
             if kind == 0 { kind = clause_kind(source, token); }
             if kind != 0 {
                 var end: i64 = checked_add(token.start, token.length);
-                if kind <= 10 {
+                if kind <= syntax_destructor_kind() {
                     let name_index: i64 = checked_add(index, 1);
                     if (name_index < vec_len<Token>(tokens)) {
                         let name: Token = vec_get<Token>(tokens, name_index);

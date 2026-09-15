@@ -1,7 +1,25 @@
 import pytest
 
-from merit.bootstrap.ast_contract import AstContractError, canonical_ast_json, lower_expression_ast
+from merit.bootstrap.ast_contract import (
+    AstContractError, KIND_ADD, KIND_CALL, KIND_CONSTRUCTOR, KIND_DIVIDE,
+    KIND_EQUAL, KIND_EXACT_NUMERIC, KIND_FIELD, KIND_FIELD_INITIALIZER,
+    KIND_GENERIC_APPLY, KIND_GREATER, KIND_GREATER_EQUAL, KIND_GROUP,
+    KIND_IDENTIFIER, KIND_INVALID, KIND_LESS, KIND_LESS_EQUAL, KIND_MULTIPLY,
+    KIND_NOT_EQUAL, KIND_SEQUENCE, KIND_STRING, KIND_SUBTRACT,
+    canonical_ast_json, lower_expression_ast,
+)
 from merit.bootstrap.ast_parity import ast_parity_observations, lower_native_ast_records
+
+
+def test_bootstrap_ast_kind_representation_is_stable():
+    assert (
+        KIND_IDENTIFIER, KIND_EXACT_NUMERIC, KIND_STRING, KIND_GROUP, KIND_CALL,
+        KIND_FIELD, KIND_GENERIC_APPLY, KIND_SEQUENCE, KIND_FIELD_INITIALIZER,
+        KIND_INVALID, KIND_EQUAL, KIND_NOT_EQUAL, KIND_GREATER_EQUAL,
+        KIND_LESS_EQUAL, KIND_GREATER, KIND_LESS, KIND_ADD, KIND_SUBTRACT,
+        KIND_MULTIPLY, KIND_DIVIDE, KIND_CONSTRUCTOR,
+    ) == (30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+          50, 51, 60, 61, 70)
 
 
 def test_native_ast_records_reconstruct_canonical_tree():

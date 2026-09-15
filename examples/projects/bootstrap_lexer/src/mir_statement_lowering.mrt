@@ -161,7 +161,7 @@ requires_caps [allocate]
     while (ast_index < count) {
         let ast: AstNodeRecord = vec_get<AstNodeRecord>(ast_nodes, ast_index);
         var binding_id: i64 = -1;
-        if (ast_kind(ast) == 30) {
+        if (ast_kind(ast) == ast_identifier_kind()) {
             binding_id = hir_find_scoped_binding_id(
                 source, tokens, binding_starts, binding_lengths, ast_start(ast), ast_length(ast)
             );
@@ -259,7 +259,7 @@ requires_caps [allocate]
     var alias_index: i64 = 0;
     while (alias_index < count) {
         let alias: HirExpressionRecord = vec_get<HirExpressionRecord>(hir_nodes, alias_index);
-        if (hir_kind(alias) == 3) {
+        if (hir_kind(alias) == hir_group_alias_kind()) {
             vec_set<i64>(local_ids, alias_index, vec_get<i64>(local_ids, hir_left(alias)));
         }
         alias_index = checked_add(alias_index, 1);

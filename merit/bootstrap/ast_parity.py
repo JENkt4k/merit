@@ -11,37 +11,36 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from .ast_contract import AstContractError, AstNode, ExpressionRecord, canonical_ast_json, lower_expression_ast
+from .ast_contract import (
+    AstContractError, AstNode, ExpressionRecord, KIND_ADD, KIND_CALL,
+    KIND_CONSTRUCTOR, KIND_DIVIDE, KIND_EQUAL, KIND_EXACT_NUMERIC, KIND_FIELD,
+    KIND_FIELD_INITIALIZER, KIND_GENERIC_APPLY, KIND_GREATER,
+    KIND_GREATER_EQUAL, KIND_IDENTIFIER, KIND_INVALID, KIND_LESS,
+    KIND_LESS_EQUAL, KIND_MULTIPLY, KIND_NOT_EQUAL, KIND_SEQUENCE, KIND_STRING,
+    KIND_SUBTRACT, canonical_ast_json, lower_expression_ast,
+)
 from .parity import StageObservation, observe
 
 
 NativeAstRecord = tuple[int, int, int, int, int, int, int, int]
 
 _KIND_NAMES = {
-    30: "identifier",
-    31: "exact_numeric",
-    32: "string",
-    34: "call",
-    35: "field",
-    36: "generic_apply",
-    37: "sequence",
-    38: "field_initializer",
-    39: "invalid",
-    40: "equal",
-    41: "not_equal",
-    42: "greater_equal",
-    43: "less_equal",
-    44: "greater",
-    45: "less",
-    50: "add",
-    51: "subtract",
-    60: "multiply",
-    61: "divide",
-    70: "constructor",
+    KIND_IDENTIFIER: "identifier", KIND_EXACT_NUMERIC: "exact_numeric",
+    KIND_STRING: "string", KIND_CALL: "call", KIND_FIELD: "field",
+    KIND_GENERIC_APPLY: "generic_apply", KIND_SEQUENCE: "sequence",
+    KIND_FIELD_INITIALIZER: "field_initializer", KIND_INVALID: "invalid",
+    KIND_EQUAL: "equal", KIND_NOT_EQUAL: "not_equal",
+    KIND_GREATER_EQUAL: "greater_equal", KIND_LESS_EQUAL: "less_equal",
+    KIND_GREATER: "greater", KIND_LESS: "less", KIND_ADD: "add",
+    KIND_SUBTRACT: "subtract", KIND_MULTIPLY: "multiply",
+    KIND_DIVIDE: "divide", KIND_CONSTRUCTOR: "constructor",
 }
-_ATOMS = {30, 31, 32, 39}
-_REQUIRED_PAIR = {35, 40, 41, 42, 43, 44, 45, 50, 51, 60, 61}
-_OPTIONAL_RIGHT = {34, 36, 37, 38, 70}
+_ATOMS = {KIND_IDENTIFIER, KIND_EXACT_NUMERIC, KIND_STRING, KIND_INVALID}
+_REQUIRED_PAIR = {KIND_FIELD, KIND_EQUAL, KIND_NOT_EQUAL, KIND_GREATER_EQUAL,
+                  KIND_LESS_EQUAL, KIND_GREATER, KIND_LESS, KIND_ADD,
+                  KIND_SUBTRACT, KIND_MULTIPLY, KIND_DIVIDE}
+_OPTIONAL_RIGHT = {KIND_CALL, KIND_GENERIC_APPLY, KIND_SEQUENCE,
+                   KIND_FIELD_INITIALIZER, KIND_CONSTRUCTOR}
 
 
 def _child(records: Sequence[NativeAstRecord], index: int, current: int) -> AstNode:

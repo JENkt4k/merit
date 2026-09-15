@@ -26,6 +26,11 @@ ownership behavior, and reference/replacement parity.
   to avoid local domain definitions.
 - Raw numeric values remain valid at canonical encoding definitions and in tests
   whose purpose is to lock the representation.
+- At most one successor milestone may be developed as a stacked draft PR while
+  its prerequisite PR runs hosted validation. The successor must target the
+  prerequisite branch, may not merge first, and must be rebased onto verified
+  current `main` and revalidated after the prerequisite merges. Any prerequisite
+  failure takes priority.
 
 ## Baseline
 
@@ -104,27 +109,59 @@ meaning.
   definitions; syntax node kinds, diagnostics/statuses, and their consumers are
   intentionally assigned to N2 and N6 rather than expanded into this PR.
 
-## Ordered PR queue
+### N2-N3 CST/AST and HIR identifiers (candidate)
 
-1. **Inventory and handoff** — establish this ledger and mark Alpha.2 released;
-   no semantic literal migration.
-2. **Lexer/token/character identifiers (N1, closed)** — canonical token and
-   character definitions with direct Python/native and replacement-driver
-   parity.
-3. **CST/AST and HIR identifiers (N2-N3)** — canonical definitions plus parity,
-   split only if one combined review cannot remain coherent.
-4. **MIR identifiers (N4)** — migrate expression/function/instruction consumers
-   while locking snapshot values.
-5. **CFG and ownership identifiers (N5)** — preserve source order, cleanup, move,
-   drop, and control-flow semantics.
-6. **Status namespaces (N6)** — name one bounded status family per coherent PR;
-   never renumber or collapse diagnostic distinctions.
-7. **Sentinel and representation audit (N7-N10)** — migrate only proven semantic
-   consumers; explicitly close compliant boundary/test occurrences as retained.
-8. **Deferred defects (D1-D3)** — independently bisectable call-ABI and
-   infrastructure repairs after numeric migrations no longer obscure them.
-9. **Campaign audit** — prove no unexplained semantic numeric consumer remains,
-   all retained raw values are classified, and full cross-platform gates pass.
+- Canonical owners: `bootstrap_syntax` now defines every top-level declaration,
+  clause, statement-envelope, and expression AST kind; `bootstrap_hir` defines
+  every HIR node kind, primitive type code, numeric policy, and operator symbol.
+- Python mirrors in `ast_contract.py`, `ast_parity.py`, `hir_parity.py`, and
+  `hir_string_parity.py` consume named mappings rather than duplicating raw
+  semantic values.
+- Native lowering consumers in lexer discovery, HIR construction/validation,
+  statement lowering, function contracts, source-function assembly, and
+  ownership expression lowering now reference domain-owned symbols or semantic
+  predicates. A focused audit finds no remaining direct raw comparisons against
+  `ast_kind(...)` or `hir_kind(...)`.
+- `test_bootstrap_ast_hir_identifier_representation_is_stable` locks the complete
+  mapping through both the interpreter and generated native C (1 passed in
+  15.43s after the final naming correction).
+- The focused Python/native AST/HIR suite passes with 51 tests in 47.01s.
+- Typed statement-operand and real source-function assembly parity preserve the
+  downstream production path (2 passed in 35.93s).
+- Raw values remain in canonical definitions and representation-locking fixtures;
+  status values, sentinels, MIR kinds, and ownership record kinds remain assigned
+  to N4-N7.
+- The bootstrap/project subsystem gate passes with 420 tests passed and 1
+  skipped in 1060.88s (gate duration 1063.299s).
+- The authoritative local full gate passes with 1155 tests passed, 1 skipped,
+  all 10 replacement acceptance projects verified, and a total gate duration of
+  2297.298s.
+- Hosted Ubuntu/native-Windows evidence and merge remain pending; the checklist
+  stays open until the PR is merged with those gates green.
+
+## Ordered PR checklist
+
+- [x] **Inventory and handoff (PR #117)** — establish this ledger and mark
+  Alpha.2 released; no semantic literal migration.
+- [x] **Lexer/token/character identifiers (N1, PR #118)** — canonical token and
+  character definitions with direct Python/native and replacement-driver
+  parity.
+- [ ] **CST/AST and HIR identifiers (N2-N3, active)** — canonical definitions
+  plus parity; split only if one combined review cannot remain coherent.
+- [ ] **MIR identifiers (N4)** — migrate expression/function/instruction
+  consumers while locking snapshot values.
+- [ ] **CFG and ownership identifiers (N5)** — preserve source order, cleanup,
+  move, drop, and control-flow semantics.
+- [ ] **Status namespaces (N6)** — name one bounded status family per coherent
+  PR; never renumber or collapse diagnostic distinctions.
+- [ ] **Sentinel and representation audit (N7-N10)** — migrate only proven
+  semantic consumers; explicitly close compliant boundary/test occurrences as
+  retained.
+- [ ] **Deferred defects (D1-D3)** — independently bisectable call-ABI and
+  infrastructure repairs after numeric migrations no longer obscure them.
+- [ ] **Campaign audit** — prove no unexplained semantic numeric consumer
+  remains, all retained raw values are classified, documentation identifies the
+  next product frontier, and full Ubuntu/native-Windows gates pass.
 
 ## Per-PR evidence
 

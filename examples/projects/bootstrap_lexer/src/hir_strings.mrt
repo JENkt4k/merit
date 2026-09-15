@@ -11,21 +11,21 @@ pub fn lower_string_hir_record(
 ) -> HirExpressionRecord
 {
     return HirExpressionRecord {
-        kind: 12,
+        kind: hir_string_literal_kind(),
         start: ast_start_value,
         length: ast_length_value,
         left: -1,
         right: -1,
-        symbol: 0,
+        symbol: hir_symbol_none(),
         type_code: resolved_type_code,
-        numeric_policy: 0,
+        numeric_policy: hir_numeric_policy_none(),
         binding_id: -1
     };
 }
 
 // Stable local validation for the additive non-numeric literal record.
 pub fn validate_string_hir_record(borrow node: HirExpressionRecord) -> i32 {
-    if (hir_kind(node) != 12) { return 1; }
+    if (hir_kind(node) != hir_string_literal_kind()) { return 1; }
     if (hir_start(node) < 0) { return 2; }
     if (hir_length(node) < 2) { return 2; }
     if (hir_left(node) != -1) { return 3; }
