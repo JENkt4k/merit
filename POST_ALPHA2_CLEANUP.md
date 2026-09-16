@@ -56,7 +56,7 @@ because they contain numbers.
 | N2 | CST/AST expression and declaration kinds; `syntax.mrt` | `syntax.mrt` uses raw kind sets/ranges including `30..45`, `50`, `51`, `60`, `61`, `70`; `merit/bootstrap/ast_contract.py` still has a raw `kind == 33` consumer | Shared semantic discriminants duplicated across Merit/Python | Establish named canonical kind functions/constants and representation tests, then migrate semantic predicates without changing values |
 | N3 | HIR node kinds, type codes, and numeric policies; `hir.mrt` | `hir.mrt` has the densest raw kind comparisons (43 heuristic matches); `merit/bootstrap/hir_parity.py` has named local constants while native consumers such as `mir_source_ownership_expression.mrt` still compare raw HIR kinds | Canonical mapping exists only in pieces | Consolidate domain-owned HIR symbols and prove Python/native parity before consumer migration |
 | N4 | MIR expression/function/instruction kinds; `mir*.mrt` | Raw comparisons occur in `mir.mrt`, `mir_composite.mrt`, `mir_functions.mrt`, `mir_statement_lowering.mrt`, and `merit/bootstrap/mir_function_assembly_parity.py`; some later kinds already use helpers such as `function_mir_kind_struct_construct()` | Mixed symbolic and raw semantic discriminants | Complete the existing symbolic pattern by MIR subdomain; preserve snapshot encodings and source order |
-| N5 | CFG, structured-control, placement, and ownership event/record kinds | `mir_cfg_parity.py` compares `10`, `11`, `12`, `13`, `14`, `15`, `16`; `mir_ownership_flow.mrt` mixes named ownership helpers with raw event/frame/record kinds such as `20..42` | Cross-language control/lifecycle identifiers | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
+| N5 | CFG, structured-control, placement, and ownership event/record kinds | N5a names CFG records and structured-control events/frames; `mir_ownership_flow.mrt` still mixes named ownership helpers with raw event/frame/record kinds such as `20..42` for N5b | Active: CFG/structured-control candidate; ownership pending | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
 | N6 | Bootstrap error/status codes and nested status offsets | Hundreds of raw `return N;` sites are concentrated in `mir_source_function_records.mrt`, `lexer.mrt`, `statements.mrt`, and `mir_functions.mrt`; named wrappers still embed offsets such as `370`, `1370`, `2090`, `3000`, and `5000` | Contractual statuses, not ordinary arithmetic | Inventory each status namespace first; name established values and offsets without renumbering; retain negative/fail-closed expectations |
 | N7 | Sentinels and absence encodings | `-1` and `0` represent absent nodes/bindings/results in HIR, MIR, snapshot rows, and ownership records, but also occur as ordinary bounds/counts | Context-dependent sentinel debt | Define domain-specific sentinels only where numeric absence is contractual; do not replace arithmetic zero/negative one mechanically |
 | N8 | Snapshot/bundle framing and row layout | `SNAPSHOT_MAGIC`, `SNAPSHOT_VERSION`, `BUNDLE_MAGIC`, and `BUNDLE_VERSION` are already named; row-width/index consumers remain in `resolved_source_function_snapshot.py` and native snapshot emitters | Canonical representation boundary, mostly compliant | Audit duplicated row indices and add names where semantic; do not hide or renumber canonical wire values |
@@ -140,7 +140,7 @@ meaning.
   after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
   convergence, and replacement acceptance all passed.
 
-### N4 MIR identifiers (candidate)
+### N4 MIR identifiers (closed by PR #120)
 
 - Canonical Merit owners now name the established expression, composite,
   whole-function, generic-call, function-contract, and assembled-instruction
@@ -170,8 +170,43 @@ meaning.
 - The authoritative local full gate passes with 1157 tests passed, 1 skipped,
   all 10 replacement acceptance projects verified, and a total gate duration
   of 2392.375s.
-- Hosted cross-platform and merge evidence remain pending; the checklist stays
-  open until the PR is merged with authoritative gates green.
+- PR #120 merged as `be5b7def3327cb235a48d93f59c66bcab4620f92`
+  after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
+  convergence, and replacement acceptance all passed.
+
+### N5a CFG and structured-control identifiers (candidate)
+
+- Canonical Merit owners now name all established CFG record kinds in
+  `bootstrap_mir_cfg` and all structured-lowering event kinds in
+  `bootstrap_mir_structured_lowering`. Internal structured-lowering and
+  statement-lowering frame kinds are named locally at their definition sites.
+- CFG constructors, structured-control lowering, whole-function event assembly,
+  ownership-aware event assembly, and Python canonical-MIR reconstruction now
+  consume those symbols instead of duplicating their numeric discriminants.
+- `mir_cfg_parity.py` exposes the matching Python constants, and
+  `test_python_cfg_kind_mirrors_preserve_bootstrap_encodings` locks the existing
+  `10..16` representation (included in 29 direct CFG/control-flow tests that
+  passed in 0.81s).
+- `test_bootstrap_cfg_structured_kind_representation_is_stable` locks all CFG
+  and structured-event values through both the interpreter and generated native
+  C (1 passed in 17.12s).
+- Structured lowering and resolved source control flow preserve native behavior
+  (3 passed in 33.64s); statement lowering and whole-function contract/CFG
+  assembly pass (3 passed in 32.10s); direct whole-function adapters pass
+  (8 passed in 1.15s).
+- Source ownership and ownership-flow production gates preserve the adjacent
+  exact-once lifecycle path (4 passed in 33.94s). Ownership event, frame, and
+  record discriminants remain deliberately assigned to N5b.
+- No record value, source order, serialization, ABI value, ownership behavior,
+  or language semantic changed. Placement has no numeric kind domain and was
+  validated through the same production paths rather than given an artificial
+  identifier family.
+- The bootstrap/project subsystem gate passes with 422 tests passed and 1
+  skipped in 1112.87s (gate duration 1115.417s).
+- The authoritative local full gate passes with 1159 tests passed, 1 skipped,
+  all 10 replacement acceptance projects verified, and a total gate duration
+  of 2402.905s.
+- Hosted cross-platform and merge evidence remain pending.
 
 ## Ordered PR checklist
 
@@ -182,10 +217,11 @@ meaning.
   parity.
 - [x] **CST/AST and HIR identifiers (N2-N3, PR #119)** — canonical definitions
   plus Python/native representation and production-path parity.
-- [ ] **MIR identifiers (N4, active)** — migrate expression/function/instruction
+- [x] **MIR identifiers (N4, PR #120)** — migrate expression/function/instruction
   consumers while locking snapshot values.
-- [ ] **CFG and ownership identifiers (N5)** — preserve source order, cleanup,
-  move, drop, and control-flow semantics.
+- [ ] **CFG and ownership identifiers (N5, active)** — N5a CFG and structured
+  control is a candidate; N5b ownership remains pending. Preserve source order,
+  cleanup, move, drop, and control-flow semantics.
 - [ ] **Status namespaces (N6)** — name one bounded status family per coherent
   PR; never renumber or collapse diagnostic distinctions.
 - [ ] **Sentinel and representation audit (N7-N10)** — migrate only proven

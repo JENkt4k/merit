@@ -44,6 +44,15 @@ from merit.bootstrap.mir_function_parity import (
     MIR_FUNCTION_KIND_STRUCT_FIELD_STORE,
     MIR_FUNCTION_KIND_TEMPORARY,
 )
+from merit.bootstrap.mir_cfg_parity import (
+    MIR_CFG_KIND_BLOCK,
+    MIR_CFG_KIND_BRANCH,
+    MIR_CFG_KIND_JUMP,
+    MIR_CFG_KIND_RETURN,
+    MIR_CFG_KIND_SWITCH_CASE,
+    MIR_CFG_KIND_SWITCH_DEFAULT,
+    MIR_CFG_KIND_UNREACHABLE,
+)
 
 BodyRecord = tuple[int, ...]
 ContractRecord = tuple[int, ...]
@@ -524,7 +533,7 @@ def lower_native_whole_function_assembly(
     terminator_rows: dict[int, list[tuple[int, ...]]] = defaultdict(list)
     for row in cfg:
         kind, block_id, operand, target_a, target_b, case_value, ordinal = row
-        if kind == 10:
+        if kind == MIR_CFG_KIND_BLOCK:
             if block_id in blocks_seen or block_id < 0:
                 raise NativeWholeFunctionMirError("duplicate/invalid CFG block")
             blocks_seen.add(block_id)
@@ -539,9 +548,12 @@ def lower_native_whole_function_assembly(
         if not rows:
             raise NativeWholeFunctionMirError(f"block {block_id} has no terminator")
         kinds = {row[0] for row in rows}
-        if kinds <= {13, 14}:
-            cases = sorted((row for row in rows if row[0] == 13), key=lambda row: row[6])
-            defaults = [row for row in rows if row[0] == 14]
+        if kinds <= {MIR_CFG_KIND_SWITCH_CASE, MIR_CFG_KIND_SWITCH_DEFAULT}:
+            cases = sorted(
+                (row for row in rows if row[0] == MIR_CFG_KIND_SWITCH_CASE),
+                key=lambda row: row[6],
+            )
+            defaults = [row for row in rows if row[0] == MIR_CFG_KIND_SWITCH_DEFAULT]
             if len(defaults) != 1:
                 raise NativeWholeFunctionMirError("switch must contain one default")
             operands = {row[2] for row in rows}
@@ -550,13 +562,13 @@ def lower_native_whole_function_assembly(
             terminator = MirTerminator("switch", operands=(next(iter(operands)),), targets=tuple(row[3] for row in cases) + (defaults[0][3],), cases=tuple(row[5] for row in cases))
         elif len(rows) == 1:
             kind, _, operand, target_a, target_b, _, _ = rows[0]
-            if kind == 11:
+            if kind == MIR_CFG_KIND_JUMP:
                 terminator = MirTerminator("jump", targets=(target_a,))
-            elif kind == 12:
+            elif kind == MIR_CFG_KIND_BRANCH:
                 terminator = MirTerminator("branch", operands=(operand,), targets=(target_a, target_b))
-            elif kind == 15:
+            elif kind == MIR_CFG_KIND_RETURN:
                 terminator = MirTerminator("return", operands=() if operand < 0 else (operand,))
-            elif kind == 16:
+            elif kind == MIR_CFG_KIND_UNREACHABLE:
                 terminator = MirTerminator("unreachable")
             else:
                 raise NativeWholeFunctionMirError(f"unsupported CFG terminator kind {kind}")

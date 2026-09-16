@@ -7,6 +7,15 @@ from collections.abc import Sequence
 from .mir_contract import MirBlock, MirContractError, MirTerminator
 
 
+MIR_CFG_KIND_BLOCK = 10
+MIR_CFG_KIND_JUMP = 11
+MIR_CFG_KIND_BRANCH = 12
+MIR_CFG_KIND_SWITCH_CASE = 13
+MIR_CFG_KIND_SWITCH_DEFAULT = 14
+MIR_CFG_KIND_RETURN = 15
+MIR_CFG_KIND_UNREACHABLE = 16
+
+
 @dataclass(frozen=True, slots=True)
 class NativeCfgRecord:
     kind: int
@@ -30,26 +39,26 @@ def lower_native_cfg_records(records: Sequence[NativeCfgRecord], *, instructions
     switches: dict[int, list[NativeCfgRecord]] = {}
 
     for record in records:
-        if record.kind == 10:
+        if record.kind == MIR_CFG_KIND_BLOCK:
             if record.block_id < 0 or record.block_id in block_order:
                 raise MirContractError("CFG block IDs must be unique and non-negative")
             if record.ordinal != len(block_order):
                 raise MirContractError("CFG block ordinals must be dense and ordered")
             block_order.append(record.block_id)
-        elif record.kind == 11:
+        elif record.kind == MIR_CFG_KIND_JUMP:
             _set_terminator(terminators, record.block_id, MirTerminator("jump", targets=(_target(record.target_a),)))
-        elif record.kind == 12:
+        elif record.kind == MIR_CFG_KIND_BRANCH:
             if record.operand < 0:
                 raise MirContractError("CFG branch requires a condition local")
             _set_terminator(terminators, record.block_id, MirTerminator("branch", operands=(record.operand,), targets=(_target(record.target_a), _target(record.target_b))))
-        elif record.kind in (13, 14):
+        elif record.kind in (MIR_CFG_KIND_SWITCH_CASE, MIR_CFG_KIND_SWITCH_DEFAULT):
             if record.operand < 0:
                 raise MirContractError("CFG switch requires a value local")
             switches.setdefault(record.block_id, []).append(record)
-        elif record.kind == 15:
+        elif record.kind == MIR_CFG_KIND_RETURN:
             operands = () if record.operand < 0 else (record.operand,)
             _set_terminator(terminators, record.block_id, MirTerminator("return", operands=operands))
-        elif record.kind == 16:
+        elif record.kind == MIR_CFG_KIND_UNREACHABLE:
             _set_terminator(terminators, record.block_id, MirTerminator("unreachable"))
         else:
             raise MirContractError(f"unknown native CFG record kind: {record.kind}")
@@ -63,9 +72,9 @@ def lower_native_cfg_records(records: Sequence[NativeCfgRecord], *, instructions
         ordered = sorted(group, key=lambda item: item.ordinal)
         if [item.ordinal for item in ordered] != list(range(len(ordered))):
             raise MirContractError("CFG switch ordinals must be dense")
-        defaults = [item for item in ordered if item.kind == 14]
-        cases = [item for item in ordered if item.kind == 13]
-        if len(defaults) != 1 or ordered[-1].kind != 14:
+        defaults = [item for item in ordered if item.kind == MIR_CFG_KIND_SWITCH_DEFAULT]
+        cases = [item for item in ordered if item.kind == MIR_CFG_KIND_SWITCH_CASE]
+        if len(defaults) != 1 or ordered[-1].kind != MIR_CFG_KIND_SWITCH_DEFAULT:
             raise MirContractError("CFG switch requires exactly one final default")
         if any(item.operand != ordered[0].operand for item in ordered):
             raise MirContractError("CFG switch records disagree on operand")

@@ -534,6 +534,66 @@ def test_bootstrap_mir_kind_representation_is_stable(tmp_path):
     assert native == expected
 
 
+CFG_STRUCTURED_KIND_REPRESENTATION = (
+    ("cfg_block_kind", 10),
+    ("cfg_jump_kind", 11),
+    ("cfg_branch_kind", 12),
+    ("cfg_switch_case_kind", 13),
+    ("cfg_switch_default_kind", 14),
+    ("cfg_return_kind", 15),
+    ("cfg_unreachable_kind", 16),
+    ("mir_event_place_kind", 1),
+    ("mir_event_return_kind", 2),
+    ("mir_event_unreachable_kind", 3),
+    ("mir_event_if_kind", 10),
+    ("mir_event_else_kind", 11),
+    ("mir_event_end_if_kind", 12),
+    ("mir_event_begin_while_kind", 19),
+    ("mir_event_while_kind", 20),
+    ("mir_event_end_while_kind", 21),
+    ("mir_event_match_kind", 30),
+    ("mir_event_case_kind", 31),
+    ("mir_event_default_kind", 32),
+    ("mir_event_end_match_kind", 33),
+)
+
+
+def test_bootstrap_cfg_structured_kind_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_cfg_structured_kind_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(
+        f"print({name}());" for name, _ in CFG_STRUCTURED_KIND_REPRESENTATION
+    )
+    (project_root / "src/cfg_structured_kind_representation_probe.mrt").write_text(
+        "module cfg_structured_kind_representation_probe\n"
+        "import bootstrap_mir_cfg;\n"
+        "import bootstrap_mir_structured_lowering;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/cfg_structured_kind_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(
+        f"{value}\n" for _, value in CFG_STRUCTURED_KIND_REPRESENTATION
+    )
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
     checker = check(project)

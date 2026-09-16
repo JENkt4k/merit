@@ -90,7 +90,7 @@ requires_caps [allocate]
     while (index < vec_len<MirLowerEvent>(ownership_events)) {
         let event: MirLowerEvent = vec_get<MirLowerEvent>(ownership_events, index);
         let kind: i32 = lower_event_kind(event);
-        if (kind == 1) {
+        if (kind == mir_event_place_kind()) {
             let input_id: i64 = lower_event_a(event);
             if (input_id != expected_input_place) { return 40; }
             expected_input_place = checked_add(expected_input_place, 1);
@@ -118,7 +118,7 @@ requires_caps [allocate]
             vec_set<i64>(next_instruction,0,checked_add(global_id,1));
             drop(event);
         } else {
-            if (kind == 2) {
+            if (kind == mir_event_return_kind()) {
                 let post_status: i32 = emit_contract_provenance_records(contracts,function_contract_postcondition_phase(),binding_count,body_local_count,lower_event_a(event),next_instruction,events,sources);
                 if (post_status != 0) { return post_status; }
                 vec_push<MirLowerEvent>(events, mir_event_return(lower_event_a(event)));
