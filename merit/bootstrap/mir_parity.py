@@ -23,10 +23,14 @@ from merit.bootstrap.parity import StageObservation, observe
 # kind,start,length,result,left,right,symbol,type_code,numeric_policy,binding_id,hir_node_id
 NativeMirExpressionRecord = tuple[int, int, int, int, int, int, int, int, int, int, int]
 
-_KIND_CONST = 1
-_KIND_BINARY = 2
-_KIND_GROUP_ALIAS = 3
-_KIND_BINDING = 4
+MIR_EXPRESSION_KIND_CONST = 1
+MIR_EXPRESSION_KIND_BINARY = 2
+MIR_EXPRESSION_KIND_GROUP_ALIAS = 3
+MIR_EXPRESSION_KIND_BINDING = 4
+_KIND_CONST = MIR_EXPRESSION_KIND_CONST
+_KIND_BINARY = MIR_EXPRESSION_KIND_BINARY
+_KIND_GROUP_ALIAS = MIR_EXPRESSION_KIND_GROUP_ALIAS
+_KIND_BINDING = MIR_EXPRESSION_KIND_BINDING
 _POLICY_NONE = 0
 _POLICY_EXACT = 1
 _POLICY_CHECKED = 2

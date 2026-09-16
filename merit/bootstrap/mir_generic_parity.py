@@ -24,9 +24,12 @@ from merit.bootstrap.parity import StageObservation, observe
 # specialization_type_code,hir_node_id,owner_hir_id,ordinal
 NativeMirGenericRecord = tuple[int, int, int, int, int, int, int, int, int, int, int, int]
 
-_KIND_CONST = 1
-_KIND_CALL = 2
-_KIND_OPERAND = 3
+MIR_GENERIC_KIND_CONST = 1
+MIR_GENERIC_KIND_CALL = 2
+MIR_GENERIC_KIND_OPERAND = 3
+_KIND_CONST = MIR_GENERIC_KIND_CONST
+_KIND_CALL = MIR_GENERIC_KIND_CALL
+_KIND_OPERAND = MIR_GENERIC_KIND_OPERAND
 
 
 class NativeMirGenericError(ValueError):

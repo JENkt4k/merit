@@ -33,7 +33,10 @@ pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return r
 pub fn statement_record_first_operand(borrow record: StatementRecord) -> i64 { return record.first_operand; }
 pub fn statement_record_operand_count(borrow record: StatementRecord) -> i64 { return record.operand_count; }
 pub fn statement_operand_kind(borrow operand: StatementOperand) -> i32 { return operand.kind; }
+pub fn statement_operand_binding_kind() -> i32 { return 1; }
+pub fn statement_operand_declared_type_kind() -> i32 { return 2; }
 pub fn statement_operand_expression_kind() -> i32 { return 3; }
+pub fn statement_operand_capability_kind() -> i32 { return 4; }
 pub fn statement_operand_start(borrow operand: StatementOperand) -> i64 { return operand.start; }
 pub fn statement_operand_length(borrow operand: StatementOperand) -> i64 { return operand.length; }
 
