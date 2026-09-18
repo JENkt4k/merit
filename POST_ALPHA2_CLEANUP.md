@@ -62,7 +62,7 @@ because they contain numbers.
 | N2 | CST/AST expression and declaration kinds; `syntax.mrt` | `syntax.mrt` uses raw kind sets/ranges including `30..45`, `50`, `51`, `60`, `61`, `70`; `merit/bootstrap/ast_contract.py` still has a raw `kind == 33` consumer | Shared semantic discriminants duplicated across Merit/Python | Establish named canonical kind functions/constants and representation tests, then migrate semantic predicates without changing values |
 | N3 | HIR node kinds, type codes, and numeric policies; `hir.mrt` | `hir.mrt` has the densest raw kind comparisons (43 heuristic matches); `merit/bootstrap/hir_parity.py` has named local constants while native consumers such as `mir_source_ownership_expression.mrt` still compare raw HIR kinds | Canonical mapping exists only in pieces | Consolidate domain-owned HIR symbols and prove Python/native parity before consumer migration |
 | N4 | MIR expression/function/instruction kinds; `mir*.mrt` | Raw comparisons occur in `mir.mrt`, `mir_composite.mrt`, `mir_functions.mrt`, `mir_statement_lowering.mrt`, and `merit/bootstrap/mir_function_assembly_parity.py`; some later kinds already use helpers such as `function_mir_kind_struct_construct()` | Mixed symbolic and raw semantic discriminants | Complete the existing symbolic pattern by MIR subdomain; preserve snapshot encodings and source order |
-| N5 | CFG, structured-control, placement, and ownership event/record kinds | N5a names CFG records and structured-control events/frames; N5b names ownership events, records, lifecycle states, and internal frame kinds | Active: N5a merged; N5b candidate | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
+| N5 | CFG, structured-control, placement, and ownership event/record kinds | N5a names CFG records and structured-control events/frames; N5b names ownership events, records, lifecycle states, and internal frame kinds | Closed by PRs #121-#122 | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
 | N6 | Bootstrap error/status codes and nested status offsets | Hundreds of raw `return N;` sites are concentrated in `mir_source_function_records.mrt`, `lexer.mrt`, `statements.mrt`, and `mir_functions.mrt`; named wrappers still embed offsets such as `370`, `1370`, `2090`, `3000`, and `5000` | Contractual statuses, not ordinary arithmetic | Inventory each status namespace first; name established values and offsets without renumbering; retain negative/fail-closed expectations |
 | N7 | Sentinels and absence encodings | `-1` and `0` represent absent nodes/bindings/results in HIR, MIR, snapshot rows, and ownership records, but also occur as ordinary bounds/counts | Context-dependent sentinel debt | Define domain-specific sentinels only where numeric absence is contractual; do not replace arithmetic zero/negative one mechanically |
 | N8 | Snapshot/bundle framing and row layout | `SNAPSHOT_MAGIC`, `SNAPSHOT_VERSION`, `BUNDLE_MAGIC`, and `BUNDLE_VERSION` are already named; row-width/index consumers remain in `resolved_source_function_snapshot.py` and native snapshot emitters | Canonical representation boundary, mostly compliant | Audit duplicated row indices and add names where semantic; do not hide or renumber canonical wire values |
@@ -78,9 +78,9 @@ meaning.
 
 | ID | Defect | Evidence | Boundary |
 |---|---|---|---|
-| D1 | Large bootstrap call/status corruption | `ALPHA2_CLOSURE.md` records that one additional scalar argument to `print_resolved_source_function_snapshot` preserved serialized output but corrupted returned status `1392`/wrapped `4392` | Dedicated call-ABI regression and repair; do not fold into numeric-status naming |
-| D2 | Repeated native bootstrap construction dominates test time | Historical measurements and gate durations show many project/bootstrap cases pay roughly one native frontend build per isolated process | Test/build infrastructure PR; preserve coverage and clean-build evidence |
-| D3 | Pytest cache permission warnings on the WSL checkout | Local focused and full gates repeatedly report inability to write `.pytest_cache` | Environment/test-infrastructure fix; do not weaken tests |
+| D1 | Large bootstrap call/status corruption | `ALPHA2_CLOSURE.md` records that one additional scalar argument to `print_resolved_source_function_snapshot` preserved serialized output but corrupted returned status `1392`/wrapped `4392`; the exact tail-scalar shape passes on current main | Candidate: retain the focused call-ABI regression; current behavior needs no speculative compiler change |
+| D2 | Repeated native bootstrap construction dominates test time | Historical measurements and gate durations show many project/bootstrap cases pay roughly one native frontend build per isolated process | Candidate: share immutable content-addressed native test objects while preserving production-local caches and clean-build evidence |
+| D3 | Pytest cache permission warnings on the WSL checkout | Local focused and full gates repeatedly report inability to write `.pytest_cache` | Candidate: route pytest state to the repository's writable ignored `.merit` state root |
 | D4 | Stale transition documentation | Alpha.2 was tagged after its candidate documentation merged | This inventory PR performs only the factual post-release handoff; historical ledgers remain historical |
 
 ## Completed evidence
@@ -216,7 +216,7 @@ meaning.
   after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
   convergence, and replacement acceptance all passed.
 
-### N5b ownership identifiers (candidate)
+### N5b ownership identifiers (closed by PR #122)
 
 - `bootstrap_mir_ownership_flow` now canonically names all established
   ownership event and output-record discriminants, lifecycle states, and its
@@ -241,7 +241,35 @@ meaning.
 - The authoritative local full gate passes with 1160 tests passed, 1 skipped,
   all 10 replacement acceptance projects verified, and a total gate duration
   of 2442.287s.
-- Hosted cross-platform and merge evidence remain pending.
+- All six authoritative hosted checks passed: corpus convergence (41s),
+  replacement acceptance (19m27s), Ubuntu M9 reproducibility (21m22s), Windows
+  M9 reproducibility (18m50s), Ubuntu full (46m33s), and native-Windows full
+  (54m32s).
+- PR #122 merged as `88c3693930fb51418e8f61292b4bf89899711cb6`.
+
+### Deferred bootstrap/test-infrastructure defects (candidate)
+
+- D2 profiling separated two dominant costs: project loading/parsing and native
+  object compilation. The safe bounded repair shares only immutable,
+  content-addressed native objects across isolated pytest output roots; normal
+  production builds retain output-local caches. A representative ownership-flow
+  native test improved from 17.12s cold to 7.82s warm without changing coverage.
+- The hosted full jobs restore the OS-specific test-object cache across runs.
+  Workflow concurrency now queues newer revisions instead of cancelling an
+  already-running 20-55 minute gate.
+- D3 moves pytest cache state from the unwritable checkout-root `.pytest_cache`
+  to ignored `.merit/pytest-cache`. The focused and adjacent infrastructure
+  suites pass without the historical permission warning (8 passed in 1.97s).
+- D1 now has a focused reproducer that mechanically adds a final scalar marker
+  with the historical value `1392` to the copied large bundle/snapshot call
+  chain. The marker is checked after the complete snapshot is emitted; native
+  output equals the independent interpreter, both nested return statuses remain
+  zero, and the bundle decodes completely. The focused test passes in 17.87s;
+  the complete adjacent file passes 2 tests in 23.77s. The defect was present
+  at M5 merge `135bc79b`; later compiler work resolved it before this campaign,
+  so the candidate preserves a bisectable regression instead of making an
+  unsupported compiler change. The resolving commit within
+  `135bc79b..88c369393` is not yet identified.
 
 ## Ordered PR checklist
 
@@ -254,10 +282,10 @@ meaning.
   plus Python/native representation and production-path parity.
 - [x] **MIR identifiers (N4, PR #120)** — migrate expression/function/instruction
   consumers while locking snapshot values.
-- [ ] **CFG and ownership identifiers (N5, active)** — N5a CFG and structured
-  control closed in PR #121; N5b ownership is the current candidate. Preserve
+- [x] **CFG and ownership identifiers (N5, PRs #121-#122)** — N5a CFG and structured
+  control closed in PR #121; N5b ownership closed in PR #122. Preserve
   source order, cleanup, move, drop, and control-flow semantics.
-- [ ] **Deferred defects (D2, D3, then D1)** — one staged PR: first remove
+- [ ] **Deferred defects (D2, D3, then D1; candidate)** — one staged PR: first remove
   redundant native-bootstrap construction, then repair WSL pytest-cache
   handling, then reproduce and repair the independently testable call-ABI
   corruption. Preserve clean-build coverage and commit each stage separately.
