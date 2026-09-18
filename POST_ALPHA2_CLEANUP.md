@@ -273,6 +273,10 @@ meaning.
 - The combined bootstrap/project subsystem gate passes with 425 tests passed
   and 1 skipped in 1116.38s (gate duration 1119.198s), with no pytest cache
   warning.
+- The authoritative local full gate passes with 1163 tests passed and 1 skipped
+  in 665.67s, all 10 replacement acceptance projects passing, and total gate
+  duration 1986.948s. The cached main suite completed in 11m05s; replacement
+  acceptance completed in 21m34s.
 
 ## Ordered PR checklist
 
