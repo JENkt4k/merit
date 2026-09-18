@@ -7,6 +7,10 @@ import sys
 from scripts import gate
 
 
+def test_pytest_cache_uses_writable_merit_state(pytestconfig) -> None:
+    assert pytestconfig.getini("cache_dir") == ".merit/pytest-cache"
+
+
 def test_acceptance_verification_selects_reference_oracle_explicitly(monkeypatch) -> None:
     observed: list[tuple[list[str], Path]] = []
     monkeypatch.setattr(

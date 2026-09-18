@@ -8,6 +8,8 @@ build/
 dist/
 .merit-build/
 .merit/gates/
+.merit/pytest-cache/
+.merit/test-native-object-cache/
 *.o
 *.obj
 *.exe
