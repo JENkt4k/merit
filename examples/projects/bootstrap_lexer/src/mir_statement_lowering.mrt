@@ -48,6 +48,9 @@ struct StatementLowerFrame {
     state: i32;
 }
 
+fn statement_lower_if_frame_kind() -> i32 { return 10; }
+fn statement_lower_while_frame_kind() -> i32 { return 20; }
+
 fn lower_token_end(borrow token: Token) -> i64 {
     return checked_add(token_start(token), token_length(token));
 }
@@ -470,7 +473,7 @@ requires_caps [allocate]
                                 if (condition_local < 0) { return 17; }
                                 vec_push<MirLowerEvent>(events, mir_event_if(condition_local));
                                 vec_push<StatementLowerFrame>(frames, StatementLowerFrame {
-                                    kind: 10,
+                                    kind: statement_lower_if_frame_kind(),
                                     open_end: checked_add(statement_record_start(statement), statement_record_length(statement)),
                                     body_depth: -1,
                                     state: 0
@@ -489,7 +492,7 @@ requires_caps [allocate]
                                     if (condition_local < 0) { return 19; }
                                     vec_push<MirLowerEvent>(events, mir_event_while(condition_local));
                                     vec_push<StatementLowerFrame>(frames, StatementLowerFrame {
-                                        kind: 20,
+                                        kind: statement_lower_while_frame_kind(),
                                         open_end: checked_add(statement_record_start(statement), statement_record_length(statement)),
                                         body_depth: -1,
                                         state: 0
@@ -566,7 +569,7 @@ requires_caps [allocate]
                     if (frame.body_depth == brace_depth) {
                         var has_else: i32 = 0;
                         let next_token_index: i64 = checked_add(token_index, 1);
-                        if (frame.kind == 10) {
+                        if (frame.kind == statement_lower_if_frame_kind()) {
                             if (next_token_index < vec_len<Token>(tokens)) {
                                 let next_token: Token = vec_get<Token>(tokens, next_token_index);
                                 has_else = lower_token_else(source, next_token);
@@ -580,10 +583,10 @@ requires_caps [allocate]
                             });
                         } else {
                             let closed: StatementLowerFrame = vec_pop<StatementLowerFrame>(frames);
-                            if (closed.kind == 10) {
+                            if (closed.kind == statement_lower_if_frame_kind()) {
                                 vec_push<MirLowerEvent>(events, mir_event_end_if());
                             } else {
-                                if (closed.kind == 20) {
+                                if (closed.kind == statement_lower_while_frame_kind()) {
                                     vec_push<MirLowerEvent>(events, mir_event_end_while());
                                 } else { return 30; }
                             }

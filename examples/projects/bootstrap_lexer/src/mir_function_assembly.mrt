@@ -71,7 +71,7 @@ requires_caps [allocate]
     while (index < vec_len<MirLowerEvent>(body_events)) {
         let event: MirLowerEvent = vec_get<MirLowerEvent>(body_events, index);
         let kind: i32 = lower_event_kind(event);
-        if (kind == 1) {
+        if (kind == mir_event_place_kind()) {
             if (lower_event_a(event) != expected_body_instruction) { return 40; }
             let global_id: i64 = vec_get<i64>(next_instruction, 0);
             vec_push<MirLowerEvent>(events, mir_event_place(global_id));
@@ -84,7 +84,7 @@ requires_caps [allocate]
             vec_set<i64>(next_instruction, 0, checked_add(global_id, 1));
             drop(event);
         } else {
-            if (kind == 2) {
+            if (kind == mir_event_return_kind()) {
                 let post_status: i32 = emit_contract_records(
                     contracts, function_contract_postcondition_phase(), binding_count, body_local_count,
                     next_instruction, events, sources

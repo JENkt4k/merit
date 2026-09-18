@@ -2,12 +2,34 @@ import pytest
 
 from merit.bootstrap.hir_contract import HirBinding, HirModule, HirNode, HirType
 from merit.bootstrap.hir_to_mir import lower_hir_to_mir
-from merit.bootstrap.mir_cfg_parity import NativeCfgRecord as R, lower_native_cfg_records
+from merit.bootstrap.mir_cfg_parity import (
+    MIR_CFG_KIND_BLOCK,
+    MIR_CFG_KIND_BRANCH,
+    MIR_CFG_KIND_JUMP,
+    MIR_CFG_KIND_RETURN,
+    MIR_CFG_KIND_SWITCH_CASE,
+    MIR_CFG_KIND_SWITCH_DEFAULT,
+    MIR_CFG_KIND_UNREACHABLE,
+    NativeCfgRecord as R,
+    lower_native_cfg_records,
+)
 from merit.bootstrap.mir_contract import MirContractError
 
 I64 = HirType("i64")
 BOOL = HirType("bool")
 UNIT = HirType("unit")
+
+
+def test_python_cfg_kind_mirrors_preserve_bootstrap_encodings():
+    assert (
+        MIR_CFG_KIND_BLOCK,
+        MIR_CFG_KIND_JUMP,
+        MIR_CFG_KIND_BRANCH,
+        MIR_CFG_KIND_SWITCH_CASE,
+        MIR_CFG_KIND_SWITCH_DEFAULT,
+        MIR_CFG_KIND_RETURN,
+        MIR_CFG_KIND_UNREACHABLE,
+    ) == (10, 11, 12, 13, 14, 15, 16)
 
 
 def _module(nodes, bindings=()):
