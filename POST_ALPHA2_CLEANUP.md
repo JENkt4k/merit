@@ -270,6 +270,9 @@ meaning.
   so the candidate preserves a bisectable regression instead of making an
   unsupported compiler change. The resolving commit within
   `135bc79b..88c369393` is not yet identified.
+- The combined bootstrap/project subsystem gate passes with 425 tests passed
+  and 1 skipped in 1116.38s (gate duration 1119.198s), with no pytest cache
+  warning.
 
 ## Ordered PR checklist
 
