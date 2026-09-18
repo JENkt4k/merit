@@ -23,6 +23,19 @@ OwnershipRecord = tuple[int, int, int, int, int, int, int, int]
 InstructionSourceRecord = tuple[int, ...]
 PlacementRecord = tuple[int, ...]
 
+MIR_OWNERSHIP_RECORD_KIND_ACTIVATE = 1
+MIR_OWNERSHIP_RECORD_KIND_MOVE = 2
+MIR_OWNERSHIP_RECORD_KIND_DROP = 3
+MIR_OWNERSHIP_RECORD_KIND_REPLACE_DROP = 4
+MIR_OWNERSHIP_RECORD_KIND_REPLACE_MOVE = 5
+MIR_OWNERSHIP_RECORD_KIND_IMPLICIT_DROP = 6
+MIR_OWNERSHIP_RECORD_KIND_NESTED_TRANSFER = 7
+
+MIR_OWNERSHIP_STATE_UNINITIALIZED = 0
+MIR_OWNERSHIP_STATE_LIVE = 1
+MIR_OWNERSHIP_STATE_MOVED = 2
+MIR_OWNERSHIP_STATE_DROPPED = 3
+
 
 def _rows(values: Iterable[tuple[int, ...]], width: int, label: str) -> tuple[tuple[int, ...], ...]:
     rows = tuple(tuple(int(value) for value in row) for row in values)
@@ -177,13 +190,17 @@ def lower_native_ownership_whole_function_assembly(
             raise NativeWholeFunctionMirError("ownership provenance references non-instruction record")
         if left != operand_local or left < 0:
             raise NativeWholeFunctionMirError("ownership provenance disagrees with operand local")
-        if record_kind in {2, 5}:
+        if record_kind in {MIR_OWNERSHIP_RECORD_KIND_MOVE, MIR_OWNERSHIP_RECORD_KIND_REPLACE_MOVE}:
             if result < 0:
                 raise NativeWholeFunctionMirError("ownership move requires destination local")
             final_instruction[global_id] = MirInstruction(
                 global_id, "move", result=result, operands=(left,), ownership="owned"
             )
-        elif record_kind in {3, 4, 6}:
+        elif record_kind in {
+            MIR_OWNERSHIP_RECORD_KIND_DROP,
+            MIR_OWNERSHIP_RECORD_KIND_REPLACE_DROP,
+            MIR_OWNERSHIP_RECORD_KIND_IMPLICIT_DROP,
+        }:
             if result != -1:
                 raise NativeWholeFunctionMirError("ownership drop cannot produce a result")
             final_instruction[global_id] = MirInstruction(
