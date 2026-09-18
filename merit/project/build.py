@@ -14,6 +14,8 @@ import tempfile
 from merit.compiler import CGenerator, Checker, Interpreter
 from .loader import LoadedProject
 
+NATIVE_OBJECT_CACHE_ENV = "MERIT_NATIVE_OBJECT_CACHE"
+
 
 class NativeBuildError(subprocess.CalledProcessError):
     """A native toolchain command failed with actionable diagnostics.
@@ -217,7 +219,12 @@ def compile_cached_object(
         pass
     digest.update(repr(project.manifest.c_flags).encode())
     digest.update(b"pic" if pic else b"exe")
-    cache_dir = cache_root / ".merit-cache"
+    configured_cache = os.environ.get(NATIVE_OBJECT_CACHE_ENV)
+    cache_dir = (
+        Path(configured_cache).expanduser().resolve()
+        if configured_cache
+        else cache_root / ".merit-cache"
+    )
     cache_dir.mkdir(parents=True, exist_ok=True)
     object_path = cache_dir / f"{digest.hexdigest()[:24]}.o"
     if object_path.exists():
@@ -264,7 +271,7 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
         command,
         phase="linking",
         artifacts=(c_path, h_path, object_path, output),
-        environment=_native_environment(output.parent / ".merit-cache"),
+        environment=_native_environment(object_path.parent),
     )
     return c_path, h_path, output
 
@@ -305,7 +312,7 @@ def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path
         command,
         phase="shared-library linking",
         artifacts=(c_path, h_path, object_path, library),
-        environment=_native_environment(library.parent / ".merit-cache"),
+        environment=_native_environment(object_path.parent),
     )
     return c_path, h_path, library
 
