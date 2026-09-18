@@ -100,9 +100,9 @@ requires_caps [allocate]
                 let record: MirOwnershipRecord = vec_get<MirOwnershipRecord>(ownership_records, ownership_index);
                 let record_kind: i32 = ownership_record_kind(record);
                 var result_local: i64 = -1; let left_local: i64 = ownership_record_operand_local(record);
-                if (record_kind == 2) { result_local = ownership_source_binding_local(bindings, ownership_record_other_binding_id(record)); if (result_local < 0) { return 41; } }
-                if (record_kind == 5) { result_local = ownership_source_binding_local(bindings, ownership_record_binding_id(record)); if (result_local < 0) { return 42; } }
-                if (record_kind < 2) { return 43; } if (record_kind > 6) { return 43; } if (left_local < 0) { return 44; }
+                if (record_kind == ownership_record_kind_move()) { result_local = ownership_source_binding_local(bindings, ownership_record_other_binding_id(record)); if (result_local < 0) { return 41; } }
+                if (record_kind == ownership_record_kind_replace_move()) { result_local = ownership_source_binding_local(bindings, ownership_record_binding_id(record)); if (result_local < 0) { return 42; } }
+                if (record_kind < ownership_record_kind_move()) { return 43; } if (record_kind > ownership_record_kind_implicit_drop()) { return 43; } if (left_local < 0) { return 44; }
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
                     global_id:global_id,source_kind:assembly_source_ownership_kind(),source_id:ownership_index,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:-1,
                     result:result_local,left:left_local,right:-1

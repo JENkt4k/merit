@@ -24,6 +24,9 @@ fn source_control_close_parenthesis_byte() -> i64 { return 41; }
 
 struct SourceOwnershipFrame { kind: i32; open_end: i64; body_depth: i64; state: i32; }
 
+fn source_ownership_if_frame_kind() -> i32 { return 10; }
+fn source_ownership_while_frame_kind() -> i32 { return 20; }
+
 fn source_control_token_end(borrow token: Token) -> i64 { return checked_add(token_start(token), token_length(token)); }
 fn source_control_open_brace_byte() -> i64 { return 123; }
 fn source_control_close_brace_byte() -> i64 { return 125; }
@@ -436,7 +439,7 @@ requires_caps [allocate]
         let condition: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (condition < 0) { return 23; }
         vec_push<MirOwnershipEvent>(events, ownership_event_if(condition));
-        vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:10, open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
+        vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:source_ownership_if_frame_kind(), open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
         return 0;
     }
     if (kind == 26) {
@@ -444,7 +447,7 @@ requires_caps [allocate]
         let condition: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
         if (condition < 0) { return 24; }
         vec_push<MirOwnershipEvent>(events, ownership_event_while(condition));
-        vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:20, open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
+        vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:source_ownership_while_frame_kind(), open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
         return 0;
     }
     if (kind == 27) {
@@ -656,14 +659,14 @@ requires_caps [allocate]
                 if (frame.state == 1) {
                     if (frame.body_depth == brace_depth) {
                         var has_else: i32 = 0; let next_token_index: i64 = checked_add(token_index, 1);
-                        if (frame.kind == 10) { if (next_token_index < vec_len<Token>(tokens)) { has_else = source_control_is_else(source, vec_get<Token>(tokens, next_token_index)); } }
+                        if (frame.kind == source_ownership_if_frame_kind()) { if (next_token_index < vec_len<Token>(tokens)) { has_else = source_control_is_else(source, vec_get<Token>(tokens, next_token_index)); } }
                         if (has_else != 0) {
                             vec_push<MirOwnershipEvent>(events, ownership_event_else());
                             vec_set<SourceOwnershipFrame>(frames, frame_index, SourceOwnershipFrame { kind:frame.kind, open_end:frame.open_end, body_depth:-1, state:2 });
                         } else {
                             let closed: SourceOwnershipFrame = vec_pop<SourceOwnershipFrame>(frames);
-                            if (closed.kind == 10) { vec_push<MirOwnershipEvent>(events, ownership_event_end_if()); }
-                            else { if (closed.kind == 20) { vec_push<MirOwnershipEvent>(events, ownership_event_end_while()); } else { return 40; } }
+                            if (closed.kind == source_ownership_if_frame_kind()) { vec_push<MirOwnershipEvent>(events, ownership_event_end_if()); }
+                            else { if (closed.kind == source_ownership_while_frame_kind()) { vec_push<MirOwnershipEvent>(events, ownership_event_end_while()); } else { return 40; } }
                         }
                     }
                 }

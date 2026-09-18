@@ -20,8 +20,14 @@ ownership behavior, and reference/replacement parity.
 - Define symbols at the canonical domain boundary, then migrate consumers.
 - Keep Python and Merit bootstrap representations in explicit parity.
 - Add compatibility assertions before changing consumers of a stable encoding.
-- Do not combine numeric-identifier, call-ABI, performance, ownership, or new
-  language work unless the evidence proves they are causally inseparable.
+- Do not intermingle numeric-identifier, call-ABI, performance, ownership, or
+  new-language edits inside one implementation stage. A deliberately bounded
+  campaign PR may close several separately tracked debt items through ordered,
+  independently committed stages with focused validation after each stage.
+- Prefer one substantial PR per ledger milestone: use staged local checkpoints
+  for bisectability, then pay for one subsystem/full/hosted validation cycle.
+  Split a milestone across PRs only for a concrete dependency, release-risk, or
+  reviewability reason—not merely because its stages can be tested separately.
 - Do not create a repository-wide constants bag or a new schema framework merely
   to avoid local domain definitions.
 - Raw numeric values remain valid at canonical encoding definitions and in tests
@@ -56,7 +62,7 @@ because they contain numbers.
 | N2 | CST/AST expression and declaration kinds; `syntax.mrt` | `syntax.mrt` uses raw kind sets/ranges including `30..45`, `50`, `51`, `60`, `61`, `70`; `merit/bootstrap/ast_contract.py` still has a raw `kind == 33` consumer | Shared semantic discriminants duplicated across Merit/Python | Establish named canonical kind functions/constants and representation tests, then migrate semantic predicates without changing values |
 | N3 | HIR node kinds, type codes, and numeric policies; `hir.mrt` | `hir.mrt` has the densest raw kind comparisons (43 heuristic matches); `merit/bootstrap/hir_parity.py` has named local constants while native consumers such as `mir_source_ownership_expression.mrt` still compare raw HIR kinds | Canonical mapping exists only in pieces | Consolidate domain-owned HIR symbols and prove Python/native parity before consumer migration |
 | N4 | MIR expression/function/instruction kinds; `mir*.mrt` | Raw comparisons occur in `mir.mrt`, `mir_composite.mrt`, `mir_functions.mrt`, `mir_statement_lowering.mrt`, and `merit/bootstrap/mir_function_assembly_parity.py`; some later kinds already use helpers such as `function_mir_kind_struct_construct()` | Mixed symbolic and raw semantic discriminants | Complete the existing symbolic pattern by MIR subdomain; preserve snapshot encodings and source order |
-| N5 | CFG, structured-control, placement, and ownership event/record kinds | N5a names CFG records and structured-control events/frames; `mir_ownership_flow.mrt` still mixes named ownership helpers with raw event/frame/record kinds such as `20..42` for N5b | Active: CFG/structured-control candidate; ownership pending | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
+| N5 | CFG, structured-control, placement, and ownership event/record kinds | N5a names CFG records and structured-control events/frames; N5b names ownership events, records, lifecycle states, and internal frame kinds | Active: N5a merged; N5b candidate | Migrate CFG and ownership families independently with focused control-flow and exact-once cleanup parity tests |
 | N6 | Bootstrap error/status codes and nested status offsets | Hundreds of raw `return N;` sites are concentrated in `mir_source_function_records.mrt`, `lexer.mrt`, `statements.mrt`, and `mir_functions.mrt`; named wrappers still embed offsets such as `370`, `1370`, `2090`, `3000`, and `5000` | Contractual statuses, not ordinary arithmetic | Inventory each status namespace first; name established values and offsets without renumbering; retain negative/fail-closed expectations |
 | N7 | Sentinels and absence encodings | `-1` and `0` represent absent nodes/bindings/results in HIR, MIR, snapshot rows, and ownership records, but also occur as ordinary bounds/counts | Context-dependent sentinel debt | Define domain-specific sentinels only where numeric absence is contractual; do not replace arithmetic zero/negative one mechanically |
 | N8 | Snapshot/bundle framing and row layout | `SNAPSHOT_MAGIC`, `SNAPSHOT_VERSION`, `BUNDLE_MAGIC`, and `BUNDLE_VERSION` are already named; row-width/index consumers remain in `resolved_source_function_snapshot.py` and native snapshot emitters | Canonical representation boundary, mostly compliant | Audit duplicated row indices and add names where semantic; do not hide or renumber canonical wire values |
@@ -174,7 +180,7 @@ meaning.
   after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
   convergence, and replacement acceptance all passed.
 
-### N5a CFG and structured-control identifiers (candidate)
+### N5a CFG and structured-control identifiers (closed by PR #121)
 
 - Canonical Merit owners now name all established CFG record kinds in
   `bootstrap_mir_cfg` and all structured-lowering event kinds in
@@ -206,6 +212,35 @@ meaning.
 - The authoritative local full gate passes with 1159 tests passed, 1 skipped,
   all 10 replacement acceptance projects verified, and a total gate duration
   of 2402.905s.
+- PR #121 merged as `7ff3d1ad3fe70596c077610fe35e345552bbee7b`
+  after Ubuntu/native-Windows full gates, both M9 reproducibility gates, corpus
+  convergence, and replacement acceptance all passed.
+
+### N5b ownership identifiers (candidate)
+
+- `bootstrap_mir_ownership_flow` now canonically names all established
+  ownership event and output-record discriminants, lifecycle states, and its
+  internal if/while/match frame kinds. Source ownership control likewise names
+  its internal if/while frame kinds.
+- Ownership constructors, validation, state transitions, control-flow merging,
+  whole-function assembly, and the Python canonical-MIR adapter consume those
+  symbols without changing any encoded value.
+- `test_bootstrap_ownership_kind_representation_is_stable` locks the complete
+  public Merit event/record/state representation through both the interpreter
+  and generated native C (1 passed in 17.10s). The Python representation test
+  locks matching record and lifecycle constants.
+- Direct cleanup and ownership assembly tests pass (30 passed in 2.78s).
+  Ownership-flow and source-ownership project gates pass (4 passed, longest
+  file 19.14s), and resolved/derived source ownership remains green (2 passed,
+  longest file 19.60s).
+- No event, record, lifecycle, serialization, ABI, source-order, cleanup, move,
+  drop, or control-flow semantic changed. Status values, sentinels, and
+  representation-boundary raw values remain assigned to N6-N10.
+- The bootstrap/project subsystem gate passes with 423 tests passed and 1
+  skipped in 1087.67s (gate duration 1090.03s).
+- The authoritative local full gate passes with 1160 tests passed, 1 skipped,
+  all 10 replacement acceptance projects verified, and a total gate duration
+  of 2442.287s.
 - Hosted cross-platform and merge evidence remain pending.
 
 ## Ordered PR checklist
@@ -220,15 +255,17 @@ meaning.
 - [x] **MIR identifiers (N4, PR #120)** — migrate expression/function/instruction
   consumers while locking snapshot values.
 - [ ] **CFG and ownership identifiers (N5, active)** — N5a CFG and structured
-  control is a candidate; N5b ownership remains pending. Preserve source order,
-  cleanup, move, drop, and control-flow semantics.
-- [ ] **Status namespaces (N6)** — name one bounded status family per coherent
-  PR; never renumber or collapse diagnostic distinctions.
-- [ ] **Sentinel and representation audit (N7-N10)** — migrate only proven
-  semantic consumers; explicitly close compliant boundary/test occurrences as
-  retained.
-- [ ] **Deferred defects (D1-D3)** — independently bisectable call-ABI and
-  infrastructure repairs after numeric migrations no longer obscure them.
+  control closed in PR #121; N5b ownership is the current candidate. Preserve
+  source order, cleanup, move, drop, and control-flow semantics.
+- [ ] **Deferred defects (D2, D3, then D1)** — one staged PR: first remove
+  redundant native-bootstrap construction, then repair WSL pytest-cache
+  handling, then reproduce and repair the independently testable call-ABI
+  corruption. Preserve clean-build coverage and commit each stage separately.
+- [ ] **Status namespaces (N6)** — one staged milestone PR covering the bounded
+  status families; never renumber or collapse diagnostic distinctions.
+- [ ] **Sentinel and representation audit (N7-N10)** — one combined audit PR;
+  migrate only proven semantic consumers and explicitly retain compliant
+  boundary/test occurrences.
 - [ ] **Campaign audit** — prove no unexplained semantic numeric consumer
   remains, all retained raw values are classified, documentation identifies the
   next product frontier, and full Ubuntu/native-Windows gates pass.

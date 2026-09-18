@@ -594,6 +594,78 @@ def test_bootstrap_cfg_structured_kind_representation_is_stable(tmp_path):
     assert native == expected
 
 
+OWNERSHIP_KIND_REPRESENTATION = (
+    ("ownership_event_kind_place", 1),
+    ("ownership_event_kind_activate", 2),
+    ("ownership_event_kind_move", 3),
+    ("ownership_event_kind_drop", 4),
+    ("ownership_event_kind_replace", 5),
+    ("ownership_event_kind_replace_from_binding", 6),
+    ("ownership_event_kind_assign", 7),
+    ("ownership_event_kind_print", 8),
+    ("ownership_event_kind_consume", 9),
+    ("ownership_event_kind_return", 10),
+    ("ownership_event_kind_end_scope", 11),
+    ("ownership_event_kind_use", 12),
+    ("ownership_event_kind_end_trivial_scope", 13),
+    ("ownership_event_kind_if", 20),
+    ("ownership_event_kind_else", 21),
+    ("ownership_event_kind_end_if", 22),
+    ("ownership_event_kind_begin_while", 29),
+    ("ownership_event_kind_while", 30),
+    ("ownership_event_kind_end_while", 31),
+    ("ownership_event_kind_match", 40),
+    ("ownership_event_kind_case", 41),
+    ("ownership_event_kind_end_match", 42),
+    ("ownership_record_kind_activate", 1),
+    ("ownership_record_kind_move", 2),
+    ("ownership_record_kind_drop", 3),
+    ("ownership_record_kind_replace_drop", 4),
+    ("ownership_record_kind_replace_move", 5),
+    ("ownership_record_kind_implicit_drop", 6),
+    ("ownership_record_kind_nested_transfer", 7),
+    ("ownership_state_uninitialized", 0),
+    ("ownership_state_live", 1),
+    ("ownership_state_moved", 2),
+    ("ownership_state_dropped", 3),
+)
+
+
+def test_bootstrap_ownership_kind_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_ownership_kind_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(
+        f"print({name}());" for name, _ in OWNERSHIP_KIND_REPRESENTATION
+    )
+    (project_root / "src/ownership_kind_representation_probe.mrt").write_text(
+        "module ownership_kind_representation_probe\n"
+        "import bootstrap_mir_ownership_flow;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/ownership_kind_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(
+        f"{value}\n" for _, value in OWNERSHIP_KIND_REPRESENTATION
+    )
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
     checker = check(project)
