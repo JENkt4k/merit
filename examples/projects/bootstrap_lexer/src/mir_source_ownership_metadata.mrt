@@ -4,6 +4,15 @@ import bootstrap_mir_functions;
 import bootstrap_mir_ownership_flow;
 
 capability allocate;
+pub fn ownership_metadata_invalid_type_catalog_status()->i32{return 1;}
+pub fn ownership_metadata_missing_binding_status()->i32{return 2;}
+pub fn ownership_metadata_missing_declared_type_status()->i32{return 3;}
+pub fn ownership_metadata_unresolved_declared_type_status()->i32{return 4;}
+pub fn ownership_metadata_validation_missing_binding_status()->i32{return 1;}
+pub fn ownership_metadata_validation_binding_id_status()->i32{return 2;}
+pub fn ownership_metadata_validation_local_id_status()->i32{return 3;}
+pub fn ownership_metadata_validation_mutability_status()->i32{return 4;}
+pub fn ownership_metadata_validation_count_status()->i32{return 5;}
 
 // Typed declaration/source metadata supplies type ownership once per type.
 // Function-local binding IDs, local IDs and mutability are derived from the
@@ -92,10 +101,10 @@ requires_caps [allocate]
     var type_index: i64 = 0;
     while (type_index < vec_len<SourceTypeOwnershipEntry>(type_catalog)) {
         let type_entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(type_catalog, type_index);
-        if (type_entry.name_start < 0) { return 1; }
-        if (type_entry.name_length <= 0) { return 1; }
-        if (type_entry.owned < 0) { return 1; }
-        if (type_entry.owned > 1) { return 1; }
+        if (type_entry.name_start < 0) { return ownership_metadata_invalid_type_catalog_status(); }
+        if (type_entry.name_length <= 0) { return ownership_metadata_invalid_type_catalog_status(); }
+        if (type_entry.owned < 0) { return ownership_metadata_invalid_type_catalog_status(); }
+        if (type_entry.owned > 1) { return ownership_metadata_invalid_type_catalog_status(); }
         type_index = checked_add(type_index, 1);
     }
 
@@ -106,15 +115,15 @@ requires_caps [allocate]
         let kind: i32 = statement_record_kind(statement);
         if (som_binding_kind(kind) != 0) {
             let binding_index: i64 = som_operand(statement, operands, 1);
-            if (binding_index < 0) { return 2; }
+            if (binding_index < 0) { return ownership_metadata_missing_binding_status(); }
             let declared_type_index: i64 = som_operand(statement, operands, 2);
-            if (declared_type_index < 0) { return 3; }
+            if (declared_type_index < 0) { return ownership_metadata_missing_declared_type_status(); }
             let declared_type: StatementOperand = vec_get<StatementOperand>(operands, declared_type_index);
             let catalog_index: i64 = som_find_type(
                 source, type_catalog,
                 statement_operand_start(declared_type), statement_operand_length(declared_type)
             );
-            if (catalog_index < 0) { return 4; }
+            if (catalog_index < 0) { return ownership_metadata_unresolved_declared_type_status(); }
             let type_entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(type_catalog, catalog_index);
             var mutable: i32 = 0;
             if (kind == 21) { mutable = 1; }
@@ -140,24 +149,24 @@ pub fn validate_derived_source_ownership_bindings(
     while (record_index < vec_len<MirFunctionRecord>(body_records)) {
         let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, record_index);
         if (function_mir_kind(record) == function_mir_kind_source_local()) {
-            if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return 1; }
+            if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return ownership_metadata_validation_missing_binding_status(); }
             let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
-            if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return 2; }
-            if (ownership_binding_local_id(binding) != function_mir_id(record)) { return 3; }
-            if (ownership_binding_mutable(binding) != function_mir_mutable(record)) { return 4; }
+            if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return ownership_metadata_validation_binding_id_status(); }
+            if (ownership_binding_local_id(binding) != function_mir_id(record)) { return ownership_metadata_validation_local_id_status(); }
+            if (ownership_binding_mutable(binding) != function_mir_mutable(record)) { return ownership_metadata_validation_mutability_status(); }
             binding_index = checked_add(binding_index, 1);
         } else {
             if (function_mir_kind(record) == function_mir_kind_parameter()) {
-                if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return 1; }
+                if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return ownership_metadata_validation_missing_binding_status(); }
                 let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
-                if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return 2; }
-                if (ownership_binding_local_id(binding) != function_mir_id(record)) { return 3; }
-                if (ownership_binding_mutable(binding) != function_mir_mutable(record)) { return 4; }
+                if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return ownership_metadata_validation_binding_id_status(); }
+                if (ownership_binding_local_id(binding) != function_mir_id(record)) { return ownership_metadata_validation_local_id_status(); }
+                if (ownership_binding_mutable(binding) != function_mir_mutable(record)) { return ownership_metadata_validation_mutability_status(); }
                 binding_index = checked_add(binding_index, 1);
             }
         }
         record_index = checked_add(record_index, 1);
     }
-    if (binding_index != vec_len<MirOwnershipBinding>(bindings)) { return 5; }
+    if (binding_index != vec_len<MirOwnershipBinding>(bindings)) { return ownership_metadata_validation_count_status(); }
     return 0;
 }
