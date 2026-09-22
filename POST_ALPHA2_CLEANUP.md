@@ -302,6 +302,8 @@ meaning.
   pass across contracts, structured/statement lowering, assembly, ownership,
   HIR, generics, lifecycle, MIR, and AST validation; no language semantic,
   serialization, ABI value, or diagnostic distinction changed.
+- The bootstrap/project subsystem gate passes with 426 tests passed and 1
+  skipped in 1196.60s (gate duration 1199.642s).
 
 ## Ordered PR checklist
 
