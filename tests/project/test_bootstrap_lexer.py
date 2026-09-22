@@ -871,6 +871,11 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("function_contract_numeric_type_mismatch_status()", 33),
     ("clause_metadata_invalid_kind_status()", 10),
     ("clause_metadata_invalid_semantic_id_status()", 14),
+    ("structured_status_place_after_termination()", 2),
+    ("structured_status_duplicate_else()", 10),
+    ("structured_status_missing_default()", 30),
+    ("structured_status_missing_terminator()", 34),
+    ("structured_status_missing_while_condition()", 41),
 )
 
 
@@ -900,6 +905,7 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_resolved_control_flow;\n"
         "import bootstrap_mir_function_contracts;\n"
         "import bootstrap_mir_function_clause_metadata;\n"
+        "import bootstrap_mir_structured_lowering;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )
