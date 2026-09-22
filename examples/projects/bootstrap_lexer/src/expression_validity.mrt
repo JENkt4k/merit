@@ -4,6 +4,10 @@ import bootstrap_syntax;
 import bootstrap_expression_spans;
 
 capability allocate;
+pub fn expression_validity_structure_status()->i32{return 1;}
+pub fn expression_validity_invalid_node_status()->i32{return 2;}
+pub fn expression_validity_root_span_status()->i32{return 3;}
+pub fn expression_validity_requested_span_status()->i32{return 4;}
 
 // Stable bootstrap-expression-validity-v1 result codes:
 // 0 complete valid expression
@@ -12,29 +16,29 @@ capability allocate;
 // 3 root expression does not consume exactly the requested source span
 // 4 invalid requested source span
 pub fn validate_expression_parse(borrow expressions: Vec<ExpressionNode>, start: i64, length: i64) -> i32 {
-    if (start < 0) { return 4; }
-    if (length < 0) { return 4; }
-    if (validate_expression_ast_records(expressions) != 0) { return 1; }
+    if (start < 0) { return expression_validity_requested_span_status(); }
+    if (length < 0) { return expression_validity_requested_span_status(); }
+    if (validate_expression_ast_records(expressions) != 0) { return expression_validity_structure_status(); }
 
     var index: i64 = 0;
     while (index < vec_len<ExpressionNode>(expressions)) {
         let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
-        if (expression_kind(expression) == 39) { return 2; }
+        if (expression_kind(expression) == ast_invalid_kind()) { return expression_validity_invalid_node_status(); }
         index = checked_add(index, 1);
     }
 
     let root_index: i64 = checked_sub(vec_len<ExpressionNode>(expressions), 1);
     let root: ExpressionNode = vec_get<ExpressionNode>(expressions, root_index);
-    if (expression_start(root) != start) { return 3; }
-    if (expression_length(root) != length) { return 3; }
+    if (expression_start(root) != start) { return expression_validity_root_span_status(); }
+    if (expression_length(root) != length) { return expression_validity_root_span_status(); }
     return 0;
 }
 
 pub fn validate_expression_span_parse(borrow source: Buffer, borrow tokens: Vec<Token>, start: i64, length: i64, allocator: Allocator) -> i32
 requires_caps [allocate]
 {
-    if (start < 0) { return 4; }
-    if (length < 0) { return 4; }
+    if (start < 0) { return expression_validity_requested_span_status(); }
+    if (length < 0) { return expression_validity_requested_span_status(); }
     let expressions: Vec<ExpressionNode> = parse_expression_span(source, tokens, start, length, allocator);
     let result: i32 = validate_expression_parse(expressions, start, length);
     drop(expressions);
