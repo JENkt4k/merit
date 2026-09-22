@@ -64,7 +64,12 @@ pub fn lower_source_function_semantics_from_catalog(
     );
 }
 
-fn source_function_body_failure_status(status:i32)->i32{return checked_add(100,status);}
+pub fn source_function_body_failure_status(status:i32)->i32{return checked_add(100,status);}
+pub fn source_function_binding_order_status()->i32{return 201;}
+pub fn source_function_metadata_failure_status(status:i32)->i32{return checked_add(300,status);}
+pub fn source_function_metadata_validation_failure_status(status:i32)->i32{return checked_add(400,status);}
+pub fn source_function_contract_failure_status(status:i32)->i32{return checked_add(500,status);}
+pub fn source_function_contract_validation_failure_status(status:i32)->i32{return checked_add(600,status);}
 
 fn finish_source_function_semantics(
     borrow source:Buffer,borrow tokens:Vec<Token>,borrow struct_catalog:Vec<I64StructCatalogEntry>,
@@ -82,7 +87,7 @@ fn finish_source_function_semantics(
         if (function_mir_kind(record) == function_mir_kind_parameter()) { named_binding = 1; }
         if (named_binding != 0) {
             let expected_binding: i64 = vec_len<i64>(binding_starts);
-            if (function_mir_binding_id(record) != expected_binding) { return 201; }
+            if (function_mir_binding_id(record) != expected_binding) { return source_function_binding_order_status(); }
             vec_push<i64>(binding_starts, function_mir_start(record));
             vec_push<i64>(binding_lengths, function_mir_length(record));
         }
@@ -95,17 +100,17 @@ fn finish_source_function_semantics(
     let metadata_status: i32 = lower_function_clause_metadata(
         source, clauses, clause_operands, capability_catalog, clause_metadata
     );
-    if (metadata_status != 0) { return checked_add(300, metadata_status); }
+    if (metadata_status != 0) { return source_function_metadata_failure_status(metadata_status); }
     let metadata_validation: i32 = validate_function_clause_metadata(clause_metadata);
-    if (metadata_validation != 0) { return checked_add(400, metadata_validation); }
+    if (metadata_validation != 0) { return source_function_metadata_validation_failure_status(metadata_validation); }
 
     let contract_status: i32 = lower_typed_function_contract_mir(
         source, tokens, clauses, clause_operands,
         binding_starts, binding_lengths, body_records, struct_catalog, allocator, contract_records
     );
-    if (contract_status != 0) { return checked_add(500, contract_status); }
+    if (contract_status != 0) { return source_function_contract_failure_status(contract_status); }
     let contract_validation: i32 = validate_function_contract_mir(contract_records);
-    if (contract_validation != 0) { return checked_add(600, contract_validation); }
+    if (contract_validation != 0) { return source_function_contract_validation_failure_status(contract_validation); }
 
     drop(clause_operands);
     drop(clauses);

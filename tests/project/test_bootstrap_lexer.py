@@ -666,6 +666,245 @@ def test_bootstrap_ownership_kind_representation_is_stable(tmp_path):
     assert native == expected
 
 
+STATUS_NAMESPACE_REPRESENTATION = (
+    ("function_mir_too_few_records_status()", 1),
+    ("function_mir_invalid_header_kind_status()", 2),
+    ("function_mir_invalid_header_span_status()", 3),
+    ("function_mir_invalid_header_symbol_status()", 4),
+    ("function_mir_invalid_header_type_status()", 5),
+    ("function_mir_record_after_return_status()", 6),
+    ("function_mir_invalid_source_local_id_status()", 7),
+    ("function_mir_invalid_source_local_span_status()", 8),
+    ("function_mir_invalid_source_local_type_status()", 9),
+    ("function_mir_invalid_source_local_binding_status()", 10),
+    ("function_mir_invalid_source_local_mutability_status()", 11),
+    ("function_mir_invalid_temporary_id_status()", 12),
+    ("function_mir_invalid_temporary_type_status()", 13),
+    ("function_mir_invalid_temporary_hir_status()", 14),
+    ("function_mir_invalid_const_id_status()", 15),
+    ("function_mir_invalid_const_result_status()", 16),
+    ("function_mir_invalid_const_span_status()", 17),
+    ("function_mir_invalid_const_type_status()", 18),
+    ("function_mir_invalid_const_hir_status()", 19),
+    ("function_mir_invalid_binary_id_status()", 20),
+    ("function_mir_invalid_binary_operand_status()", 21),
+    ("function_mir_invalid_binary_symbol_status()", 22),
+    ("function_mir_invalid_binary_type_status()", 23),
+    ("function_mir_invalid_binary_policy_status()", 24),
+    ("function_mir_invalid_binary_hir_status()", 25),
+    ("function_mir_invalid_copy_id_status()", 26),
+    ("function_mir_invalid_copy_operand_status()", 27),
+    ("function_mir_invalid_copy_binding_status()", 28),
+    ("function_mir_invalid_copy_hir_status()", 29),
+    ("function_mir_invalid_return_operand_status()", 30),
+    ("function_mir_invalid_return_hir_status()", 31),
+    ("function_mir_unknown_record_kind_status()", 32),
+    ("function_mir_missing_return_status()", 33),
+    ("function_mir_invalid_print_id_status()", 34),
+    ("function_mir_invalid_print_operand_status()", 35),
+    ("function_mir_invalid_print_hir_status()", 36),
+    ("function_mir_invalid_enum_id_status()", 37),
+    ("function_mir_invalid_enum_operand_status()", 38),
+    ("function_mir_invalid_enum_hir_status()", 39),
+    ("function_mir_invalid_enum_type_status()", 40),
+    ("function_mir_invalid_enum_symbol_status()", 41),
+    ("function_mir_invalid_struct_record_status()", 42),
+    ("function_mir_invalid_callable_header_status()", 43),
+    ("function_mir_invalid_parameter_status()", 44),
+    ("function_mir_invalid_call_status()", 45),
+    ("function_mir_invalid_call_argument_status()", 46),
+    ("function_mir_parameter_count_mismatch_status()", 47),
+    ("sfr_signature_missing_header_status()", 1),
+    ("sfr_signature_invalid_name_status()", 2),
+    ("sfr_signature_missing_parameter_list_status()", 3),
+    ("sfr_signature_invalid_parameter_status()", 4),
+    ("sfr_signature_unresolved_parameter_type_status()", 5),
+    ("sfr_signature_unclosed_parameter_list_status()", 6),
+    ("sfr_signature_missing_return_status()", 7),
+    ("sfr_signature_unresolved_return_type_status()", 8),
+    ("sfr_signature_unresolved_borrow_origin_status()", 9),
+    ("sfr_signature_owned_borrow_origin_status()", 10),
+    ("sfr_signature_mutable_origin_required_status()", 11),
+    ("sfr_signature_inconsistent_borrow_origin_status()", 12),
+    ("sfr_signature_invalid_body_status()", 13),
+    ("sfr_invalid_function_header_status()", 1),
+    ("sfr_missing_let_binding_status()", 2),
+    ("sfr_missing_var_binding_status()", 3),
+    ("sfr_missing_let_type_status()", 4),
+    ("sfr_missing_var_type_status()", 5),
+    ("sfr_invalid_let_expression_status()", 10),
+    ("sfr_invalid_var_expression_status()", 12),
+    ("sfr_invalid_return_expression_status()", 14),
+    ("sfr_invalid_if_expression_status()", 16),
+    ("sfr_invalid_while_expression_status()", 18),
+    ("sfr_invalid_assignment_operands_status()", 20),
+    ("sfr_invalid_assignment_target_status()", 21),
+    ("sfr_invalid_assignment_value_status()", 22),
+    ("sfr_invalid_expression_statement_status()", 23),
+    ("sfr_invalid_expression_result_status()", 24),
+    ("sfr_invalid_print_expression_status()", 25),
+    ("sfr_invalid_drop_operand_status()", 27),
+    ("sfr_invalid_drop_expression_status()", 28),
+    ("sfr_expression_invalid_struct_symbol_status()", 62),
+    ("sfr_expression_unresolved_struct_type_status()", 63),
+    ("sfr_expression_missing_struct_initializer_status()", 64),
+    ("sfr_expression_invalid_struct_initializer_status()", 65),
+    ("sfr_expression_invalid_struct_receiver_status()", 66),
+    ("sfr_expression_unresolved_struct_receiver_status()", 67),
+    ("sfr_expression_unknown_failure_status()", 68),
+    ("sfr_borrowed_value_storage_status()", 69),
+    ("sfr_duplicate_current_signature_status()", 79),
+    ("sfr_missing_current_signature_status()", 80),
+    ("sfr_try_result_shape_status()", 81),
+    ("sfr_ownership_binding_order_status()", 82),
+    ("sfr_expression_call_argument_count_status()", 90),
+    ("sfr_expression_call_argument_expression_status()", 91),
+    ("sfr_expression_call_argument_type_status()", 92),
+    ("sfr_expression_borrowed_argument_by_value_status()", 93),
+    ("sfr_expression_move_while_loaned_status()", 94),
+    ("sfr_expression_unresolved_borrow_root_status()", 95),
+    ("sfr_expression_shared_to_mutable_borrow_status()", 96),
+    ("sfr_expression_immutable_mutable_borrow_status()", 97),
+    ("sfr_expression_borrow_of_moved_value_status()", 98),
+    ("sfr_expression_conflicting_loan_status()", 99),
+    ("sfr_expression_invalid_call_callee_status()", 100),
+    ("sfr_expression_unresolved_call_or_variant_status()", 101),
+    ("sfr_expression_conflicting_numeric_domain_status()", 102),
+    ("sfr_expression_unresolved_variant_status()", 103),
+    ("sfr_callable_catalog_status(7)", 17),
+    ("sfr_function_signature_status(7)", 77),
+    ("sfr_parameter_ownership_status(7)", 87),
+    ("lower_resolved_source_function_semantics_catalog_failure_status(7)", 377),
+    ("resolved_pipeline_function_failure_status(7)", 207),
+    ("resolved_pipeline_match_arm_failure_status(7)", 307),
+    ("resolved_pipeline_capability_scope_record_failure_status(7)", 407),
+    ("resolved_pipeline_match_identity_failure_status(7)", 507),
+    ("resolved_pipeline_match_resolution_failure_status(7)", 527),
+    ("resolved_pipeline_match_identity_resolution_failure_status(7)", 27),
+    ("resolved_pipeline_capability_scope_resolution_failure_status(7)", 607),
+    ("resolved_pipeline_allocation_capability_failure_status(7)", 657),
+    ("resolved_pipeline_ownership_source_failure_status(7)", 707),
+    ("resolved_pipeline_ownership_flow_failure_status(7)", 807),
+    ("resolved_pipeline_ownership_validation_failure_status(7)", 907),
+    ("resolved_pipeline_return_surface_failure_status(7)", 1007),
+    ("resolved_pipeline_unresolved_local_type_status()", 201),
+    ("resolved_parameter_metadata_status(7)", 87),
+    ("lower_resolved_source_function_assembly_catalog_failure_status(7)", 1377),
+    ("resolved_assembly_semantic_failure_status(7)", 1007),
+    ("resolved_assembly_stats_failure_status(7)", 2007),
+    ("resolved_assembly_invalid_stats_status()", 2005),
+    ("resolved_assembly_missing_return_status()", 2006),
+    ("resolved_assembly_plan_failure_status(7)", 3007),
+    ("resolved_assembly_event_failure_status(7)", 4007),
+    ("resolved_assembly_cfg_failure_status(7)", 5007),
+    ("resolved_assembly_invalid_sources_status()", 6001),
+    ("resolved_assembly_placement_count_status()", 6002),
+    ("lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(7)", 97),
+    ("resolved_source_types_metadata_failure_status(7)", 107),
+    ("resolved_source_types_assembly_failure_status(7)", 1007),
+    ("lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(7)", 1097),
+    ("resolved_source_tokens_type_failure_status(7)", 57),
+    ("resolved_source_tokens_assembly_failure_status(7)", 1007),
+    ("source_function_body_failure_status(7)", 107),
+    ("source_function_binding_order_status()", 201),
+    ("source_function_metadata_failure_status(7)", 307),
+    ("source_function_metadata_validation_failure_status(7)", 407),
+    ("source_function_contract_failure_status(7)", 507),
+    ("source_function_contract_validation_failure_status(7)", 607),
+    ("native_driver_missing_function_status()", 901),
+    ("native_driver_unopened_function_body_status()", 902),
+    ("native_driver_unclosed_function_body_status()", 903),
+    ("native_driver_invalid_function_slice_status()", 904),
+    ("native_driver_unclosed_function_slice_status()", 905),
+    ("native_driver_function_count_mismatch_status()", 906),
+    ("native_driver_enum_catalog_failure_status(7)", 927),
+    ("native_driver_capability_catalog_failure_status(7)", 957),
+    ("native_driver_numeric_descriptor_failure_status(7)", 992),
+    ("native_driver_assembly_failure_status(7)", 1007),
+    ("native_driver_bundle_header_failure_status(7)", 2007),
+    ("native_driver_bundle_item_failure_status(7)", 3007),
+    ("native_driver_callable_catalog_failure_status(7)", 2097),
+    ("ownership_status_empty_event_stream()", 1),
+    ("ownership_status_invalid_binding_id()", 2),
+    ("ownership_status_invalid_binding_local()", 3),
+    ("ownership_status_invalid_owned_flag()", 4),
+    ("ownership_status_invalid_mutable_flag()", 5),
+    ("ownership_status_place_after_termination()", 20),
+    ("ownership_status_move_destination_initialized()", 30),
+    ("ownership_status_drop_after_termination()", 31),
+    ("ownership_status_invalid_replace_local()", 40),
+    ("ownership_status_return_after_termination()", 41),
+    ("ownership_status_while_wrong_frame()", 56),
+    ("ownership_status_if_without_else_diverged()", 61),
+    ("ownership_status_unclosed_control_frame()", 65),
+    ("ownership_status_missing_replace_target()", 66),
+    ("ownership_status_replace_source_not_live()", 73),
+    ("ownership_status_replace_binding_after_termination()", 74),
+    ("ownership_status_incomplete_match_cases()", 85),
+    ("ownership_status_assign_after_termination()", 90),
+    ("ownership_status_scope_binding_uninitialized()", 104),
+    ("ownership_status_live_at_scope_exit()", 105),
+    ("ownership_status_use_binding_not_live()", 108),
+    ("ownership_record_status_invalid_kind()", 1),
+    ("ownership_record_status_nested_transfer_has_instruction()", 10),
+    ("source_control_missing_binding_status()", 10),
+    ("source_control_invalid_return_expression_status()", 20),
+    ("source_control_invalid_assign_value_status()", 39),
+    ("source_control_missing_scope_binding_status()", 45),
+    ("source_control_invalid_match_arm_count_status()", 50),
+    ("source_control_expression_failure_status(-1)", 61),
+    ("source_control_expression_failure_status(-5)", 65),
+    ("source_control_expression_failure_status(-9)", 66),
+    ("source_control_missing_drop_operand_status()", 67),
+    ("source_control_invalid_try_value_status()", 73),
+    ("source_control_match_without_arms_status()", 127),
+    ("source_control_missing_capability_scope_status()", 128),
+    ("source_control_unknown_statement_status(31)", 131),
+)
+
+
+def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_status_namespace_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(
+        f"print({expression});" for expression, _ in STATUS_NAMESPACE_REPRESENTATION
+    )
+    (project_root / "src/status_namespace_representation_probe.mrt").write_text(
+        "module status_namespace_representation_probe\n"
+        "import bootstrap_mir_functions;\n"
+        "import bootstrap_mir_source_function_records;\n"
+        "import bootstrap_mir_source_function_pipeline;\n"
+        "import bootstrap_mir_resolved_source_function_pipeline;\n"
+        "import bootstrap_mir_resolved_source_function_assembly;\n"
+        "import bootstrap_mir_ownership_flow;\n"
+        "import bootstrap_mir_source_ownership_control;\n"
+        "import bootstrap_native_replacement_driver;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/status_namespace_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(
+        f"{value}\n" for _, value in STATUS_NAMESPACE_REPRESENTATION
+    )
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
 def test_bootstrap_lexer_matches_interpreter_native_and_ordered_c(tmp_path):
     project = load_project(MANIFEST)
     checker = check(project)

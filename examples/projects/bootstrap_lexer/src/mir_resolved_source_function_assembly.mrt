@@ -22,7 +22,7 @@ import bootstrap_mir_cfg_placement;
 
 capability allocate;
 
-fn resolved_parameter_metadata_status(status:i32)->i32{return checked_add(80,status);}
+pub fn resolved_parameter_metadata_status(status:i32)->i32{return checked_add(80,status);}
 
 // Complete native source-function assembly boundary. Semantic lowering owns
 // source interpretation; this stage only derives namespace sizes, inserts
@@ -72,7 +72,16 @@ requires_caps [allocate]
 }
 
 // Preserve the existing nested stage-status encoding at the source-only boundary.
-fn lower_resolved_source_function_assembly_catalog_failure_status(status:i32)->i32{return checked_add(1370,status);}
+pub fn lower_resolved_source_function_assembly_catalog_failure_status(status:i32)->i32{return checked_add(1370,status);}
+pub fn resolved_assembly_semantic_failure_status(status:i32)->i32{return checked_add(1000,status);}
+pub fn resolved_assembly_stats_failure_status(status:i32)->i32{return checked_add(2000,status);}
+pub fn resolved_assembly_invalid_stats_status()->i32{return 2005;}
+pub fn resolved_assembly_missing_return_status()->i32{return 2006;}
+pub fn resolved_assembly_plan_failure_status(status:i32)->i32{return checked_add(3000,status);}
+pub fn resolved_assembly_event_failure_status(status:i32)->i32{return checked_add(4000,status);}
+pub fn resolved_assembly_cfg_failure_status(status:i32)->i32{return checked_add(5000,status);}
+pub fn resolved_assembly_invalid_sources_status()->i32{return 6001;}
+pub fn resolved_assembly_placement_count_status()->i32{return 6002;}
 
 pub fn lower_resolved_source_function_assembly_with_catalog(
     borrow catalog_tokens:Vec<Token>,
@@ -113,39 +122,39 @@ requires_caps [allocate]
         resolved_arms, resolved_scopes, ownership_events, capability_effects,
         canonical_events, ownership_records
     );
-    if (semantic_status != 0) { return checked_add(1000, semantic_status); }
+    if (semantic_status != 0) { return resolved_assembly_semantic_failure_status(semantic_status); }
 
     var stats: Vec<i64> = vec_new<i64>(allocator, 4);
     let stats_status: i32 = source_function_record_stats(body_records, stats);
-    if (stats_status != 0) { return checked_add(2000, stats_status); }
-    if (vec_len<i64>(stats) != 4) { return 2005; }
+    if (stats_status != 0) { return resolved_assembly_stats_failure_status(stats_status); }
+    if (vec_len<i64>(stats) != 4) { return resolved_assembly_invalid_stats_status(); }
     let binding_count: i64 = vec_get<i64>(stats, 0);
     let body_local_count: i64 = vec_get<i64>(stats, 1);
     let body_instruction_count: i64 = vec_get<i64>(stats, 2);
     let return_count: i64 = vec_get<i64>(stats, 3);
-    if (return_count <= 0) { return 2006; }
+    if (return_count <= 0) { return resolved_assembly_missing_return_status(); }
 
     let plan_status: i32 = plan_function_contract_namespace(
         clause_metadata, contract_records, binding_count, body_local_count,
         contract_locals, required_capabilities
     );
-    if (plan_status != 0) { return checked_add(3000, plan_status); }
+    if (plan_status != 0) { return resolved_assembly_plan_failure_status(plan_status); }
 
     let assembly_status: i32 = assemble_function_mir_events_with_ownership(
         contract_records, canonical_events, ownership_records, ownership_metadata,
         binding_count, body_local_count, body_instruction_count, allocator,
         assembled_events, instruction_sources
     );
-    if (assembly_status != 0) { return checked_add(4000, assembly_status); }
+    if (assembly_status != 0) { return resolved_assembly_event_failure_status(assembly_status); }
 
     let cfg_status: i32 = lower_structured_mir(
         assembled_events, allocator, cfg_records, placements
     );
-    if (cfg_status != 0) { return checked_add(5000, cfg_status); }
+    if (cfg_status != 0) { return resolved_assembly_cfg_failure_status(cfg_status); }
 
-    if (validate_function_assembly_sources(instruction_sources) != 0) { return 6001; }
+    if (validate_function_assembly_sources(instruction_sources) != 0) { return resolved_assembly_invalid_sources_status(); }
     if (vec_len<MirPlacementRecord>(placements) != vec_len<MirFunctionInstructionSource>(instruction_sources)) {
-        return 6002;
+        return resolved_assembly_placement_count_status();
     }
 
     drop(stats);
@@ -202,7 +211,9 @@ requires_caps [allocate]
 }
 
 // Preserve the existing nested stage-status encoding at the source-only boundary.
-fn lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(status:i32)->i32{return checked_add(90,status);}
+pub fn lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(status:i32)->i32{return checked_add(90,status);}
+pub fn resolved_source_types_metadata_failure_status(status:i32)->i32{return checked_add(100,status);}
+pub fn resolved_source_types_assembly_failure_status(status:i32)->i32{return checked_add(1000,status);}
 
 pub fn lower_resolved_source_function_assembly_from_source_types_with_catalog(
     borrow catalog_tokens:Vec<Token>,
@@ -243,7 +254,7 @@ requires_caps [allocate]
     let metadata_status: i32 = derive_source_ownership_bindings(
         source, statements, statement_operands, type_ownership_catalog, ownership_metadata
     );
-    if (metadata_status != 0) { return checked_add(100, metadata_status); }
+    if (metadata_status != 0) { return resolved_source_types_metadata_failure_status(metadata_status); }
 
     let assembly_status: i32 = lower_resolved_source_function_assembly_with_catalog(catalog_tokens,callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands,
@@ -253,7 +264,7 @@ requires_caps [allocate]
         ownership_records, contract_locals, required_capabilities,
         instruction_sources, assembled_events, cfg_records, placements
     );
-    if (assembly_status != 0) { return checked_add(1000, assembly_status); }
+    if (assembly_status != 0) { return resolved_source_types_assembly_failure_status(assembly_status); }
 
     let binding_validation: i32 = validate_derived_source_ownership_bindings(
         body_records, ownership_metadata
@@ -312,7 +323,9 @@ requires_caps [allocate]
 }
 
 // Preserve the existing nested stage-status encoding at the source-only boundary.
-fn lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(status:i32)->i32{return checked_add(1090,status);}
+pub fn lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(status:i32)->i32{return checked_add(1090,status);}
+pub fn resolved_source_tokens_type_failure_status(status:i32)->i32{return checked_add(50,status);}
+pub fn resolved_source_tokens_assembly_failure_status(status:i32)->i32{return checked_add(1000,status);}
 
 pub fn lower_resolved_source_function_assembly_from_catalog(
     borrow catalog_tokens:Vec<Token>,
@@ -352,7 +365,7 @@ requires_caps [allocate]
     let type_status: i32 = derive_source_type_ownership_catalog(
         source, declaration_tokens, statements, statement_operands, type_ownership
     );
-    if (type_status != 0) { return checked_add(50, type_status); }
+    if (type_status != 0) { return resolved_source_tokens_type_failure_status(type_status); }
 
     let assembly_status: i32 = lower_resolved_source_function_assembly_from_source_types_with_catalog(catalog_tokens,callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands,
@@ -362,7 +375,7 @@ requires_caps [allocate]
         ownership_records, contract_locals, required_capabilities,
         instruction_sources, assembled_events, cfg_records, placements
     );
-    if (assembly_status != 0) { return checked_add(1000, assembly_status); }
+    if (assembly_status != 0) { return resolved_source_tokens_assembly_failure_status(assembly_status); }
     drop(type_ownership);
     return 0;
 }

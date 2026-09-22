@@ -32,47 +32,73 @@ fn sfr_invalid_call_callee_error() -> i64 { return -20; }
 fn sfr_unresolved_call_or_variant_error() -> i64 { return -21; }
 fn sfr_conflicting_numeric_domain_error() -> i64 { return -38; }
 fn sfr_unresolved_variant_error() -> i64 { return -39; }
-fn sfr_expression_call_argument_count_status() -> i32 { return 90; }
-fn sfr_expression_call_argument_expression_status() -> i32 { return 91; }
-fn sfr_expression_call_argument_type_status() -> i32 { return 92; }
-fn sfr_expression_borrowed_argument_by_value_status() -> i32 { return 93; }
-fn sfr_expression_move_while_loaned_status() -> i32 { return 94; }
-fn sfr_expression_unresolved_borrow_root_status() -> i32 { return 95; }
-fn sfr_expression_shared_to_mutable_borrow_status() -> i32 { return 96; }
-fn sfr_expression_immutable_mutable_borrow_status() -> i32 { return 97; }
-fn sfr_expression_borrow_of_moved_value_status() -> i32 { return 98; }
-fn sfr_expression_conflicting_loan_status() -> i32 { return 99; }
-fn sfr_expression_invalid_call_callee_status() -> i32 { return 100; }
-fn sfr_expression_unresolved_call_or_variant_status() -> i32 { return 101; }
-fn sfr_expression_conflicting_numeric_domain_status() -> i32 { return 102; }
-fn sfr_expression_unresolved_variant_status() -> i32 { return 103; }
-fn sfr_signature_missing_header_status() -> i32 { return 1; }
-fn sfr_signature_invalid_name_status() -> i32 { return 2; }
-fn sfr_signature_missing_parameter_list_status() -> i32 { return 3; }
-fn sfr_signature_invalid_parameter_status() -> i32 { return 4; }
-fn sfr_signature_unresolved_parameter_type_status() -> i32 { return 5; }
-fn sfr_signature_unclosed_parameter_list_status() -> i32 { return 6; }
-fn sfr_signature_missing_return_status() -> i32 { return 7; }
-fn sfr_signature_unresolved_return_type_status() -> i32 { return 8; }
-fn sfr_signature_unresolved_borrow_origin_status() -> i32 { return 9; }
-fn sfr_signature_owned_borrow_origin_status() -> i32 { return 10; }
-fn sfr_signature_mutable_origin_required_status() -> i32 { return 11; }
-fn sfr_signature_inconsistent_borrow_origin_status() -> i32 { return 12; }
-fn sfr_signature_invalid_body_status() -> i32 { return 13; }
-fn sfr_callable_catalog_status(status:i32) -> i32 { return checked_add(10,status); }
-fn sfr_function_signature_status(status:i32) -> i32 { return checked_add(70,status); }
-fn sfr_parameter_ownership_status(status:i32) -> i32 { return checked_add(80,status); }
-fn sfr_borrowed_value_storage_status() -> i32 { return 69; }
-fn sfr_try_result_shape_status() -> i32 { return 81; }
-fn sfr_duplicate_current_signature_status() -> i32 { return 79; }
-fn sfr_missing_current_signature_status() -> i32 { return 80; }
+pub fn sfr_expression_call_argument_count_status() -> i32 { return 90; }
+pub fn sfr_expression_call_argument_expression_status() -> i32 { return 91; }
+pub fn sfr_expression_call_argument_type_status() -> i32 { return 92; }
+pub fn sfr_expression_borrowed_argument_by_value_status() -> i32 { return 93; }
+pub fn sfr_expression_move_while_loaned_status() -> i32 { return 94; }
+pub fn sfr_expression_unresolved_borrow_root_status() -> i32 { return 95; }
+pub fn sfr_expression_shared_to_mutable_borrow_status() -> i32 { return 96; }
+pub fn sfr_expression_immutable_mutable_borrow_status() -> i32 { return 97; }
+pub fn sfr_expression_borrow_of_moved_value_status() -> i32 { return 98; }
+pub fn sfr_expression_conflicting_loan_status() -> i32 { return 99; }
+pub fn sfr_expression_invalid_call_callee_status() -> i32 { return 100; }
+pub fn sfr_expression_unresolved_call_or_variant_status() -> i32 { return 101; }
+pub fn sfr_expression_conflicting_numeric_domain_status() -> i32 { return 102; }
+pub fn sfr_expression_unresolved_variant_status() -> i32 { return 103; }
+pub fn sfr_signature_missing_header_status() -> i32 { return 1; }
+pub fn sfr_signature_invalid_name_status() -> i32 { return 2; }
+pub fn sfr_signature_missing_parameter_list_status() -> i32 { return 3; }
+pub fn sfr_signature_invalid_parameter_status() -> i32 { return 4; }
+pub fn sfr_signature_unresolved_parameter_type_status() -> i32 { return 5; }
+pub fn sfr_signature_unclosed_parameter_list_status() -> i32 { return 6; }
+pub fn sfr_signature_missing_return_status() -> i32 { return 7; }
+pub fn sfr_signature_unresolved_return_type_status() -> i32 { return 8; }
+pub fn sfr_signature_unresolved_borrow_origin_status() -> i32 { return 9; }
+pub fn sfr_signature_owned_borrow_origin_status() -> i32 { return 10; }
+pub fn sfr_signature_mutable_origin_required_status() -> i32 { return 11; }
+pub fn sfr_signature_inconsistent_borrow_origin_status() -> i32 { return 12; }
+pub fn sfr_signature_invalid_body_status() -> i32 { return 13; }
+pub fn sfr_callable_catalog_status(status:i32) -> i32 { return checked_add(10,status); }
+pub fn sfr_function_signature_status(status:i32) -> i32 { return checked_add(70,status); }
+pub fn sfr_parameter_ownership_status(status:i32) -> i32 { return checked_add(80,status); }
+pub fn sfr_invalid_function_header_status() -> i32 { return 1; }
+pub fn sfr_missing_let_binding_status() -> i32 { return 2; }
+pub fn sfr_missing_var_binding_status() -> i32 { return 3; }
+pub fn sfr_missing_let_type_status() -> i32 { return 4; }
+pub fn sfr_missing_var_type_status() -> i32 { return 5; }
+pub fn sfr_invalid_let_expression_status() -> i32 { return 10; }
+pub fn sfr_invalid_var_expression_status() -> i32 { return 12; }
+pub fn sfr_invalid_return_expression_status() -> i32 { return 14; }
+pub fn sfr_invalid_if_expression_status() -> i32 { return 16; }
+pub fn sfr_invalid_while_expression_status() -> i32 { return 18; }
+pub fn sfr_invalid_assignment_operands_status() -> i32 { return 20; }
+pub fn sfr_invalid_assignment_target_status() -> i32 { return 21; }
+pub fn sfr_invalid_assignment_value_status() -> i32 { return 22; }
+pub fn sfr_invalid_expression_statement_status() -> i32 { return 23; }
+pub fn sfr_invalid_expression_result_status() -> i32 { return 24; }
+pub fn sfr_invalid_print_expression_status() -> i32 { return 25; }
+pub fn sfr_invalid_drop_operand_status() -> i32 { return 27; }
+pub fn sfr_invalid_drop_expression_status() -> i32 { return 28; }
+pub fn sfr_borrowed_value_storage_status() -> i32 { return 69; }
+pub fn sfr_duplicate_current_signature_status() -> i32 { return 79; }
+pub fn sfr_missing_current_signature_status() -> i32 { return 80; }
+pub fn sfr_try_result_shape_status() -> i32 { return 81; }
+pub fn sfr_ownership_binding_order_status() -> i32 { return 82; }
+pub fn sfr_expression_invalid_struct_symbol_status() -> i32 { return 62; }
+pub fn sfr_expression_unresolved_struct_type_status() -> i32 { return 63; }
+pub fn sfr_expression_missing_struct_initializer_status() -> i32 { return 64; }
+pub fn sfr_expression_invalid_struct_initializer_status() -> i32 { return 65; }
+pub fn sfr_expression_invalid_struct_receiver_status() -> i32 { return 66; }
+pub fn sfr_expression_unresolved_struct_receiver_status() -> i32 { return 67; }
+pub fn sfr_expression_unknown_failure_status() -> i32 { return 68; }
 fn sfr_expression_failure_status(status: i64) -> i32 {
-    if (status == sfr_invalid_struct_symbol_error()) { return 62; }
-    if (status == sfr_unresolved_struct_type_error()) { return 63; }
-    if (status == sfr_missing_struct_initializer_error()) { return 64; }
-    if (status == sfr_invalid_struct_initializer_error()) { return 65; }
-    if (status == sfr_invalid_struct_receiver_error()) { return 66; }
-    if (status == sfr_unresolved_struct_receiver_error()) { return 67; }
+    if (status == sfr_invalid_struct_symbol_error()) { return sfr_expression_invalid_struct_symbol_status(); }
+    if (status == sfr_unresolved_struct_type_error()) { return sfr_expression_unresolved_struct_type_status(); }
+    if (status == sfr_missing_struct_initializer_error()) { return sfr_expression_missing_struct_initializer_status(); }
+    if (status == sfr_invalid_struct_initializer_error()) { return sfr_expression_invalid_struct_initializer_status(); }
+    if (status == sfr_invalid_struct_receiver_error()) { return sfr_expression_invalid_struct_receiver_status(); }
+    if (status == sfr_unresolved_struct_receiver_error()) { return sfr_expression_unresolved_struct_receiver_status(); }
     if (status == sfr_call_argument_count_error()) { return sfr_expression_call_argument_count_status(); }
     if (status == sfr_call_argument_expression_error()) { return sfr_expression_call_argument_expression_status(); }
     if (status == sfr_call_argument_type_error()) { return sfr_expression_call_argument_type_status(); }
@@ -87,7 +113,7 @@ fn sfr_expression_failure_status(status: i64) -> i32 {
     if (status == sfr_unresolved_call_or_variant_error()) { return sfr_expression_unresolved_call_or_variant_status(); }
     if (status == sfr_conflicting_numeric_domain_error()) { return sfr_expression_conflicting_numeric_domain_status(); }
     if (status == sfr_unresolved_variant_error()) { return sfr_expression_unresolved_variant_status(); }
-    return 68;
+    return sfr_expression_unknown_failure_status();
 }
 
 pub struct I64StructCatalogEntry {
@@ -2426,7 +2452,7 @@ pub fn derive_source_parameter_ownership(
 requires_caps [allocate]
 {
     let name_index:i64=sfr_function_name_index(source,function_tokens);
-    if(name_index<0){return 1;}
+    if(name_index<0){return sfr_invalid_function_header_status();}
     var all_tokens:Vec<Token>=lex(source,allocator);
     var signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
     var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
@@ -2447,7 +2473,7 @@ pub fn derive_source_parameter_ownership_from_catalog(
     borrow_mut output:Vec<MirOwnershipBinding>
 )->i32 requires_caps [allocate] {
     let name_index:i64=sfr_function_name_index(source,function_tokens);
-    if(name_index<0){return 1;}
+    if(name_index<0){return sfr_invalid_function_header_status();}
     let name:Token=vec_get<Token>(function_tokens,name_index);
     var found:i64=-1;
     var index:i64=0;
@@ -3687,7 +3713,7 @@ pub fn lower_source_function_body_records_from_catalog(
         name_index = sfr_destructor_name_index(source, tokens);
         if (name_index >= 0) { destructor_body = 1; }
     }
-    if (name_index < 0) { return 1; }
+    if (name_index < 0) { return sfr_invalid_function_header_status(); }
     let name_token: Token = vec_get<Token>(tokens, name_index);
     var result_type_code: i32 = function_mir_i64_type_code();
     var current_signature:i64=-1;
@@ -3695,7 +3721,7 @@ pub fn lower_source_function_body_records_from_catalog(
         result_type_code = source_i64_struct_type_code(
             source, struct_catalog, token_start(name_token), token_length(name_token)
         );
-        if (result_type_code < function_mir_i64_struct_type_code(0)) { return 1; }
+        if (result_type_code < function_mir_i64_struct_type_code(0)) { return sfr_invalid_function_header_status(); }
     } else {
         var signature_index:i64=0;
         while(signature_index<vec_len<SourceFunctionSignature>(function_signatures)){
@@ -3776,13 +3802,13 @@ pub fn lower_source_function_body_records_from_catalog(
         let kind: i32 = statement_record_kind(statement);
         if (kind == 20) {
             let binding_index: i64 = sfr_operand(statement, operands, 1);
-            if (binding_index < 0) { return 2; }
+            if (binding_index < 0) { return sfr_missing_let_binding_status(); }
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
             let binding_id: i64 = vec_len<i64>(binding_starts);
             vec_push<i64>(binding_starts, statement_operand_start(binding));
             vec_push<i64>(binding_lengths, statement_operand_length(binding));
             let type_index: i64 = sfr_operand(statement, operands, 2);
-            if (type_index < 0) { return 4; }
+            if (type_index < 0) { return sfr_missing_let_type_status(); }
             let declared: StatementOperand = vec_get<StatementOperand>(operands, type_index);
             let payload_subject: i32 = sfr_is_payload_match_subject(
                 source, tokens, statements, operands, resolved_arms,
@@ -3795,13 +3821,13 @@ pub fn lower_source_function_body_records_from_catalog(
         }
         if (kind == 21) {
             let binding_index: i64 = sfr_operand(statement, operands, 1);
-            if (binding_index < 0) { return 3; }
+            if (binding_index < 0) { return sfr_missing_var_binding_status(); }
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
             let binding_id: i64 = vec_len<i64>(binding_starts);
             vec_push<i64>(binding_starts, statement_operand_start(binding));
             vec_push<i64>(binding_lengths, statement_operand_length(binding));
             let type_index: i64 = sfr_operand(statement, operands, 2);
-            if (type_index < 0) { return 5; }
+            if (type_index < 0) { return sfr_missing_var_type_status(); }
             let declared: StatementOperand = vec_get<StatementOperand>(operands, type_index);
             let payload_subject: i32 = sfr_is_payload_match_subject(
                 source, tokens, statements, operands, resolved_arms,
@@ -3842,8 +3868,8 @@ pub fn lower_source_function_body_records_from_catalog(
         if (kind == 20) {
             let expression_index: i64 = sfr_operand(statement, operands, 3);
             let binding_index: i64 = sfr_operand(statement, operands, 1);
-            if (expression_index < 0) { return 10; }
-            if (binding_index < 0) { return 10; }
+            if (expression_index < 0) { return sfr_invalid_let_expression_status(); }
+            if (binding_index < 0) { return sfr_invalid_let_expression_status(); }
             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
             let destination: i64 = hir_find_scoped_binding_id(source, tokens, binding_starts, binding_lengths,
@@ -3856,8 +3882,8 @@ pub fn lower_source_function_body_records_from_catalog(
                 expression_start = statement_try_value_start(tokens, expression);
                 expression_length = statement_try_value_length(tokens, expression);
                 expected_type = result_type_code;
-                if (expression_start < 0) { return 10; }
-                if (expression_length <= 0) { return 10; }
+                if (expression_start < 0) { return sfr_invalid_let_expression_status(); }
+                if (expression_length <= 0) { return sfr_invalid_let_expression_status(); }
             }
             let source_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                 expression_start, expression_length, expected_type, enum_catalog, struct_catalog,
@@ -3914,8 +3940,8 @@ pub fn lower_source_function_body_records_from_catalog(
             if (kind == 21) {
                 let expression_index: i64 = sfr_operand(statement, operands, 3);
                 let binding_index: i64 = sfr_operand(statement, operands, 1);
-                if (expression_index < 0) { return 12; }
-                if (binding_index < 0) { return 12; }
+                if (expression_index < 0) { return sfr_invalid_var_expression_status(); }
+                if (binding_index < 0) { return sfr_invalid_var_expression_status(); }
                 let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                 let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
                 let destination: i64 = hir_find_scoped_binding_id(source, tokens, binding_starts, binding_lengths,
@@ -3943,7 +3969,7 @@ pub fn lower_source_function_body_records_from_catalog(
             } else {
                 if (kind == 22) {
                     let expression_index: i64 = sfr_operand(statement, operands, 3);
-                    if (expression_index < 0) { return 14; }
+                    if (expression_index < 0) { return sfr_invalid_return_expression_status(); }
                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                     let result_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                         statement_operand_start(expression), statement_operand_length(expression),
@@ -3956,7 +3982,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 } else {
                     if (kind == 23) {
                         let expression_index: i64 = sfr_operand(statement, operands, 3);
-                        if (expression_index < 0) { return 25; }
+                        if (expression_index < 0) { return sfr_invalid_print_expression_status(); }
                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                         let result_local: i64 = sfr_emit_expression(
                             source, tokens, binding_starts, binding_lengths,
@@ -3974,7 +4000,7 @@ pub fn lower_source_function_body_records_from_catalog(
                     } else {
                     if (kind == 25) {
                         let expression_index: i64 = sfr_operand(statement, operands, 3);
-                        if (expression_index < 0) { return 16; }
+                        if (expression_index < 0) { return sfr_invalid_if_expression_status(); }
                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                         let expression_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                             statement_operand_start(expression), statement_operand_length(expression),
@@ -3983,7 +4009,7 @@ pub fn lower_source_function_body_records_from_catalog(
                     } else {
                         if (kind == 26) {
                             let expression_index: i64 = sfr_operand(statement, operands, 3);
-                            if (expression_index < 0) { return 18; }
+                            if (expression_index < 0) { return sfr_invalid_while_expression_status(); }
                             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                             let expression_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                                 statement_operand_start(expression), statement_operand_length(expression),
@@ -3993,8 +4019,8 @@ pub fn lower_source_function_body_records_from_catalog(
                             if (kind == 29) {
                                 let target_index: i64 = sfr_operand_ordinal(statement, operands, 3, 0);
                                 let value_index: i64 = sfr_operand_ordinal(statement, operands, 3, 1);
-                                if (target_index < 0) { return 20; }
-                                if (value_index < 0) { return 20; }
+                                if (target_index < 0) { return sfr_invalid_assignment_operands_status(); }
+                                if (value_index < 0) { return sfr_invalid_assignment_operands_status(); }
                                 let target: StatementOperand = vec_get<StatementOperand>(operands, target_index);
                                 let target_record_start:i64=vec_len<MirFunctionRecord>(records);
                                 let target_result:i64=sfr_emit_expression(
@@ -4003,17 +4029,17 @@ pub fn lower_source_function_body_records_from_catalog(
                                     function_mir_i64_type_code(),enum_catalog,struct_catalog,
                                     function_signatures,function_parameters,allocator,records,counters
                                 );
-                                if(target_result<0){return 21;}
+                                if(target_result<0){return sfr_invalid_assignment_target_status();}
                                 if(vec_len<MirFunctionRecord>(records)>target_record_start){
                                     let omitted_load:MirFunctionRecord=vec_pop<MirFunctionRecord>(records);
-                                    if(function_mir_kind(omitted_load)!=function_mir_kind_struct_field_load()){return 21;}
+                                    if(function_mir_kind(omitted_load)!=function_mir_kind_struct_field_load()){return sfr_invalid_assignment_target_status();}
                                     let destination:i64=function_mir_left(omitted_load);
                                     let field_ordinal:i32=function_mir_symbol_code(omitted_load);
                                     vec_set<i64>(counters,1,checked_sub(vec_get<i64>(counters,1),1));
                                     let destination_type:i32=sfr_i64_struct_field_type_code(
                                         source,struct_catalog,sfr_local_type_code(records,destination),field_ordinal
                                     );
-                                    if(destination_type==function_mir_unresolved_type_code()){return 21;}
+                                    if(destination_type==function_mir_unresolved_type_code()){return sfr_invalid_assignment_target_status();}
                                     let value:StatementOperand=vec_get<StatementOperand>(operands,value_index);
                                     let source_local:i64=sfr_emit_expression(
                                         source,tokens,binding_starts,binding_lengths,
@@ -4021,7 +4047,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                         destination_type,enum_catalog,struct_catalog,function_signatures,
                                         function_parameters,allocator,records,counters
                                     );
-                                    if(source_local<0){return 22;}
+                                    if(source_local<0){return sfr_invalid_assignment_value_status();}
                                     let instruction_id:i64=vec_get<i64>(counters,1);
                                     vec_push<MirFunctionRecord>(records,function_mir_struct_field_replace(
                                         statement_record_start(statement),statement_record_length(statement),
@@ -4035,8 +4061,8 @@ pub fn lower_source_function_body_records_from_catalog(
                             if (kind == 30) {
                                 let target_index: i64 = sfr_operand_ordinal(statement, operands, 3, 0);
                                 let value_index: i64 = sfr_operand_ordinal(statement, operands, 3, 1);
-                                if (target_index < 0) { return 20; }
-                                if (value_index < 0) { return 20; }
+                                if (target_index < 0) { return sfr_invalid_assignment_operands_status(); }
+                                if (value_index < 0) { return sfr_invalid_assignment_operands_status(); }
                                 let target: StatementOperand = vec_get<StatementOperand>(operands, target_index);
                                 var destination: i64 = hir_find_scoped_binding_id(
                                     source, tokens, binding_starts, binding_lengths,
@@ -4074,22 +4100,22 @@ pub fn lower_source_function_body_records_from_catalog(
                                             function_mir_i64_type_code(),enum_catalog,struct_catalog,
                                             function_signatures,function_parameters,allocator,records,counters
                                         );
-                                        if(target_result<0){return 21;}
-                                        if(vec_len<MirFunctionRecord>(records)<=target_record_start){return 21;}
+                                        if(target_result<0){return sfr_invalid_assignment_target_status();}
+                                        if(vec_len<MirFunctionRecord>(records)<=target_record_start){return sfr_invalid_assignment_target_status();}
                                         let omitted_load:MirFunctionRecord=vec_pop<MirFunctionRecord>(records);
-                                        if(function_mir_kind(omitted_load)!=function_mir_kind_struct_field_load()){return 21;}
+                                        if(function_mir_kind(omitted_load)!=function_mir_kind_struct_field_load()){return sfr_invalid_assignment_target_status();}
                                         destination=function_mir_left(omitted_load);
                                         field_ordinal=function_mir_symbol_code(omitted_load);
                                         vec_set<i64>(counters,1,checked_sub(vec_get<i64>(counters,1),1));
                                     }
                                 }
-                                if (destination < 0) { return 21; }
+                                if (destination < 0) { return sfr_invalid_assignment_target_status(); }
                                 var destination_type: i32 = sfr_local_type_code(records, destination);
                                 if (field_ordinal >= 0) {
                                     destination_type = sfr_i64_struct_field_type_code(
                                         source, struct_catalog, destination_type, field_ordinal
                                     );
-                                    if (destination_type == function_mir_unresolved_type_code()) { return 21; }
+                                    if (destination_type == function_mir_unresolved_type_code()) { return sfr_invalid_assignment_target_status(); }
                                 }
                                 let value: StatementOperand = vec_get<StatementOperand>(operands, value_index);
                                 let source_local: i64 = sfr_emit_expression(
@@ -4097,7 +4123,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                     statement_operand_start(value), statement_operand_length(value),
                                     destination_type, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters
                                 );
-                                if (source_local < 0) { return 22; }
+                                if (source_local < 0) { return sfr_invalid_assignment_value_status(); }
                                 let instruction_id: i64 = vec_get<i64>(counters, 1);
                                 if (field_ordinal >= 0) {
                                     vec_push<MirFunctionRecord>(records, function_mir_struct_field_store(
@@ -4119,25 +4145,25 @@ pub fn lower_source_function_body_records_from_catalog(
                             } else {
                                 if (kind == 31) {
                                     let expression_index: i64 = sfr_operand(statement, operands, 3);
-                                    if (expression_index < 0) { return 23; }
+                                    if (expression_index < 0) { return sfr_invalid_expression_statement_status(); }
                                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                                     let expression_result:i64=sfr_emit_expression(
                                         source, tokens, binding_starts, binding_lengths,
                                         statement_operand_start(expression), statement_operand_length(expression),
                                         1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters
                                     );
-                                    if(expression_result<0){if(expression_result!=sfr_unit_expression_result()){return 24;}}
+                                    if(expression_result<0){if(expression_result!=sfr_unit_expression_result()){return sfr_invalid_expression_result_status();}}
                                 } else {
                                     if (kind == 27) {
                                         let expression_index: i64 = sfr_operand(statement, operands, 3);
-                                        if (expression_index < 0) { return 27; }
+                                        if (expression_index < 0) { return sfr_invalid_drop_operand_status(); }
                                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
                                         let enum_local: i64 = sfr_emit_expression(
                                             source, tokens, binding_starts, binding_lengths,
                                             statement_operand_start(expression), statement_operand_length(expression),
                                             1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters
                                         );
-                                        if (enum_local < 0) { return 28; }
+                                        if (enum_local < 0) { return sfr_invalid_drop_expression_status(); }
                                         var has_payload: i32 = 0;
                                         var payload_arm: i64 = 0;
                                         while (payload_arm < vec_len<ResolvedMatchArm>(resolved_arms)) {
@@ -4232,7 +4258,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 if(function_mir_kind(event_record)==function_mir_kind_source_local()){event_named_binding=1;}
                 if(function_mir_kind(event_record)==function_mir_kind_parameter()){event_named_binding=1;}
                 if(event_named_binding!=0){
-                    if(function_mir_binding_id(event_record)!=vec_len<i64>(event_binding_starts)){return 82;}
+                    if(function_mir_binding_id(event_record)!=vec_len<i64>(event_binding_starts)){return sfr_ownership_binding_order_status();}
                     vec_push<i64>(event_binding_starts,function_mir_start(event_record));
                     vec_push<i64>(event_binding_lengths,function_mir_length(event_record));
                 }
