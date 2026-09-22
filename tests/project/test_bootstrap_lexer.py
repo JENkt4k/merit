@@ -912,6 +912,10 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("ownership_metadata_validation_count_status()", 5),
     ("source_binding_collection_missing_operand_status()", 1),
     ("source_binding_collection_local_id_status()", 4),
+    ("generic_validation_empty_status()", 1),
+    ("generic_validation_missing_specialization_status()", 8),
+    ("source_type_lifecycle_missing_declared_type_status()", 1),
+    ("source_type_lifecycle_unresolved_status()", 3),
 )
 
 
@@ -956,6 +960,8 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_expression_validity;\n"
         "import bootstrap_mir_source_ownership_metadata;\n"
         "import bootstrap_mir_source_ownership_expression;\n"
+        "import bootstrap_mir_generics;\n"
+        "import bootstrap_mir_source_type_lifecycle;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )

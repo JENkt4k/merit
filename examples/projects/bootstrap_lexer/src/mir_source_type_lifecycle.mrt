@@ -4,6 +4,9 @@ import bootstrap_statements;
 import bootstrap_mir_source_ownership_metadata;
 
 capability allocate;
+pub fn source_type_lifecycle_missing_declared_type_status()->i32{return 1;}
+pub fn source_type_lifecycle_unsupported_status()->i32{return 2;}
+pub fn source_type_lifecycle_unresolved_status()->i32{return 3;}
 
 fn stl_span_equal(
     borrow source: Buffer,
@@ -318,14 +321,14 @@ requires_caps [allocate]
         if (kind == 21) { is_binding = 1; }
         if (is_binding != 0) {
             let type_index: i64 = stl_operand(statement,operands,2);
-            if (type_index < 0) { return 1; }
+            if (type_index < 0) { return source_type_lifecycle_missing_declared_type_status(); }
             let declared: StatementOperand = vec_get<StatementOperand>(operands,type_index);
             let start: i64 = statement_operand_start(declared);
             let length: i64 = statement_operand_length(declared);
             var owned: i32 = stl_builtin_ownership(source,start,length);
             if (owned < 0) { owned = stl_declared_ownership(source,tokens,start,length); }
-            if (owned == -2) { return 2; }
-            if (owned < 0) { return 3; }
+            if (owned == -2) { return source_type_lifecycle_unsupported_status(); }
+            if (owned < 0) { return source_type_lifecycle_unresolved_status(); }
             vec_push<SourceTypeOwnershipEntry>(output,source_type_ownership_entry(start,length,owned));
         }
         index = checked_add(index,1);
