@@ -214,6 +214,7 @@ requires_caps [allocate]
 pub fn lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(status:i32)->i32{return checked_add(90,status);}
 pub fn resolved_source_types_metadata_failure_status(status:i32)->i32{return checked_add(100,status);}
 pub fn resolved_source_types_assembly_failure_status(status:i32)->i32{return checked_add(1000,status);}
+pub fn resolved_source_types_binding_validation_failure_status(status:i32)->i32{return checked_add(8000,status);}
 
 pub fn lower_resolved_source_function_assembly_from_source_types_with_catalog(
     borrow catalog_tokens:Vec<Token>,
@@ -269,7 +270,7 @@ requires_caps [allocate]
     let binding_validation: i32 = validate_derived_source_ownership_bindings(
         body_records, ownership_metadata
     );
-    if (binding_validation != 0) { return checked_add(8000, binding_validation); }
+    if (binding_validation != 0) { return resolved_source_types_binding_validation_failure_status(binding_validation); }
     return 0;
 }
 

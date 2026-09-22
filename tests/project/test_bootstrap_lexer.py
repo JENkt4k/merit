@@ -802,6 +802,7 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("lower_resolved_source_function_assembly_from_source_types_catalog_failure_status(7)", 97),
     ("resolved_source_types_metadata_failure_status(7)", 107),
     ("resolved_source_types_assembly_failure_status(7)", 1007),
+    ("resolved_source_types_binding_validation_failure_status(7)", 8007),
     ("lower_resolved_source_function_assembly_from_source_tokens_catalog_failure_status(7)", 1097),
     ("resolved_source_tokens_type_failure_status(7)", 57),
     ("resolved_source_tokens_assembly_failure_status(7)", 1007),
@@ -860,6 +861,10 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("source_control_match_without_arms_status()", 127),
     ("source_control_missing_capability_scope_status()", 128),
     ("source_control_unknown_statement_status(31)", 131),
+    ("source_function_stats_empty_records_status()", 1),
+    ("source_function_stats_invalid_record_kind_status()", 14),
+    ("resolved_control_invalid_value_status()", 30),
+    ("resolved_control_invalid_variant_status()", 33),
 )
 
 
@@ -885,6 +890,8 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_resolved_source_function_assembly;\n"
         "import bootstrap_mir_ownership_flow;\n"
         "import bootstrap_mir_source_ownership_control;\n"
+        "import bootstrap_mir_source_function_record_stats;\n"
+        "import bootstrap_mir_resolved_control_flow;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )

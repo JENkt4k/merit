@@ -5,6 +5,11 @@ import bootstrap_mir_structured_lowering;
 
 capability allocate;
 
+pub fn resolved_control_invalid_value_status()->i32{return 30;}
+pub fn resolved_control_empty_match_status()->i32{return 31;}
+pub fn resolved_control_arm_order_status()->i32{return 32;}
+pub fn resolved_control_invalid_variant_status()->i32{return 33;}
+
 // Bridge from typed source-backed statement semantics into the existing
 // structured-MIR event contract. Ownership exits are validated before any CFG
 // control events are emitted, so structurally valid MIR cannot be produced for
@@ -19,14 +24,14 @@ pub fn lower_resolved_match_control(
 ) -> i32
 requires_caps [allocate]
 {
-    if (value_local < 0) { return 30; }
+    if (value_local < 0) { return resolved_control_invalid_value_status(); }
     let merge_status: i32 = validate_match_ownership_merge(
         arms, binding_count, exits, merged_states
     );
     if (merge_status != 0) { return merge_status; }
 
     let arm_count: i64 = vec_len<ResolvedMatchArm>(arms);
-    if (arm_count == 0) { return 31; }
+    if (arm_count == 0) { return resolved_control_empty_match_status(); }
 
     // Typed enum matches are exhaustive at the semantic boundary. Structured
     // MIR still gets an explicit defensive default edge, but that edge is
@@ -36,8 +41,8 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < arm_count) {
         let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, index);
-        if (resolved_match_ordinal(arm) != index) { return 32; }
-        if (resolved_match_variant_ordinal(arm) < 0) { return 33; }
+        if (resolved_match_ordinal(arm) != index) { return resolved_control_arm_order_status(); }
+        if (resolved_match_variant_ordinal(arm) < 0) { return resolved_control_invalid_variant_status(); }
         vec_push<MirLowerEvent>(output, mir_event_case(resolved_match_variant_ordinal(arm)));
         index = checked_add(index, 1);
     }
