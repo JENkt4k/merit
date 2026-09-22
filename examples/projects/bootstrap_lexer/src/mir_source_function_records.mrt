@@ -62,6 +62,19 @@ pub fn sfr_signature_invalid_body_status() -> i32 { return 13; }
 pub fn sfr_callable_catalog_status(status:i32) -> i32 { return checked_add(10,status); }
 pub fn sfr_function_signature_status(status:i32) -> i32 { return checked_add(70,status); }
 pub fn sfr_parameter_ownership_status(status:i32) -> i32 { return checked_add(80,status); }
+pub fn sfr_vector_unresolved_type_status() -> i32 { return 14; }
+pub fn sfr_vector_get_owned_element_status() -> i32 { return 15; }
+pub fn sfr_vector_set_owned_element_status() -> i32 { return 16; }
+pub fn sfr_vector_replace_copy_element_status() -> i32 { return 17; }
+pub fn sfr_duplicate_current_signature_ownership_status() -> i32 { return 20; }
+pub fn sfr_missing_current_signature_ownership_status() -> i32 { return 21; }
+pub fn sfr_parameter_spans_missing_header_status() -> i32 { return 1; }
+pub fn sfr_parameter_spans_missing_open_status() -> i32 { return 2; }
+pub fn sfr_parameter_spans_invalid_parameter_status() -> i32 { return 3; }
+pub fn sfr_parameter_spans_unclosed_status() -> i32 { return 4; }
+pub fn sfr_invalid_numeric_descriptor_status() -> i32 { return 1; }
+pub fn sfr_unresolved_struct_descriptor_status() -> i32 { return 1; }
+pub fn sfr_unresolved_vector_descriptor_status() -> i32 { return 2; }
 pub fn sfr_invalid_function_header_status() -> i32 { return 1; }
 pub fn sfr_missing_let_binding_status() -> i32 { return 2; }
 pub fn sfr_missing_var_binding_status() -> i32 { return 3; }
@@ -1352,7 +1365,7 @@ requires_caps [allocate]
     while(index<vec_len<Token>(tokens)){
         let keyword:Token=vec_get<Token>(tokens,index);
         if(sfr_is_decimal_declaration(source,keyword)!=0){
-            let end:i64=checked_add(index,8);if(end>=vec_len<Token>(tokens)){return 1;}
+            let end:i64=checked_add(index,8);if(end>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let name:Token=vec_get<Token>(tokens,checked_add(index,1));
             let open:Token=vec_get<Token>(tokens,checked_add(index,2));
             let precision_token:Token=vec_get<Token>(tokens,checked_add(index,3));
@@ -1361,19 +1374,19 @@ requires_caps [allocate]
             let second_comma:Token=vec_get<Token>(tokens,checked_add(index,6));
             let policy_token:Token=vec_get<Token>(tokens,checked_add(index,7));
             let close:Token=vec_get<Token>(tokens,end);
-            let semicolon_index:i64=checked_add(end,1);if(semicolon_index>=vec_len<Token>(tokens)){return 1;}
+            let semicolon_index:i64=checked_add(end,1);if(semicolon_index>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let semicolon:Token=vec_get<Token>(tokens,semicolon_index);
-            if(token_kind(name)!=token_identifier_kind()){return 1;}
-            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return 1;}
-            if(sfr_token_byte_is(source,first_comma,sfr_ascii_comma())==0){return 1;}
-            if(sfr_token_byte_is(source,second_comma,sfr_ascii_comma())==0){return 1;}
-            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return 1;}
-            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return 1;}
+            if(token_kind(name)!=token_identifier_kind()){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,first_comma,sfr_ascii_comma())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,second_comma,sfr_ascii_comma())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return sfr_invalid_numeric_descriptor_status();}
             let precision:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,precision_token);
             let scale:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,scale_token);
             let policy:i32=sfr_decimal_policy(source,policy_token);
-            if(precision.high!=0){return 1;}if(scale.high!=0){return 1;}
-            if(precision.low<1){return 1;}if(scale.low>precision.low){return 1;}if(policy<0){return 1;}
+            if(precision.high!=0){return sfr_invalid_numeric_descriptor_status();}if(scale.high!=0){return sfr_invalid_numeric_descriptor_status();}
+            if(precision.low<1){return sfr_invalid_numeric_descriptor_status();}if(scale.low>precision.low){return sfr_invalid_numeric_descriptor_status();}if(policy<0){return sfr_invalid_numeric_descriptor_status();}
             vec_push<MirNumericTypeDescriptor>(output,function_mir_numeric_descriptor(
                 function_mir_decimal_type_code(decimal_identity),function_mir_numeric_descriptor_decimal_kind(),
                 decimal_identity,0,0,precision.low,scale.low,0,0,0,policy
@@ -1383,36 +1396,36 @@ requires_caps [allocate]
         if(sfr_is_bounded_declaration(source,keyword)!=0){
             let name_index:i64=checked_add(index,1);let open_index:i64=checked_add(index,2);
             let base_index:i64=checked_add(index,3);let comma_one_index:i64=checked_add(index,4);
-            if(comma_one_index>=vec_len<Token>(tokens)){return 1;}
+            if(comma_one_index>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let name:Token=vec_get<Token>(tokens,name_index);let open:Token=vec_get<Token>(tokens,open_index);
             let base:Token=vec_get<Token>(tokens,base_index);let comma_one:Token=vec_get<Token>(tokens,comma_one_index);
-            if(token_kind(name)!=token_identifier_kind()){return 1;}
-            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return 1;}
-            if(sfr_token_byte_is(source,comma_one,sfr_ascii_comma())==0){return 1;}
+            if(token_kind(name)!=token_identifier_kind()){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,open,sfr_ascii_left_paren())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,comma_one,sfr_ascii_comma())==0){return sfr_invalid_numeric_descriptor_status();}
             let base_type:i32=sfr_builtin_type_code(source,token_start(base),token_length(base));
             var cursor:i64=checked_add(comma_one_index,1);var lower_sign:i32=1;
-            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let lower_first:Token=vec_get<Token>(tokens,cursor);
             if(sfr_token_byte_is(source,lower_first,sfr_ascii_hyphen())!=0){lower_sign=-1;cursor=checked_add(cursor,1);}
-            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let lower_token:Token=vec_get<Token>(tokens,cursor);let lower:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,lower_token);
-            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
-            let comma_two:Token=vec_get<Token>(tokens,cursor);if(sfr_token_byte_is(source,comma_two,sfr_ascii_comma())==0){return 1;}
-            cursor=checked_add(cursor,1);var upper_sign:i32=1;if(cursor>=vec_len<Token>(tokens)){return 1;}
+            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
+            let comma_two:Token=vec_get<Token>(tokens,cursor);if(sfr_token_byte_is(source,comma_two,sfr_ascii_comma())==0){return sfr_invalid_numeric_descriptor_status();}
+            cursor=checked_add(cursor,1);var upper_sign:i32=1;if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let upper_first:Token=vec_get<Token>(tokens,cursor);
             if(sfr_token_byte_is(source,upper_first,sfr_ascii_hyphen())!=0){upper_sign=-1;cursor=checked_add(cursor,1);}
-            if(cursor>=vec_len<Token>(tokens)){return 1;}
+            if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let upper_token:Token=vec_get<Token>(tokens,cursor);let upper:SfrNumericMagnitude=sfr_parse_numeric_magnitude(source,upper_token);
-            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
-            let close:Token=vec_get<Token>(tokens,cursor);cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return 1;}
+            cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
+            let close:Token=vec_get<Token>(tokens,cursor);cursor=checked_add(cursor,1);if(cursor>=vec_len<Token>(tokens)){return sfr_invalid_numeric_descriptor_status();}
             let semicolon:Token=vec_get<Token>(tokens,cursor);
-            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return 1;}
-            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return 1;}
-            if(lower.high<0){return 1;}if(upper.high<0){return 1;}
+            if(sfr_token_byte_is(source,close,sfr_ascii_right_paren())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_token_byte_is(source,semicolon,sfr_ascii_semicolon())==0){return sfr_invalid_numeric_descriptor_status();}
+            if(lower.high<0){return sfr_invalid_numeric_descriptor_status();}if(upper.high<0){return sfr_invalid_numeric_descriptor_status();}
             lower_sign=sfr_numeric_sign(lower_sign,lower);upper_sign=sfr_numeric_sign(upper_sign,upper);
-            if(sfr_numeric_bound_fits(base_type,lower_sign,lower)==0){return 1;}
-            if(sfr_numeric_bound_fits(base_type,upper_sign,upper)==0){return 1;}
-            if(sfr_signed_magnitude_compare(lower_sign,lower,upper_sign,upper)>0){return 1;}
+            if(sfr_numeric_bound_fits(base_type,lower_sign,lower)==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_numeric_bound_fits(base_type,upper_sign,upper)==0){return sfr_invalid_numeric_descriptor_status();}
+            if(sfr_signed_magnitude_compare(lower_sign,lower,upper_sign,upper)>0){return sfr_invalid_numeric_descriptor_status();}
             vec_push<MirNumericTypeDescriptor>(output,function_mir_numeric_descriptor(
                 function_mir_bounded_type_code(bounded_identity),function_mir_numeric_descriptor_bounded_kind(),
                 bounded_identity,base_type,lower_sign,lower.high,lower.low,upper_sign,upper.high,upper.low,0
@@ -1467,8 +1480,8 @@ requires_caps [allocate]
                 let colon: Token = vec_get<Token>(tokens, colon_index);
                 let field_type: Token = vec_get<Token>(tokens, type_index);
                 let semicolon: Token = vec_get<Token>(tokens, semicolon_index);
-                if (token_kind(field) != 1) { return i64_struct_catalog_invalid_status(); }
-                if (token_kind(field_type) != 1) { return i64_struct_catalog_invalid_status(); }
+                if (token_kind(field) != token_identifier_kind()) { return i64_struct_catalog_invalid_status(); }
+                if (token_kind(field_type) != token_identifier_kind()) { return i64_struct_catalog_invalid_status(); }
                 if (sfr_token_byte_is(source, colon, sfr_ascii_colon()) == 0) { return i64_struct_catalog_invalid_status(); }
                 if (sfr_token_byte_is(source, semicolon, sfr_ascii_semicolon()) == 0) { return i64_struct_catalog_invalid_status(); }
                 var destructor_policy: i32 = 0;
@@ -1605,7 +1618,7 @@ requires_caps [allocate]
                     let child_type_code:i32=sfr_declared_type_code(
                         source,tokens,variants,structs,empty_arms,child_start,child_length,0
                     );
-                    if(child_type_code==function_mir_unresolved_type_code()){return 2;}
+                    if(child_type_code==function_mir_unresolved_type_code()){return sfr_unresolved_vector_descriptor_status();}
                     vec_push<MirTypeDescriptor>(output,function_mir_type_descriptor(
                         type_code,function_mir_type_descriptor_vector_kind(),
                         checked_sub(type_code,function_mir_vector_type_code(0)),child_type_code,0,0,
@@ -1630,7 +1643,7 @@ requires_caps [allocate]
                     source, structs, entry.field_type_start, entry.field_type_length
                 );
             }
-            if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
+            if (child_type_code == function_mir_unresolved_type_code()) { return sfr_unresolved_struct_descriptor_status(); }
             vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
                 type_code, function_mir_type_descriptor_aggregate_struct_kind(),
                 entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal,
@@ -1645,7 +1658,7 @@ requires_caps [allocate]
                             source, structs, entry.field_type_start, entry.field_type_length
                         );
                     }
-                    if (child_type_code == function_mir_unresolved_type_code()) { return 1; }
+                    if (child_type_code == function_mir_unresolved_type_code()) { return sfr_unresolved_struct_descriptor_status(); }
                     vec_push<MirTypeDescriptor>(output, function_mir_type_descriptor(
                         type_code, function_mir_type_descriptor_owned_field_struct_kind(),
                         entry.struct_id, child_type_code, entry.destructor_policy, entry.field_ordinal,
@@ -2198,17 +2211,17 @@ fn sfr_append_vector_callable_signatures(
                         source,tokens,enum_catalog,struct_catalog,empty_arms,element_start,element_length,0
                     );
                     let vector_type:i32=sfr_vector_type_for_element(source,tokens,element_start,element_length);
-                    if(element_type==function_mir_unresolved_type_code()){return 14;}
-                    if(vector_type==function_mir_unresolved_type_code()){return 14;}
+                    if(element_type==function_mir_unresolved_type_code()){return sfr_vector_unresolved_type_status();}
+                    if(vector_type==function_mir_unresolved_type_code()){return sfr_vector_unresolved_type_status();}
                     let element_needs_drop:i32=sfr_type_needs_drop_depth(source,struct_catalog,element_type,0);
                     if(operation==sfr_vector_get_operation()){
-                        if(element_needs_drop!=0){return 15;}
+                        if(element_needs_drop!=0){return sfr_vector_get_owned_element_status();}
                     }
                     if(operation==sfr_vector_set_operation()){
-                        if(element_needs_drop!=0){return 16;}
+                        if(element_needs_drop!=0){return sfr_vector_set_owned_element_status();}
                     }
                     if(operation==sfr_vector_replace_operation()){
-                        if(element_needs_drop==0){return 17;}
+                        if(element_needs_drop==0){return sfr_vector_replace_copy_element_status();}
                     }
                     let parameter_start:i64=vec_len<SourceFunctionParameter>(parameters);
                     var return_type:i32=function_mir_unit_type_code();
@@ -2480,12 +2493,12 @@ pub fn derive_source_parameter_ownership_from_catalog(
     while(index<vec_len<SourceFunctionSignature>(signatures)){
         let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(signatures,index);
         if(sfr_span_equal(source,token_start(name),token_length(name),source_function_signature_name_start(signature),source_function_signature_name_length(signature))!=0){
-            if(found>=0){return 20;}
+            if(found>=0){return sfr_duplicate_current_signature_ownership_status();}
             found=index;
         }
         index=checked_add(index,1);
     }
-    if(found<0){return 21;}
+    if(found<0){return sfr_missing_current_signature_ownership_status();}
     let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(signatures,found);
     var ordinal:i64=0;
     while(ordinal<source_function_signature_parameter_count(signature)){
@@ -2511,11 +2524,11 @@ pub fn collect_source_parameter_spans(
 requires_caps [allocate]
 {
     let name_index:i64=sfr_function_name_index(source,function_tokens);
-    if(name_index<0){return 1;}
+    if(name_index<0){return sfr_parameter_spans_missing_header_status();}
     let open_index:i64=checked_add(name_index,1);
-    if(open_index>=vec_len<Token>(function_tokens)){return 2;}
+    if(open_index>=vec_len<Token>(function_tokens)){return sfr_parameter_spans_missing_open_status();}
     let open:Token=vec_get<Token>(function_tokens,open_index);
-    if(sfr_token_punctuation(source,open,sfr_ascii_left_paren())==0){return 2;}
+    if(sfr_token_punctuation(source,open,sfr_ascii_left_paren())==0){return sfr_parameter_spans_missing_open_status();}
     var cursor:i64=checked_add(open_index,1);
     var closed:i32=0;
     while(cursor<vec_len<Token>(function_tokens)){
@@ -2526,10 +2539,10 @@ requires_caps [allocate]
                 let mode:i32=sfr_callable_mode(source,candidate);
                 if(mode!=function_mir_mode_value()){
                     cursor=checked_add(cursor,1);
-                    if(cursor>=vec_len<Token>(function_tokens)){return 3;}
+                    if(cursor>=vec_len<Token>(function_tokens)){return sfr_parameter_spans_invalid_parameter_status();}
                 }
                 let name:Token=vec_get<Token>(function_tokens,cursor);
-                if(token_kind(name)!=token_identifier_kind()){return 3;}
+                if(token_kind(name)!=token_identifier_kind()){return sfr_parameter_spans_invalid_parameter_status();}
                 vec_push<i64>(starts,token_start(name));
                 vec_push<i64>(lengths,token_length(name));
                 cursor=checked_add(cursor,3);
@@ -2540,7 +2553,7 @@ requires_caps [allocate]
             }
         } else {cursor=vec_len<Token>(function_tokens);}
     }
-    if(closed==0){return 4;}
+    if(closed==0){return sfr_parameter_spans_unclosed_status();}
     return 0;
 }
 
@@ -3683,7 +3696,7 @@ requires_caps [allocate]
 {
     var name_index:i64=sfr_function_name_index(source,tokens);
     if(name_index<0){name_index=sfr_destructor_name_index(source,tokens);}
-    if(name_index<0){return 1;}
+    if(name_index<0){return sfr_invalid_function_header_status();}
     var function_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
     var function_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
     let source_tokens:Vec<Token>=lex(source,allocator);

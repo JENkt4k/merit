@@ -73,6 +73,10 @@ fn resolved_pipeline_is_allocate_name(borrow source:Buffer,start:i64,length:i64)
     return 1;
 }
 
+pub fn resolved_pipeline_duplicate_allocate_capability_status()->i32{return 1;}
+pub fn resolved_pipeline_unauthorized_allocation_status()->i32{return 2;}
+pub fn resolved_pipeline_return_count_mismatch_status()->i32{return 1;}
+
 fn resolved_pipeline_validate_allocation_capability(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow capability_catalog:Vec<CapabilityCatalogEntry>,
@@ -84,7 +88,7 @@ fn resolved_pipeline_validate_allocation_capability(
     while(catalog_index<vec_len<CapabilityCatalogEntry>(capability_catalog)){
         let entry:CapabilityCatalogEntry=vec_get<CapabilityCatalogEntry>(capability_catalog,catalog_index);
         if(resolved_pipeline_is_allocate_name(source,entry.name_start,entry.name_length)!=0){
-            if(allocate_id>=0){return 1;}
+            if(allocate_id>=0){return resolved_pipeline_duplicate_allocate_capability_status();}
             allocate_id=entry.capability_id;
         }
         catalog_index=checked_add(catalog_index,1);
@@ -129,7 +133,7 @@ fn resolved_pipeline_validate_allocation_capability(
                         scope_index=checked_add(scope_index,1);
                     }
                 }
-                if(authorized==0){return 2;}
+                if(authorized==0){return resolved_pipeline_unauthorized_allocation_status();}
             }
         }
         token_index=checked_add(token_index,1);
@@ -359,10 +363,10 @@ pub fn validate_resolved_function_return_surface(
     index = 0;
     while (index < vec_len<MirLowerEvent>(canonical_events)) {
         let event: MirLowerEvent = vec_get<MirLowerEvent>(canonical_events, index);
-        if (lower_event_kind(event) == 2) { canonical_returns = checked_add(canonical_returns, 1); }
+        if (lower_event_kind(event) == mir_event_return_kind()) { canonical_returns = checked_add(canonical_returns, 1); }
         index = checked_add(index, 1);
     }
-    if (body_returns != canonical_returns) { return 1; }
+    if (body_returns != canonical_returns) { return resolved_pipeline_return_count_mismatch_status(); }
     return 0;
 }
 
