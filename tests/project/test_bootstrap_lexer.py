@@ -876,6 +876,16 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("structured_status_missing_default()", 30),
     ("structured_status_missing_terminator()", 34),
     ("structured_status_missing_while_condition()", 41),
+    ("statement_lower_missing_let_expression_status()", 10),
+    ("statement_lower_invalid_print_expression_status()", 25),
+    ("statement_lower_unclosed_frame_status()", 32),
+    ("statement_lower_unknown_kind_status(31)", 131),
+    ("match_resolution_arm_order_status()", 1),
+    ("match_identity_empty_match_status()", 25),
+    ("capability_resolution_unknown_capability_status()", 11),
+    ("match_merge_empty_arms_status()", 1),
+    ("match_merge_state_divergence_status()", 9),
+    ("capability_effect_invalid_capability_status()", 21),
 )
 
 
@@ -906,6 +916,9 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_function_contracts;\n"
         "import bootstrap_mir_function_clause_metadata;\n"
         "import bootstrap_mir_structured_lowering;\n"
+        "import bootstrap_mir_statement_lowering;\n"
+        "import bootstrap_statement_semantics;\n"
+        "import bootstrap_mir_match_capability_flow;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )
