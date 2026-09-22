@@ -54,6 +54,19 @@ pub fn hir_symbol_greater_equal() -> i32 { return 7; }
 pub fn hir_symbol_less_equal() -> i32 { return 8; }
 pub fn hir_symbol_greater() -> i32 { return 9; }
 pub fn hir_symbol_less() -> i32 { return 10; }
+pub fn hir_validation_empty_status()->i32{return 1;}
+pub fn hir_validation_invalid_kind_or_type_status()->i32{return 2;}
+pub fn hir_validation_invalid_span_status()->i32{return 3;}
+pub fn hir_validation_invalid_literal_status()->i32{return 4;}
+pub fn hir_validation_invalid_binary_status()->i32{return 5;}
+pub fn hir_validation_invalid_numeric_policy_status()->i32{return 6;}
+pub fn hir_validation_invalid_group_status()->i32{return 7;}
+pub fn hir_validation_invalid_identifier_status()->i32{return 8;}
+pub fn hir_validation_invalid_call_or_field_status()->i32{return 9;}
+pub fn hir_validation_invalid_argument_sequence_status()->i32{return 10;}
+pub fn hir_validation_invalid_symbol_reference_status()->i32{return 11;}
+pub fn hir_validation_invalid_constructor_status()->i32{return 12;}
+pub fn hir_validation_invalid_field_initializer_status()->i32{return 13;}
 pub fn hir_is_numeric_literal(borrow node:HirExpressionRecord)->i32{if(node.kind==hir_literal_kind()){return 1;}return 0;}
 pub fn hir_is_binary(borrow node:HirExpressionRecord)->i32{if(node.kind==hir_arithmetic_kind()){return 1;}return 0;}
 pub fn hir_is_comparison(borrow node:HirExpressionRecord)->i32{if(node.kind==hir_comparison_kind()){return 1;}return 0;}
@@ -429,123 +442,123 @@ pub fn lower_primitive_hir_record(
 // 9 malformed call/field; 10 malformed sequence; 11 malformed symbol;
 // 12 malformed constructor; 13 malformed field initializer.
 pub fn validate_primitive_hir_records(borrow nodes: Vec<HirExpressionRecord>) -> i32 {
-    if (vec_len<HirExpressionRecord>(nodes) == 0) { return 1; }
+    if (vec_len<HirExpressionRecord>(nodes) == 0) { return hir_validation_empty_status(); }
     var index: i64 = 0;
     while (index < vec_len<HirExpressionRecord>(nodes)) {
         let node: HirExpressionRecord = vec_get<HirExpressionRecord>(nodes, index);
-        if (node.kind == hir_invalid_kind()) { return 2; }
-        if (node.start < 0) { return 3; }
-        if (node.length < 0) { return 3; }
+        if (node.kind == hir_invalid_kind()) { return hir_validation_invalid_kind_or_type_status(); }
+        if (node.start < 0) { return hir_validation_invalid_span_status(); }
+        if (node.length < 0) { return hir_validation_invalid_span_status(); }
         if (node.kind == hir_literal_kind()) {
-            if (node.type_code != hir_type_i64()) { return 2; }
-            if (node.left != -1) { return 4; }
-            if (node.right != -1) { return 4; }
-            if (node.symbol != hir_symbol_none()) { return 4; }
-            if (node.binding_id != -1) { return 4; }
-            if (node.numeric_policy != hir_numeric_policy_exact()) { return 6; }
+            if (node.type_code != hir_type_i64()) { return hir_validation_invalid_kind_or_type_status(); }
+            if (node.left != -1) { return hir_validation_invalid_literal_status(); }
+            if (node.right != -1) { return hir_validation_invalid_literal_status(); }
+            if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_literal_status(); }
+            if (node.binding_id != -1) { return hir_validation_invalid_literal_status(); }
+            if (node.numeric_policy != hir_numeric_policy_exact()) { return hir_validation_invalid_numeric_policy_status(); }
         } else {
             if (node.kind == hir_arithmetic_kind()) {
-                if (node.type_code != hir_type_i64()) { return 2; }
-                if (node.left < 0) { return 5; }
-                if (node.right < 0) { return 5; }
-                if (node.left >= index) { return 5; }
-                if (node.right >= index) { return 5; }
-                if (node.symbol < hir_symbol_add()) { return 5; }
-                if (node.symbol > hir_symbol_divide()) { return 5; }
-                if (node.binding_id != -1) { return 5; }
-                if (node.numeric_policy != hir_numeric_policy_checked()) { return 6; }
+                if (node.type_code != hir_type_i64()) { return hir_validation_invalid_kind_or_type_status(); }
+                if (node.left < 0) { return hir_validation_invalid_binary_status(); }
+                if (node.right < 0) { return hir_validation_invalid_binary_status(); }
+                if (node.left >= index) { return hir_validation_invalid_binary_status(); }
+                if (node.right >= index) { return hir_validation_invalid_binary_status(); }
+                if (node.symbol < hir_symbol_add()) { return hir_validation_invalid_binary_status(); }
+                if (node.symbol > hir_symbol_divide()) { return hir_validation_invalid_binary_status(); }
+                if (node.binding_id != -1) { return hir_validation_invalid_binary_status(); }
+                if (node.numeric_policy != hir_numeric_policy_checked()) { return hir_validation_invalid_numeric_policy_status(); }
             } else {
                 if (node.kind == hir_group_alias_kind()) {
-                    if (node.left < 0) { return 7; }
-                    if (node.left >= index) { return 7; }
-                    if (node.right != -1) { return 7; }
-                    if (node.symbol != hir_symbol_none()) { return 7; }
-                    if (node.binding_id != -1) { return 7; }
-                    if (node.numeric_policy != hir_numeric_policy_none()) { return 7; }
+                    if (node.left < 0) { return hir_validation_invalid_group_status(); }
+                    if (node.left >= index) { return hir_validation_invalid_group_status(); }
+                    if (node.right != -1) { return hir_validation_invalid_group_status(); }
+                    if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_group_status(); }
+                    if (node.binding_id != -1) { return hir_validation_invalid_group_status(); }
+                    if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_group_status(); }
                 } else {
                     if (node.kind == hir_identifier_kind()) {
-                        if (node.type_code <= 0) { return 2; }
-                        if (node.left != -1) { return 8; }
-                        if (node.right != -1) { return 8; }
-                        if (node.symbol != hir_symbol_none()) { return 8; }
-                        if (node.binding_id < 0) { return 8; }
-                        if (node.numeric_policy != hir_numeric_policy_none()) { return 8; }
+                        if (node.type_code <= 0) { return hir_validation_invalid_kind_or_type_status(); }
+                        if (node.left != -1) { return hir_validation_invalid_identifier_status(); }
+                        if (node.right != -1) { return hir_validation_invalid_identifier_status(); }
+                        if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_identifier_status(); }
+                        if (node.binding_id < 0) { return hir_validation_invalid_identifier_status(); }
+                        if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_identifier_status(); }
                     } else {
                         if (node.kind == hir_comparison_kind()) {
-                            if (node.type_code != hir_type_bool()) { return 2; }
-                            if (node.left < 0) { return 5; }
-                            if (node.right < 0) { return 5; }
-                            if (node.left >= index) { return 5; }
-                            if (node.right >= index) { return 5; }
-                            if (node.symbol < hir_symbol_equal()) { return 5; }
-                            if (node.symbol > hir_symbol_less()) { return 5; }
-                            if (node.binding_id != -1) { return 5; }
-                            if (node.numeric_policy != hir_numeric_policy_exact()) { return 6; }
+                            if (node.type_code != hir_type_bool()) { return hir_validation_invalid_kind_or_type_status(); }
+                            if (node.left < 0) { return hir_validation_invalid_binary_status(); }
+                            if (node.right < 0) { return hir_validation_invalid_binary_status(); }
+                            if (node.left >= index) { return hir_validation_invalid_binary_status(); }
+                            if (node.right >= index) { return hir_validation_invalid_binary_status(); }
+                            if (node.symbol < hir_symbol_equal()) { return hir_validation_invalid_binary_status(); }
+                            if (node.symbol > hir_symbol_less()) { return hir_validation_invalid_binary_status(); }
+                            if (node.binding_id != -1) { return hir_validation_invalid_binary_status(); }
+                            if (node.numeric_policy != hir_numeric_policy_exact()) { return hir_validation_invalid_numeric_policy_status(); }
                         } else {
                             if (node.kind == hir_call_kind()) {
-                                if (node.type_code <= 0) { return 2; }
-                                if (node.left < 0) { return 9; }
-                                if (node.left >= index) { return 9; }
-                                if (node.right >= index) { return 9; }
-                                if (node.symbol != hir_symbol_none()) { return 9; }
-                                if (node.binding_id != -1) { return 9; }
-                                if (node.numeric_policy != hir_numeric_policy_none()) { return 9; }
+                                if (node.type_code <= 0) { return hir_validation_invalid_kind_or_type_status(); }
+                                if (node.left < 0) { return hir_validation_invalid_call_or_field_status(); }
+                                if (node.left >= index) { return hir_validation_invalid_call_or_field_status(); }
+                                if (node.right >= index) { return hir_validation_invalid_call_or_field_status(); }
+                                if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_call_or_field_status(); }
+                                if (node.binding_id != -1) { return hir_validation_invalid_call_or_field_status(); }
+                                if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_call_or_field_status(); }
                             } else {
                                 if (node.kind == hir_field_kind()) {
-                                    if (node.type_code <= 0) { return 2; }
-                                    if (node.left < 0) { return 9; }
-                                    if (node.right < 0) { return 9; }
-                                    if (node.left >= index) { return 9; }
-                                    if (node.right >= index) { return 9; }
-                                    if (node.symbol != hir_symbol_none()) { return 9; }
-                                    if (node.binding_id != -1) { return 9; }
-                                    if (node.numeric_policy != hir_numeric_policy_none()) { return 9; }
+                                    if (node.type_code <= 0) { return hir_validation_invalid_kind_or_type_status(); }
+                                    if (node.left < 0) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.right < 0) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.left >= index) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.right >= index) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.binding_id != -1) { return hir_validation_invalid_call_or_field_status(); }
+                                    if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_call_or_field_status(); }
                                 } else {
                                     if (node.kind == hir_argument_sequence_kind()) {
-                                        if (node.type_code != hir_type_unresolved()) { return 10; }
-                                        if (node.left < 0) { return 10; }
-                                        if (node.right < 0) { return 10; }
-                                        if (node.left >= index) { return 10; }
-                                        if (node.right >= index) { return 10; }
-                                        if (node.symbol != hir_symbol_none()) { return 10; }
-                                        if (node.binding_id != -1) { return 10; }
-                                        if (node.numeric_policy != hir_numeric_policy_none()) { return 10; }
+                                        if (node.type_code != hir_type_unresolved()) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.left < 0) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.right < 0) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.left >= index) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.right >= index) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.binding_id != -1) { return hir_validation_invalid_argument_sequence_status(); }
+                                        if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_argument_sequence_status(); }
                                     } else {
                                         if (node.kind == hir_symbol_reference_kind()) {
-                                            if (node.type_code != hir_type_unresolved()) { return 11; }
-                                            if (node.left != -1) { return 11; }
-                                            if (node.right != -1) { return 11; }
-                                            if (node.symbol != hir_symbol_none()) { return 11; }
-                                            if (node.binding_id != -2) { return 11; }
-                                            if (node.numeric_policy != hir_numeric_policy_none()) { return 11; }
+                                            if (node.type_code != hir_type_unresolved()) { return hir_validation_invalid_symbol_reference_status(); }
+                                            if (node.left != -1) { return hir_validation_invalid_symbol_reference_status(); }
+                                            if (node.right != -1) { return hir_validation_invalid_symbol_reference_status(); }
+                                            if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_symbol_reference_status(); }
+                                            if (node.binding_id != -2) { return hir_validation_invalid_symbol_reference_status(); }
+                                            if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_symbol_reference_status(); }
                                         } else {
                                             if (node.kind == hir_constructor_kind()) {
-                                                if (node.type_code <= 0) { return 12; }
-                                                if (node.left < 0) { return 12; }
-                                                if (node.left >= index) { return 12; }
-                                                if (node.right >= index) { return 12; }
-                                                if (node.symbol != hir_symbol_none()) { return 12; }
-                                                if (node.binding_id != -1) { return 12; }
-                                                if (node.numeric_policy != hir_numeric_policy_none()) { return 12; }
+                                                if (node.type_code <= 0) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.left < 0) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.left >= index) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.right >= index) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.binding_id != -1) { return hir_validation_invalid_constructor_status(); }
+                                                if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_constructor_status(); }
                                             } else {
                                                 if (node.kind == hir_field_initializer_kind()) {
-                                                    if (node.type_code != hir_type_unresolved()) { return 13; }
-                                                    if (node.left < 0) { return 13; }
-                                                    if (node.right < 0) { return 13; }
-                                                    if (node.left >= index) { return 13; }
-                                                    if (node.right >= index) { return 13; }
-                                                    if (node.symbol != hir_symbol_none()) { return 13; }
-                                                    if (node.binding_id != -1) { return 13; }
-                                                    if (node.numeric_policy != hir_numeric_policy_none()) { return 13; }
+                                                    if (node.type_code != hir_type_unresolved()) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.left < 0) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.right < 0) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.left >= index) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.right >= index) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.symbol != hir_symbol_none()) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.binding_id != -1) { return hir_validation_invalid_field_initializer_status(); }
+                                                    if (node.numeric_policy != hir_numeric_policy_none()) { return hir_validation_invalid_field_initializer_status(); }
                                                 } else {
                                                     if (hir_is_string_literal(node) != 0) {
-                                                        if (node.type_code != function_mir_string_type_code()) { return 2; }
-                                                        if (node.left != -1) { return 4; }
-                                                        if (node.right != -1) { return 4; }
-                                                        if (node.symbol != 0) { return 4; }
-                                                        if (node.binding_id != -1) { return 4; }
-                                                        if (node.numeric_policy != 0) { return 6; }
-                                                    } else { return 2; }
+                                                        if (node.type_code != function_mir_string_type_code()) { return hir_validation_invalid_kind_or_type_status(); }
+                                                        if (node.left != -1) { return hir_validation_invalid_literal_status(); }
+                                                        if (node.right != -1) { return hir_validation_invalid_literal_status(); }
+                                                        if (node.symbol != 0) { return hir_validation_invalid_literal_status(); }
+                                                        if (node.binding_id != -1) { return hir_validation_invalid_literal_status(); }
+                                                        if (node.numeric_policy != 0) { return hir_validation_invalid_numeric_policy_status(); }
+                                                    } else { return hir_validation_invalid_kind_or_type_status(); }
                                                 }
                                             }
                                         }

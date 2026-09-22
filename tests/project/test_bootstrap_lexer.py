@@ -898,6 +898,9 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("match_structure_empty_subject_status()", 24),
     ("composite_validation_empty_status()", 1),
     ("composite_validation_invalid_construct_status()", 10),
+    ("hir_validation_empty_status()", 1),
+    ("hir_validation_invalid_call_or_field_status()", 9),
+    ("hir_validation_invalid_field_initializer_status()", 13),
 )
 
 
@@ -936,6 +939,7 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_function_ownership_assembly;\n"
         "import bootstrap_statement_structure;\n"
         "import bootstrap_mir_composite;\n"
+        "import bootstrap_hir;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )
