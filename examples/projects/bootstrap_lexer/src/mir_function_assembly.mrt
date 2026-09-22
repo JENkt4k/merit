@@ -5,6 +5,12 @@ import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_structured_lowering;
 
 capability allocate;
+pub fn function_assembly_invalid_binding_count_status()->i32{return 1;}
+pub fn function_assembly_invalid_local_count_status()->i32{return 2;}
+pub fn function_assembly_empty_body_status()->i32{return 3;}
+pub fn function_assembly_invalid_contract_status()->i32{return 4;}
+pub fn function_assembly_unsupported_contract_record_status()->i32{return 30;}
+pub fn function_assembly_body_instruction_order_status()->i32{return 40;}
 
 fn emit_contract_records(
     borrow contracts: Vec<MirFunctionContractRecord>, wanted_kind: i32,
@@ -21,7 +27,7 @@ requires_caps [allocate]
         if (function_contract_contract_kind(record) == wanted_kind) {
             let kind: i32 = function_contract_kind(record);
             if (kind >= function_contract_const_kind()) {
-                if (kind > function_contract_check_kind()) { return 30; }
+                if (kind > function_contract_check_kind()) { return function_assembly_unsupported_contract_record_status(); }
                 let global_id: i64 = vec_get<i64>(next_instruction, 0);
                 vec_push<MirLowerEvent>(events, mir_event_place(global_id));
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
@@ -53,10 +59,10 @@ pub fn assemble_function_mir_events(
 ) -> i32
 requires_caps [allocate]
 {
-    if (binding_count < 0) { return 1; }
-    if (body_local_count < binding_count) { return 2; }
-    if (vec_len<MirLowerEvent>(body_events) == 0) { return 3; }
-    if (validate_function_contract_mir(contracts) != 0) { return 4; }
+    if (binding_count < 0) { return function_assembly_invalid_binding_count_status(); }
+    if (body_local_count < binding_count) { return function_assembly_invalid_local_count_status(); }
+    if (vec_len<MirLowerEvent>(body_events) == 0) { return function_assembly_empty_body_status(); }
+    if (validate_function_contract_mir(contracts) != 0) { return function_assembly_invalid_contract_status(); }
 
     var next_instruction: Vec<i64> = vec_new<i64>(allocator, 1);
     vec_push<i64>(next_instruction, 0);
@@ -72,7 +78,7 @@ requires_caps [allocate]
         let event: MirLowerEvent = vec_get<MirLowerEvent>(body_events, index);
         let kind: i32 = lower_event_kind(event);
         if (kind == mir_event_place_kind()) {
-            if (lower_event_a(event) != expected_body_instruction) { return 40; }
+            if (lower_event_a(event) != expected_body_instruction) { return function_assembly_body_instruction_order_status(); }
             let global_id: i64 = vec_get<i64>(next_instruction, 0);
             vec_push<MirLowerEvent>(events, mir_event_place(global_id));
             vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {

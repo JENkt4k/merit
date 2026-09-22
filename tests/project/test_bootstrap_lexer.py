@@ -886,6 +886,13 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("match_merge_empty_arms_status()", 1),
     ("match_merge_state_divergence_status()", 9),
     ("capability_effect_invalid_capability_status()", 21),
+    ("function_assembly_invalid_binding_count_status()", 1),
+    ("function_assembly_body_instruction_order_status()", 40),
+    ("assembly_plan_invalid_binding_count_status()", 1),
+    ("assembly_contract_validation_status(7)", 407),
+    ("ownership_assembly_invalid_binding_count_status()", 1),
+    ("ownership_assembly_body_instruction_count_status()", 46),
+    ("ownership_assembly_empty_event_stream_status()", 104),
 )
 
 
@@ -919,6 +926,9 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_statement_lowering;\n"
         "import bootstrap_statement_semantics;\n"
         "import bootstrap_mir_match_capability_flow;\n"
+        "import bootstrap_mir_function_assembly;\n"
+        "import bootstrap_mir_function_assembly_plan;\n"
+        "import bootstrap_mir_function_ownership_assembly;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )

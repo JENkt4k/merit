@@ -4,7 +4,13 @@ import bootstrap_mir_function_contracts;
 
 capability allocate;
 
-fn assembly_contract_validation_status(status:i32)->i32{return checked_add(400,status);}
+pub fn assembly_contract_validation_status(status:i32)->i32{return checked_add(400,status);}
+pub fn assembly_plan_invalid_binding_count_status()->i32{return 1;}
+pub fn assembly_plan_invalid_local_count_status()->i32{return 2;}
+pub fn assembly_plan_invalid_metadata_status()->i32{return 3;}
+pub fn assembly_plan_invalid_capability_status()->i32{return 10;}
+pub fn assembly_plan_duplicate_capability_status()->i32{return 11;}
+pub fn assembly_plan_invalid_contract_local_status()->i32{return 20;}
 
 pub struct MirFunctionContractLocal {
     local_id: i64;
@@ -45,9 +51,9 @@ pub fn plan_function_contract_namespace(
 ) -> i32
 requires_caps [allocate]
 {
-    if (binding_count < 0) { return 1; }
-    if (body_local_count < binding_count) { return 2; }
-    if (validate_function_clause_metadata(metadata) != 0) { return 3; }
+    if (binding_count < 0) { return assembly_plan_invalid_binding_count_status(); }
+    if (body_local_count < binding_count) { return assembly_plan_invalid_local_count_status(); }
+    if (validate_function_clause_metadata(metadata) != 0) { return assembly_plan_invalid_metadata_status(); }
     let contract_validation:i32=validate_function_contract_mir(contracts);
     if(contract_validation!=0){return assembly_contract_validation_status(contract_validation);}
 
@@ -56,8 +62,8 @@ requires_caps [allocate]
         let value: MirFunctionClauseMetadata = vec_get<MirFunctionClauseMetadata>(metadata, index);
         if (clause_metadata_kind(value) == 2) {
             let id: i64 = clause_metadata_semantic_id(value);
-            if (id < 0) { return 10; }
-            if (assembly_has_capability(capabilities, id) != 0) { return 11; }
+            if (id < 0) { return assembly_plan_invalid_capability_status(); }
+            if (assembly_has_capability(capabilities, id) != 0) { return assembly_plan_duplicate_capability_status(); }
             vec_push<i64>(capabilities, id);
         }
         index = checked_add(index, 1);
@@ -68,7 +74,7 @@ requires_caps [allocate]
         let record: MirFunctionContractRecord = vec_get<MirFunctionContractRecord>(contracts, index);
         if (function_contract_kind(record) == function_contract_temporary_local_kind()) {
             let source_local: i64 = function_contract_id(record);
-            if (source_local < binding_count) { return 20; }
+            if (source_local < binding_count) { return assembly_plan_invalid_contract_local_status(); }
             vec_push<MirFunctionContractLocal>(locals, MirFunctionContractLocal {
                 local_id: assembly_remap_local(source_local, binding_count, body_local_count),
                 source_local_id: source_local,
