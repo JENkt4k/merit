@@ -110,6 +110,14 @@ pub fn ast_subtract_kind() -> i32 { return 51; }
 pub fn ast_multiply_kind() -> i32 { return 60; }
 pub fn ast_divide_kind() -> i32 { return 61; }
 pub fn ast_constructor_kind() -> i32 { return 70; }
+pub fn ast_validation_invalid_span_status()->i32{return 1;}
+pub fn ast_validation_unknown_kind_status()->i32{return 2;}
+pub fn ast_validation_invalid_group_status()->i32{return 3;}
+pub fn ast_validation_invalid_leaf_status()->i32{return 4;}
+pub fn ast_validation_invalid_binary_status()->i32{return 5;}
+pub fn ast_validation_invalid_unary_status()->i32{return 6;}
+pub fn ast_validation_invalid_shape_status()->i32{return 7;}
+pub fn ast_validation_empty_status()->i32{return 8;}
 pub fn expression_start(borrow node: ExpressionNode) -> i64 { return node.start; }
 pub fn expression_length(borrow node: ExpressionNode) -> i64 { return node.length; }
 pub fn expression_left(borrow node: ExpressionNode) -> i64 { return node.left; }
@@ -184,31 +192,31 @@ fn ast_child_is_before(child: i64, current: i64) -> i32 {
 // 4 atom with children, 5 required child not earlier, 6 optional child invalid,
 // 7 unclassified known kind, 8 empty stream.
 pub fn validate_expression_ast_records(borrow expressions: Vec<ExpressionNode>) -> i32 {
-    if vec_len<ExpressionNode>(expressions) == 0 { return 8; }
+    if vec_len<ExpressionNode>(expressions) == 0 { return ast_validation_empty_status(); }
     var index: i64 = 0;
     while (index < vec_len<ExpressionNode>(expressions)) {
         let expression: ExpressionNode = vec_get<ExpressionNode>(expressions, index);
-        if expression.start < 0 { return 1; }
-        if expression.length < 0 { return 1; }
-        if ast_known_kind(expression.kind) == 0 { return 2; }
+        if expression.start < 0 { return ast_validation_invalid_span_status(); }
+        if expression.length < 0 { return ast_validation_invalid_span_status(); }
+        if ast_known_kind(expression.kind) == 0 { return ast_validation_unknown_kind_status(); }
         if expression.kind == ast_group_kind() {
-            if ast_child_is_before(expression.left, index) == 0 { return 3; }
-            if expression.right != -1 { return 3; }
+            if ast_child_is_before(expression.left, index) == 0 { return ast_validation_invalid_group_status(); }
+            if expression.right != -1 { return ast_validation_invalid_group_status(); }
         } else {
             if (ast_atom_kind(expression.kind)) {
-                if expression.left != -1 { return 4; }
-                if expression.right != -1 { return 4; }
+                if expression.left != -1 { return ast_validation_invalid_leaf_status(); }
+                if expression.right != -1 { return ast_validation_invalid_leaf_status(); }
             } else {
                 if (ast_required_pair_kind(expression.kind)) {
-                    if ast_child_is_before(expression.left, index) == 0 { return 5; }
-                    if ast_child_is_before(expression.right, index) == 0 { return 5; }
+                    if ast_child_is_before(expression.left, index) == 0 { return ast_validation_invalid_binary_status(); }
+                    if ast_child_is_before(expression.right, index) == 0 { return ast_validation_invalid_binary_status(); }
                 } else {
                     if (ast_optional_right_kind(expression.kind)) {
-                        if ast_child_is_before(expression.left, index) == 0 { return 6; }
+                        if ast_child_is_before(expression.left, index) == 0 { return ast_validation_invalid_unary_status(); }
                         if expression.right != -1 {
-                            if ast_child_is_before(expression.right, index) == 0 { return 6; }
+                            if ast_child_is_before(expression.right, index) == 0 { return ast_validation_invalid_unary_status(); }
                         }
-                    } else { return 7; }
+                    } else { return ast_validation_invalid_shape_status(); }
                 }
             }
         }

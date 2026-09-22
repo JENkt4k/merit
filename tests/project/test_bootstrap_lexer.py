@@ -918,6 +918,8 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("source_type_lifecycle_unresolved_status()", 3),
     ("mir_validation_empty_status()", 1),
     ("mir_validation_invalid_binding_status()", 8),
+    ("ast_validation_invalid_span_status()", 1),
+    ("ast_validation_empty_status()", 8),
 )
 
 
@@ -965,6 +967,7 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_generics;\n"
         "import bootstrap_mir_source_type_lifecycle;\n"
         "import bootstrap_mir;\n"
+        "import bootstrap_syntax;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )
