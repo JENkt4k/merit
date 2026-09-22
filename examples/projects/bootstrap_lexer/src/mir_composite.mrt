@@ -43,6 +43,16 @@ pub fn composite_call_kind() -> i32 { return 4; }
 pub fn composite_field_kind() -> i32 { return 5; }
 pub fn composite_construct_kind() -> i32 { return 6; }
 pub fn composite_operand_kind() -> i32 { return 7; }
+pub fn composite_validation_empty_status()->i32{return 1;}
+pub fn composite_validation_invalid_kind_status()->i32{return 2;}
+pub fn composite_validation_invalid_span_status()->i32{return 3;}
+pub fn composite_validation_invalid_operand_status()->i32{return 4;}
+pub fn composite_validation_invalid_result_status()->i32{return 5;}
+pub fn composite_validation_invalid_binary_status()->i32{return 6;}
+pub fn composite_validation_invalid_binding_status()->i32{return 7;}
+pub fn composite_validation_invalid_call_status()->i32{return 8;}
+pub fn composite_validation_invalid_field_status()->i32{return 9;}
+pub fn composite_validation_invalid_construct_status()->i32{return 10;}
 
 pub fn composite_const(start: i64, length: i64, result: i64, type_code: i32, hir_node_id: i64) -> MirCompositeRecord {
     return MirCompositeRecord {
@@ -122,46 +132,46 @@ pub fn composite_construct(
 }
 
 pub fn validate_composite_mir_records(borrow nodes: Vec<MirCompositeRecord>) -> i32 {
-    if (vec_len<MirCompositeRecord>(nodes) == 0) { return 1; }
+    if (vec_len<MirCompositeRecord>(nodes) == 0) { return composite_validation_empty_status(); }
     var index: i64 = 0;
     while (index < vec_len<MirCompositeRecord>(nodes)) {
         let node: MirCompositeRecord = vec_get<MirCompositeRecord>(nodes, index);
-        if (node.kind < composite_const_kind()) { return 2; }
-        if (node.kind > composite_operand_kind()) { return 2; }
-        if (node.start < 0) { return 3; }
-        if (node.length < 0) { return 3; }
+        if (node.kind < composite_const_kind()) { return composite_validation_invalid_kind_status(); }
+        if (node.kind > composite_operand_kind()) { return composite_validation_invalid_kind_status(); }
+        if (node.start < 0) { return composite_validation_invalid_span_status(); }
+        if (node.length < 0) { return composite_validation_invalid_span_status(); }
         if (node.kind == composite_operand_kind()) {
-            if (node.result < 0) { return 4; }
-            if (node.owner_hir_id < 0) { return 4; }
-            if (node.ordinal < 0) { return 4; }
-            if (node.type_code != 0) { return 4; }
+            if (node.result < 0) { return composite_validation_invalid_operand_status(); }
+            if (node.owner_hir_id < 0) { return composite_validation_invalid_operand_status(); }
+            if (node.ordinal < 0) { return composite_validation_invalid_operand_status(); }
+            if (node.type_code != 0) { return composite_validation_invalid_operand_status(); }
         } else {
-            if (node.result < 0) { return 5; }
-            if (node.type_code <= 0) { return 5; }
-            if (node.hir_node_id < 0) { return 5; }
+            if (node.result < 0) { return composite_validation_invalid_result_status(); }
+            if (node.type_code <= 0) { return composite_validation_invalid_result_status(); }
+            if (node.hir_node_id < 0) { return composite_validation_invalid_result_status(); }
         }
         if (node.kind == composite_binary_kind()) {
-            if (node.left < 0) { return 6; }
-            if (node.right < 0) { return 6; }
-            if (node.symbol_code < 1) { return 6; }
-            if (node.symbol_code > 10) { return 6; }
+            if (node.left < 0) { return composite_validation_invalid_binary_status(); }
+            if (node.right < 0) { return composite_validation_invalid_binary_status(); }
+            if (node.symbol_code < 1) { return composite_validation_invalid_binary_status(); }
+            if (node.symbol_code > 10) { return composite_validation_invalid_binary_status(); }
         }
         if (node.kind == composite_binding_kind()) {
-            if (node.binding_id < 0) { return 7; }
-            if (node.result != node.binding_id) { return 7; }
+            if (node.binding_id < 0) { return composite_validation_invalid_binding_status(); }
+            if (node.result != node.binding_id) { return composite_validation_invalid_binding_status(); }
         }
         if (node.kind == composite_call_kind()) {
-            if (node.symbol_start < 0) { return 8; }
-            if (node.symbol_length <= 0) { return 8; }
+            if (node.symbol_start < 0) { return composite_validation_invalid_call_status(); }
+            if (node.symbol_length <= 0) { return composite_validation_invalid_call_status(); }
         }
         if (node.kind == composite_field_kind()) {
-            if (node.left < 0) { return 9; }
-            if (node.symbol_start < 0) { return 9; }
-            if (node.symbol_length <= 0) { return 9; }
+            if (node.left < 0) { return composite_validation_invalid_field_status(); }
+            if (node.symbol_start < 0) { return composite_validation_invalid_field_status(); }
+            if (node.symbol_length <= 0) { return composite_validation_invalid_field_status(); }
         }
         if (node.kind == composite_construct_kind()) {
-            if (node.symbol_start < 0) { return 10; }
-            if (node.symbol_length <= 0) { return 10; }
+            if (node.symbol_start < 0) { return composite_validation_invalid_construct_status(); }
+            if (node.symbol_length <= 0) { return composite_validation_invalid_construct_status(); }
         }
         index = checked_add(index, 1);
     }
