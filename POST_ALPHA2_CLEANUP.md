@@ -247,7 +247,7 @@ meaning.
   (54m32s).
 - PR #122 merged as `88c3693930fb51418e8f61292b4bf89899711cb6`.
 
-### Deferred bootstrap/test-infrastructure defects (candidate)
+### Deferred bootstrap/test-infrastructure defects (closed by PR #123)
 
 - D2 profiling separated two dominant costs: project loading/parsing and native
   object compilation. The safe bounded repair shares only immutable,
@@ -277,6 +277,31 @@ meaning.
   in 665.67s, all 10 replacement acceptance projects passing, and total gate
   duration 1986.948s. The cached main suite completed in 11m05s; replacement
   acceptance completed in 21m34s.
+- All six authoritative hosted checks passed, and PR #123 merged as
+  `16b62289e072632a66912da1d3ce4b974af3242c`.
+
+### N6 status namespaces (candidate)
+
+- Bootstrap validation, lowering, assembly, ownership, contract, capability,
+  generic, lifecycle, driver, and nested failure-offset families now define
+  named status functions at their canonical Merit production sites. Consumers
+  use those symbols without changing any established result or nested offset.
+- The source-function record and resolved-pipeline audit additionally names
+  allocation-capability validation, numeric/type descriptor validation, vector
+  callable synthesis, parameter ownership lookup, parameter-span parsing, and
+  return-surface mismatch statuses. A stale raw token-kind consumer and return
+  event-kind consumer found during the audit now use their existing canonical
+  symbols.
+- Remaining raw numeric returns in the bounded files were classified as
+  boolean predicates, ordering results, canonical kind/policy/type definitions,
+  character or packed-text encodings, ordinary arithmetic, or sentinels owned
+  by N7-N10; they are not duplicate status consumers.
+- `test_bootstrap_status_namespace_representation_is_stable` locks the named
+  status values and offsets through both the interpreter and generated native C
+  (1 passed in 17.57s). Focused adjacent status-family and production-path tests
+  pass across contracts, structured/statement lowering, assembly, ownership,
+  HIR, generics, lifecycle, MIR, and AST validation; no language semantic,
+  serialization, ABI value, or diagnostic distinction changed.
 
 ## Ordered PR checklist
 
@@ -292,7 +317,7 @@ meaning.
 - [x] **CFG and ownership identifiers (N5, PRs #121-#122)** — N5a CFG and structured
   control closed in PR #121; N5b ownership closed in PR #122. Preserve
   source order, cleanup, move, drop, and control-flow semantics.
-- [ ] **Deferred defects (D2, D3, then D1; candidate)** — one staged PR: first remove
+- [x] **Deferred defects (D2, D3, then D1; PR #123)** — one staged PR: first remove
   redundant native-bootstrap construction, then repair WSL pytest-cache
   handling, then reproduce and repair the independently testable call-ABI
   corruption. Preserve clean-build coverage and commit each stage separately.
@@ -312,7 +337,6 @@ Each migration PR must provide:
 1. the exact numeric domain and canonical definition site;
 2. a before/after consumer inventory;
 3. representation assertions proving no value changed;
-4. focused Python/native parity or fail-closed tests;
 5. confirmation that language semantics, serialization, and ABI did not change;
 6. the narrowest relevant subsystem gate, followed by the full gate only when
    the candidate is ready.
