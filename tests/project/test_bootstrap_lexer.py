@@ -865,6 +865,12 @@ STATUS_NAMESPACE_REPRESENTATION = (
     ("source_function_stats_invalid_record_kind_status()", 14),
     ("resolved_control_invalid_value_status()", 30),
     ("resolved_control_invalid_variant_status()", 33),
+    ("function_contract_record_invalid_kind_status()", 10),
+    ("function_contract_record_invalid_old_snapshot_status()", 20),
+    ("function_contract_missing_ast_status()", 20),
+    ("function_contract_numeric_type_mismatch_status()", 33),
+    ("clause_metadata_invalid_kind_status()", 10),
+    ("clause_metadata_invalid_semantic_id_status()", 14),
 )
 
 
@@ -892,6 +898,8 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
         "import bootstrap_mir_source_ownership_control;\n"
         "import bootstrap_mir_source_function_record_stats;\n"
         "import bootstrap_mir_resolved_control_flow;\n"
+        "import bootstrap_mir_function_contracts;\n"
+        "import bootstrap_mir_function_clause_metadata;\n"
         "import bootstrap_native_replacement_driver;\n"
         f"fn main()->i32 {{ {prints} return 0; }}\n"
     )

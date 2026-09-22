@@ -36,11 +36,31 @@ pub fn function_contract_call_kind()->i32{return 5;}
 pub fn function_contract_result_capture_kind()->i32{return 6;}
 pub fn function_contract_field_load_kind()->i32{return 7;}
 pub fn function_contract_old_snapshot_kind()->i32{return 8;}
-fn function_contract_missing_call_argument_status()->i32{return 23;}
-fn function_contract_invalid_call_symbol_status()->i32{return 24;}
-fn function_contract_unsupported_call_status()->i32{return 25;}
-fn function_contract_multiple_call_arguments_status()->i32{return 26;}
-fn function_contract_invalid_call_argument_status()->i32{return 27;}
+pub fn function_contract_missing_ast_status()->i32{return 20;}
+pub fn function_contract_invalid_binding_status()->i32{return 21;}
+pub fn function_contract_invalid_hir_status()->i32{return 22;}
+pub fn function_contract_missing_call_argument_status()->i32{return 23;}
+pub fn function_contract_invalid_call_symbol_status()->i32{return 24;}
+pub fn function_contract_unsupported_call_status()->i32{return 25;}
+pub fn function_contract_multiple_call_arguments_status()->i32{return 26;}
+pub fn function_contract_invalid_call_argument_status()->i32{return 27;}
+pub fn function_contract_invalid_field_ordinal_status()->i32{return 28;}
+pub fn function_contract_unresolved_field_type_status()->i32{return 29;}
+pub fn function_contract_unresolved_result_type_status()->i32{return 30;}
+pub fn function_contract_invalid_old_phase_status()->i32{return 31;}
+pub fn function_contract_invalid_old_argument_status()->i32{return 32;}
+pub fn function_contract_numeric_type_mismatch_status()->i32{return 33;}
+pub fn function_contract_record_invalid_kind_status()->i32{return 10;}
+pub fn function_contract_record_invalid_clause_status()->i32{return 11;}
+pub fn function_contract_record_invalid_phase_status()->i32{return 12;}
+pub fn function_contract_record_invalid_span_status()->i32{return 13;}
+pub fn function_contract_record_instruction_order_status()->i32{return 14;}
+pub fn function_contract_record_invalid_binary_status()->i32{return 15;}
+pub fn function_contract_record_invalid_check_status()->i32{return 16;}
+pub fn function_contract_record_invalid_call_status()->i32{return 17;}
+pub fn function_contract_record_invalid_result_capture_status()->i32{return 18;}
+pub fn function_contract_record_invalid_field_load_status()->i32{return 19;}
+pub fn function_contract_record_invalid_old_snapshot_status()->i32{return 20;}
 pub fn function_contract_precondition_phase()->i32{return 1;}
 pub fn function_contract_postcondition_phase()->i32{return 2;}
 pub fn function_contract_entry_snapshot_phase()->i32{return 3;}
@@ -98,7 +118,7 @@ fn function_contract_emit(
 {
  let expressions:Vec<ExpressionNode>=parse_expression_span(source,tokens,clause_operand_start(operand),clause_operand_length(operand),allocator);
  let ast_nodes:Vec<AstNodeRecord>=lower_expression_ast_records(expressions,allocator);
- if(vec_len<AstNodeRecord>(ast_nodes)==0){return 20;}
+ if(vec_len<AstNodeRecord>(ast_nodes)==0){return function_contract_missing_ast_status();}
  var hir_nodes:Vec<HirExpressionRecord>=vec_new<HirExpressionRecord>(allocator,vec_len<AstNodeRecord>(ast_nodes));
  var index:i64=0;
  while(index<vec_len<AstNodeRecord>(ast_nodes)){
@@ -115,25 +135,25 @@ fn function_contract_emit(
    else {
     binding_id=hir_find_scoped_binding_id(source,tokens,binding_starts,binding_lengths,ast_start(ast),ast_length(ast));
     if(binding_id<0){if(typed!=0){if(function_contract_is_result(source,ast_start(ast),ast_length(ast))!=0){binding_id=hir_result_reference_binding_id();}}}
-    if(binding_id<0){if(binding_id!=hir_result_reference_binding_id()){return 21;}}
+    if(binding_id<0){if(binding_id!=hir_result_reference_binding_id()){return function_contract_invalid_binding_status();}}
    }
   }
   var resolved_type:i32=function_contract_ast_type(ast_kind(ast));
   if(typed!=0){
    if(binding_id>=0){let binding_type:i32=sfr_local_type_code(body_records,binding_id);if(binding_type!=function_mir_unresolved_type_code()){resolved_type=binding_type;}}
-   if(binding_id==hir_result_reference_binding_id()){resolved_type=function_contract_result_type(body_records);if(resolved_type==function_mir_unresolved_type_code()){return 30;}}
+   if(binding_id==hir_result_reference_binding_id()){resolved_type=function_contract_result_type(body_records);if(resolved_type==function_mir_unresolved_type_code()){return function_contract_unresolved_result_type_status();}}
    if(ast_kind(ast)==ast_field_kind()){
     let receiver:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_left(ast));
     let field:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_right(ast));
     let ordinal:i32=sfr_i64_struct_field_ordinal(source,struct_catalog,hir_type_code(receiver),hir_start(field),hir_length(field));
-    if(ordinal<0){return 28;}
+    if(ordinal<0){return function_contract_invalid_field_ordinal_status();}
     resolved_type=sfr_i64_struct_field_type_code(source,struct_catalog,hir_type_code(receiver),ordinal);
-    if(resolved_type==function_mir_unresolved_type_code()){return 29;}
+    if(resolved_type==function_mir_unresolved_type_code()){return function_contract_unresolved_field_type_status();}
    }
    if(ast_is_call(ast)!=0){
     let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_left(ast));
     if(function_contract_is_old(source,hir_start(callee),hir_length(callee))!=0){
-     if(ast_right(ast)<0){return 32;}let old_argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_right(ast));resolved_type=hir_type_code(old_argument);
+     if(ast_right(ast)<0){return function_contract_invalid_old_argument_status();}let old_argument:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,ast_right(ast));resolved_type=hir_type_code(old_argument);
     }
    }
   }
@@ -154,7 +174,7 @@ fn function_contract_emit(
     var numeric_type:i32=function_mir_unresolved_type_code();
     if(function_mir_type_is_declared_numeric(hir_type_code(left_node))!=0){numeric_type=hir_type_code(left_node);}
     if(function_mir_type_is_declared_numeric(hir_type_code(right_node))!=0){
-     if(numeric_type!=function_mir_unresolved_type_code()){if(numeric_type!=hir_type_code(right_node)){return 33;}}
+     if(numeric_type!=function_mir_unresolved_type_code()){if(numeric_type!=hir_type_code(right_node)){return function_contract_numeric_type_mismatch_status();}}
      numeric_type=hir_type_code(right_node);
     }
     if(numeric_type!=function_mir_unresolved_type_code()){
@@ -170,7 +190,7 @@ fn function_contract_emit(
     var numeric_type:i32=function_mir_unresolved_type_code();
     if(function_mir_type_is_declared_numeric(hir_type_code(left_node))!=0){numeric_type=hir_type_code(left_node);}
     if(function_mir_type_is_declared_numeric(hir_type_code(right_node))!=0){
-     if(numeric_type!=function_mir_unresolved_type_code()){if(numeric_type!=hir_type_code(right_node)){return 33;}}
+     if(numeric_type!=function_mir_unresolved_type_code()){if(numeric_type!=hir_type_code(right_node)){return function_contract_numeric_type_mismatch_status();}}
      numeric_type=hir_type_code(right_node);
     }
     if(numeric_type!=function_mir_unresolved_type_code()){
@@ -181,8 +201,8 @@ fn function_contract_emit(
    index=checked_add(index,1);
   }
  }
- if(typed==0){if(validate_primitive_hir_records(hir_nodes)!=0){return 22;}}
- else {if(validate_typed_contract_hir(hir_nodes)!=0){return 22;}}
+ if(typed==0){if(validate_primitive_hir_records(hir_nodes)!=0){return function_contract_invalid_hir_status();}}
+ else {if(validate_typed_contract_hir(hir_nodes)!=0){return function_contract_invalid_hir_status();}}
  let count:i64=vec_len<HirExpressionRecord>(hir_nodes); var local_ids:Vec<i64>=vec_new<i64>(allocator,count); index=0;
  while(index<count){vec_push<i64>(local_ids,-1);index=checked_add(index,1);}
  var phases:Vec<i32>=vec_new<i32>(allocator,count);index=0;while(index<count){vec_push<i32>(phases,contract_kind);index=checked_add(index,1);}
@@ -191,7 +211,7 @@ fn function_contract_emit(
   if(hir_is_call(candidate)!=0){
    let callee:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(candidate));
    if(function_contract_is_old(source,hir_start(callee),hir_length(callee))!=0){
-    if(contract_kind!=function_contract_postcondition_phase()){return 31;}if(hir_right(candidate)<0){return 32;}
+    if(contract_kind!=function_contract_postcondition_phase()){return function_contract_invalid_old_phase_status();}if(hir_right(candidate)<0){return function_contract_invalid_old_argument_status();}
     var phase_stack:Vec<i64>=vec_new<i64>(allocator,4);vec_push<i64>(phase_stack,hir_right(candidate));
     while(vec_len<i64>(phase_stack)>0){let phase_index:i64=vec_pop<i64>(phase_stack);vec_set<i32>(phases,phase_index,function_contract_entry_snapshot_phase());
      let phase_node:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,phase_index);let phase_kind:i32=hir_kind(phase_node);
@@ -247,7 +267,7 @@ fn function_contract_emit(
    let receiver:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_left(hir));
    let field:HirExpressionRecord=vec_get<HirExpressionRecord>(hir_nodes,hir_right(hir));
    let ordinal:i32=sfr_i64_struct_field_ordinal(source,struct_catalog,hir_type_code(receiver),hir_start(field),hir_length(field));
-   if(ordinal<0){return 28;}
+   if(ordinal<0){return function_contract_invalid_field_ordinal_status();}
    let iid:i64=vec_get<i64>(counters,1);
    vec_push<MirFunctionContractRecord>(output,MirFunctionContractRecord{kind:function_contract_field_load_kind(),clause_ordinal:clause_ordinal,contract_kind:vec_get<i32>(phases,index),start:hir_start(hir),length:hir_length(hir),id:iid,result:vec_get<i64>(local_ids,index),left:vec_get<i64>(local_ids,hir_left(hir)),right:-1,symbol:ordinal,type_code:hir_type_code(hir),numeric_policy:0});
    vec_set<i64>(counters,1,checked_add(iid,1));
@@ -324,14 +344,14 @@ pub fn validate_function_contract_mir(borrow records:Vec<MirFunctionContractReco
  var next_instruction:i64=0;var index:i64=0;
  while(index<vec_len<MirFunctionContractRecord>(records)){
   let r:MirFunctionContractRecord=vec_get<MirFunctionContractRecord>(records,index);
-  if(r.kind<function_contract_temporary_local_kind()){return 10;}if(r.kind>function_contract_old_snapshot_kind()){return 10;}if(r.clause_ordinal<0){return 11;}if(r.contract_kind<function_contract_precondition_phase()){return 12;}if(r.contract_kind>function_contract_entry_snapshot_phase()){return 12;}if(r.start<0){return 13;}if(r.length<=0){return 13;}
-  if(r.kind==function_contract_const_kind()){if(r.id!=next_instruction){return 14;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_binary_kind()){if(r.id!=next_instruction){return 14;}if(r.left<0){return 15;}if(r.right<0){return 15;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_check_kind()){if(r.id!=next_instruction){return 14;}if(r.left<0){return 16;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_call_kind()){if(r.id!=next_instruction){return 14;}if(r.result<0){return 17;}if(r.left<0){return 17;}if(r.right!=-1){return 17;}if(r.symbol<=0){return 17;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_result_capture_kind()){if(r.id!=next_instruction){return 14;}if(r.result<0){return 18;}if(r.left!=-1){return 18;}if(r.right!=-1){return 18;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_field_load_kind()){if(r.id!=next_instruction){return 14;}if(r.result<0){return 19;}if(r.left<0){return 19;}if(r.right!=-1){return 19;}if(r.symbol<0){return 19;}next_instruction=checked_add(next_instruction,1);}
-  if(r.kind==function_contract_old_snapshot_kind()){if(r.id!=next_instruction){return 14;}if(r.result<0){return 20;}if(r.left<0){return 20;}if(r.right!=-1){return 20;}if(r.contract_kind!=function_contract_entry_snapshot_phase()){return 20;}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind<function_contract_temporary_local_kind()){return function_contract_record_invalid_kind_status();}if(r.kind>function_contract_old_snapshot_kind()){return function_contract_record_invalid_kind_status();}if(r.clause_ordinal<0){return function_contract_record_invalid_clause_status();}if(r.contract_kind<function_contract_precondition_phase()){return function_contract_record_invalid_phase_status();}if(r.contract_kind>function_contract_entry_snapshot_phase()){return function_contract_record_invalid_phase_status();}if(r.start<0){return function_contract_record_invalid_span_status();}if(r.length<=0){return function_contract_record_invalid_span_status();}
+  if(r.kind==function_contract_const_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_binary_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.left<0){return function_contract_record_invalid_binary_status();}if(r.right<0){return function_contract_record_invalid_binary_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_check_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.left<0){return function_contract_record_invalid_check_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_call_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.result<0){return function_contract_record_invalid_call_status();}if(r.left<0){return function_contract_record_invalid_call_status();}if(r.right!=-1){return function_contract_record_invalid_call_status();}if(r.symbol<=0){return function_contract_record_invalid_call_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_result_capture_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.result<0){return function_contract_record_invalid_result_capture_status();}if(r.left!=-1){return function_contract_record_invalid_result_capture_status();}if(r.right!=-1){return function_contract_record_invalid_result_capture_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_field_load_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.result<0){return function_contract_record_invalid_field_load_status();}if(r.left<0){return function_contract_record_invalid_field_load_status();}if(r.right!=-1){return function_contract_record_invalid_field_load_status();}if(r.symbol<0){return function_contract_record_invalid_field_load_status();}next_instruction=checked_add(next_instruction,1);}
+  if(r.kind==function_contract_old_snapshot_kind()){if(r.id!=next_instruction){return function_contract_record_instruction_order_status();}if(r.result<0){return function_contract_record_invalid_old_snapshot_status();}if(r.left<0){return function_contract_record_invalid_old_snapshot_status();}if(r.right!=-1){return function_contract_record_invalid_old_snapshot_status();}if(r.contract_kind!=function_contract_entry_snapshot_phase()){return function_contract_record_invalid_old_snapshot_status();}next_instruction=checked_add(next_instruction,1);}
   index=checked_add(index,1);
  }
  return 0;

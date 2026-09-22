@@ -4,6 +4,12 @@ import bootstrap_statement_semantics;
 
 capability allocate;
 
+pub fn clause_metadata_invalid_kind_status()->i32{return 10;}
+pub fn clause_metadata_invalid_clause_ordinal_status()->i32{return 11;}
+pub fn clause_metadata_invalid_operand_ordinal_status()->i32{return 12;}
+pub fn clause_metadata_invalid_span_status()->i32{return 13;}
+pub fn clause_metadata_invalid_semantic_id_status()->i32{return 14;}
+
 // Semantic function-clause metadata. Kinds: 1 effect, 2 required capability.
 pub struct MirFunctionClauseMetadata {
     kind: i32;
@@ -103,13 +109,13 @@ pub fn validate_function_clause_metadata(borrow values: Vec<MirFunctionClauseMet
     var index: i64 = 0;
     while (index < vec_len<MirFunctionClauseMetadata>(values)) {
         let value: MirFunctionClauseMetadata = vec_get<MirFunctionClauseMetadata>(values, index);
-        if (value.kind < 1) { return 10; }
-        if (value.kind > 2) { return 10; }
-        if (value.clause_ordinal < 0) { return 11; }
-        if (value.operand_ordinal < 0) { return 12; }
-        if (value.start < 0) { return 13; }
-        if (value.length <= 0) { return 13; }
-        if (value.kind == 2) { if (value.semantic_id < 0) { return 14; } }
+        if (value.kind < 1) { return clause_metadata_invalid_kind_status(); }
+        if (value.kind > 2) { return clause_metadata_invalid_kind_status(); }
+        if (value.clause_ordinal < 0) { return clause_metadata_invalid_clause_ordinal_status(); }
+        if (value.operand_ordinal < 0) { return clause_metadata_invalid_operand_ordinal_status(); }
+        if (value.start < 0) { return clause_metadata_invalid_span_status(); }
+        if (value.length <= 0) { return clause_metadata_invalid_span_status(); }
+        if (value.kind == 2) { if (value.semantic_id < 0) { return clause_metadata_invalid_semantic_id_status(); } }
         index = checked_add(index, 1);
     }
     return 0;
