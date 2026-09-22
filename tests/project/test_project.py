@@ -8,7 +8,14 @@ import subprocess
 import pytest
 
 from merit.compiler import CompileError
-from merit.project.build import build, build_shared, check, interpret, shared_library_policy
+from merit.project.build import (
+    NATIVE_OBJECT_CACHE_ENV,
+    build,
+    build_shared,
+    check,
+    interpret,
+    shared_library_policy,
+)
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 
@@ -51,7 +58,8 @@ def test_multimodule_native_matches_interpreter(tmp_path,monkeypatch):
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
-def test_project_build_reuses_content_addressed_object(tmp_path):
+def test_project_build_reuses_content_addressed_object(tmp_path, monkeypatch):
+    monkeypatch.delenv(NATIVE_OBJECT_CACHE_ENV, raising=False)
     project = load_project(EXAMPLE)
     build(project, tmp_path / "first")
     objects = list((tmp_path / ".merit-cache").glob("*.o"))
@@ -67,7 +75,29 @@ def test_project_build_reuses_content_addressed_object(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
-def test_failed_object_compilation_does_not_publish_partial_cache_entry(tmp_path):
+def test_project_build_can_share_content_addressed_objects_across_output_roots(
+    tmp_path, monkeypatch
+):
+    shared_cache = tmp_path / "shared-native-object-cache"
+    monkeypatch.setenv(NATIVE_OBJECT_CACHE_ENV, str(shared_cache))
+    project = load_project(EXAMPLE)
+
+    build(project, tmp_path / "first-output" / "ledger")
+    objects = list(shared_cache.glob("*.o"))
+    assert len(objects) == 1
+    cached_object = objects[0]
+    original_mtime = cached_object.stat().st_mtime_ns
+
+    build(project, tmp_path / "second-output" / "ledger")
+    assert list(shared_cache.glob("*.o")) == [cached_object]
+    assert cached_object.stat().st_mtime_ns == original_mtime
+    assert not (tmp_path / "first-output" / ".merit-cache").exists()
+    assert not (tmp_path / "second-output" / ".merit-cache").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="C compiler unavailable")
+def test_failed_object_compilation_does_not_publish_partial_cache_entry(tmp_path, monkeypatch):
+    monkeypatch.delenv(NATIVE_OBJECT_CACHE_ENV, raising=False)
     project = load_project(EXAMPLE)
     invalid_manifest = dataclasses.replace(project.manifest, c_flags=("-fdefinitely-not-a-real-merit-test-flag",))
     with pytest.raises(subprocess.CalledProcessError):

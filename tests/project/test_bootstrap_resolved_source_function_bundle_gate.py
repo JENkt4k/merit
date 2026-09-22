@@ -89,6 +89,72 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
+def _add_tail_status_marker(root: Path) -> None:
+    snapshot = root / "src" / "mir_resolved_source_function_snapshot.mrt"
+    text = snapshot.read_text()
+    text, count = re.subn(
+        r"(pub fn print_resolved_source_function_snapshot_with_source_policy\([\s\S]*?"
+        r"borrow destructor_placements: Vec<MirPlacementRecord>)(\n\) -> i32)",
+        r"\1,\n    call_abi_marker: i32\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    text, count = re.subn(
+        r"(pub fn print_resolved_source_function_snapshot_with_source_policy\([\s\S]*?\n\{)",
+        r"\1\n    if (call_abi_marker != 1392) { return call_abi_marker; }",
+        text,
+        count=1,
+    )
+    assert count == 1
+    text, count = re.subn(
+        r"(destructor_body, destructor_cfg, destructor_placements)(\n    \);\n\})",
+        r"\1, 1392\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    snapshot.write_text(text)
+
+    bundle = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    text = bundle.read_text()
+    text, count = re.subn(
+        r"(pub fn print_resolved_source_function_bundle_item_with_source_policy\([\s\S]*?"
+        r"borrow destructor_placements: Vec<MirPlacementRecord>)(\n\) -> i32)",
+        r"\1,\n    call_abi_marker: i32\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    text, count = re.subn(
+        r"(destructor_body, destructor_cfg, destructor_placements)(\n    \);\n\})",
+        r"\1, call_abi_marker\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    text, count = re.subn(
+        r"(destructor_body, destructor_cfg, destructor_placements)(\n    \);\n\})",
+        r"\1, 1392\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    bundle.write_text(text)
+
+    driver = root / "src" / "native_replacement_driver.mrt"
+    text = driver.read_text()
+    text, count = re.subn(
+        r"(destructor_descriptors, destructor_body, destructor_cfg, destructor_placements)(\n"
+        r"\s*\);)",
+        r"\1, 1392\2",
+        text,
+        count=1,
+    )
+    assert count == 1
+    driver.write_text(text)
+
+
 def test_native_bundle_framing_matches_interpreter_and_python_decoder(tmp_path: Path) -> None:
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
@@ -102,3 +168,17 @@ def test_native_bundle_framing_matches_interpreter_and_python_decoder(tmp_path: 
     assert len(bundle.functions) == 2
     assert len(bundle.encoded_snapshots) == 2
     assert all(len(snapshot) == 2 + SNAPSHOT_SECTION_COUNT for snapshot in bundle.encoded_snapshots)
+
+
+def test_large_nested_call_preserves_tail_scalar_and_return_status(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _add_tail_status_marker(root)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "large-call-status")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = tuple(int(line) for line in native.splitlines())
+    bundle = decode_resolved_source_function_bundle(values)
+    assert len(bundle.functions) == 2

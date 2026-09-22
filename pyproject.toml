@@ -20,3 +20,6 @@ merit-copybook-c = "merit.copybook_c:main"
 
 [tool.setuptools.packages.find]
 include = ["merit*"]
+
+[tool.pytest.ini_options]
+cache_dir = ".merit/pytest-cache"
