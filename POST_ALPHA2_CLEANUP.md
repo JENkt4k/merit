@@ -304,6 +304,17 @@ meaning.
   serialization, ABI value, or diagnostic distinction changed.
 - The bootstrap/project subsystem gate passes with 426 tests passed and 1
   skipped in 1196.60s (gate duration 1199.642s).
+- The first native-Windows full run exposed a D2 cache-publication race rather
+  than an N6 semantic failure: two xdist workers compiling the same immutable
+  object could make the losing `os.replace` fail while the winning object was
+  already in use. The cache now accepts only an already-published regular-file
+  destination on that `PermissionError` path and still propagates unrelated
+  permission failures. The focused portability and formerly failing corpus
+  case pass together (12 passed in 10.67s), and the adjacent cache contract
+  tests pass (3 passed in 2.72s).
+- The authoritative native-Windows full gate passes on Python 3.13.15 with
+  1167 tests passed, 11 replacement-acceptance tests passed, all 10 acceptance
+  projects verified, and a total gate duration of 2324.079s.
 
 ## Ordered PR checklist
 
