@@ -8,6 +8,9 @@ from merit.bootstrap.mir_composite_parity import (
     MIR_COMPOSITE_KIND_OPERAND,
 )
 from merit.bootstrap.mir_function_assembly_parity import (
+    MIR_FUNCTION_ABSENT_RECORD_VALUE,
+    MIR_FIELD_STORE_INITIALIZE_POLICY,
+    MIR_FIELD_STORE_REPLACE_POLICY,
     MIR_ASSEMBLY_SOURCE_KIND_BODY,
     MIR_ASSEMBLY_SOURCE_KIND_CONTRACT,
     MIR_ASSEMBLY_SOURCE_KIND_OWNERSHIP,
@@ -69,6 +72,11 @@ from merit.bootstrap.mir_parity import (
 
 
 def test_python_mir_kind_mirrors_preserve_bootstrap_encodings():
+    assert MIR_FUNCTION_ABSENT_RECORD_VALUE == -1
+    assert (
+        MIR_FIELD_STORE_INITIALIZE_POLICY,
+        MIR_FIELD_STORE_REPLACE_POLICY,
+    ) == (0, 1)
     assert (
         MIR_EXPRESSION_KIND_CONST,
         MIR_EXPRESSION_KIND_BINARY,

@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping
 
 from merit.bootstrap.mir_contract import MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirType
 from merit.bootstrap.mir_function_assembly_parity import (
+    MIR_FUNCTION_ABSENT_RECORD_VALUE,
     NativeWholeFunctionMirError,
     lower_native_whole_function_assembly,
 )
@@ -201,7 +202,7 @@ def lower_native_ownership_whole_function_assembly(
             MIR_OWNERSHIP_RECORD_KIND_REPLACE_DROP,
             MIR_OWNERSHIP_RECORD_KIND_IMPLICIT_DROP,
         }:
-            if result != -1:
+            if result != MIR_FUNCTION_ABSENT_RECORD_VALUE:
                 raise NativeWholeFunctionMirError("ownership drop cannot produce a result")
             final_instruction[global_id] = MirInstruction(
                 global_id, "drop", operands=(left,), ownership="owned"

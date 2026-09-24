@@ -22,6 +22,8 @@ pub fn ownership_assembly_invalid_operand_local_status()->i32{return 44;}
 pub fn ownership_assembly_excess_body_instruction_status()->i32{return 45;}
 pub fn ownership_assembly_body_instruction_count_status()->i32{return 46;}
 pub fn ownership_assembly_empty_event_stream_status()->i32{return 104;}
+fn ownership_source_record_not_found()->i64{return -1;}
+fn ownership_source_local_not_found()->i64{return -1;}
 
 fn ownership_source_record_for_instruction(borrow records: Vec<MirOwnershipRecord>, instruction_id: i64) -> i64 {
     var index: i64 = 0;
@@ -30,7 +32,7 @@ fn ownership_source_record_for_instruction(borrow records: Vec<MirOwnershipRecor
         if (ownership_record_instruction_id(record) == instruction_id) { return index; }
         index = checked_add(index, 1);
     }
-    return -1;
+    return ownership_source_record_not_found();
 }
 
 fn ownership_source_binding_local(borrow bindings: Vec<MirOwnershipBinding>, binding_id: i64) -> i64 {
@@ -40,7 +42,7 @@ fn ownership_source_binding_local(borrow bindings: Vec<MirOwnershipBinding>, bin
         if (ownership_binding_id(binding) == binding_id) { return ownership_binding_local_id(binding); }
         index = checked_add(index, 1);
     }
-    return -1;
+    return ownership_source_local_not_found();
 }
 
 fn emit_contract_provenance_records(
@@ -95,9 +97,9 @@ requires_caps [allocate]
     if (validate_ownership_records(ownership_records, bindings) != 0) { return ownership_assembly_invalid_records_status(); }
 
     var next_instruction: Vec<i64> = vec_new<i64>(allocator, 1); vec_push<i64>(next_instruction, 0);
-    let pre_status: i32 = emit_contract_provenance_records(contracts,function_contract_precondition_phase(),binding_count,body_local_count,-1,next_instruction,events,sources);
+    let pre_status: i32 = emit_contract_provenance_records(contracts,function_contract_precondition_phase(),binding_count,body_local_count,assembly_source_absent_record_value(),next_instruction,events,sources);
     if (pre_status != 0) { return pre_status; }
-    let old_status:i32=emit_contract_provenance_records(contracts,function_contract_entry_snapshot_phase(),binding_count,body_local_count,-1,next_instruction,events,sources);
+    let old_status:i32=emit_contract_provenance_records(contracts,function_contract_entry_snapshot_phase(),binding_count,body_local_count,assembly_source_absent_record_value(),next_instruction,events,sources);
     if(old_status!=0){return old_status;}
 
     var expected_source_body: i64 = 0; var expected_input_place: i64 = 0; var index: i64 = 0;
@@ -113,19 +115,19 @@ requires_caps [allocate]
             if (ownership_index >= 0) {
                 let record: MirOwnershipRecord = vec_get<MirOwnershipRecord>(ownership_records, ownership_index);
                 let record_kind: i32 = ownership_record_kind(record);
-                var result_local: i64 = -1; let left_local: i64 = ownership_record_operand_local(record);
+                var result_local: i64 = assembly_source_absent_record_value(); let left_local: i64 = ownership_record_operand_local(record);
                 if (record_kind == ownership_record_kind_move()) { result_local = ownership_source_binding_local(bindings, ownership_record_other_binding_id(record)); if (result_local < 0) { return ownership_assembly_missing_move_destination_status(); } }
                 if (record_kind == ownership_record_kind_replace_move()) { result_local = ownership_source_binding_local(bindings, ownership_record_binding_id(record)); if (result_local < 0) { return ownership_assembly_missing_replace_target_status(); } }
                 if (record_kind < ownership_record_kind_move()) { return ownership_assembly_invalid_record_kind_status(); } if (record_kind > ownership_record_kind_implicit_drop()) { return ownership_assembly_invalid_record_kind_status(); } if (left_local < 0) { return ownership_assembly_invalid_operand_local_status(); }
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                    global_id:global_id,source_kind:assembly_source_ownership_kind(),source_id:ownership_index,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:-1,
-                    result:result_local,left:left_local,right:-1
+                    global_id:global_id,source_kind:assembly_source_ownership_kind(),source_id:ownership_index,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+                    result:result_local,left:left_local,right:assembly_source_absent_record_value()
                 });
             } else {
                 if (expected_source_body >= body_instruction_count) { return ownership_assembly_excess_body_instruction_status(); }
                 vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
-                    global_id:global_id,source_kind:assembly_source_body_kind(),source_id:expected_source_body,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:-1,
-                    result:-1,left:-1,right:-1
+                    global_id:global_id,source_kind:assembly_source_body_kind(),source_id:expected_source_body,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+                    result:assembly_source_absent_record_value(),left:assembly_source_absent_record_value(),right:assembly_source_absent_record_value()
                 });
                 expected_source_body = checked_add(expected_source_body, 1);
             }

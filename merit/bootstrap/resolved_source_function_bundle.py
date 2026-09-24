@@ -25,6 +25,10 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
 BUNDLE_VERSION = 2
 _SUPPORTED_BUNDLE_VERSIONS = frozenset({1, BUNDLE_VERSION})
+_BUNDLE_MAGIC_INDEX = 0
+_BUNDLE_VERSION_INDEX = 1
+_BUNDLE_FUNCTION_COUNT_INDEX = 2
+_BUNDLE_HEADER_WIDTH = 3
 
 
 class ResolvedSourceFunctionBundleError(ValueError):
@@ -76,18 +80,18 @@ def decode_resolved_source_function_bundle(
     values: Iterable[int],
 ) -> ResolvedSourceFunctionBundle:
     data = tuple(int(value) for value in values)
-    if len(data) < 3 or data[0] != BUNDLE_MAGIC:
+    if len(data) < _BUNDLE_HEADER_WIDTH or data[_BUNDLE_MAGIC_INDEX] != BUNDLE_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
-    if data[1] not in _SUPPORTED_BUNDLE_VERSIONS:
+    bundle_version = data[_BUNDLE_VERSION_INDEX]
+    if bundle_version not in _SUPPORTED_BUNDLE_VERSIONS:
         raise ResolvedSourceFunctionBundleError(
-            f"unsupported resolved source function bundle version {data[1]}"
+            f"unsupported resolved source function bundle version {bundle_version}"
         )
-    count = data[2]
+    count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
     if count <= 0:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
 
-    bundle_version = data[1]
-    position = 3
+    position = _BUNDLE_HEADER_WIDTH
     decoded: list[ResolvedSourceFunctionSnapshot] = []
     encoded: list[tuple[int, ...]] = []
     shared_source: tuple[int, ...] = ()

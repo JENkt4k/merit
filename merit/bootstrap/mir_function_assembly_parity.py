@@ -79,7 +79,10 @@ MIR_ASSEMBLY_SOURCE_KIND_OWNERSHIP = 3
 MIR_CONTRACT_PHASE_PRECONDITION = 1
 MIR_CONTRACT_PHASE_POSTCONDITION = 2
 MIR_CONTRACT_PHASE_OLD_SNAPSHOT = 3
+MIR_FIELD_STORE_INITIALIZE_POLICY = 0
+MIR_FIELD_STORE_REPLACE_POLICY = 1
 _I64_TYPE_CODE = 1
+MIR_FUNCTION_ABSENT_RECORD_VALUE = -1
 
 
 def _materialize_literal(
@@ -230,7 +233,7 @@ def lower_native_whole_function_assembly(
         raise NativeWholeFunctionMirError("function header carries invalid export metadata")
     if symbol_code not in _CALLABLE_MODES or ordinal < 0:
         raise NativeWholeFunctionMirError("function header carries invalid callable metadata")
-    if symbol_code == 0 and left != -1:
+    if symbol_code == 0 and left != MIR_FUNCTION_ABSENT_RECORD_VALUE:
         raise NativeWholeFunctionMirError("value-returning function declares a borrowed origin")
     if symbol_code != 0 and left < 0:
         raise NativeWholeFunctionMirError("borrowed-returning function lacks an origin")
@@ -290,7 +293,7 @@ def lower_native_whole_function_assembly(
                 raise NativeWholeFunctionMirError(f"body instruction {index} has duplicate/invalid ID")
             instruction_span = span(start, length, f"body instruction {index}")
             if kind == MIR_FUNCTION_KIND_CALL:
-                if result < -1 or symbol_start < 0 or symbol_length <= 0 or type_code <= 0:
+                if result < MIR_FUNCTION_ABSENT_RECORD_VALUE or symbol_start < 0 or symbol_length <= 0 or type_code <= 0:
                     raise NativeWholeFunctionMirError(f"body call {index} is invalid")
                 if policy not in _CALLABLE_MODES:
                     raise NativeWholeFunctionMirError(f"body call {index} has invalid return mode")
@@ -316,18 +319,18 @@ def lower_native_whole_function_assembly(
             elif kind == MIR_FUNCTION_KIND_COPY_TO_BINDING:
                 body_instructions[rid] = MirInstruction(rid, "copy", result=result, operands=(left,), span=instruction_span)
             elif kind == MIR_FUNCTION_KIND_PRINT:
-                if result != -1 or left < 0:
+                if result != MIR_FUNCTION_ABSENT_RECORD_VALUE or left < 0:
                     raise NativeWholeFunctionMirError(f"body print {index} has invalid operands")
                 body_instructions[rid] = MirInstruction(rid, "print", operands=(left,), span=instruction_span)
             elif kind == MIR_FUNCTION_KIND_ENUM_CONSTRUCT:
                 if result < 0 or symbol_code < 0:
                     raise NativeWholeFunctionMirError(f"body enum construct {index} is invalid")
-                if type_code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE and left == -1:
+                if type_code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE and left == MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     body_instructions[rid] = MirInstruction(
                         rid, "construct", result=result, operands=(), symbol=f"variant_{symbol_code}",
                         span=instruction_span, ownership="value",
                     )
-                elif type_code == _I64_TYPE_CODE and left == -1:
+                elif type_code == _I64_TYPE_CODE and left == MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     body_instructions[rid] = MirInstruction(
                         rid, "const", result=result, value=symbol_code,
                         span=instruction_span, ownership="value",
@@ -347,7 +350,7 @@ def lower_native_whole_function_assembly(
                     rid, "load_field", result=result, operands=(left,), symbol="tag", span=instruction_span,
                 )
             elif kind == MIR_FUNCTION_KIND_ENUM_PAYLOAD_LOAD:
-                if result < 0 or left < 0 or right < -1:
+                if result < 0 or left < 0 or right < MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     raise NativeWholeFunctionMirError(f"body enum payload load {index} is invalid")
                 receiver = locals_by_id.get(left)
                 if receiver is None:
@@ -368,11 +371,19 @@ def lower_native_whole_function_assembly(
             elif kind == MIR_FUNCTION_KIND_STRUCT_FIELD_STORE:
                 if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
                     raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} is invalid")
-                if policy not in {0, 1}:
+                if policy not in {
+                    MIR_FIELD_STORE_INITIALIZE_POLICY,
+                    MIR_FIELD_STORE_REPLACE_POLICY,
+                }:
                     raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} has invalid policy")
                 body_instructions[rid] = MirInstruction(
                     rid, "store_field", result=result, operands=(left,), symbol=f"field_{symbol_code}",
-                    span=instruction_span, ownership="moved" if policy == 1 else "owned",
+                    span=instruction_span,
+                    ownership=(
+                        "moved"
+                        if policy == MIR_FIELD_STORE_REPLACE_POLICY
+                        else "owned"
+                    ),
                 )
             else:
                 if result < 0 or left < 0 or symbol_code < 0:
@@ -484,27 +495,27 @@ def lower_native_whole_function_assembly(
                     symbol = _CONTRACT_BUILTIN_CALLS[symbol_code]
                 except KeyError as error:
                     raise NativeWholeFunctionMirError("contract call has unsupported builtin symbol") from error
-                if result < 0 or left < 0 or right != -1:
+                if result < 0 or left < 0 or right != MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     raise NativeWholeFunctionMirError("contract call has invalid result or arguments")
                 global_instructions[global_id] = MirInstruction(
                     global_id, "call", result=result, operands=(left,), symbol=symbol,
                     span=instruction_span,
                 )
             elif kind == MIR_CONTRACT_KIND_RESULT_CAPTURE:
-                if result < 0 or left < 0 or right != -1 or contract_kind != MIR_CONTRACT_PHASE_POSTCONDITION:
+                if result < 0 or left < 0 or right != MIR_FUNCTION_ABSENT_RECORD_VALUE or contract_kind != MIR_CONTRACT_PHASE_POSTCONDITION:
                     raise NativeWholeFunctionMirError("contract result capture has invalid placement")
                 global_instructions[global_id] = MirInstruction(
                     global_id, "copy", result=result, operands=(left,), span=instruction_span,
                 )
             elif kind == MIR_CONTRACT_KIND_FIELD_LOAD:
-                if result < 0 or left < 0 or right != -1 or symbol_code < 0:
+                if result < 0 or left < 0 or right != MIR_FUNCTION_ABSENT_RECORD_VALUE or symbol_code < 0:
                     raise NativeWholeFunctionMirError("contract field load has invalid operands")
                 global_instructions[global_id] = MirInstruction(
                     global_id, "load_field", result=result, operands=(left,),
                     symbol=f"field_{symbol_code}", span=instruction_span,
                 )
             elif kind == MIR_CONTRACT_KIND_OLD_SNAPSHOT:
-                if result < 0 or left < 0 or right != -1 or contract_kind != MIR_CONTRACT_PHASE_OLD_SNAPSHOT:
+                if result < 0 or left < 0 or right != MIR_FUNCTION_ABSENT_RECORD_VALUE or contract_kind != MIR_CONTRACT_PHASE_OLD_SNAPSHOT:
                     raise NativeWholeFunctionMirError("old snapshot has invalid entry placement")
                 global_instructions[global_id] = MirInstruction(
                     global_id, "copy", result=result, operands=(left,), span=instruction_span,
