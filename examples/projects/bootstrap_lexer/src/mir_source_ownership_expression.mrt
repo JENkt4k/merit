@@ -9,12 +9,16 @@ import bootstrap_mir_source_function_records;
 import bootstrap_mir_functions;
 
 capability allocate;
+pub fn source_binding_collection_missing_operand_status()->i32{return 1;}
+pub fn source_binding_collection_excess_metadata_status()->i32{return 2;}
+pub fn source_binding_collection_binding_id_status()->i32{return 3;}
+pub fn source_binding_collection_local_id_status()->i32{return 4;}
 
 fn source_expression_is_comparison_kind(kind:i32)->i32 {
-    if(kind==50){return 1;}
-    if(kind==51){return 1;}
-    if(kind==60){return 1;}
-    if(kind==61){return 1;}
+    if(kind==ast_add_kind()){return 1;}
+    if(kind==ast_subtract_kind()){return 1;}
+    if(kind==ast_multiply_kind()){return 1;}
+    if(kind==ast_divide_kind()){return 1;}
     return 0;
 }
 
@@ -57,26 +61,26 @@ requires_caps [allocate]
         let kind: i32 = statement_record_kind(statement);
         if (kind == 20) {
             let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
-            if (operand_index < 0) { return 1; }
+            if (operand_index < 0) { return source_binding_collection_missing_operand_status(); }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
             vec_push<i64>(starts, statement_operand_start(operand));
             vec_push<i64>(lengths, statement_operand_length(operand));
         }
         if (kind == 21) {
             let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
-            if (operand_index < 0) { return 1; }
+            if (operand_index < 0) { return source_binding_collection_missing_operand_status(); }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
             vec_push<i64>(starts, statement_operand_start(operand));
             vec_push<i64>(lengths, statement_operand_length(operand));
         }
         index = checked_add(index, 1);
     }
-    if (vec_len<i64>(starts) > vec_len<MirOwnershipBinding>(metadata)) { return 2; }
+    if (vec_len<i64>(starts) > vec_len<MirOwnershipBinding>(metadata)) { return source_binding_collection_excess_metadata_status(); }
     index = 0;
     while (index < vec_len<i64>(starts)) {
         let semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, index);
-        if (ownership_binding_id(semantic) != index) { return 3; }
-        if (ownership_binding_local_id(semantic) != index) { return 4; }
+        if (ownership_binding_id(semantic) != index) { return source_binding_collection_binding_id_status(); }
+        if (ownership_binding_local_id(semantic) != index) { return source_binding_collection_local_id_status(); }
         index = checked_add(index, 1);
     }
     return 0;

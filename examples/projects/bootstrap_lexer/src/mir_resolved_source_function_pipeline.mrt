@@ -73,6 +73,10 @@ fn resolved_pipeline_is_allocate_name(borrow source:Buffer,start:i64,length:i64)
     return 1;
 }
 
+pub fn resolved_pipeline_duplicate_allocate_capability_status()->i32{return 1;}
+pub fn resolved_pipeline_unauthorized_allocation_status()->i32{return 2;}
+pub fn resolved_pipeline_return_count_mismatch_status()->i32{return 1;}
+
 fn resolved_pipeline_validate_allocation_capability(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow capability_catalog:Vec<CapabilityCatalogEntry>,
@@ -84,7 +88,7 @@ fn resolved_pipeline_validate_allocation_capability(
     while(catalog_index<vec_len<CapabilityCatalogEntry>(capability_catalog)){
         let entry:CapabilityCatalogEntry=vec_get<CapabilityCatalogEntry>(capability_catalog,catalog_index);
         if(resolved_pipeline_is_allocate_name(source,entry.name_start,entry.name_length)!=0){
-            if(allocate_id>=0){return 1;}
+            if(allocate_id>=0){return resolved_pipeline_duplicate_allocate_capability_status();}
             allocate_id=entry.capability_id;
         }
         catalog_index=checked_add(catalog_index,1);
@@ -129,7 +133,7 @@ fn resolved_pipeline_validate_allocation_capability(
                         scope_index=checked_add(scope_index,1);
                     }
                 }
-                if(authorized==0){return 2;}
+                if(authorized==0){return resolved_pipeline_unauthorized_allocation_status();}
             }
         }
         token_index=checked_add(token_index,1);
@@ -359,10 +363,10 @@ pub fn validate_resolved_function_return_surface(
     index = 0;
     while (index < vec_len<MirLowerEvent>(canonical_events)) {
         let event: MirLowerEvent = vec_get<MirLowerEvent>(canonical_events, index);
-        if (lower_event_kind(event) == 2) { canonical_returns = checked_add(canonical_returns, 1); }
+        if (lower_event_kind(event) == mir_event_return_kind()) { canonical_returns = checked_add(canonical_returns, 1); }
         index = checked_add(index, 1);
     }
-    if (body_returns != canonical_returns) { return 1; }
+    if (body_returns != canonical_returns) { return resolved_pipeline_return_count_mismatch_status(); }
     return 0;
 }
 
@@ -405,7 +409,20 @@ requires_caps [allocate]
 }
 
 // Preserve the existing nested stage-status encoding at the source-only boundary.
-fn lower_resolved_source_function_semantics_catalog_failure_status(status:i32)->i32{return checked_add(370,status);}
+pub fn lower_resolved_source_function_semantics_catalog_failure_status(status:i32)->i32{return checked_add(370,status);}
+pub fn resolved_pipeline_function_failure_status(status:i32)->i32{return checked_add(200,status);}
+pub fn resolved_pipeline_match_arm_failure_status(status:i32)->i32{return checked_add(300,status);}
+pub fn resolved_pipeline_capability_scope_record_failure_status(status:i32)->i32{return checked_add(400,status);}
+pub fn resolved_pipeline_match_identity_failure_status(status:i32)->i32{return checked_add(500,status);}
+pub fn resolved_pipeline_match_resolution_failure_status(status:i32)->i32{return checked_add(520,status);}
+pub fn resolved_pipeline_match_identity_resolution_failure_status(status:i32)->i32{return checked_add(20,status);}
+pub fn resolved_pipeline_capability_scope_resolution_failure_status(status:i32)->i32{return checked_add(600,status);}
+pub fn resolved_pipeline_allocation_capability_failure_status(status:i32)->i32{return checked_add(650,status);}
+pub fn resolved_pipeline_ownership_source_failure_status(status:i32)->i32{return checked_add(700,status);}
+pub fn resolved_pipeline_ownership_flow_failure_status(status:i32)->i32{return checked_add(800,status);}
+pub fn resolved_pipeline_ownership_validation_failure_status(status:i32)->i32{return checked_add(900,status);}
+pub fn resolved_pipeline_return_surface_failure_status(status:i32)->i32{return checked_add(1000,status);}
+pub fn resolved_pipeline_unresolved_local_type_status()->i32{return 201;}
 
 pub fn lower_resolved_source_function_semantics_from_catalog(
     borrow catalog_tokens:Vec<Token>,
@@ -436,18 +453,18 @@ requires_caps [allocate]
     var raw_arms: Vec<MatchArmRecord> = vec_new<MatchArmRecord>(allocator, 8);
     var raw_scopes: Vec<CapabilityScopeRecord> = vec_new<CapabilityScopeRecord>(allocator, 8);
     let arm_status: i32 = lower_match_arm_records(source, tokens, statements, raw_arms);
-    if (arm_status != 0) { return checked_add(300, arm_status); }
+    if (arm_status != 0) { return resolved_pipeline_match_arm_failure_status(arm_status); }
     let scope_status: i32 = lower_capability_scope_records(
         source, tokens, statements, statement_operands, raw_scopes
     );
-    if (scope_status != 0) { return checked_add(400, scope_status); }
+    if (scope_status != 0) { return resolved_pipeline_capability_scope_record_failure_status(scope_status); }
 
     if (vec_len<MatchArmRecord>(raw_arms) > 0) {
         if (match_enum_id >= 0) {
             let resolve_arms_status: i32 = resolve_match_arms(
                 source, raw_arms, enum_catalog, match_enum_id, resolved_arms
             );
-            if (resolve_arms_status != 0) { return checked_add(520, resolve_arms_status); }
+            if (resolve_arms_status != 0) { return resolved_pipeline_match_resolution_failure_status(resolve_arms_status); }
         } else {
             var match_identities: Vec<MatchEnumIdentity> = vec_new<MatchEnumIdentity>(
                 allocator, vec_len<MatchArmRecord>(raw_arms)
@@ -461,11 +478,11 @@ requires_caps [allocate]
                     source, raw_arms, enum_catalog, match_identities, resolved_arms
                 );
                 if (derived_status != 0) {
-                    derived_status = checked_add(20, derived_status);
+                    derived_status = resolved_pipeline_match_identity_resolution_failure_status(derived_status);
                 }
             }
             drop(match_identities);
-            if (derived_status != 0) { return checked_add(500, derived_status); }
+            if (derived_status != 0) { return resolved_pipeline_match_identity_failure_status(derived_status); }
         }
     }
 
@@ -490,7 +507,7 @@ requires_caps [allocate]
         source, tokens, catalog_tokens, statements, statement_operands, enum_catalog, struct_catalog, resolved_arms,
         capability_catalog, callable_signatures, callable_parameters, allocator, body_records, body_events, clause_metadata, contract_records
     );
-    if (function_status != 0) { return checked_add(200, function_status); }
+    if (function_status != 0) { return resolved_pipeline_function_failure_status(function_status); }
 
     // Non-Copy and destruction obligation are distinct Alpha.1 facts. Refine
     // the conservative source bindings now that canonical local types exist;
@@ -500,7 +517,7 @@ requires_caps [allocate]
     while(ownership_binding_index<vec_len<MirOwnershipBinding>(ownership_metadata)){
         let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_metadata,ownership_binding_index);
         let local_type:i32=sfr_local_type_code(body_records,ownership_binding_local_id(binding));
-        if(local_type==function_mir_unresolved_type_code()){return 201;}
+        if(local_type==function_mir_unresolved_type_code()){return resolved_pipeline_unresolved_local_type_status();}
         vec_set<MirOwnershipBinding>(ownership_metadata,ownership_binding_index,ownership_binding_with_drop(
             ownership_binding_id(binding),ownership_binding_local_id(binding),ownership_binding_owned(binding),
             ownership_binding_mutable(binding),source_type_needs_drop(source,struct_catalog,local_type)
@@ -511,18 +528,18 @@ requires_caps [allocate]
     let resolve_scopes_status: i32 = resolve_capability_scopes(
         source, raw_scopes, capability_catalog, resolved_scopes
     );
-    if (resolve_scopes_status != 0) { return checked_add(600, resolve_scopes_status); }
+    if (resolve_scopes_status != 0) { return resolved_pipeline_capability_scope_resolution_failure_status(resolve_scopes_status); }
 
     let allocation_capability_status:i32=resolved_pipeline_validate_allocation_capability(
         source,tokens,capability_catalog,resolved_scopes,clause_metadata
     );
-    if(allocation_capability_status!=0){return checked_add(650,allocation_capability_status);}
+    if(allocation_capability_status!=0){return resolved_pipeline_allocation_capability_failure_status(allocation_capability_status);}
 
     let ownership_source_status: i32 = lower_resolved_source_ownership_events_from_catalog(callable_signatures,callable_parameters,
         source, tokens, statements, statement_operands, ownership_metadata,
         resolved_arms, resolved_scopes, allocator, ownership_events, capability_effects
     );
-    if (ownership_source_status != 0) { return checked_add(700, ownership_source_status); }
+    if (ownership_source_status != 0) { return resolved_pipeline_ownership_source_failure_status(ownership_source_status); }
 
     // Non-Copy binding ownership does not imply a destruction obligation.
     // Refine scope exits with the resolved local type before state lowering.
@@ -551,7 +568,7 @@ requires_caps [allocate]
         ownership_events, ownership_metadata, allocator,
         canonical_events, ownership_records
     );
-    if (ownership_status != 0) { return checked_add(800, ownership_status); }
+    if (ownership_status != 0) { return resolved_pipeline_ownership_flow_failure_status(ownership_status); }
     if(vec_len<MirLowerEvent>(canonical_events)==0){
         var body_event_index:i64=0;
         while(body_event_index<vec_len<MirLowerEvent>(body_events)){
@@ -562,12 +579,12 @@ requires_caps [allocate]
     let ownership_validation: i32 = validate_ownership_records(
         ownership_records, ownership_metadata
     );
-    if (ownership_validation != 0) { return checked_add(900, ownership_validation); }
+    if (ownership_validation != 0) { return resolved_pipeline_ownership_validation_failure_status(ownership_validation); }
 
     let return_surface: i32 = validate_resolved_function_return_surface(
         body_records, canonical_events
     );
-    if (return_surface != 0) { return checked_add(1000, return_surface); }
+    if (return_surface != 0) { return resolved_pipeline_return_surface_failure_status(return_surface); }
 
     drop(raw_scopes);
     drop(raw_arms);

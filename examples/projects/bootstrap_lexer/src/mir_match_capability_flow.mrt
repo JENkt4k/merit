@@ -3,6 +3,18 @@ import bootstrap_statement_semantics;
 
 capability allocate;
 
+pub fn match_merge_empty_arms_status()->i32{return 1;}
+pub fn match_merge_invalid_binding_count_status()->i32{return 2;}
+pub fn match_merge_exit_count_status()->i32{return 3;}
+pub fn match_merge_arm_order_status()->i32{return 4;}
+pub fn match_merge_invalid_termination_status()->i32{return 5;}
+pub fn match_merge_missing_base_status()->i32{return 6;}
+pub fn match_merge_invalid_state_status()->i32{return 7;}
+pub fn match_merge_missing_candidate_status()->i32{return 8;}
+pub fn match_merge_state_divergence_status()->i32{return 9;}
+pub fn capability_effect_scope_order_status()->i32{return 20;}
+pub fn capability_effect_invalid_capability_status()->i32{return 21;}
+
 // Flat per-arm ownership-exit matrix. Each non-terminated arm must contribute
 // one state for every tracked binding. Terminated arms are excluded from the
 // surviving merge, matching the existing if-path ownership rule.
@@ -77,17 +89,17 @@ pub fn validate_match_ownership_merge(
 ) -> i32
 requires_caps [allocate]
 {
-    if (vec_len<ResolvedMatchArm>(arms) == 0) { return 1; }
-    if (binding_count < 0) { return 2; }
-    if (vec_len<MatchOwnershipExit>(exits) != vec_len<ResolvedMatchArm>(arms) * binding_count) { return 3; }
+    if (vec_len<ResolvedMatchArm>(arms) == 0) { return match_merge_empty_arms_status(); }
+    if (binding_count < 0) { return match_merge_invalid_binding_count_status(); }
+    if (vec_len<MatchOwnershipExit>(exits) != vec_len<ResolvedMatchArm>(arms) * binding_count) { return match_merge_exit_count_status(); }
 
     var survivor_arm: i64 = -1;
     var arm_index: i64 = 0;
     while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
         let arm: ResolvedMatchArm = vec_get<ResolvedMatchArm>(arms, arm_index);
-        if (resolved_match_ordinal(arm) != arm_index) { return 4; }
+        if (resolved_match_ordinal(arm) != arm_index) { return match_merge_arm_order_status(); }
         let terminated: i32 = match_arm_terminated(exits, arm_index, binding_count);
-        if (terminated < 0) { return 5; }
+        if (terminated < 0) { return match_merge_invalid_termination_status(); }
         if (terminated == 0) {
             if (survivor_arm < 0) { survivor_arm = arm_index; }
         }
@@ -100,19 +112,19 @@ requires_caps [allocate]
     var binding: i64 = 0;
     while (binding < binding_count) {
         let base_index: i64 = match_exit_find(exits, survivor_arm, binding);
-        if (base_index < 0) { return 6; }
+        if (base_index < 0) { return match_merge_missing_base_status(); }
         let base: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, base_index);
-        if (base.state < 0) { return 7; }
-        if (base.state > 3) { return 7; }
+        if (base.state < 0) { return match_merge_invalid_state_status(); }
+        if (base.state > 3) { return match_merge_invalid_state_status(); }
 
         arm_index = 0;
         while (arm_index < vec_len<ResolvedMatchArm>(arms)) {
             let terminated: i32 = match_arm_terminated(exits, arm_index, binding_count);
             if (terminated == 0) {
                 let candidate_index: i64 = match_exit_find(exits, arm_index, binding);
-                if (candidate_index < 0) { return 8; }
+                if (candidate_index < 0) { return match_merge_missing_candidate_status(); }
                 let candidate: MatchOwnershipExit = vec_get<MatchOwnershipExit>(exits, candidate_index);
-                if (candidate.state != base.state) { return 9; }
+                if (candidate.state != base.state) { return match_merge_state_divergence_status(); }
             }
             arm_index = checked_add(arm_index, 1);
         }
@@ -131,9 +143,9 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < vec_len<ResolvedCapabilityScope>(scopes)) {
         let scope: ResolvedCapabilityScope = vec_get<ResolvedCapabilityScope>(scopes, index);
-        if (resolved_capability_ordinal(scope) != index) { return 20; }
+        if (resolved_capability_ordinal(scope) != index) { return capability_effect_scope_order_status(); }
         let capability_id: i64 = resolved_capability_id(scope);
-        if (capability_id < 0) { return 21; }
+        if (capability_id < 0) { return capability_effect_invalid_capability_status(); }
         vec_push<MirCapabilityEffect>(output, MirCapabilityEffect {
             kind: 1,
             capability_id: capability_id,

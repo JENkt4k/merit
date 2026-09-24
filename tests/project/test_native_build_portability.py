@@ -10,6 +10,7 @@ from merit.project.build import (
     NativeBuildError,
     _native_environment,
     _native_executable_path,
+    _publish_cached_object,
     _run_native_command,
     _temporary_object_path,
 )
@@ -36,6 +37,42 @@ def test_temporary_object_path_is_not_precreated(tmp_path):
     assert temporary_path.parent == tmp_path
     assert temporary_path.name.endswith(".tmp.o")
     assert not temporary_path.exists()
+
+
+def test_cached_object_publish_accepts_concurrent_winner(monkeypatch, tmp_path):
+    temporary_path = tmp_path / "compiled.tmp.o"
+    object_path = tmp_path / "cached.o"
+    temporary_path.write_bytes(b"equivalent object")
+    object_path.write_bytes(b"equivalent object")
+
+    def destination_is_in_use(source, destination):
+        assert source == temporary_path
+        assert destination == object_path
+        raise PermissionError("destination is in use")
+
+    monkeypatch.setattr(os, "replace", destination_is_in_use)
+
+    _publish_cached_object(temporary_path, object_path)
+    assert object_path.read_bytes() == b"equivalent object"
+
+
+def test_cached_object_publish_preserves_unrelated_permission_error(
+    monkeypatch, tmp_path
+):
+    temporary_path = tmp_path / "compiled.tmp.o"
+    object_path = tmp_path / "cached.o"
+    temporary_path.write_bytes(b"compiled object")
+
+    monkeypatch.setattr(
+        os,
+        "replace",
+        lambda source, destination: (_ for _ in ()).throw(
+            PermissionError("cache is not writable")
+        ),
+    )
+
+    with pytest.raises(PermissionError, match="cache is not writable"):
+        _publish_cached_object(temporary_path, object_path)
 
 
 def test_native_command_reports_command_streams_and_artifacts(monkeypatch, tmp_path):

@@ -9,16 +9,61 @@ import bootstrap_mir_source_function_records;
 
 capability allocate;
 
-fn source_control_expression_failure_status(status: i64) -> i32 {
-    if (status == -1) { return 61; }
-    if (status == -2) { return 62; }
-    if (status == -3) { return 63; }
-    if (status == -4) { return 64; }
-    if (status == -5) { return 65; }
-    return 66;
+pub fn source_control_expression_failure_status(status: i64) -> i32 {
+    if (status == -1) { return source_control_expression_unresolved_binding_status(); }
+    if (status == -2) { return source_control_expression_moved_binding_status(); }
+    if (status == -3) { return source_control_expression_invalid_field_status(); }
+    if (status == -4) { return source_control_expression_invalid_call_status(); }
+    if (status == -5) { return source_control_expression_invalid_borrow_status(); }
+    return source_control_expression_unknown_failure_status();
 }
-fn source_control_missing_scope_binding_status() -> i32 { return 45; }
-fn source_control_missing_drop_operand_status() -> i32 { return 67; }
+pub fn source_control_missing_binding_status() -> i32 { return 10; }
+pub fn source_control_binding_mutability_status() -> i32 { return 11; }
+pub fn source_control_missing_expression_status() -> i32 { return 12; }
+pub fn source_control_nonowned_move_source_status() -> i32 { return 14; }
+pub fn source_control_invalid_return_expression_status() -> i32 { return 20; }
+pub fn source_control_missing_drop_binding_status() -> i32 { return 22; }
+pub fn source_control_invalid_if_condition_status() -> i32 { return 23; }
+pub fn source_control_invalid_while_condition_status() -> i32 { return 24; }
+pub fn source_control_missing_replace_target_status() -> i32 { return 25; }
+pub fn source_control_missing_replace_value_status() -> i32 { return 26; }
+pub fn source_control_invalid_replace_target_status() -> i32 { return 27; }
+pub fn source_control_unresolved_replace_target_status() -> i32 { return 28; }
+pub fn source_control_invalid_replace_value_status() -> i32 { return 29; }
+pub fn source_control_replace_source_out_of_range_status() -> i32 { return 30; }
+pub fn source_control_replace_source_not_owned_status() -> i32 { return 31; }
+pub fn source_control_invalid_match_subject_status() -> i32 { return 32; }
+pub fn source_control_missing_assign_target_status() -> i32 { return 33; }
+pub fn source_control_missing_assign_value_status() -> i32 { return 34; }
+pub fn source_control_invalid_assign_target_status() -> i32 { return 35; }
+pub fn source_control_unresolved_assign_target_status() -> i32 { return 36; }
+pub fn source_control_assign_target_immutable_status() -> i32 { return 37; }
+pub fn source_control_assign_requires_replace_status() -> i32 { return 38; }
+pub fn source_control_invalid_assign_value_status() -> i32 { return 39; }
+pub fn source_control_invalid_closed_frame_status() -> i32 { return 40; }
+pub fn source_control_statement_count_mismatch_status() -> i32 { return 41; }
+pub fn source_control_unclosed_frame_status() -> i32 { return 42; }
+pub fn source_control_invalid_expression_statement_status() -> i32 { return 43; }
+pub fn source_control_invalid_print_expression_status() -> i32 { return 44; }
+pub fn source_control_missing_scope_binding_status() -> i32 { return 45; }
+pub fn source_control_invalid_match_arm_count_status() -> i32 { return 50; }
+pub fn source_control_missing_match_arm_binding_status() -> i32 { return 51; }
+pub fn source_control_missing_match_arm_scope_binding_status() -> i32 { return 52; }
+pub fn source_control_expression_unresolved_binding_status() -> i32 { return 61; }
+pub fn source_control_expression_moved_binding_status() -> i32 { return 62; }
+pub fn source_control_expression_invalid_field_status() -> i32 { return 63; }
+pub fn source_control_expression_invalid_call_status() -> i32 { return 64; }
+pub fn source_control_expression_invalid_borrow_status() -> i32 { return 65; }
+pub fn source_control_expression_unknown_failure_status() -> i32 { return 66; }
+pub fn source_control_missing_drop_operand_status() -> i32 { return 67; }
+pub fn source_control_missing_try_binding_status() -> i32 { return 70; }
+pub fn source_control_try_binding_not_owned_status() -> i32 { return 71; }
+pub fn source_control_missing_try_expression_status() -> i32 { return 72; }
+pub fn source_control_invalid_try_value_status() -> i32 { return 73; }
+pub fn source_control_try_subject_not_owned_status() -> i32 { return 75; }
+pub fn source_control_match_without_arms_status() -> i32 { return 127; }
+pub fn source_control_missing_capability_scope_status() -> i32 { return 128; }
+pub fn source_control_unknown_statement_status(kind:i32) -> i32 { return checked_add(100,kind); }
 fn source_control_open_parenthesis_byte() -> i64 { return 40; }
 fn source_control_close_parenthesis_byte() -> i64 { return 41; }
 
@@ -190,11 +235,11 @@ fn source_control_initialize_binding(
 requires_caps [allocate]
 {
     let destination: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
-    if (destination < 0) { return 10; }
+    if (destination < 0) { return source_control_missing_binding_status(); }
     let semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, destination);
-    if (ownership_binding_mutable(semantic) != expected_mutable) { return 11; }
+    if (ownership_binding_mutable(semantic) != expected_mutable) { return source_control_binding_mutability_status(); }
     let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
-    if (expression_index < 0) { return 12; }
+    if (expression_index < 0) { return source_control_missing_expression_status(); }
     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
     let result_local: i64 = source_expression(callable_signatures,callable_parameters,
         source, tokens, starts, lengths,
@@ -206,7 +251,7 @@ requires_caps [allocate]
     if (ownership_binding_owned(semantic) != 0) {
         if (source_binding >= 0) {
             let source_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, source_binding);
-            if (ownership_binding_owned(source_semantic) == 0) { return 14; }
+            if (ownership_binding_owned(source_semantic) == 0) { return source_control_nonowned_move_source_status(); }
             vec_push<MirOwnershipEvent>(events, ownership_event_move(source_binding, destination));
         } else {
             var consumed_index: i64 = 1;
@@ -238,16 +283,16 @@ fn source_control_initialize_try_binding(
 requires_caps [allocate]
 {
     let destination: i64 = source_binding_index(source, tokens, statement, operands, starts, lengths);
-    if (destination < 0) { return 70; }
+    if (destination < 0) { return source_control_missing_try_binding_status(); }
     let destination_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, destination);
-    if (ownership_binding_owned(destination_semantic) == 0) { return 71; }
+    if (ownership_binding_owned(destination_semantic) == 0) { return source_control_try_binding_not_owned_status(); }
     let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
-    if (expression_index < 0) { return 72; }
+    if (expression_index < 0) { return source_control_missing_try_expression_status(); }
     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
     let value_start: i64 = statement_try_value_start(tokens, expression);
     let value_length: i64 = statement_try_value_length(tokens, expression);
-    if (value_start < 0) { return 73; }
-    if (value_length <= 0) { return 73; }
+    if (value_start < 0) { return source_control_invalid_try_value_status(); }
+    if (value_length <= 0) { return source_control_invalid_try_value_status(); }
     let subject_local: i64 = source_expression(callable_signatures,callable_parameters,
         source, tokens, starts, lengths, value_start, value_length,
         allocator, counters, direct, events
@@ -256,7 +301,7 @@ requires_caps [allocate]
     let subject_binding: i64 = vec_get<i64>(direct, 0);
     if (subject_binding >= 0) {
         let subject_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, subject_binding);
-        if (ownership_binding_owned(subject_semantic) == 0) { return 75; }
+        if (ownership_binding_owned(subject_semantic) == 0) { return source_control_try_subject_not_owned_status(); }
         vec_push<MirOwnershipEvent>(events, ownership_event_consume(subject_binding));
     } else {
         var consumed_index: i64 = 1;
@@ -331,7 +376,7 @@ requires_caps [allocate]
                         source, tokens, starts, lengths,
                         resolved_match_binding_start(arm), resolved_match_binding_length(arm)
                     );
-                    if (binding_id < 0) { return 51; }
+                    if (binding_id < 0) { return source_control_missing_match_arm_binding_status(); }
                     if (binding_id < vec_len<MirOwnershipBinding>(metadata)) {
                         let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, binding_id);
                         if (ownership_binding_owned(binding) != 0) {
@@ -350,7 +395,7 @@ requires_caps [allocate]
                         source, tokens, starts, lengths,
                         resolved_match_binding_start(arm), resolved_match_binding_length(arm)
                     );
-                    if (binding_id < 0) { return 52; }
+                    if (binding_id < 0) { return source_control_missing_match_arm_scope_binding_status(); }
                     if (binding_id < vec_len<MirOwnershipBinding>(metadata)) {
                         let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, binding_id);
                         if (ownership_binding_owned(binding) != 0) {
@@ -359,7 +404,7 @@ requires_caps [allocate]
                     }
                 }
                 let count: i64 = source_control_match_count(arms, resolved_match_statement(arm));
-                if (count <= 0) { return 50; }
+                if (count <= 0) { return source_control_invalid_match_arm_count_status(); }
                 if (resolved_match_ordinal(arm) == checked_sub(count, 1)) {
                     vec_push<MirOwnershipEvent>(events, ownership_event_end_match());
                 }
@@ -384,7 +429,7 @@ requires_caps [allocate]
     let kind: i32 = statement_record_kind(statement);
     if (kind == 20) {
         let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
-        if (expression_index < 0) { return 12; }
+        if (expression_index < 0) { return source_control_missing_expression_status(); }
         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
         if (statement_operand_is_try(source, tokens, expression) != 0) {
             return source_control_initialize_try_binding(callable_signatures,callable_parameters,
@@ -397,7 +442,7 @@ requires_caps [allocate]
     if (kind == 21) { return source_control_initialize_binding(callable_signatures,callable_parameters,source,tokens,statement,operands,metadata,starts,lengths,allocator,1,counters,direct,events); }
     if (kind == 22) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (result < 0) { return 20; }
+        if (result < 0) { return source_control_invalid_return_expression_status(); }
         var return_consumed:i64=0;
         while(return_consumed<vec_len<i64>(direct)){
             let binding_id:i64=vec_get<i64>(direct,return_consumed);
@@ -415,7 +460,7 @@ requires_caps [allocate]
     }
     if (kind == 23) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (result < 0) { return 44; }
+        if (result < 0) { return source_control_invalid_print_expression_status(); }
         vec_push<MirOwnershipEvent>(events, ownership_event_print(result)); return 0;
     }
     if (kind == 24) {
@@ -431,13 +476,13 @@ requires_caps [allocate]
             );
             if (result < 0) { return source_control_expression_failure_status(result); }
             binding = vec_get<i64>(direct, 0);
-            if (binding < 0) { return 22; }
+            if (binding < 0) { return source_control_missing_drop_binding_status(); }
         }
         vec_push<MirOwnershipEvent>(events, ownership_event_drop(binding)); return 0;
     }
     if (kind == 25) {
         let condition: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (condition < 0) { return 23; }
+        if (condition < 0) { return source_control_invalid_if_condition_status(); }
         vec_push<MirOwnershipEvent>(events, ownership_event_if(condition));
         vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:source_ownership_if_frame_kind(), open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
         return 0;
@@ -445,15 +490,15 @@ requires_caps [allocate]
     if (kind == 26) {
         vec_push<MirOwnershipEvent>(events, ownership_event_begin_while());
         let condition: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (condition < 0) { return 24; }
+        if (condition < 0) { return source_control_invalid_while_condition_status(); }
         vec_push<MirOwnershipEvent>(events, ownership_event_while(condition));
         vec_push<SourceOwnershipFrame>(frames, SourceOwnershipFrame { kind:source_ownership_while_frame_kind(), open_end:checked_add(statement_record_start(statement),statement_record_length(statement)), body_depth:-1, state:0 });
         return 0;
     }
     if (kind == 27) {
-        let count: i64 = source_control_match_count(arms, statement_index); if (count <= 0) { return 127; }
+        let count: i64 = source_control_match_count(arms, statement_index); if (count <= 0) { return source_control_match_without_arms_status(); }
         let value_local: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (value_local < 0) { return 32; }
+        if (value_local < 0) { return source_control_invalid_match_subject_status(); }
         var match_local: i64 = value_local;
         var has_payload: i32 = 0;
         var arm_index: i64 = 0;
@@ -486,16 +531,16 @@ requires_caps [allocate]
         }
         vec_push<MirOwnershipEvent>(events, ownership_event_match(match_local, count)); return 0;
     }
-    if (kind == 28) { if (source_control_scope_exists(scopes, statement_index) == 0) { return 128; } return 0; }
+    if (kind == 28) { if (source_control_scope_exists(scopes, statement_index) == 0) { return source_control_missing_capability_scope_status(); } return 0; }
     if (kind == 29) {
         let target_index: i64 = source_ownership_operand(statement, operands, 3, 0);
         let replacement_index: i64 = source_ownership_operand(statement, operands, 3, 1);
-        if (target_index < 0) { return 25; } if (replacement_index < 0) { return 26; }
+        if (target_index < 0) { return source_control_missing_replace_target_status(); } if (replacement_index < 0) { return source_control_missing_replace_value_status(); }
         let target_operand: StatementOperand = vec_get<StatementOperand>(operands, target_index);
         let target_event_start:i64=vec_len<MirOwnershipEvent>(events);
         var target_is_field:i32=0;
         let target_local: i64 = source_expression(callable_signatures,callable_parameters,source,tokens,starts,lengths,statement_operand_start(target_operand),statement_operand_length(target_operand),allocator,counters,direct,events);
-        if (target_local < 0) { return 27; }
+        if (target_local < 0) { return source_control_invalid_replace_target_status(); }
         if(vec_len<MirOwnershipEvent>(events)>target_event_start){
             target_is_field=1;
             let target_event_count:i64=checked_sub(vec_len<MirOwnershipEvent>(events),target_event_start);
@@ -504,15 +549,15 @@ requires_caps [allocate]
                 vec_set<i64>(counters,0,checked_sub(vec_get<i64>(counters,0),1));
             }
         }
-        let target_binding: i64 = vec_get<i64>(direct, 0); if (target_binding < 0) { return 28; }
+        let target_binding: i64 = vec_get<i64>(direct, 0); if (target_binding < 0) { return source_control_unresolved_replace_target_status(); }
         let replacement_operand: StatementOperand = vec_get<StatementOperand>(operands, replacement_index);
         let replacement_local: i64 = source_expression(callable_signatures,callable_parameters,source,tokens,starts,lengths,statement_operand_start(replacement_operand),statement_operand_length(replacement_operand),allocator,counters,direct,events);
-        if (replacement_local < 0) { return 29; }
+        if (replacement_local < 0) { return source_control_invalid_replace_value_status(); }
         let replacement_binding: i64 = vec_get<i64>(direct, 0);
         if (replacement_binding >= 0) {
-            if (replacement_binding >= vec_len<MirOwnershipBinding>(metadata)) { return 30; }
+            if (replacement_binding >= vec_len<MirOwnershipBinding>(metadata)) { return source_control_replace_source_out_of_range_status(); }
             let source_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, replacement_binding);
-            if (ownership_binding_owned(source_semantic) == 0) { return 31; }
+            if (ownership_binding_owned(source_semantic) == 0) { return source_control_replace_source_not_owned_status(); }
             if(target_is_field!=0){
                 vec_push<MirOwnershipEvent>(events,ownership_event_consume(replacement_binding));
                 vec_push<MirOwnershipEvent>(events,ownership_event_place(replacement_local));
@@ -525,8 +570,8 @@ requires_caps [allocate]
     if (kind == 30) {
         let target_index: i64 = source_ownership_operand(statement, operands, 3, 0);
         let value_index: i64 = source_ownership_operand(statement, operands, 3, 1);
-        if (target_index < 0) { return 33; }
-        if (value_index < 0) { return 34; }
+        if (target_index < 0) { return source_control_missing_assign_target_status(); }
+        if (value_index < 0) { return source_control_missing_assign_value_status(); }
         let target_operand: StatementOperand = vec_get<StatementOperand>(operands, target_index);
         let target_event_start:i64=vec_len<MirOwnershipEvent>(events);
         var target_is_field:i32=0;
@@ -535,7 +580,7 @@ requires_caps [allocate]
             statement_operand_start(target_operand), statement_operand_length(target_operand),
             allocator, counters, direct, events
         );
-        if (target_local < 0) { return 35; }
+        if (target_local < 0) { return source_control_invalid_assign_target_status(); }
         if(vec_len<MirOwnershipEvent>(events)>target_event_start){
             target_is_field=1;
             let target_event_count:i64=checked_sub(vec_len<MirOwnershipEvent>(events),target_event_start);
@@ -545,17 +590,17 @@ requires_caps [allocate]
             }
         }
         let target_binding: i64 = vec_get<i64>(direct, 0);
-        if (target_binding < 0) { return 36; }
+        if (target_binding < 0) { return source_control_unresolved_assign_target_status(); }
         let target_semantic: MirOwnershipBinding = vec_get<MirOwnershipBinding>(metadata, target_binding);
-        if (ownership_binding_mutable(target_semantic) == 0) { return 37; }
-        if (ownership_binding_needs_drop(target_semantic) != 0) { if(target_is_field==0){return 38;} }
+        if (ownership_binding_mutable(target_semantic) == 0) { return source_control_assign_target_immutable_status(); }
+        if (ownership_binding_needs_drop(target_semantic) != 0) { if(target_is_field==0){return source_control_assign_requires_replace_status();} }
         let value_operand: StatementOperand = vec_get<StatementOperand>(operands, value_index);
         let value_local: i64 = source_expression(callable_signatures,callable_parameters,
             source, tokens, starts, lengths,
             statement_operand_start(value_operand), statement_operand_length(value_operand),
             allocator, counters, direct, events
         );
-        if (value_local < 0) { return 39; }
+        if (value_local < 0) { return source_control_invalid_assign_value_status(); }
         vec_push<MirOwnershipEvent>(events, ownership_event_assign(target_binding, value_local));
         return 0;
     }
@@ -564,7 +609,7 @@ requires_caps [allocate]
             source, tokens, statement, operands, starts, lengths,
             allocator, counters, direct, events
         );
-        if(result<0){if(result!=sfr_unit_expression_result()){return 43;}}
+        if(result<0){if(result!=sfr_unit_expression_result()){return source_control_invalid_expression_statement_status();}}
         var consumed_index:i64=1;
         while(consumed_index<vec_len<i64>(direct)){
             let consumed_binding:i64=vec_get<i64>(direct,consumed_index);
@@ -578,7 +623,7 @@ requires_caps [allocate]
         }
         return 0;
     }
-    return checked_add(100, kind);
+    return source_control_unknown_statement_status(kind);
 }
 
 fn source_control_worker(
@@ -666,7 +711,7 @@ requires_caps [allocate]
                         } else {
                             let closed: SourceOwnershipFrame = vec_pop<SourceOwnershipFrame>(frames);
                             if (closed.kind == source_ownership_if_frame_kind()) { vec_push<MirOwnershipEvent>(events, ownership_event_end_if()); }
-                            else { if (closed.kind == source_ownership_while_frame_kind()) { vec_push<MirOwnershipEvent>(events, ownership_event_end_while()); } else { return 40; } }
+                            else { if (closed.kind == source_ownership_while_frame_kind()) { vec_push<MirOwnershipEvent>(events, ownership_event_end_while()); } else { return source_control_invalid_closed_frame_status(); } }
                         }
                     }
                 }
@@ -675,8 +720,8 @@ requires_caps [allocate]
         }
         token_index = checked_add(token_index, 1);
     }
-    if (statement_index != vec_len<StatementRecord>(statements)) { return 41; }
-    if (vec_len<SourceOwnershipFrame>(frames) != 0) { return 42; }
+    if (statement_index != vec_len<StatementRecord>(statements)) { return source_control_statement_count_mismatch_status(); }
+    if (vec_len<SourceOwnershipFrame>(frames) != 0) { return source_control_unclosed_frame_status(); }
     return 0;
 }
 

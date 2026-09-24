@@ -4,6 +4,19 @@ import bootstrap_statement_structure;
 
 capability allocate;
 
+pub fn match_resolution_arm_order_status()->i32{return 1;}
+pub fn match_resolution_unknown_variant_status()->i32{return 2;}
+pub fn match_resolution_variant_order_status()->i32{return 3;}
+pub fn match_resolution_missing_payload_binding_status()->i32{return 4;}
+pub fn match_resolution_empty_match_status()->i32{return 5;}
+pub fn match_identity_arm_order_status()->i32{return 20;}
+pub fn match_identity_count_status()->i32{return 21;}
+pub fn match_identity_unknown_variant_status()->i32{return 22;}
+pub fn match_identity_missing_payload_binding_status()->i32{return 24;}
+pub fn match_identity_empty_match_status()->i32{return 25;}
+pub fn capability_resolution_scope_order_status()->i32{return 10;}
+pub fn capability_resolution_unknown_capability_status()->i32{return 11;}
+
 // Catalog entries are produced by the typed declaration stage. Identity is
 // semantic (enum/capability id); source spans are only used to resolve the
 // spelling preserved by the structural statement IR.
@@ -141,16 +154,16 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < vec_len<MatchArmRecord>(arms)) {
         let arm: MatchArmRecord = vec_get<MatchArmRecord>(arms, index);
-        if (match_arm_ordinal(arm) != expected_ordinal) { return 1; }
+        if (match_arm_ordinal(arm) != expected_ordinal) { return match_resolution_arm_order_status(); }
         let catalog_index: i64 = semantic_find_variant(
             source, catalog, enum_id,
             match_arm_variant_start(arm), match_arm_variant_length(arm)
         );
-        if (catalog_index < 0) { return 2; }
+        if (catalog_index < 0) { return match_resolution_unknown_variant_status(); }
         let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
-        if (entry.ordinal != expected_ordinal) { return 3; }
+        if (entry.ordinal != expected_ordinal) { return match_resolution_variant_order_status(); }
         if (entry.payload_owned != 0) {
-            if (match_arm_binding_start(arm) < 0) { return 4; }
+            if (match_arm_binding_start(arm) < 0) { return match_resolution_missing_payload_binding_status(); }
         }
         vec_push<ResolvedMatchArm>(output, ResolvedMatchArm {
             match_statement: match_arm_statement(arm),
@@ -168,7 +181,7 @@ requires_caps [allocate]
         expected_ordinal = checked_add(expected_ordinal, 1);
         index = checked_add(index, 1);
     }
-    if (expected_ordinal == 0) { return 5; }
+    if (expected_ordinal == 0) { return match_resolution_empty_match_status(); }
     return 0;
 }
 
@@ -194,7 +207,7 @@ requires_caps [allocate]
             current_statement = statement;
             expected_ordinal = 0;
         }
-        if (match_arm_ordinal(arm) != expected_ordinal) { return 20; }
+        if (match_arm_ordinal(arm) != expected_ordinal) { return match_identity_arm_order_status(); }
 
         var identity_index: i64 = -1;
         var identity_count: i64 = 0;
@@ -207,17 +220,17 @@ requires_caps [allocate]
             }
             identity_scan = checked_add(identity_scan, 1);
         }
-        if (identity_count != 1) { return 21; }
+        if (identity_count != 1) { return match_identity_count_status(); }
         let identity: MatchEnumIdentity = vec_get<MatchEnumIdentity>(identities, identity_index);
         let enum_id: i64 = match_enum_identity_enum_id(identity);
         let catalog_index: i64 = semantic_find_variant(
             source, catalog, enum_id,
             match_arm_variant_start(arm), match_arm_variant_length(arm)
         );
-        if (catalog_index < 0) { return 22; }
+        if (catalog_index < 0) { return match_identity_unknown_variant_status(); }
         let entry: EnumVariantCatalogEntry = vec_get<EnumVariantCatalogEntry>(catalog, catalog_index);
         if (entry.payload_owned != 0) {
-            if (match_arm_binding_start(arm) < 0) { return 24; }
+            if (match_arm_binding_start(arm) < 0) { return match_identity_missing_payload_binding_status(); }
         }
         vec_push<ResolvedMatchArm>(output, ResolvedMatchArm {
             match_statement: statement,
@@ -235,7 +248,7 @@ requires_caps [allocate]
         expected_ordinal = checked_add(expected_ordinal, 1);
         index = checked_add(index, 1);
     }
-    if (index == 0) { return 25; }
+    if (index == 0) { return match_identity_empty_match_status(); }
     return 0;
 }
 
@@ -251,12 +264,12 @@ requires_caps [allocate]
     var index: i64 = 0;
     while (index < vec_len<CapabilityScopeRecord>(scopes)) {
         let scope: CapabilityScopeRecord = vec_get<CapabilityScopeRecord>(scopes, index);
-        if (capability_scope_ordinal(scope) != expected_ordinal) { return 10; }
+        if (capability_scope_ordinal(scope) != expected_ordinal) { return capability_resolution_scope_order_status(); }
         let catalog_index: i64 = semantic_find_capability(
             source, catalog,
             capability_scope_name_start(scope), capability_scope_name_length(scope)
         );
-        if (catalog_index < 0) { return 11; }
+        if (catalog_index < 0) { return capability_resolution_unknown_capability_status(); }
         let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(catalog, catalog_index);
         vec_push<ResolvedCapabilityScope>(output, ResolvedCapabilityScope {
             statement_index: capability_scope_statement(scope),

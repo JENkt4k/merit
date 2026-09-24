@@ -201,6 +201,22 @@ def _temporary_object_path(cache_dir: Path, object_path: Path) -> Path:
     return temporary_path
 
 
+def _publish_cached_object(temporary_path: Path, object_path: Path) -> None:
+    """Atomically publish an immutable object, tolerating a concurrent winner.
+
+    Parallel builders can compile the same content digest at the same time. On
+    Windows, replacing the destination can fail while another process links
+    the object that it just published. The existing destination is equivalent
+    by construction, so only that specific race is safe to accept.
+    """
+
+    try:
+        os.replace(temporary_path, object_path)
+    except PermissionError:
+        if not object_path.is_file():
+            raise
+
+
 def compile_cached_object(
     project: LoadedProject,
     c_path: Path,
@@ -244,7 +260,7 @@ def compile_cached_object(
             artifacts=(c_path, temporary_path),
             environment=_native_environment(cache_dir),
         )
-        os.replace(temporary_path, object_path)
+        _publish_cached_object(temporary_path, object_path)
     finally:
         temporary_path.unlink(missing_ok=True)
     return object_path
