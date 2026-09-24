@@ -13,6 +13,11 @@ pub fn source_binding_collection_missing_operand_status()->i32{return 1;}
 pub fn source_binding_collection_excess_metadata_status()->i32{return 2;}
 pub fn source_binding_collection_binding_id_status()->i32{return 3;}
 pub fn source_binding_collection_local_id_status()->i32{return 4;}
+pub fn source_expression_unresolved_binding_failure() -> i64 { return -1; }
+pub fn source_expression_moved_binding_failure() -> i64 { return -2; }
+pub fn source_expression_invalid_field_failure() -> i64 { return -3; }
+pub fn source_expression_invalid_call_failure() -> i64 { return -4; }
+pub fn source_expression_invalid_borrow_failure() -> i64 { return -5; }
 
 fn source_expression_is_comparison_kind(kind:i32)->i32 {
     if(kind==ast_add_kind()){return 1;}
@@ -59,14 +64,14 @@ requires_caps [allocate]
     while (index < vec_len<StatementRecord>(statements)) {
         let statement: StatementRecord = vec_get<StatementRecord>(statements, index);
         let kind: i32 = statement_record_kind(statement);
-        if (kind == 20) {
+        if (kind == statement_record_let_kind()) {
             let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
             if (operand_index < 0) { return source_binding_collection_missing_operand_status(); }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
             vec_push<i64>(starts, statement_operand_start(operand));
             vec_push<i64>(lengths, statement_operand_length(operand));
         }
-        if (kind == 21) {
+        if (kind == statement_record_var_kind()) {
             let operand_index: i64 = source_ownership_operand(statement, operands, 1, 0);
             if (operand_index < 0) { return source_binding_collection_missing_operand_status(); }
             let operand: StatementOperand = vec_get<StatementOperand>(operands, operand_index);
@@ -165,10 +170,10 @@ requires_caps [allocate]
             let kind: i32 = hir_kind(hir);
             if (hir_is_group(hir) != 0) {
                 let child: i64 = hir_left(hir);
-                if (child < 0) { status = -2; } else { vec_push<i64>(stack, child); }
+                if (child < 0) { status = source_expression_moved_binding_failure(); } else { vec_push<i64>(stack, child); }
             } else {
                 if (hir_is_identifier(hir) != 0) {
-                    if (hir_binding_id(hir) < 0) { status = -3; }
+                    if (hir_binding_id(hir) < 0) { status = source_expression_invalid_field_failure(); }
                     else { vec_set<i64>(local_ids, current, hir_binding_id(hir)); }
                 } else {
                     if (hir_is_symbol_reference(hir) != 0) {
@@ -231,7 +236,7 @@ requires_caps [allocate]
                                                     vec_set<i64>(local_ids, current, next_local);
                                                     vec_set<i64>(counters, 0, checked_add(next_local, 1));
                                                     vec_push<i64>(stack, hir_left(hir));
-                                                } else { status = -4; }
+                                                } else { status = source_expression_invalid_call_failure(); }
                                             }
                                         }
                                     }
@@ -279,7 +284,7 @@ requires_caps [allocate]
     var root_binding: i64 = -1;
     var consumed_binding: i64 = -1;
     if (status == 0) {
-        if (count == 0) { result = -5; }
+        if (count == 0) { result = source_expression_invalid_borrow_failure(); }
         else {
             let root_index: i64 = checked_sub(count, 1);
             result = vec_get<i64>(local_ids, root_index);

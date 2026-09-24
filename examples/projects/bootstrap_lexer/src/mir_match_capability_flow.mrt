@@ -44,6 +44,8 @@ pub fn match_exit(arm_ordinal: i64, binding_id: i64, state: i32, terminated: i32
 }
 
 pub fn capability_effect_kind(borrow value: MirCapabilityEffect) -> i32 { return value.kind; }
+pub fn capability_effect_enter_kind() -> i32 { return 1; }
+pub fn capability_effect_exit_kind() -> i32 { return 2; }
 pub fn capability_effect_id(borrow value: MirCapabilityEffect) -> i64 { return value.capability_id; }
 pub fn capability_effect_statement(borrow value: MirCapabilityEffect) -> i64 { return value.statement_index; }
 pub fn capability_effect_ordinal(borrow value: MirCapabilityEffect) -> i64 { return value.scope_ordinal; }
@@ -147,13 +149,13 @@ requires_caps [allocate]
         let capability_id: i64 = resolved_capability_id(scope);
         if (capability_id < 0) { return capability_effect_invalid_capability_status(); }
         vec_push<MirCapabilityEffect>(output, MirCapabilityEffect {
-            kind: 1,
+            kind: capability_effect_enter_kind(),
             capability_id: capability_id,
             statement_index: resolved_capability_statement(scope),
             scope_ordinal: index
         });
         vec_push<MirCapabilityEffect>(output, MirCapabilityEffect {
-            kind: 2,
+            kind: capability_effect_exit_kind(),
             capability_id: capability_id,
             statement_index: resolved_capability_statement(scope),
             scope_ordinal: index

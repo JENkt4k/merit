@@ -26,6 +26,8 @@ pub fn clause_metadata_operand(borrow value: MirFunctionClauseMetadata) -> i64 {
 pub fn clause_metadata_start(borrow value: MirFunctionClauseMetadata) -> i64 { return value.start; }
 pub fn clause_metadata_length(borrow value: MirFunctionClauseMetadata) -> i64 { return value.length; }
 pub fn clause_metadata_semantic_id(borrow value: MirFunctionClauseMetadata) -> i64 { return value.semantic_id; }
+pub fn clause_metadata_effect_kind() -> i32 { return 1; }
+pub fn clause_metadata_capability_kind() -> i32 { return 2; }
 
 fn clause_metadata_equal(
     borrow source: Buffer,
@@ -69,20 +71,20 @@ requires_caps [allocate]
     while (clause_index < vec_len<ClauseRecord>(clauses)) {
         let clause: ClauseRecord = vec_get<ClauseRecord>(clauses, clause_index);
         let kind: i32 = clause_record_kind(clause);
-        if (kind == 11) {
+        if (kind == clause_effects_kind()) {
             var offset: i64 = 0;
             while (offset < clause_record_operand_count(clause)) {
                 let operand_index: i64 = checked_add(clause_record_first_operand(clause), offset);
                 let operand: ClauseOperand = vec_get<ClauseOperand>(operands, operand_index);
                 if (clause_operand_kind(operand) != 1) { return 1; }
                 vec_push<MirFunctionClauseMetadata>(output, MirFunctionClauseMetadata {
-                    kind: 1, clause_ordinal: clause_index, operand_ordinal: offset,
+                    kind: clause_metadata_effect_kind(), clause_ordinal: clause_index, operand_ordinal: offset,
                     start: clause_operand_start(operand), length: clause_operand_length(operand), semantic_id: -1
                 });
                 offset = checked_add(offset, 1);
             }
         } else {
-            if (kind == 12) {
+            if (kind == clause_requires_caps_kind()) {
                 var offset: i64 = 0;
                 while (offset < clause_record_operand_count(clause)) {
                     let operand_index: i64 = checked_add(clause_record_first_operand(clause), offset);
@@ -93,7 +95,7 @@ requires_caps [allocate]
                     );
                     if (capability_id < 0) { return 3; }
                     vec_push<MirFunctionClauseMetadata>(output, MirFunctionClauseMetadata {
-                        kind: 2, clause_ordinal: clause_index, operand_ordinal: offset,
+                        kind: clause_metadata_capability_kind(), clause_ordinal: clause_index, operand_ordinal: offset,
                         start: clause_operand_start(operand), length: clause_operand_length(operand), semantic_id: capability_id
                     });
                     offset = checked_add(offset, 1);
@@ -109,13 +111,13 @@ pub fn validate_function_clause_metadata(borrow values: Vec<MirFunctionClauseMet
     var index: i64 = 0;
     while (index < vec_len<MirFunctionClauseMetadata>(values)) {
         let value: MirFunctionClauseMetadata = vec_get<MirFunctionClauseMetadata>(values, index);
-        if (value.kind < 1) { return clause_metadata_invalid_kind_status(); }
-        if (value.kind > 2) { return clause_metadata_invalid_kind_status(); }
+        if (value.kind < clause_metadata_effect_kind()) { return clause_metadata_invalid_kind_status(); }
+        if (value.kind > clause_metadata_capability_kind()) { return clause_metadata_invalid_kind_status(); }
         if (value.clause_ordinal < 0) { return clause_metadata_invalid_clause_ordinal_status(); }
         if (value.operand_ordinal < 0) { return clause_metadata_invalid_operand_ordinal_status(); }
         if (value.start < 0) { return clause_metadata_invalid_span_status(); }
         if (value.length <= 0) { return clause_metadata_invalid_span_status(); }
-        if (value.kind == 2) { if (value.semantic_id < 0) { return clause_metadata_invalid_semantic_id_status(); } }
+        if (value.kind == clause_metadata_capability_kind()) { if (value.semantic_id < 0) { return clause_metadata_invalid_semantic_id_status(); } }
         index = checked_add(index, 1);
     }
     return 0;

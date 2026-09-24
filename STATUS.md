@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-09-12
+Status date: 2026-09-24
 
 ## Release target
 
@@ -59,10 +59,12 @@ native-Windows environments.
 
 The replacement compiler is trusted for the documented Alpha.1 production
 surface, and Alpha.2 completed M10 and was tagged at merge commit `53699f2`.
-The active frontier is the bounded post-Alpha.2 cleanup campaign: first classify
-and migrate existing semantic numeric identifiers without renumbering or
-semantic changes, then address separately tracked bootstrap/test-infrastructure
-defects. Ownership/buffer/tensor expansion belongs to a later Alpha.3 plan.
+The implementation milestones in the bounded post-Alpha.2 cleanup campaign are
+complete through PR #125. The final campaign audit is active: it closes the
+ledger, verifies cross-platform gates, and hands development to self-hosting
+without changing language semantics. Self-hosting through the normal project
+interface is the next compiler-engineering frontier after that audit merges;
+ownership/buffer/tensor expansion belongs to a later Alpha.3 plan.
 
 ## Documentation
 

@@ -4,6 +4,10 @@ import bootstrap_statement_semantics;
 import bootstrap_mir_functions;
 import bootstrap_mir_source_function_records;
 
+fn project_payload_no_declaration_kind() -> i32 { return 0; }
+fn project_payload_decimal_declaration_kind() -> i32 { return 1; }
+fn project_payload_bounded_declaration_kind() -> i32 { return 2; }
+
 fn project_payload_span_equal(
     borrow source:Buffer,left_start:i64,left_length:i64,right_start:i64,right_length:i64
 )->i32{
@@ -116,20 +120,20 @@ fn project_payload_numeric_type_code(
             }
         }
         if(depth==0){
-            var declaration_kind:i32=0;
-            if(project_payload_keyword(source,token,100,101,99,105,109,97,108)!=0){declaration_kind=1;}
-            if(project_payload_keyword(source,token,98,111,117,110,100,101,100)!=0){declaration_kind=2;}
-            if(declaration_kind!=0){
+            var declaration_kind:i32=project_payload_no_declaration_kind();
+            if(project_payload_keyword(source,token,100,101,99,105,109,97,108)!=0){declaration_kind=project_payload_decimal_declaration_kind();}
+            if(project_payload_keyword(source,token,98,111,117,110,100,101,100)!=0){declaration_kind=project_payload_bounded_declaration_kind();}
+            if(declaration_kind!=project_payload_no_declaration_kind()){
                 let name_index:i64=checked_add(index,1);
                 if(name_index<vec_len<Token>(tokens)){
                     let name:Token=vec_get<Token>(tokens,name_index);
                     if(project_payload_span_equal(source,start,length,token_start(name),token_length(name))!=0){
-                        if(declaration_kind==1){return function_mir_decimal_type_code(decimal_identity);}
+                        if(declaration_kind==project_payload_decimal_declaration_kind()){return function_mir_decimal_type_code(decimal_identity);}
                         return function_mir_bounded_type_code(bounded_identity);
                     }
                 }
-                if(declaration_kind==1){decimal_identity=checked_add(decimal_identity,1);}
-                if(declaration_kind==2){bounded_identity=checked_add(bounded_identity,1);}
+                if(declaration_kind==project_payload_decimal_declaration_kind()){decimal_identity=checked_add(decimal_identity,1);}
+                if(declaration_kind==project_payload_bounded_declaration_kind()){bounded_identity=checked_add(bounded_identity,1);}
             }
         }
         index=checked_add(index,1);

@@ -320,7 +320,7 @@ meaning.
   hosted Windows evidence. The hosted Ubuntu jobs were cancelled by runner
   shutdown signals after making progress rather than reporting a test failure.
 
-### N7-N10 sentinel and representation audit (candidate)
+### N7-N10 sentinel and representation audit (closed by PR #125)
 
 - N7 gives the stable flat function-MIR record absence value and ownership
   lookup/record/event/frame absence values domain-specific names without
@@ -361,6 +361,44 @@ meaning.
   after all N7-N10 edits (`88 passed in 6.63s`).
 - The native-Windows bootstrap/project subsystem gate passes with `431 passed`
   in `1417.88s` (gate duration `1418.388s`).
+- The authoritative local native-Windows full gate passes with `1170` tests,
+  `11` replacement-acceptance tests, all `10/10` acceptance projects, and a
+  total gate duration of `2398.156s`.
+- Hosted Ubuntu full, native-Windows full, Windows M9 reproducibility, and
+  Ubuntu corpus convergence passed. Ubuntu M7 acceptance and M9 reproducibility
+  were each externally terminated twice by explicit GitHub runner shutdown
+  signals without a Merit failure marker; M9 reached stage 2 after stages 0 and
+  1 passed on both attempts. PR #125 was manually accepted and merged as
+  `241da17e4d1b645fc9b85fbef2c82469d0c3fa68`.
+
+### Campaign audit (candidate)
+
+- The final repository-wide consumer scan found and migrated residual raw
+  parser AST construction, statement/clause dispatch, HIR validation,
+  capability-effect, ownership-expression failure, project numeric-declaration,
+  function-MIR classification, and Python assembly-provenance values. These
+  consumers now use the canonical domain symbols without changing an encoding.
+- N1-N10 now have canonical definition sites, migrated semantic consumers, and
+  representation-locking evidence. Retained explicit numbers fall into the
+  allowed categories in `docs/design/NUMERIC_IDENTIFIERS.md`: canonical
+  discriminant/status/sentinel/wire definitions; compatibility assertions;
+  character and packed-text encodings; row widths and local tuple indexing;
+  boolean flags; arithmetic, counts, bounds, and capacities; or local
+  not-found control flow that does not cross a representation boundary.
+- The audit intentionally does not convert every structural literal into a
+  constant, create a repository-wide constants bag, renumber an established
+  value, or introduce a new schema layer.
+- D1-D3 are closed by PR #123: immutable content-addressed native test objects
+  remove redundant construction, pytest state uses the writable ignored Merit
+  state root, and the historical large-call corruption has a passing focused
+  regression reproducer.
+- The next product frontier is self-hosting through the normal project
+  interface while retaining Python as an independent oracle and preserving M9
+  stage equivalence. That work is not part of this cleanup campaign and does
+  not authorize Alpha.3 language features.
+- Focused bootstrap compile/parity and Python identifier/ownership checks pass
+  (`3 passed in 10.98s`). The native-Windows fast gate passes with `92 passed`
+  in `12.72s` (gate duration `13.176s`).
 
 ## Ordered PR checklist
 
@@ -383,9 +421,9 @@ meaning.
 - [x] **Status namespaces (N6, PR #124)** — one staged milestone PR covering the
   bounded status families; no diagnostic distinction was renumbered or
   collapsed.
-- [ ] **Sentinel and representation audit (N7-N10)** — one combined audit PR;
-  migrate only proven semantic consumers and explicitly retain compliant
-  boundary/test occurrences.
+- [x] **Sentinel and representation audit (N7-N10, PR #125)** — migrated only
+  proven semantic consumers and explicitly retained compliant boundary/test
+  occurrences.
 - [ ] **Campaign audit** — prove no unexplained semantic numeric consumer
   remains, all retained raw values are classified, documentation identifies the
   next product frontier, and full Ubuntu/native-Windows gates pass.

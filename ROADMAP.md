@@ -54,17 +54,18 @@ M10 closed the release audit, and `v0.1.0-alpha.2` is tagged at `53699f2`.
 
 ### Post-Alpha.2 direction
 
-`POST_ALPHA2_CLEANUP.md` is the active bounded work queue. It first migrates
-existing semantic numeric identifiers without renumbering or changing language
-semantics, then isolates the deferred bootstrap call-ABI and validation/test
-infrastructure defects.
+`POST_ALPHA2_CLEANUP.md` is in its final campaign-audit milestone. Its semantic
+numeric-identifier migrations and separately tracked bootstrap/test-
+infrastructure defects are complete through PR #125 without renumbering or
+changing language semantics.
 
-After that cleanup, **Self-hosting** is the first compiler-engineering frontier: the
-trusted replacement must reproducibly compile its own source through the normal
-project interface without weakening the independent oracle or stage-agreement
-contract. Separate compilation and dependency-granular caching are the next
-natural infrastructure boundary. Stored references/lifetimes and scientific
-arrays remain later semantic/domain work rather than implicit Alpha.2 scope.
+After the final audit merges, **Self-hosting** is the first compiler-engineering
+frontier: the trusted replacement must reproducibly compile its own source
+through the normal project interface without weakening the independent oracle
+or stage-agreement contract. Separate compilation and dependency-granular
+caching are the next natural infrastructure boundary. Stored
+references/lifetimes and scientific arrays remain later semantic/domain work
+rather than implicit Alpha.2 scope.
 
 ### Documentation path
 

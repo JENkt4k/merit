@@ -6,10 +6,12 @@ Continue Merit as a deterministic systems language. Preserve exact numerics,
 explicit allocation, ownership, contracts, capability-gated hazardous operations,
 stable C interoperability, and interpreter/native semantic equivalence.
 
-`v0.1.0-alpha.2` is released. The active objective is the bounded technical-debt
-campaign in `POST_ALPHA2_CLEANUP.md`, beginning with deliberate migration of
-existing semantic numeric identifiers. Python semantic authority remains absent
-from normal production compilation, and Python remains an independent oracle.
+`v0.1.0-alpha.2` is released. The bounded technical-debt implementation in
+`POST_ALPHA2_CLEANUP.md` is complete through PR #125; the active objective is
+its final campaign audit. Python semantic authority remains absent from normal
+production compilation, and Python remains an independent oracle. After the
+audit merges, self-hosting through the normal project interface is the next
+compiler-engineering frontier.
 
 Do not broaden the language during post-Alpha.2 cleanup.
 
@@ -295,8 +297,9 @@ The following production replacement boundaries are already established:
 Do not recreate these milestones or introduce older transitional architecture
 because older status documents mention them.
 
-M1-M10 are closed through this pipeline. The active objective is the bounded
-post-Alpha.2 cleanup campaign tracked in `POST_ALPHA2_CLEANUP.md`.
+M1-M10 and the bounded cleanup implementation are closed through this pipeline.
+The active objective is the final campaign audit tracked in
+`POST_ALPHA2_CLEANUP.md`.
 
 Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
 The Alpha.2 compiler has satisfied the trust/reproducibility gate; self-hosting

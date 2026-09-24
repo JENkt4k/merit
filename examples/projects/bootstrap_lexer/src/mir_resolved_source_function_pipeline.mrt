@@ -206,8 +206,8 @@ requires_caps [allocate]
                         let binding_record: StatementRecord = vec_get<StatementRecord>(statements, binding_statement);
                         let binding_kind: i32 = statement_record_kind(binding_record);
                         var supported_binding: i32 = 0;
-                        if (binding_kind == 20) { supported_binding = 1; }
-                        if (binding_kind == 21) { supported_binding = 1; }
+                        if (binding_kind == statement_record_let_kind()) { supported_binding = 1; }
+                        if (binding_kind == statement_record_var_kind()) { supported_binding = 1; }
                         if (supported_binding != 0) {
                             var name_start: i64 = -1;
                             var name_length: i64 = 0;
