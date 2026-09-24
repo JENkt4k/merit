@@ -315,6 +315,41 @@ meaning.
 - The authoritative native-Windows full gate passes on Python 3.13.15 with
   1167 tests passed, 11 replacement-acceptance tests passed, all 10 acceptance
   projects verified, and a total gate duration of 2324.079s.
+- PR #124 merged as `af53cde48a43e66dca668c9bf47b803f8b62fc50`
+  after manual review of the authoritative local native-Windows full pass and
+  hosted Windows evidence. The hosted Ubuntu jobs were cancelled by runner
+  shutdown signals after making progress rather than reporting a test failure.
+
+### N7-N10 sentinel and representation audit (candidate)
+
+- N7 gives the stable flat function-MIR record absence value and ownership
+  lookup/record/event/frame absence values domain-specific names without
+  changing their established `-1` encodings. Merit constructors and validators
+  plus the Python ownership assembly adapter consume those symbols.
+- The Merit function-MIR and ownership representation probes lock the named
+  sentinels through both the interpreter and generated native C. The Python MIR
+  representation test independently locks the matching function-record value.
+- N8 names every snapshot section index and bundle header/version/function-count
+  index at their canonical serialization boundaries. The snapshot/bundle tests
+  pass with an added assertion covering the complete ordered section mapping
+  (`38 passed in 0.12s`).
+- N9 names filesystem Result and FileError tags beside the backend metadata that
+  emits them, then uses those names for every generated-C consumer. ABI/runtime
+  output remains locked by a focused generated-C representation test; the
+  complete adjacent emitter file passes (`48 passed in 6.53s`) and typed
+  filesystem interpreter/native parity passes (`1 passed in 4.16s`).
+- N10 retains raw values in tests whose purpose is representation compatibility,
+  including snapshot rows, kind/status mappings, sentinel encodings, and ABI
+  strings. Behavioral tests continue to use public constructors and semantic
+  outcomes. The audit does not treat row widths, tuple indices local to unpacked
+  data, arithmetic bounds, counts, boolean flags, or local not-found control
+  flow as new identifier domains.
+- Focused N7 Python assembly and representation checks pass (`9 passed in
+  1.06s`); the ownership and function-MIR sentinel probes each pass through the
+  interpreter and generated native C (`1 passed in 20.77s` and `1 passed in
+  20.41s`).
+- The canonical fast gate passes (`92 passed in 11.14s`; gate duration
+  `11.595s`).
 
 ## Ordered PR checklist
 
@@ -334,8 +369,9 @@ meaning.
   redundant native-bootstrap construction, then repair WSL pytest-cache
   handling, then reproduce and repair the independently testable call-ABI
   corruption. Preserve clean-build coverage and commit each stage separately.
-- [ ] **Status namespaces (N6)** — one staged milestone PR covering the bounded
-  status families; never renumber or collapse diagnostic distinctions.
+- [x] **Status namespaces (N6, PR #124)** — one staged milestone PR covering the
+  bounded status families; no diagnostic distinction was renumbered or
+  collapsed.
 - [ ] **Sentinel and representation audit (N7-N10)** — one combined audit PR;
   migrate only proven semantic consumers and explicitly retain compliant
   boundary/test occurrences.
