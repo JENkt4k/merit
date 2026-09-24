@@ -48,6 +48,11 @@ _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
 _AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
+_FILESYSTEM_RESULT_OK_TAG = 0
+_FILESYSTEM_RESULT_ERROR_TAG = 1
+_FILESYSTEM_ERROR_NOT_FOUND_TAG = 0
+_FILESYSTEM_ERROR_PERMISSION_DENIED_TAG = 1
+_FILESYSTEM_ERROR_IO_TAG = 2
 _VECTOR_OPERATIONS = frozenset({
     "new", "push", "len", "get", "set", "replace", "pop", "drop", "transfer", "allocator",
 })
@@ -91,6 +96,8 @@ def _vector_call_operation(symbol: str) -> str | None:
 
 def _filesystem_runtime(read_types: set[MirType], write_types: set[MirType]) -> list[str]:
     lines: list[str] = []
+    ok_tag = _FILESYSTEM_RESULT_OK_TAG
+    error_tag = _FILESYSTEM_RESULT_ERROR_TAG
     for type_ in sorted(read_types, key=_type_mangle):
         identity = _recursive_owned_payload_enum_identity(type_)
         if identity is None or identity[1] != (MirType("Buffer"), MirType("i64")):
@@ -102,18 +109,18 @@ def _filesystem_runtime(read_types: set[MirType], write_types: set[MirType]) -> 
             '    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
             "    memcpy(name, path.data, path.len); name[path.len] = 0;",
             "    FILE *file = fopen(name, \"rb\"); int open_error = errno; free(name);",
-            f"    if (!file) return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(open_error) }};",
+            f"    if (!file) return ({c_type}){{ .tag = {error_tag}, .payload.variant_{error_tag} = merit_fs_error(open_error) }};",
             "    if (fseek(file, 0, SEEK_END) != 0) { int error = errno; fclose(file);",
-            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }}",
+            f"        return ({c_type}){{ .tag = {error_tag}, .payload.variant_{error_tag} = merit_fs_error(error) }}; }}",
             "    long length = ftell(file); if (length < 0) { int error = errno; fclose(file);",
-            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }}",
+            f"        return ({c_type}){{ .tag = {error_tag}, .payload.variant_{error_tag} = merit_fs_error(error) }}; }}",
             "    rewind(file); merit_Buffer buffer = merit_buffer_new(allocator, (int64_t)length);",
             "    if (length > 0) { size_t got = fread(buffer.data, 1, (size_t)length, file);",
             "        if (got != (size_t)length) { int error = errno; merit_buffer_drop(&buffer); fclose(file);",
-            f"            return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(error) }}; }} buffer.len = got; }}",
+            f"            return ({c_type}){{ .tag = {error_tag}, .payload.variant_{error_tag} = merit_fs_error(error) }}; }} buffer.len = got; }}",
             "    if (fclose(file) != 0) { merit_buffer_drop(&buffer);",
-            f"        return ({c_type}){{ .tag = 1, .payload.variant_1 = merit_fs_error(errno) }}; }}",
-            f"    return ({c_type}){{ .tag = 0, .payload.variant_0 = buffer }};",
+            f"        return ({c_type}){{ .tag = {error_tag}, .payload.variant_{error_tag} = merit_fs_error(errno) }}; }}",
+            f"    return ({c_type}){{ .tag = {ok_tag}, .payload.variant_{ok_tag} = buffer }};",
             "}",
         ])
     for type_ in sorted(write_types, key=_type_mangle):
@@ -125,13 +132,13 @@ def _filesystem_runtime(read_types: set[MirType], write_types: set[MirType]) -> 
             f"static {c_type} {helper}(merit_String path, const merit_Buffer *buffer) {{",
             '    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, "Merit allocation failed\\n"); exit(80); }',
             "    memcpy(name, path.data, path.len); name[path.len] = 0;",
-            f"    if (merit_path_is_directory(name)) {{ free(name); return ({c_type}){{ 1, 2 }}; }}",
+            f"    if (merit_path_is_directory(name)) {{ free(name); return ({c_type}){{ {error_tag}, {_FILESYSTEM_ERROR_IO_TAG} }}; }}",
             "    FILE *file = fopen(name, \"wb\"); int open_error = errno; free(name);",
-            f"    if (!file) return ({c_type}){{ 1, merit_fs_error(open_error) }};",
+            f"    if (!file) return ({c_type}){{ {error_tag}, merit_fs_error(open_error) }};",
             "    size_t wrote = buffer->len ? fwrite(buffer->data, 1, buffer->len, file) : 0;",
-            f"    if (wrote != buffer->len) {{ int error = errno; fclose(file); return ({c_type}){{ 1, merit_fs_error(error) }}; }}",
-            f"    if (fclose(file) != 0) return ({c_type}){{ 1, merit_fs_error(errno) }};",
-            f"    return ({c_type}){{ 0, (int64_t)wrote }};",
+            f"    if (wrote != buffer->len) {{ int error = errno; fclose(file); return ({c_type}){{ {error_tag}, merit_fs_error(error) }}; }}",
+            f"    if (fclose(file) != 0) return ({c_type}){{ {error_tag}, merit_fs_error(errno) }};",
+            f"    return ({c_type}){{ {ok_tag}, (int64_t)wrote }};",
             "}",
         ])
     return lines
@@ -1741,7 +1748,10 @@ def emit_c_module(module: MirModule) -> str:
         prelude.extend([*prototypes, ""])
     runtime = [
         *([
-            "static int64_t merit_fs_error(int error) { if (error == ENOENT) return 0; if (error == EACCES || error == EPERM) return 1; return 2; }",
+            "static int64_t merit_fs_error(int error) { "
+            f"if (error == ENOENT) return {_FILESYSTEM_ERROR_NOT_FOUND_TAG}; "
+            f"if (error == EACCES || error == EPERM) return {_FILESYSTEM_ERROR_PERMISSION_DENIED_TAG}; "
+            f"return {_FILESYSTEM_ERROR_IO_TAG}; }}",
             "static int merit_path_is_directory(const char *path) { struct stat info; return stat(path, &info) == 0 && S_ISDIR(info.st_mode); }",
         ] if needs_filesystem_runtime else []),
         *_filesystem_runtime(filesystem_read_types, filesystem_write_types),

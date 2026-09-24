@@ -14,12 +14,39 @@ from merit.bootstrap.mir_contract import (
     MirTerminator,
     MirType,
 )
-from merit.bootstrap.mir_to_c import MirToCError, emit_c_header, emit_c_module
+from merit.bootstrap.mir_to_c import (
+    MirToCError,
+    _FILESYSTEM_ERROR_IO_TAG,
+    _FILESYSTEM_ERROR_NOT_FOUND_TAG,
+    _FILESYSTEM_ERROR_PERMISSION_DENIED_TAG,
+    _FILESYSTEM_RESULT_ERROR_TAG,
+    _FILESYSTEM_RESULT_OK_TAG,
+    _filesystem_runtime,
+    emit_c_header,
+    emit_c_module,
+)
 
 
 I64 = MirType("i64")
 BOOL = MirType("bool")
 UNIT = MirType("unit")
+
+
+def test_filesystem_result_and_error_tags_preserve_runtime_abi() -> None:
+    assert (_FILESYSTEM_RESULT_OK_TAG, _FILESYSTEM_RESULT_ERROR_TAG) == (0, 1)
+    assert (
+        _FILESYSTEM_ERROR_NOT_FOUND_TAG,
+        _FILESYSTEM_ERROR_PERMISSION_DENIED_TAG,
+        _FILESYSTEM_ERROR_IO_TAG,
+    ) == (0, 1, 2)
+
+    read_result = MirType("enum_owned_payload_0", (MirType("Buffer"), I64))
+    write_result = MirType("enum_copy_payload_0", (I64, I64))
+    runtime = "\n".join(_filesystem_runtime({read_result}, {write_result}))
+
+    assert ".tag = 0, .payload.variant_0 = buffer" in runtime
+    assert ".tag = 1, .payload.variant_1 = merit_fs_error" in runtime
+    assert "return (merit_enum_copy_payload_0){ 1, 2 };" in runtime
 
 
 def compile_and_run(tmp_path, module, main_body):
