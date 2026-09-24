@@ -495,6 +495,7 @@ MIR_KIND_REPRESENTATION = (
     ("assembly_source_contract_record_kind", 1),
     ("assembly_source_body_kind", 2),
     ("assembly_source_ownership_kind", 3),
+    ("assembly_source_absent_record_value", -1),
     ("function_contract_precondition_phase", 1),
     ("function_contract_postcondition_phase", 2),
     ("function_contract_entry_snapshot_phase", 3),

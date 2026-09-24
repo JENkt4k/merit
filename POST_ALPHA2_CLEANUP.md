@@ -347,7 +347,10 @@ meaning.
 - Focused N7 Python assembly and representation checks pass (`9 passed in
   1.06s`); the ownership and function-MIR sentinel probes each pass through the
   interpreter and generated native C (`1 passed in 20.77s` and `1 passed in
-  20.41s`).
+  20.41s`). The instruction-source record now likewise owns its absent metadata
+  value, with whole-function assembly and unified provenance coverage passing
+  alongside its interpreter/native representation probe (`3 passed in
+  61.99s`).
 - The canonical fast gate passes (`92 passed in 11.14s`; gate duration
   `11.595s`).
 

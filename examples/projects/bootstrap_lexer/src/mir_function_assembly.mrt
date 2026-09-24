@@ -83,8 +83,8 @@ requires_caps [allocate]
             vec_push<MirLowerEvent>(events, mir_event_place(global_id));
             vec_push<MirFunctionInstructionSource>(sources, MirFunctionInstructionSource {
                 global_id: global_id, source_kind: assembly_source_body_kind(), source_id: expected_body_instruction,
-                contract_kind: assembly_source_no_contract_phase(), clause_ordinal: -1,
-                result: -1, left: -1, right: -1
+                contract_kind: assembly_source_no_contract_phase(), clause_ordinal: assembly_source_absent_record_value(),
+                result: assembly_source_absent_record_value(), left: assembly_source_absent_record_value(), right: assembly_source_absent_record_value()
             });
             expected_body_instruction = checked_add(expected_body_instruction, 1);
             vec_set<i64>(next_instruction, 0, checked_add(global_id, 1));

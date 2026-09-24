@@ -29,6 +29,7 @@ pub fn assembly_source_contract_record_kind() -> i32 { return 1; }
 pub fn assembly_source_body_kind() -> i32 { return 2; }
 pub fn assembly_source_ownership_kind() -> i32 { return 3; }
 pub fn assembly_source_no_contract_phase() -> i32 { return 0; }
+pub fn assembly_source_absent_record_value() -> i64 { return -1; }
 pub fn assembly_source_global_order_status()->i32{return 1;}
 pub fn assembly_source_invalid_kind_status()->i32{return 2;}
 pub fn assembly_source_invalid_id_status()->i32{return 3;}
@@ -50,7 +51,7 @@ pub fn validate_function_assembly_sources(borrow sources: Vec<MirFunctionInstruc
             if (value.clause_ordinal < 0) { return assembly_source_invalid_clause_status(); }
         } else {
             if (value.contract_kind != assembly_source_no_contract_phase()) { return assembly_source_unexpected_contract_metadata_status(); }
-            if (value.clause_ordinal != -1) { return assembly_source_unexpected_contract_metadata_status(); }
+            if (value.clause_ordinal != assembly_source_absent_record_value()) { return assembly_source_unexpected_contract_metadata_status(); }
         }
         index = checked_add(index, 1);
     }
