@@ -79,6 +79,8 @@ MIR_ASSEMBLY_SOURCE_KIND_OWNERSHIP = 3
 MIR_CONTRACT_PHASE_PRECONDITION = 1
 MIR_CONTRACT_PHASE_POSTCONDITION = 2
 MIR_CONTRACT_PHASE_OLD_SNAPSHOT = 3
+MIR_FIELD_STORE_INITIALIZE_POLICY = 0
+MIR_FIELD_STORE_REPLACE_POLICY = 1
 _I64_TYPE_CODE = 1
 MIR_FUNCTION_ABSENT_RECORD_VALUE = -1
 
@@ -369,11 +371,19 @@ def lower_native_whole_function_assembly(
             elif kind == MIR_FUNCTION_KIND_STRUCT_FIELD_STORE:
                 if result < 0 or left < 0 or symbol_code < 0 or type_code < _I64_STRUCT_TYPE_CODE_BASE:
                     raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} is invalid")
-                if policy not in {0, 1}:
+                if policy not in {
+                    MIR_FIELD_STORE_INITIALIZE_POLICY,
+                    MIR_FIELD_STORE_REPLACE_POLICY,
+                }:
                     raise NativeWholeFunctionMirError(f"body aggregate struct field store {index} has invalid policy")
                 body_instructions[rid] = MirInstruction(
                     rid, "store_field", result=result, operands=(left,), symbol=f"field_{symbol_code}",
-                    span=instruction_span, ownership="moved" if policy == 1 else "owned",
+                    span=instruction_span,
+                    ownership=(
+                        "moved"
+                        if policy == MIR_FIELD_STORE_REPLACE_POLICY
+                        else "owned"
+                    ),
                 )
             else:
                 if result < 0 or left < 0 or symbol_code < 0:

@@ -337,7 +337,10 @@ meaning.
   emits them, then uses those names for every generated-C consumer. ABI/runtime
   output remains locked by a focused generated-C representation test; the
   complete adjacent emitter file passes (`48 passed in 6.53s`) and typed
-  filesystem interpreter/native parity passes (`1 passed in 4.16s`).
+  filesystem interpreter/native parity passes (`1 passed in 4.16s`). Python
+  whole-function assembly also names the existing initialize/replace field-store
+  policies, matching the Merit-side definitions; direct assembly, representation,
+  and native replacement lifecycle coverage passes (`9 passed in 24.11s`).
 - N10 retains raw values in tests whose purpose is representation compatibility,
   including snapshot rows, kind/status mappings, sentinel encodings, and ABI
   strings. Behavioral tests continue to use public constructors and semantic
@@ -351,8 +354,13 @@ meaning.
   value, with whole-function assembly and unified provenance coverage passing
   alongside its interpreter/native representation probe (`3 passed in
   61.99s`).
-- The canonical fast gate passes (`92 passed in 11.14s`; gate duration
-  `11.595s`).
+- The canonical fast gate passes after the final focused migration (`92 passed
+  in 11.35s`; gate duration `11.808s`).
+- Consolidated direct coverage for snapshot/bundle decoding, MIR identifiers,
+  whole-function and ownership assembly, and deterministic C emission passes
+  after all N7-N10 edits (`88 passed in 6.63s`).
+- The native-Windows bootstrap/project subsystem gate passes with `431 passed`
+  in `1417.88s` (gate duration `1418.388s`).
 
 ## Ordered PR checklist
 
