@@ -481,6 +481,7 @@ MIR_KIND_REPRESENTATION = (
     ("function_mir_kind_struct_field_store", 14),
     ("function_mir_kind_parameter", 15), ("function_mir_kind_call", 16),
     ("function_mir_kind_call_argument", 17),
+    ("function_mir_absent_record_value", -1),
     ("generic_const_kind", 1), ("generic_call_kind", 2),
     ("generic_operand_kind", 3),
     ("function_contract_temporary_local_kind", 1),
@@ -630,6 +631,14 @@ OWNERSHIP_KIND_REPRESENTATION = (
     ("ownership_state_dropped", 3),
 )
 
+OWNERSHIP_SENTINEL_REPRESENTATION = (
+    ("ownership_binding_not_found", -1),
+    ("ownership_record_no_instruction_id", -1),
+    ("ownership_record_no_other_binding_id", -1),
+    ("ownership_event_no_local_id", -1),
+    ("ownership_frame_no_branch_start", -1),
+)
+
 
 def test_bootstrap_ownership_kind_representation_is_stable(tmp_path):
     project_root = tmp_path / "bootstrap_ownership_kind_representation"
@@ -657,6 +666,41 @@ def test_bootstrap_ownership_kind_representation_is_stable(tmp_path):
     project = load_project(manifest_path)
     expected = "".join(
         f"{value}\n" for _, value in OWNERSHIP_KIND_REPRESENTATION
+    )
+    assert interpret(project) == expected
+    _, _, executable = build(project, project_root / "native")
+    native = subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True
+    ).stdout
+    assert native == expected
+
+
+def test_bootstrap_ownership_sentinel_representation_is_stable(tmp_path):
+    project_root = tmp_path / "bootstrap_ownership_sentinel_representation"
+    shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
+    lexer_path = project_root / "src/lexer.mrt"
+    lexer_source, replacements = re.subn(
+        r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {",
+        lexer_path.read_text(), count=1,
+    )
+    assert replacements == 1
+    lexer_path.write_text(lexer_source)
+    prints = " ".join(
+        f"print({name}());" for name, _ in OWNERSHIP_SENTINEL_REPRESENTATION
+    )
+    (project_root / "src/ownership_sentinel_representation_probe.mrt").write_text(
+        "module ownership_sentinel_representation_probe\n"
+        "import bootstrap_mir_ownership_flow;\n"
+        f"fn main()->i32 {{ {prints} return 0; }}\n"
+    )
+    manifest_path = project_root / "Merit.toml"
+    manifest_path.write_text(manifest_path.read_text().replace(
+        'entry = "src/lexer.mrt"',
+        'entry = "src/ownership_sentinel_representation_probe.mrt"',
+    ))
+    project = load_project(manifest_path)
+    expected = "".join(
+        f"{value}\n" for _, value in OWNERSHIP_SENTINEL_REPRESENTATION
     )
     assert interpret(project) == expected
     _, _, executable = build(project, project_root / "native")
