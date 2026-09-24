@@ -24,6 +24,31 @@ from merit.bootstrap.mir_function_ownership_assembly_parity import (
 
 SNAPSHOT_MAGIC = 0x4D525346  # "MRSF"
 SNAPSHOT_VERSION = 9
+SNAPSHOT_SECTION_BODY_RECORDS = 0
+SNAPSHOT_SECTION_CONTRACT_RECORDS = 1
+SNAPSHOT_SECTION_CONTRACT_LOCALS = 2
+SNAPSHOT_SECTION_INSTRUCTION_SOURCES = 3
+SNAPSHOT_SECTION_OWNERSHIP_BINDINGS = 4
+SNAPSHOT_SECTION_OWNERSHIP_RECORDS = 5
+SNAPSHOT_SECTION_CFG_RECORDS = 6
+SNAPSHOT_SECTION_PLACEMENTS = 7
+SNAPSHOT_SECTION_CAPABILITIES = 8
+SNAPSHOT_SECTION_TYPE_DESCRIPTORS = 9
+SNAPSHOT_SECTION_NUMERIC_TYPE_DESCRIPTORS = 10
+SNAPSHOT_SECTION_DESTRUCTORS = 11
+SNAPSHOT_SECTION_DESTRUCTOR_BODY = 12
+SNAPSHOT_SECTION_DESTRUCTOR_CFG = 13
+SNAPSHOT_SECTION_DESTRUCTOR_PLACEMENTS = 14
+SNAPSHOT_SECTION_EFFECTIVE_SOURCE = 15
+_SNAPSHOT_MAGIC_INDEX = 0
+_SNAPSHOT_VERSION_INDEX = 1
+_SNAPSHOT_HEADER_WIDTH = 2
+_SNAPSHOT_NUMERIC_DESCRIPTORS_VERSION = 6
+_SNAPSHOT_EFFECTIVE_SOURCE_VERSION = 7
+_SNAPSHOT_EXPORT_METADATA_VERSION = 8
+_LEGACY_DESTRUCTOR_SECTION = 10
+_BODY_EXPORTED_FLAG_INDEX = 13
+_SINGLE_VALUE_INDEX = 0
 _TYPE_DESCRIPTOR_OWNED_FIELD_STRUCT = 1
 _TYPE_DESCRIPTOR_OWNED_PAYLOAD_ENUM = 2
 _TYPE_DESCRIPTOR_AGGREGATE_STRUCT = 3
@@ -89,16 +114,17 @@ class ResolvedSourceFunctionSnapshot:
 
 def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedSourceFunctionSnapshot:
     data = tuple(int(value) for value in values)
-    if len(data) < 2 or data[0] != SNAPSHOT_MAGIC:
+    if len(data) < _SNAPSHOT_HEADER_WIDTH or data[_SNAPSHOT_MAGIC_INDEX] != SNAPSHOT_MAGIC:
         raise ResolvedSourceFunctionSnapshotError("resolved source snapshot has invalid magic")
-    if data[1] not in _SECTION_WIDTHS_BY_VERSION:
+    version = data[_SNAPSHOT_VERSION_INDEX]
+    if version not in _SECTION_WIDTHS_BY_VERSION:
         raise ResolvedSourceFunctionSnapshotError(
-            f"unsupported resolved source snapshot version {data[1]}"
+            f"unsupported resolved source snapshot version {version}"
         )
 
-    position = 2
+    position = _SNAPSHOT_HEADER_WIDTH
     sections: list[tuple[tuple[int, ...], ...]] = []
-    widths = _SECTION_WIDTHS_BY_VERSION[data[1]]
+    widths = _SECTION_WIDTHS_BY_VERSION[version]
     for section_index, width in enumerate(widths):
         if position >= len(data):
             raise ResolvedSourceFunctionSnapshotError(
@@ -125,9 +151,16 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
     if position != len(data):
         raise ResolvedSourceFunctionSnapshotError("resolved source snapshot has trailing data")
 
-    capabilities = tuple(row[0] for row in sections[8])
+    capabilities = tuple(
+        row[_SINGLE_VALUE_INDEX]
+        for row in sections[SNAPSHOT_SECTION_CAPABILITIES]
+    )
     destructor_snapshots: list[ResolvedSourceDestructorSnapshot] = []
-    destructor_section = 11 if data[1] >= 6 else 10
+    destructor_section = (
+        SNAPSHOT_SECTION_DESTRUCTORS
+        if version >= _SNAPSHOT_NUMERIC_DESCRIPTORS_VERSION
+        else _LEGACY_DESTRUCTOR_SECTION
+    )
     destructor_body_section = destructor_section + 1
     destructor_cfg_section = destructor_section + 2
     destructor_placement_section = destructor_section + 3
@@ -163,31 +196,48 @@ def decode_resolved_source_function_snapshot(values: Iterable[int]) -> ResolvedS
         ):
             raise ResolvedSourceFunctionSnapshotError("destructor record sections contain unreferenced rows")
 
-    if data[1] >= 8 and sections[0]:
-        if sections[0][0][13] not in {0, 1}:
+    body_records = sections[SNAPSHOT_SECTION_BODY_RECORDS]
+    if version >= _SNAPSHOT_EXPORT_METADATA_VERSION and body_records:
+        exported_flag = body_records[0][_BODY_EXPORTED_FLAG_INDEX]
+        if exported_flag not in {0, 1}:
             raise ResolvedSourceFunctionSnapshotError(
                 "resolved source snapshot has invalid export metadata"
             )
-        exported = sections[0][0][13] == 1
+        exported = exported_flag == 1
     else:
         exported = False
 
     return ResolvedSourceFunctionSnapshot(
-        body_records=sections[0],
-        contract_records=sections[1],
-        contract_locals=sections[2],
-        instruction_sources=sections[3],
-        ownership_bindings=sections[4],
-        ownership_records=sections[5],
-        cfg_records=sections[6],
-        placements=sections[7],
+        body_records=body_records,
+        contract_records=sections[SNAPSHOT_SECTION_CONTRACT_RECORDS],
+        contract_locals=sections[SNAPSHOT_SECTION_CONTRACT_LOCALS],
+        instruction_sources=sections[SNAPSHOT_SECTION_INSTRUCTION_SOURCES],
+        ownership_bindings=sections[SNAPSHOT_SECTION_OWNERSHIP_BINDINGS],
+        ownership_records=sections[SNAPSHOT_SECTION_OWNERSHIP_RECORDS],
+        cfg_records=sections[SNAPSHOT_SECTION_CFG_RECORDS],
+        placements=sections[SNAPSHOT_SECTION_PLACEMENTS],
         capability_ids=capabilities,
-        type_descriptors=sections[9] if len(sections) > 9 else (),
-        numeric_type_descriptors=sections[10] if data[1] >= 6 else (),
+        type_descriptors=(
+            sections[SNAPSHOT_SECTION_TYPE_DESCRIPTORS]
+            if len(sections) > SNAPSHOT_SECTION_TYPE_DESCRIPTORS
+            else ()
+        ),
+        numeric_type_descriptors=(
+            sections[SNAPSHOT_SECTION_NUMERIC_TYPE_DESCRIPTORS]
+            if version >= _SNAPSHOT_NUMERIC_DESCRIPTORS_VERSION
+            else ()
+        ),
         destructors=tuple(destructor_snapshots),
-        effective_source_bytes=tuple(row[0] for row in sections[15]) if data[1] >= 7 else (),
+        effective_source_bytes=(
+            tuple(
+                row[_SINGLE_VALUE_INDEX]
+                for row in sections[SNAPSHOT_SECTION_EFFECTIVE_SOURCE]
+            )
+            if version >= _SNAPSHOT_EFFECTIVE_SOURCE_VERSION
+            else ()
+        ),
         exported=exported,
-        version=data[1],
+        version=version,
     )
 
 
