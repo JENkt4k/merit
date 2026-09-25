@@ -402,6 +402,9 @@ meaning.
 - After repairing the representation probe's explicit statement/clause imports,
   the native-Windows bootstrap/project subsystem gate passes with `431 passed`
   in `838.36s` (gate duration `838.852s`).
+- The authoritative native-Windows full gate passes with `1170` tests in
+  `883.78s`, `11` replacement-acceptance tests in `1501.18s`, all `10/10`
+  acceptance projects, and a total gate duration of `2415.597s`.
 
 ## Ordered PR checklist
 
