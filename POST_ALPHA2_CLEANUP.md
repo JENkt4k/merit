@@ -399,6 +399,9 @@ meaning.
 - Focused bootstrap compile/parity and Python identifier/ownership checks pass
   (`3 passed in 10.98s`). The native-Windows fast gate passes with `92 passed`
   in `12.72s` (gate duration `13.176s`).
+- After repairing the representation probe's explicit statement/clause imports,
+  the native-Windows bootstrap/project subsystem gate passes with `431 passed`
+  in `838.36s` (gate duration `838.852s`).
 
 ## Ordered PR checklist
 
