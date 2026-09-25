@@ -1014,6 +1014,8 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
     )
     (project_root / "src/status_namespace_representation_probe.mrt").write_text(
         "module status_namespace_representation_probe\n"
+        "import bootstrap_statements;\n"
+        "import bootstrap_clauses;\n"
         "import bootstrap_mir_functions;\n"
         "import bootstrap_mir_source_function_records;\n"
         "import bootstrap_mir_source_function_pipeline;\n"
