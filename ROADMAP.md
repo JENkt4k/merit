@@ -54,12 +54,12 @@ M10 closed the release audit, and `v0.1.0-alpha.2` is tagged at `53699f2`.
 
 ### Post-Alpha.2 direction
 
-`POST_ALPHA2_CLEANUP.md` is in its final campaign-audit milestone. Its semantic
-numeric-identifier migrations and separately tracked bootstrap/test-
-infrastructure defects are complete through PR #125 without renumbering or
-changing language semantics.
+`POST_ALPHA2_CLEANUP.md` is closed through its final campaign audit in PR #126.
+Its semantic numeric-identifier migrations and separately tracked bootstrap/
+test-infrastructure defects completed without renumbering or changing language
+semantics.
 
-After the final audit merges, **Self-hosting** is the first compiler-engineering
+**Self-hosting** is now the first compiler-engineering
 frontier: the trusted replacement must reproducibly compile its own source
 through the normal project interface without weakening the independent oracle
 or stage-agreement contract. Separate compilation and dependency-granular

@@ -7,10 +7,10 @@ completed, tagged **`v0.1.0-alpha.2` release**.
 Alpha.2 replacement work closed M1-M10 through PR #116. The replacement
 compiler is trusted for the documented Alpha.1 production surface but is not
 self-hosted. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
-The bounded cleanup implementation is complete through PR #125.
-`POST_ALPHA2_CLEANUP.md` is in its final campaign-audit milestone; self-hosting
-through the normal project interface is the next compiler-engineering frontier
-after that audit merges.
+The bounded cleanup campaign, including its final repository-wide audit, is
+closed through PR #126. `POST_ALPHA2_CLEANUP.md` is the completed evidence
+ledger; self-hosting through the normal project interface is the next
+compiler-engineering frontier.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here
