@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-09-24
+Status date: 2026-09-25
 
 ## Release target
 
@@ -13,7 +13,7 @@ diagnostic reference oracle.
 
 The canonical GitHub gates run the full clean suite on Ubuntu and native
 Windows. M1-M10 are closed. `ALPHA2_CLOSURE.md` is the historical detailed
-release ledger; `POST_ALPHA2_CLEANUP.md` is the active work queue.
+release ledger; `POST_ALPHA2_CLEANUP.md` is the completed cleanup ledger.
 
 ## Proven alpha foundation
 
@@ -59,12 +59,10 @@ native-Windows environments.
 
 The replacement compiler is trusted for the documented Alpha.1 production
 surface, and Alpha.2 completed M10 and was tagged at merge commit `53699f2`.
-The implementation milestones in the bounded post-Alpha.2 cleanup campaign are
-complete through PR #125. The final campaign audit is active: it closes the
-ledger, verifies cross-platform gates, and hands development to self-hosting
-without changing language semantics. Self-hosting through the normal project
-interface is the next compiler-engineering frontier after that audit merges;
-ownership/buffer/tensor expansion belongs to a later Alpha.3 plan.
+The bounded post-Alpha.2 cleanup campaign, including its final repository-wide
+audit, is closed through PR #126. Self-hosting through the normal project
+interface is now the next compiler-engineering frontier; ownership/buffer/tensor
+expansion belongs to a later Alpha.3 plan.
 
 ## Documentation
 

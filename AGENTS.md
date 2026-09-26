@@ -6,23 +6,22 @@ Continue Merit as a deterministic systems language. Preserve exact numerics,
 explicit allocation, ownership, contracts, capability-gated hazardous operations,
 stable C interoperability, and interpreter/native semantic equivalence.
 
-`v0.1.0-alpha.2` is released. The bounded technical-debt implementation in
-`POST_ALPHA2_CLEANUP.md` is complete through PR #125; the active objective is
-its final campaign audit. Python semantic authority remains absent from normal
-production compilation, and Python remains an independent oracle. After the
-audit merges, self-hosting through the normal project interface is the next
-compiler-engineering frontier.
+`v0.1.0-alpha.2` is released. The bounded technical-debt campaign in
+`POST_ALPHA2_CLEANUP.md` is closed through PR #126. Python semantic authority
+remains absent from normal production compilation, and Python remains an
+independent oracle. Self-hosting through the normal project interface is the
+next compiler-engineering frontier.
 
-Do not broaden the language during post-Alpha.2 cleanup.
+Do not treat the completed cleanup campaign as authorization to broaden the
+language or begin Alpha.3 feature work.
 
 ## Start here
 
-1. Read `POST_ALPHA2_CLEANUP.md` first. Treat its inventory, PR ordering, and
-   exit criteria as the authoritative cleanup work queue. Read
+1. Read `POST_ALPHA2_CLEANUP.md` as the completed cleanup evidence ledger. Read
    `ALPHA2_CLOSURE.md` as the historical release-evidence ledger.
 2. Read `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `CODEX_HANDOFF.md`
-   for architecture/history. When those conflict with the active cleanup ledger
-   or current `main`, current `main` and `POST_ALPHA2_CLEANUP.md` win.
+   for architecture/history. When those conflict with current `main`, current
+   `main` wins.
 3. Read `ARCHITECTURE.md`, `EPOCH-III.md`, and relevant files under `spec/`.
 4. Read `docs/DEVELOPMENT_GATES.md` before running broad validation.
 5. Re-anchor on current `main`:
@@ -77,8 +76,8 @@ definition boundaries when the numeric value itself is part of the contract;
 consumers should use the symbolic representation rather than duplicate the raw
 value.
 
-The cleanup campaign explicitly authorizes only the numeric domains and PR
-boundaries selected in `POST_ALPHA2_CLEANUP.md`. It does not authorize unrelated
+The closed cleanup campaign authorized only the numeric domains and PR
+boundaries recorded in `POST_ALPHA2_CLEANUP.md`. It does not authorize unrelated
 cleanup or refactoring.
 
 ## Trusted replacement architecture
@@ -116,14 +115,14 @@ The completed Alpha.2 milestone sequence was:
 9. stage-0/stage-1 reproducibility and deterministic equivalence;
 10. alpha.2 release audit/documentation closure.
 
-Do not rewrite `ALPHA2_CLOSURE.md` as a new work queue. New cleanup evidence
-belongs in `POST_ALPHA2_CLEANUP.md`.
+Do not rewrite `ALPHA2_CLOSURE.md` or `POST_ALPHA2_CLEANUP.md` as a new work
+queue. New work requires its own bounded plan.
 
 ## Development loop
 
 1. Re-anchor on `main` and verify the previous merge/gate.
-2. Read the active cleanup ledger.
-3. Choose the highest-value coherent open milestone.
+2. Read the active bounded plan and current status documents.
+3. Choose the highest-value coherent open milestone from that plan.
 4. Create one branch. Do not start parallel autonomous branches.
 5. Analyze the complete affected surface before editing.
 6. Implement the complete vertical slice, including as applicable:
@@ -297,9 +296,9 @@ The following production replacement boundaries are already established:
 Do not recreate these milestones or introduce older transitional architecture
 because older status documents mention them.
 
-M1-M10 and the bounded cleanup implementation are closed through this pipeline.
-The active objective is the final campaign audit tracked in
-`POST_ALPHA2_CLEANUP.md`.
+M1-M10 and the bounded cleanup campaign, including its final audit, are closed
+through this pipeline. Self-hosting through the normal project interface is the
+next compiler-engineering frontier.
 
 Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
 The Alpha.2 compiler has satisfied the trust/reproducibility gate; self-hosting

@@ -280,7 +280,7 @@ meaning.
 - All six authoritative hosted checks passed, and PR #123 merged as
   `16b62289e072632a66912da1d3ce4b974af3242c`.
 
-### N6 status namespaces (candidate)
+### N6 status namespaces (closed by PR #124)
 
 - Bootstrap validation, lowering, assembly, ownership, contract, capability,
   generic, lifecycle, driver, and nested failure-offset families now define
@@ -371,7 +371,7 @@ meaning.
   1 passed on both attempts. PR #125 was manually accepted and merged as
   `241da17e4d1b645fc9b85fbef2c82469d0c3fa68`.
 
-### Campaign audit (candidate)
+### Campaign audit (closed by PR #126)
 
 - The final repository-wide consumer scan found and migrated residual raw
   parser AST construction, statement/clause dispatch, HIR validation,
@@ -405,6 +405,12 @@ meaning.
 - The authoritative native-Windows full gate passes with `1170` tests in
   `883.78s`, `11` replacement-acceptance tests in `1501.18s`, all `10/10`
   acceptance projects, and a total gate duration of `2415.597s`.
+- Hosted Ubuntu full, native-Windows full, Windows M9 reproducibility, and
+  Ubuntu corpus convergence passed. Ubuntu M7 acceptance and M9 reproducibility
+  were externally terminated by explicit GitHub runner shutdown signals after
+  making progress, without a Merit failure marker. The campaign audit was
+  manually accepted, and PR #126 merged as
+  `20e05788a1d531a48dfc9eeaacc4aaa696c80a7e`.
 
 ## Ordered PR checklist
 
@@ -430,7 +436,7 @@ meaning.
 - [x] **Sentinel and representation audit (N7-N10, PR #125)** — migrated only
   proven semantic consumers and explicitly retained compliant boundary/test
   occurrences.
-- [ ] **Campaign audit** — prove no unexplained semantic numeric consumer
+- [x] **Campaign audit (PR #126)** — prove no unexplained semantic numeric consumer
   remains, all retained raw values are classified, documentation identifies the
   next product frontier, and full Ubuntu/native-Windows gates pass.
 
