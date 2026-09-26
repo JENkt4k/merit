@@ -15,6 +15,9 @@ from collections.abc import Iterable, Mapping
 from merit.bootstrap.mir_contract import MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirType
 from merit.bootstrap.mir_function_assembly_parity import (
     MIR_FUNCTION_ABSENT_RECORD_VALUE,
+    MIR_ASSEMBLY_SOURCE_KIND_BODY,
+    MIR_ASSEMBLY_SOURCE_KIND_CONTRACT,
+    MIR_ASSEMBLY_SOURCE_KIND_OWNERSHIP,
     NativeWholeFunctionMirError,
     lower_native_whole_function_assembly,
 )
@@ -94,11 +97,11 @@ def lower_native_ownership_whole_function_assembly(
     reduced_sources: list[tuple[int, ...]] = []
     for row in sources:
         global_id, source_kind, source_id, contract_kind, clause, result, left, right = row
-        if source_kind in {1, 2}:
+        if source_kind in {MIR_ASSEMBLY_SOURCE_KIND_CONTRACT, MIR_ASSEMBLY_SOURCE_KIND_BODY}:
             reduced_id = len(reduced_sources)
             old_to_reduced[global_id] = reduced_id
             reduced_sources.append((reduced_id, source_kind, source_id, contract_kind, clause, result, left, right))
-        elif source_kind != 3:
+        elif source_kind != MIR_ASSEMBLY_SOURCE_KIND_OWNERSHIP:
             raise NativeWholeFunctionMirError(f"unknown instruction source kind {source_kind}")
 
     reduced_ordinals: dict[int, int] = defaultdict(int)

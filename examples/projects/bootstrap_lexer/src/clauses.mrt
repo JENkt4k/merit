@@ -24,7 +24,14 @@ pub fn clause_record_start(borrow record: ClauseRecord) -> i64 { return record.s
 pub fn clause_record_length(borrow record: ClauseRecord) -> i64 { return record.length; }
 pub fn clause_record_first_operand(borrow record: ClauseRecord) -> i64 { return record.first_operand; }
 pub fn clause_record_operand_count(borrow record: ClauseRecord) -> i64 { return record.operand_count; }
+pub fn clause_effects_kind() -> i32 { return 11; }
+pub fn clause_requires_caps_kind() -> i32 { return 12; }
+pub fn clause_requires_kind() -> i32 { return 13; }
+pub fn clause_ensures_kind() -> i32 { return 14; }
 pub fn clause_operand_kind(borrow operand: ClauseOperand) -> i32 { return operand.kind; }
+pub fn clause_operand_effect_kind() -> i32 { return 1; }
+pub fn clause_operand_capability_kind() -> i32 { return 2; }
+pub fn clause_operand_expression_kind() -> i32 { return 3; }
 pub fn clause_operand_start(borrow operand: ClauseOperand) -> i64 { return operand.start; }
 pub fn clause_operand_length(borrow operand: ClauseOperand) -> i64 { return operand.length; }
 
@@ -144,7 +151,7 @@ fn clause_find_expression_end(borrow source: Buffer, borrow tokens: Vec<Token>, 
 }
 
 fn clause_end(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
-    if kind == 11 {
+    if kind == clause_effects_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index < vec_len<Token>(tokens) {
             let open: Token = vec_get<Token>(tokens, open_index);
@@ -158,7 +165,7 @@ fn clause_end(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind
         }
         return buffer_len(source);
     }
-    if kind == 12 {
+    if kind == clause_requires_caps_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index < vec_len<Token>(tokens) {
             let open: Token = vec_get<Token>(tokens, open_index);
@@ -199,8 +206,8 @@ fn clause_list_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, i
 }
 
 fn clause_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
-    if kind == 11 { return clause_list_operand_count(source, tokens, index); }
-    if kind == 12 { return clause_list_operand_count(source, tokens, index); }
+    if kind == clause_effects_kind() { return clause_list_operand_count(source, tokens, index); }
+    if kind == clause_requires_caps_kind() { return clause_list_operand_count(source, tokens, index); }
     let first: i64 = checked_add(index, 1);
     let semicolon: i64 = clause_find_expression_end(source, tokens, first);
     if (semicolon > first) { return 1; }
@@ -295,18 +302,18 @@ requires_caps [allocate]
         if clause_punctuation(source, token, 125) { if depth > 0 { depth = checked_sub(depth, 1); } }
         if depth == 0 {
             let kind: i32 = clause_v1_kind(source, token);
-            if kind == 11 {
+            if kind == clause_effects_kind() {
                 clause_push_list_operands(source, tokens, index, 1, operands);
             } else {
-                if kind == 12 {
+                if kind == clause_requires_caps_kind() {
                     clause_push_list_operands(source, tokens, index, 2, operands);
                 } else {
-                    if kind == 13 {
+                    if kind == clause_requires_kind() {
                         let first: i64 = checked_add(index, 1);
                         let semicolon: i64 = clause_find_expression_end(source, tokens, first);
                         clause_push_operand(operands, 3, tokens, first, semicolon);
                     } else {
-                        if kind == 14 {
+                        if kind == clause_ensures_kind() {
                             let first: i64 = checked_add(index, 1);
                             let semicolon: i64 = clause_find_expression_end(source, tokens, first);
                             clause_push_operand(operands, 3, tokens, first, semicolon);

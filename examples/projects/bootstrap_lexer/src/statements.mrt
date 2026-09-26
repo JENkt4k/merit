@@ -27,7 +27,12 @@ pub fn statement_record_if_kind() -> i32 { return 25; }
 pub fn statement_record_while_kind() -> i32 { return 26; }
 pub fn statement_record_assign_kind() -> i32 { return 30; }
 pub fn statement_record_expression_kind() -> i32 { return 31; }
-pub fn statement_record_is_match(borrow record: StatementRecord) -> i32 { if (record.kind == 27) { return 1; } return 0; }
+pub fn statement_record_match_kind() -> i32 { return 27; }
+pub fn statement_record_with_kind() -> i32 { return 28; }
+pub fn statement_record_replace_kind() -> i32 { return 29; }
+pub fn statement_record_drop_kind() -> i32 { return 24; }
+pub fn statement_record_return_kind() -> i32 { return 22; }
+pub fn statement_record_is_match(borrow record: StatementRecord) -> i32 { if (record.kind == statement_record_match_kind()) { return 1; } return 0; }
 pub fn statement_record_start(borrow record: StatementRecord) -> i64 { return record.start; }
 pub fn statement_record_length(borrow record: StatementRecord) -> i64 { return record.length; }
 pub fn statement_record_first_operand(borrow record: StatementRecord) -> i64 { return record.first_operand; }
@@ -382,9 +387,9 @@ fn stmt_binding_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
 }
 
 fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32) -> i64 {
-    if kind == 20 { return stmt_binding_count(source, tokens, index); }
-    if kind == 21 { return stmt_binding_count(source, tokens, index); }
-    if kind == 28 {
+    if kind == statement_record_let_kind() { return stmt_binding_count(source, tokens, index); }
+    if kind == statement_record_var_kind() { return stmt_binding_count(source, tokens, index); }
+    if kind == statement_record_with_kind() {
         let cap_index: i64 = checked_add(index, 2);
         if cap_index < vec_len<Token>(tokens) {
             let cap: Token = vec_get<Token>(tokens, cap_index);
@@ -392,7 +397,7 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         }
         return 0;
     }
-    if kind == 29 {
+    if kind == statement_record_replace_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index >= vec_len<Token>(tokens) { return 0; }
         let open: Token = vec_get<Token>(tokens, open_index);
@@ -407,7 +412,7 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         if (close > second) { count = checked_add(count, 1); }
         return count;
     }
-    if kind == 30 {
+    if kind == statement_record_assign_kind() {
         let equals: i64 = stmt_assignment_equals(source, tokens, index);
         if (equals <= index) { return 0; }
         let value_start: i64 = checked_add(equals, 1);
@@ -415,7 +420,7 @@ fn stmt_operand_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         if (semicolon <= value_start) { return 0; }
         return 2;
     }
-    if kind == 31 {
+    if kind == statement_record_expression_kind() {
         let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
         if (semicolon > index) { return 1; }
         return 0;
@@ -495,15 +500,15 @@ requires_caps [allocate]
 fn stmt_emit_operands(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64, kind: i32, borrow_mut operands: Vec<StatementOperand>) -> i32
 requires_caps [allocate]
 {
-    if kind == 20 {
+    if kind == statement_record_let_kind() {
         let emitted_let: i32 = stmt_emit_binding(source, tokens, index, operands);
         return 0;
     }
-    if kind == 21 {
+    if kind == statement_record_var_kind() {
         let emitted_var: i32 = stmt_emit_binding(source, tokens, index, operands);
         return 0;
     }
-    if kind == 28 {
+    if kind == statement_record_with_kind() {
         let cap_index: i64 = checked_add(index, 2);
         if cap_index < vec_len<Token>(tokens) {
             let cap: Token = vec_get<Token>(tokens, cap_index);
@@ -513,7 +518,7 @@ requires_caps [allocate]
         }
         return 0;
     }
-    if kind == 29 {
+    if kind == statement_record_replace_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index >= vec_len<Token>(tokens) { return 0; }
         let open: Token = vec_get<Token>(tokens, open_index);
@@ -531,7 +536,7 @@ requires_caps [allocate]
         }
         return 0;
     }
-    if kind == 30 {
+    if kind == statement_record_assign_kind() {
         let equals: i64 = stmt_assignment_equals(source, tokens, index);
         if (equals <= index) { return 0; }
         let pushed_target: i32 = stmt_push_span(operands, 3, tokens, index, equals);
@@ -542,14 +547,14 @@ requires_caps [allocate]
         }
         return 0;
     }
-    if kind == 31 {
+    if kind == statement_record_expression_kind() {
         let semicolon: i64 = stmt_find_statement_semicolon(source, tokens, index);
         if (semicolon > index) {
             let pushed_statement: i32 = stmt_push_span(operands, 3, tokens, index, semicolon);
         }
         return 0;
     }
-    if kind == 23 {
+    if kind == statement_record_print_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index >= vec_len<Token>(tokens) { return 0; }
         let open: Token = vec_get<Token>(tokens, open_index);
@@ -561,7 +566,7 @@ requires_caps [allocate]
         }
         return 0;
     }
-    if kind == 24 {
+    if kind == statement_record_drop_kind() {
         let open_index: i64 = checked_add(index, 1);
         if open_index >= vec_len<Token>(tokens) { return 0; }
         let open: Token = vec_get<Token>(tokens, open_index);

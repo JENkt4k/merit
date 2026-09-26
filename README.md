@@ -24,7 +24,7 @@ These documents describe design goals and constraints. Claims about performance,
 For continued development, start with:
 
 - `AGENTS.md` — repository rules, invariants, and development loop
-- `POST_ALPHA2_CLEANUP.md` — active bounded technical-debt inventory and queue
+- `POST_ALPHA2_CLEANUP.md` — bounded cleanup ledger and active final audit
 - `STATUS.md` — current project and replacement-compiler state
 - `ROADMAP.md` — active critical path and later work
 - `BOOTSTRAP_STATUS.md` — detailed replacement-compiler checkpoint

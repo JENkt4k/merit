@@ -7,6 +7,11 @@ capability allocate;
 pub fn source_type_lifecycle_missing_declared_type_status()->i32{return 1;}
 pub fn source_type_lifecycle_unsupported_status()->i32{return 2;}
 pub fn source_type_lifecycle_unresolved_status()->i32{return 3;}
+fn source_type_lifecycle_no_declaration_kind() -> i32 { return 0; }
+fn source_type_lifecycle_struct_declaration_kind() -> i32 { return 1; }
+fn source_type_lifecycle_enum_declaration_kind() -> i32 { return 2; }
+fn source_type_lifecycle_decimal_declaration_kind() -> i32 { return 3; }
+fn source_type_lifecycle_bounded_declaration_kind() -> i32 { return 4; }
 
 fn stl_span_equal(
     borrow source: Buffer,
@@ -192,12 +197,12 @@ fn stl_declared_ownership_depth(
         if (token_kind(token) == 1) {
             let keyword_start: i64 = token_start(token);
             let keyword_length: i64 = token_length(token);
-            var declaration_kind: i32 = 0;
-            if (stl_is_struct(source,keyword_start,keyword_length) != 0) { declaration_kind = 1; }
-            if (stl_is_enum(source,keyword_start,keyword_length) != 0) { declaration_kind = 2; }
-            if (stl_is_decimal(source,keyword_start,keyword_length) != 0) { declaration_kind = 3; }
-            if (stl_is_bounded(source,keyword_start,keyword_length) != 0) { declaration_kind = 4; }
-            if (declaration_kind != 0) {
+            var declaration_kind: i32 = source_type_lifecycle_no_declaration_kind();
+            if (stl_is_struct(source,keyword_start,keyword_length) != 0) { declaration_kind = source_type_lifecycle_struct_declaration_kind(); }
+            if (stl_is_enum(source,keyword_start,keyword_length) != 0) { declaration_kind = source_type_lifecycle_enum_declaration_kind(); }
+            if (stl_is_decimal(source,keyword_start,keyword_length) != 0) { declaration_kind = source_type_lifecycle_decimal_declaration_kind(); }
+            if (stl_is_bounded(source,keyword_start,keyword_length) != 0) { declaration_kind = source_type_lifecycle_bounded_declaration_kind(); }
+            if (declaration_kind != source_type_lifecycle_no_declaration_kind()) {
                 let name_index: i64 = checked_add(index,1);
                 if (name_index < vec_len<Token>(tokens)) {
                     let name: Token = vec_get<Token>(tokens,name_index);
@@ -206,8 +211,8 @@ fn stl_declared_ownership_depth(
                             // Alpha structs are non-Copy regardless of field shape.
                             // Their recursive field destruction is represented by
                             // later M2 lowering; lifecycle identity here is owned.
-                            if (declaration_kind == 1) { return 1; }
-                            if (declaration_kind == 2) {
+                            if (declaration_kind == source_type_lifecycle_struct_declaration_kind()) { return 1; }
+                            if (declaration_kind == source_type_lifecycle_enum_declaration_kind()) {
                                 let open_index: i64 = checked_add(name_index,1);
                                 if (open_index >= vec_len<Token>(tokens)) { return -2; }
                                 let open: Token = vec_get<Token>(tokens,open_index);
@@ -317,8 +322,8 @@ requires_caps [allocate]
         let statement: StatementRecord = vec_get<StatementRecord>(statements,index);
         let kind: i32 = statement_record_kind(statement);
         var is_binding: i32 = 0;
-        if (kind == 20) { is_binding = 1; }
-        if (kind == 21) { is_binding = 1; }
+        if (kind == statement_record_let_kind()) { is_binding = 1; }
+        if (kind == statement_record_var_kind()) { is_binding = 1; }
         if (is_binding != 0) {
             let type_index: i64 = stl_operand(statement,operands,2);
             if (type_index < 0) { return source_type_lifecycle_missing_declared_type_status(); }

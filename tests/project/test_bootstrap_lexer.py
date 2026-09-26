@@ -712,6 +712,21 @@ def test_bootstrap_ownership_sentinel_representation_is_stable(tmp_path):
 
 
 STATUS_NAMESPACE_REPRESENTATION = (
+    ("statement_record_return_kind()", 22),
+    ("statement_record_drop_kind()", 24),
+    ("statement_record_match_kind()", 27),
+    ("statement_record_with_kind()", 28),
+    ("statement_record_replace_kind()", 29),
+    ("clause_effects_kind()", 11),
+    ("clause_requires_caps_kind()", 12),
+    ("clause_requires_kind()", 13),
+    ("clause_ensures_kind()", 14),
+    ("clause_metadata_effect_kind()", 1),
+    ("clause_metadata_capability_kind()", 2),
+    ("capability_effect_enter_kind()", 1),
+    ("capability_effect_exit_kind()", 2),
+    ("source_expression_unresolved_binding_failure()", -1),
+    ("source_expression_invalid_borrow_failure()", -5),
     ("function_mir_too_few_records_status()", 1),
     ("function_mir_invalid_header_kind_status()", 2),
     ("function_mir_invalid_header_span_status()", 3),
@@ -999,6 +1014,8 @@ def test_bootstrap_status_namespace_representation_is_stable(tmp_path):
     )
     (project_root / "src/status_namespace_representation_probe.mrt").write_text(
         "module status_namespace_representation_probe\n"
+        "import bootstrap_statements;\n"
+        "import bootstrap_clauses;\n"
         "import bootstrap_mir_functions;\n"
         "import bootstrap_mir_source_function_records;\n"
         "import bootstrap_mir_source_function_pipeline;\n"

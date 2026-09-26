@@ -98,7 +98,7 @@ fn function_contract_result_type(borrow records:Vec<MirFunctionRecord>)->i32{
 fn validate_typed_contract_hir(borrow nodes:Vec<HirExpressionRecord>)->i32{
  var index:i64=0;while(index<vec_len<HirExpressionRecord>(nodes)){
   let node:HirExpressionRecord=vec_get<HirExpressionRecord>(nodes,index);let kind:i32=hir_kind(node);
-  if(kind<1){return 1;}if(kind>9){return 1;}if(hir_start(node)<0){return 2;}if(hir_length(node)<=0){return 2;}
+  if(kind<hir_literal_kind()){return 1;}if(kind>hir_symbol_reference_kind()){return 1;}if(hir_start(node)<0){return 2;}if(hir_length(node)<=0){return 2;}
   if(kind==hir_arithmetic_kind()){if(hir_left(node)<0){return 3;}if(hir_right(node)<0){return 3;}if(hir_left(node)>=index){return 3;}if(hir_right(node)>=index){return 3;}}
   if(kind==hir_group_alias_kind()){if(hir_left(node)<0){return 4;}if(hir_left(node)>=index){return 4;}}
   if(hir_is_call(node)!=0){if(hir_left(node)<0){return 5;}if(hir_left(node)>=index){return 5;}}
@@ -313,8 +313,8 @@ fn lower_function_contract_mir_impl(
  var counters:Vec<i64>=vec_new<i64>(allocator,2);vec_push<i64>(counters,vec_len<i64>(binding_starts));vec_push<i64>(counters,0);
  var ci:i64=0; while(ci<vec_len<ClauseRecord>(clauses)){
   let clause:ClauseRecord=vec_get<ClauseRecord>(clauses,ci);let kind:i32=clause_record_kind(clause);
-  if(kind==13){if(clause_record_operand_count(clause)!=1){return 2;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=3){return 3;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,body_records,struct_catalog,typed,ci,function_contract_precondition_phase(),allocator,output,counters);if(status!=0){return status;}}
-  if(kind==14){if(clause_record_operand_count(clause)!=1){return 4;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=3){return 5;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,body_records,struct_catalog,typed,ci,function_contract_postcondition_phase(),allocator,output,counters);if(status!=0){return status;}}
+  if(kind==clause_requires_kind()){if(clause_record_operand_count(clause)!=1){return 2;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=clause_operand_expression_kind()){return 3;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,body_records,struct_catalog,typed,ci,function_contract_precondition_phase(),allocator,output,counters);if(status!=0){return status;}}
+  if(kind==clause_ensures_kind()){if(clause_record_operand_count(clause)!=1){return 4;}let operand:ClauseOperand=vec_get<ClauseOperand>(operands,clause_record_first_operand(clause));if(clause_operand_kind(operand)!=clause_operand_expression_kind()){return 5;}let status:i32=function_contract_emit(source,tokens,operand,binding_starts,binding_lengths,body_records,struct_catalog,typed,ci,function_contract_postcondition_phase(),allocator,output,counters);if(status!=0){return status;}}
   ci=checked_add(ci,1);
  }
  drop(counters);return 0;

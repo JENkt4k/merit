@@ -2790,9 +2790,9 @@ pub fn sfr_local_type_code(borrow records: Vec<MirFunctionRecord>, local_id: i64
     while (index < vec_len<MirFunctionRecord>(records)) {
         let record: MirFunctionRecord = vec_get<MirFunctionRecord>(records, index);
         let kind: i32 = function_mir_kind(record);
-        if (kind == 2) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
+        if (kind == function_mir_kind_source_local()) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
         if (kind == function_mir_kind_parameter()) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
-        if (kind == 3) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
+        if (kind == function_mir_kind_temporary_local()) { if (function_mir_id(record) == local_id) { return function_mir_type_code(record); } }
         index = checked_add(index, 1);
     }
     return 0;
@@ -2818,9 +2818,9 @@ fn sfr_local_mutable(borrow records:Vec<MirFunctionRecord>,local_id:i64)->i32 {
         let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
         if(function_mir_id(record)==local_id){
             let kind:i32=function_mir_kind(record);
-            if(kind==2){return function_mir_mutable(record);}
+            if(kind==function_mir_kind_source_local()){return function_mir_mutable(record);}
             if(kind==function_mir_kind_parameter()){return function_mir_mutable(record);}
-            if(kind==3){if(function_mir_numeric_policy(record)==function_mir_mode_mutable_borrow()){return 1;}return 0;}
+            if(kind==function_mir_kind_temporary_local()){if(function_mir_numeric_policy(record)==function_mir_mode_mutable_borrow()){return 1;}return 0;}
         }
         index=checked_add(index,1);
     }
@@ -3813,7 +3813,7 @@ pub fn lower_source_function_body_records_from_catalog(
     while (statement_index < vec_len<StatementRecord>(statements)) {
         let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
         let kind: i32 = statement_record_kind(statement);
-        if (kind == 20) {
+        if (kind == statement_record_let_kind()) {
             let binding_index: i64 = sfr_operand(statement, operands, 1);
             if (binding_index < 0) { return sfr_missing_let_binding_status(); }
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
@@ -3832,7 +3832,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 statement_operand_start(binding), statement_operand_length(binding), binding_id, type_code, binding_id, 0
             ));
         }
-        if (kind == 21) {
+        if (kind == statement_record_var_kind()) {
             let binding_index: i64 = sfr_operand(statement, operands, 1);
             if (binding_index < 0) { return sfr_missing_var_binding_status(); }
             let binding: StatementOperand = vec_get<StatementOperand>(operands, binding_index);
@@ -3878,7 +3878,7 @@ pub fn lower_source_function_body_records_from_catalog(
     while (statement_index < vec_len<StatementRecord>(statements)) {
         let statement: StatementRecord = vec_get<StatementRecord>(statements, statement_index);
         let kind: i32 = statement_record_kind(statement);
-        if (kind == 20) {
+        if (kind == statement_record_let_kind()) {
             let expression_index: i64 = sfr_operand(statement, operands, 3);
             let binding_index: i64 = sfr_operand(statement, operands, 1);
             if (expression_index < 0) { return sfr_invalid_let_expression_status(); }
@@ -3950,7 +3950,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 }
             }
         } else {
-            if (kind == 21) {
+            if (kind == statement_record_var_kind()) {
                 let expression_index: i64 = sfr_operand(statement, operands, 3);
                 let binding_index: i64 = sfr_operand(statement, operands, 1);
                 if (expression_index < 0) { return sfr_invalid_var_expression_status(); }
@@ -3980,7 +3980,7 @@ pub fn lower_source_function_body_records_from_catalog(
                     vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                 }
             } else {
-                if (kind == 22) {
+                if (kind == statement_record_return_kind()) {
                     let expression_index: i64 = sfr_operand(statement, operands, 3);
                     if (expression_index < 0) { return sfr_invalid_return_expression_status(); }
                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
@@ -3993,7 +3993,7 @@ pub fn lower_source_function_body_records_from_catalog(
                     ));
                     vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                 } else {
-                    if (kind == 23) {
+                    if (kind == statement_record_print_kind()) {
                         let expression_index: i64 = sfr_operand(statement, operands, 3);
                         if (expression_index < 0) { return sfr_invalid_print_expression_status(); }
                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
@@ -4011,7 +4011,7 @@ pub fn lower_source_function_body_records_from_catalog(
                         vec_set<i64>(counters, 1, checked_add(instruction_id, 1));
                         vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                     } else {
-                    if (kind == 25) {
+                    if (kind == statement_record_if_kind()) {
                         let expression_index: i64 = sfr_operand(statement, operands, 3);
                         if (expression_index < 0) { return sfr_invalid_if_expression_status(); }
                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
@@ -4020,7 +4020,7 @@ pub fn lower_source_function_body_records_from_catalog(
                             1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters);
                         if (expression_local < 0) { return sfr_expression_failure_status(expression_local); }
                     } else {
-                        if (kind == 26) {
+                        if (kind == statement_record_while_kind()) {
                             let expression_index: i64 = sfr_operand(statement, operands, 3);
                             if (expression_index < 0) { return sfr_invalid_while_expression_status(); }
                             let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
@@ -4029,7 +4029,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                 1, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters);
                             if (expression_local < 0) { return sfr_expression_failure_status(expression_local); }
                         } else {
-                            if (kind == 29) {
+                            if (kind == statement_record_replace_kind()) {
                                 let target_index: i64 = sfr_operand_ordinal(statement, operands, 3, 0);
                                 let value_index: i64 = sfr_operand_ordinal(statement, operands, 3, 1);
                                 if (target_index < 0) { return sfr_invalid_assignment_operands_status(); }
@@ -4071,7 +4071,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                     vec_set<i64>(counters,2,checked_add(vec_get<i64>(counters,2),1));
                                 }
                             } else {
-                            if (kind == 30) {
+                            if (kind == statement_record_assign_kind()) {
                                 let target_index: i64 = sfr_operand_ordinal(statement, operands, 3, 0);
                                 let value_index: i64 = sfr_operand_ordinal(statement, operands, 3, 1);
                                 if (target_index < 0) { return sfr_invalid_assignment_operands_status(); }
@@ -4156,7 +4156,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                     vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                                 }
                             } else {
-                                if (kind == 31) {
+                                if (kind == statement_record_expression_kind()) {
                                     let expression_index: i64 = sfr_operand(statement, operands, 3);
                                     if (expression_index < 0) { return sfr_invalid_expression_statement_status(); }
                                     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
@@ -4167,7 +4167,7 @@ pub fn lower_source_function_body_records_from_catalog(
                                     );
                                     if(expression_result<0){if(expression_result!=sfr_unit_expression_result()){return sfr_invalid_expression_result_status();}}
                                 } else {
-                                    if (kind == 27) {
+                                    if (kind == statement_record_match_kind()) {
                                         let expression_index: i64 = sfr_operand(statement, operands, 3);
                                         if (expression_index < 0) { return sfr_invalid_drop_operand_status(); }
                                         let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
