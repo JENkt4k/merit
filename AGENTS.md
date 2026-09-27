@@ -9,15 +9,16 @@ stable C interoperability, and interpreter/native semantic equivalence.
 `v0.1.0-alpha.2` is released. The bounded technical-debt campaign in
 `POST_ALPHA2_CLEANUP.md` is closed through PR #126. Python semantic authority
 remains absent from normal production compilation, and Python remains an
-independent oracle. Self-hosting through the normal project interface is the
-next compiler-engineering frontier.
+independent oracle. `SELF_HOSTING.md` is the active bounded plan for self-hosting
+through the normal project interface.
 
 Do not treat the completed cleanup campaign as authorization to broaden the
 language or begin Alpha.3 feature work.
 
 ## Start here
 
-1. Read `POST_ALPHA2_CLEANUP.md` as the completed cleanup evidence ledger. Read
+1. Read `SELF_HOSTING.md` as the active work queue. Read
+   `POST_ALPHA2_CLEANUP.md` as the completed cleanup evidence ledger and
    `ALPHA2_CLOSURE.md` as the historical release-evidence ledger.
 2. Read `STATUS.md`, `ROADMAP.md`, `BOOTSTRAP_STATUS.md`, and `CODEX_HANDOFF.md`
    for architecture/history. When those conflict with current `main`, current
@@ -298,7 +299,7 @@ because older status documents mention them.
 
 M1-M10 and the bounded cleanup campaign, including its final audit, are closed
 through this pipeline. Self-hosting through the normal project interface is the
-next compiler-engineering frontier.
+active compiler-engineering frontier tracked in `SELF_HOSTING.md`.
 
 Keep reference, replacement/bootstrap, trusted, and self-hosted stages distinct.
 The Alpha.2 compiler has satisfied the trust/reproducibility gate; self-hosting

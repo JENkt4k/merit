@@ -12,9 +12,11 @@ they become trusted.
 - The Python implementation is the executable reference and semantic/diagnostic oracle during bootstrap.
 - The Merit-native implementation began as the bootstrap compiler and is the
   trusted Alpha.2 production compiler for the documented Alpha.1 surface;
-  later self-hosting remains distinct.
+  self-hosting remains distinct and is tracked in `SELF_HOSTING.md`.
 - A trusted compiler must pass the complete accepted and rejected corpora, defined diagnostic contracts, runtime equivalence, deterministic output, and stage-0/stage-1 gates with no unexplained differences.
-- A self-hosted compiler is a later trusted compiler that reproducibly compiles its own source. Self-hosting alone is not correctness evidence.
+- A self-hosted compiler is a trusted compiler that reproducibly compiles its
+  own source through the normal project interface. Self-hosting alone is not
+  correctness evidence.
 
 When implementations disagree, the specification is authoritative. Add a minimal regression, determine which implementation or rule is wrong, and document intentional changes; never automatically modify the reference to match bootstrap convenience.
 
