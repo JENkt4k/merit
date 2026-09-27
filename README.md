@@ -24,6 +24,7 @@ These documents describe design goals and constraints. Claims about performance,
 For continued development, start with:
 
 - `AGENTS.md` — repository rules, invariants, and development loop
+- `SELF_HOSTING.md` — active bounded self-hosting inventory and work queue
 - `POST_ALPHA2_CLEANUP.md` — completed bounded cleanup evidence ledger
 - `STATUS.md` — current project and replacement-compiler state
 - `ROADMAP.md` — active critical path and later work

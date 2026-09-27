@@ -10,7 +10,8 @@ self-hosted. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
 The bounded cleanup campaign, including its final repository-wide audit, is
 closed through PR #126. `POST_ALPHA2_CLEANUP.md` is the completed evidence
 ledger; self-hosting through the normal project interface is the next
-compiler-engineering frontier.
+compiler-engineering frontier, with its bounded work queue and evidence contract
+in `SELF_HOSTING.md`.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here

@@ -15,7 +15,8 @@ documented Alpha.1 production surface but is not self-hosted.
 M10 synchronized documentation and limitations, package version `0.1.0a2`,
 clean reproducibility and full gates, authoritative hosted checks, manual merge,
 and the reviewed `v0.1.0-alpha.2` tag. `ALPHA2_CLOSURE.md` is the historical
-detailed evidence ledger; `POST_ALPHA2_CLEANUP.md` tracks current work.
+detailed evidence ledger; `POST_ALPHA2_CLEANUP.md` preserves the completed
+cleanup evidence, and `SELF_HOSTING.md` tracks current work.
 
 ## Historical `v0.1.0-alpha.1` readiness
 

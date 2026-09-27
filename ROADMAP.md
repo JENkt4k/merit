@@ -59,8 +59,9 @@ Its semantic numeric-identifier migrations and separately tracked bootstrap/
 test-infrastructure defects completed without renumbering or changing language
 semantics.
 
-**Self-hosting** is now the first compiler-engineering
-frontier: the trusted replacement must reproducibly compile its own source
+**Self-hosting** is now the first compiler-engineering frontier, with its bounded
+inventory, milestones, and evidence contract in `SELF_HOSTING.md`: the trusted
+replacement must reproducibly compile its own source
 through the normal project interface without weakening the independent oracle
 or stage-agreement contract. Separate compilation and dependency-granular
 caching are the next natural infrastructure boundary. Stored

@@ -1,5 +1,6 @@
 import tomllib
 from pathlib import Path
+import re
 
 from merit import __version__
 
@@ -13,11 +14,12 @@ def test_release_documents_exist_and_name_the_active_target():
         assert 'v0.1.0-alpha.2' in text
 
 
-def test_status_records_the_alpha2_release_and_cleanup_frontier():
+def test_status_records_the_alpha2_release_and_self_hosting_frontier():
     status=(ROOT/'STATUS.md').read_text()
     assert 'Alpha.2 is released' in status
     assert 'M1-M10 are closed' in status
     assert 'POST_ALPHA2_CLEANUP.md' in status
+    assert 'SELF_HOSTING.md' in status
     assert 'independent semantic' in status
     assert 'diagnostic reference oracle' in status
     assert 'No known semantic correctness blocker remains undocumented' in status
@@ -72,3 +74,35 @@ def test_post_alpha2_cleanup_is_bounded_and_preserves_encodings():
     assert 'language semantics' in cleanup
     assert 'Python and Merit bootstrap mappings have parity evidence' in cleanup
     assert 'ALPHA3_CLOSURE.md' in cleanup
+
+
+def test_self_hosting_ledger_locks_complete_merit_source_inventory():
+    ledger=(ROOT/'SELF_HOSTING.md').read_text(encoding='utf-8')
+    inventory=ledger.split('## Complete Merit source inventory',1)[1].split(
+        '## Current special-stage seam audit',1
+    )[0]
+    documented=set(re.findall(r'`([a-z0-9_]+\.mrt)`',inventory))
+    project_root=ROOT/'examples/projects/bootstrap_lexer'
+    source_root=project_root/'src'
+    actual={path.relative_to(source_root).as_posix() for path in source_root.rglob('*.mrt')}
+    manifest=tomllib.loads((project_root/'Merit.toml').read_text(encoding='utf-8'))
+    assert manifest['package']['sources'] == ['src/**/*.mrt']
+    assert documented == actual
+    assert len(actual) == 45
+
+
+def test_self_hosting_ledger_defines_public_interface_seams_and_evidence():
+    ledger=(ROOT/'SELF_HOSTING.md').read_text(encoding='utf-8')
+    for requirement in (
+        'merit-project build',
+        '--compiler-path',
+        'Current special-stage seam audit',
+        'Python remains an independent',
+        'SH0 — Inventory and contract',
+        'SH6 — Cross-platform qualification and handoff',
+        'Machine-readable evidence',
+        'Completion evidence matrix',
+        'Ubuntu and native-Windows',
+    ):
+        assert requirement in ledger
+    assert 'does not authorize Alpha.3 language features' in ledger

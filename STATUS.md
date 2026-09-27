@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-09-25
+Status date: 2026-09-27
 
 ## Release target
 
@@ -61,8 +61,9 @@ The replacement compiler is trusted for the documented Alpha.1 production
 surface, and Alpha.2 completed M10 and was tagged at merge commit `53699f2`.
 The bounded post-Alpha.2 cleanup campaign, including its final repository-wide
 audit, is closed through PR #126. Self-hosting through the normal project
-interface is now the next compiler-engineering frontier; ownership/buffer/tensor
-expansion belongs to a later Alpha.3 plan.
+interface is now the active compiler-engineering frontier tracked in
+`SELF_HOSTING.md`; ownership/buffer/tensor expansion belongs to a later Alpha.3
+plan.
 
 ## Documentation
 

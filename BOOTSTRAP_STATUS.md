@@ -1,6 +1,6 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-09-25
+Checkpoint date: 2026-09-27
 
 Scope: released `v0.1.0-alpha.2` baseline after replacement-compiler trust
 qualification. Python remains the independent oracle. The Merit-native
@@ -60,7 +60,8 @@ stage 2, and canonical compiler artifacts agree under
 `docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows. The bounded
 technical-debt campaign and its final audit are closed through PR #126, as
 recorded in `POST_ALPHA2_CLEANUP.md`. Self-hosting through the normal project
-interface is the next compiler-engineering frontier.
+interface is the active compiler-engineering frontier tracked in
+`SELF_HOSTING.md`.
 Unsupported source must continue to fail deterministically rather than silently
 falling back to the reference compiler.
 
