@@ -20,6 +20,7 @@ import bootstrap_mir_source_type_lifecycle;
 import bootstrap_mir_resolved_source_function_assembly;
 import bootstrap_mir_resolved_source_function_bundle;
 import bootstrap_mir_generic_expansion;
+import bootstrap_project_request;
 
 capability allocate;
 
@@ -47,9 +48,16 @@ pub fn native_driver_bundle_item_failure_status(status:i32)->i32{return checked_
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
-        let original_source: Buffer = buffer_from_string(allocator, source_text);
+        let request_source: Buffer = buffer_from_string(allocator, source_text);
+        var original_source: Buffer = buffer_new(allocator, buffer_len(request_source));
+        let request_status: i32 = prepare_native_project_source(
+            request_source, allocator, original_source
+        );
+        drop(request_source);
         let original_tokens: Vec<Token> = lex(original_source, allocator);
         var source: Buffer = buffer_new(allocator, buffer_len(original_source));
+        var tokens: Vec<Token> = vec_new<Token>(allocator, 0);
+        if (request_status != 0) { return request_status; }
         let expansion_status: i32 = expand_generic_source(
             original_source, original_tokens, allocator, source
         );
@@ -57,7 +65,9 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         if (expansion_status != generic_expansion_ok()) {
             return generic_expansion_driver_status(expansion_status);
         }
-        let tokens: Vec<Token> = lex(source, allocator);
+        var prepared_tokens: Vec<Token> = lex(source, allocator);
+        vec_transfer<Token>(tokens, prepared_tokens);
+        drop(prepared_tokens);
 
         // First pass: count top-level function bodies. Once a function starts,
         // skip its complete balanced body so a future nested-function feature
@@ -111,7 +121,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         }
         if (function_count <= 0) { return native_driver_missing_function_status(); }
 
-        let header_status: i32 = print_resolved_source_function_bundle_header(function_count);
+        let header_status: i32 = print_resolved_source_function_project_bundle_header(function_count);
         if (header_status != 0) {
             return native_driver_bundle_header_failure_status(header_status);
         }
@@ -800,6 +810,12 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 if (function_status != 0) { return function_status; }
             }
         }
+        if (emitted_functions != function_count) { return native_driver_function_count_mismatch_status(); }
+        let module_token: Token = vec_get<Token>(tokens, 1);
+        let metadata_status: i32 = print_resolved_source_function_bundle_metadata(
+            source, token_start(module_token), token_length(module_token), capabilities
+        );
+        if (metadata_status != 0) { return checked_add(6000, metadata_status); }
         drop(callable_parameters);drop(callable_signatures);
         drop(capabilities);
         drop(destructor_placements);
@@ -810,7 +826,6 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         drop(type_descriptors);
         drop(structs);
         drop(variants);
-        if (emitted_functions != function_count) { return native_driver_function_count_mismatch_status(); }
         return 0;
     }
 }

@@ -7,8 +7,9 @@ import bootstrap_mir_ownership_flow;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 import bootstrap_mir_resolved_source_function_snapshot;
+import bootstrap_statement_semantics;
 
-// resolved-source-function-bundle-v2
+// resolved-source-function-bundle-v3
 // magic "MRBF", version, function count, then for each function:
 // snapshot value count followed by a bootstrap-resolved-source-function-
 // snapshot-v9 payload. The first payload carries the canonical effective
@@ -16,6 +17,8 @@ import bootstrap_mir_resolved_source_function_snapshot;
 
 fn resolved_source_function_bundle_magic()->i64{return 1297236550;}
 fn resolved_source_function_bundle_version()->i64{return 2;}
+fn resolved_source_function_project_bundle_version()->i64{return 3;}
+fn resolved_source_function_bundle_metadata_magic()->i64{return 1296389185;}
 
 pub fn resolved_source_function_snapshot_value_count(
     borrow effective_source: Buffer,
@@ -59,6 +62,14 @@ pub fn print_resolved_source_function_bundle_header(function_count: i64) -> i32 
     if (function_count <= 0) { return 1; }
     print(resolved_source_function_bundle_magic());
     print(resolved_source_function_bundle_version());
+    print(function_count);
+    return 0;
+}
+
+pub fn print_resolved_source_function_project_bundle_header(function_count: i64) -> i32 {
+    if (function_count <= 0) { return 1; }
+    print(resolved_source_function_bundle_magic());
+    print(resolved_source_function_project_bundle_version());
     print(function_count);
     return 0;
 }
@@ -126,4 +137,33 @@ pub fn print_resolved_source_function_bundle_item(
         type_descriptors, numeric_type_descriptors, destructor_descriptors,
         destructor_body, destructor_cfg, destructor_placements
     );
+}
+
+pub fn print_resolved_source_function_bundle_metadata(
+    borrow source: Buffer,
+    module_start: i64,
+    module_length: i64,
+    borrow capabilities: Vec<CapabilityCatalogEntry>
+) -> i32 {
+    if (module_length <= 0) { return 1; }
+    print(resolved_source_function_bundle_metadata_magic());
+    print(module_length);
+    var offset: i64 = 0;
+    while (offset < module_length) {
+        print(buffer_get(source, checked_add(module_start, offset)));
+        offset = checked_add(offset, 1);
+    }
+    print(vec_len<CapabilityCatalogEntry>(capabilities));
+    var index: i64 = 0;
+    while (index < vec_len<CapabilityCatalogEntry>(capabilities)) {
+        let entry: CapabilityCatalogEntry = vec_get<CapabilityCatalogEntry>(capabilities, index);
+        print(entry.name_length);
+        offset = 0;
+        while (offset < entry.name_length) {
+            print(buffer_get(source, checked_add(entry.name_start, offset)));
+            offset = checked_add(offset, 1);
+        }
+        index = checked_add(index, 1);
+    }
+    return 0;
 }

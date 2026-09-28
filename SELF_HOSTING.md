@@ -90,7 +90,7 @@ versioned protocol, not in a privileged manifest kind.
 ## Complete Merit source inventory
 
 The canonical compiler project is `compiler/Merit.toml`. Its ordinary source
-glob references the same complete 45-module source closure under
+glob references the same complete 46-module source closure under
 `examples/projects/bootstrap_lexer/src`. The executable contract names the
 exported `emit_replacement_bundle(String)` function in
 `src/native_replacement_driver.mrt`. The historical bootstrap manifest remains
@@ -105,6 +105,7 @@ the corpus/probe project; it is not the documented compiler target.
 | Ownership, lifecycle, control flow, and placement | `mir_ownership_flow.mrt`, `mir_source_ownership_metadata.mrt`, `mir_source_ownership_expression.mrt`, `mir_source_ownership_control.mrt`, `mir_source_ownership_lowering.mrt`, `mir_source_type_lifecycle.mrt`, `mir_statement_lowering.mrt`, `mir_structured_lowering.mrt`, `mir_match_capability_flow.mrt`, `mir_resolved_control_flow.mrt`, `mir_function_ownership_assembly.mrt` | Expressible in Merit; included in stage builds |
 | Generics and project types | `mir_generic_catalog.mrt`, `mir_generic_expansion.mrt`, `mir_project_payload_types.mrt` | Expressible in Merit; included in stage builds |
 | Native compiler protocol entry | `native_replacement_driver.mrt` | Merit-native semantic entry is exposed through the ordinary `stdin-string-i32` executable adapter |
+| Versioned project request | `project_request.mrt` | Merit-native framing validation, module/import canonicalization, capability deduplication, newline normalization, and legacy Alpha.1 vector desugaring |
 
 This list is the required compiler semantic-source closure for the initial
 self-hosting campaign. Moving or renaming it is not required. Any newly
@@ -119,9 +120,9 @@ is a privileged Python assembly path rather than the normal project UX.
 | Seam | Current owner and behavior | Classification | Required disposition |
 |---|---|---|---|
 | Manifest parsing and file discovery | `merit/project/manifest.py` reads TOML and paths | Permitted host work | May remain host-side if it passes bytes and metadata without semantic interpretation |
-| Module/import discovery | `merit/project/replacement_loader.py` uses Python regular expressions to discover module and import names | Source interpretation | Move behind the native compiler protocol; host discovery must not define Merit grammar |
-| Multi-module source envelope | `merit/project/replacement_source.py` blanks module/import syntax, removes project qualification, rewrites legacy `I64Vec`, and deduplicates capabilities | Semantic source rewriting | Must migrate into the Merit compiler or be removed in favor of a structured, versioned project request |
-| Capability labels | `merit/project/replacement_prepare.py` scans capability declarations with a Python regular expression | Semantic identity/diagnostic metadata | Native output must carry canonical capability identity and names |
+| Module/import discovery | `project_request.mrt` discovers module/import syntax after the host transports path-sorted bytes | Merit-native source interpretation | Closed in SH2; the host loader no longer defines Merit grammar |
+| Multi-module source envelope | `project_request.mrt` validates and canonicalizes the versioned `MPRQ` request; the former Python `replacement_source.py` seam is removed | Merit-native source canonicalization | Closed in SH2 with single/multi-module, CRLF, qualification, duplicate-capability, and legacy-vector evidence |
+| Capability labels | Bundle v3 carries module and capability names emitted from the native catalogs | Merit-native semantic metadata | Closed in SH2; Python publishes native metadata without source scanning |
 | Driver execution | `replacement_prepare.py` launches one executable with bounded input/output and timeout | Permitted host work | Retain as generic protocol transport, with structured request/response framing |
 | Bundle framing validation | `resolved_source_function_bundle.py` validates the versioned integer transport | Representation adapter | May remain for oracle/testing; production self-hosted build must not depend on Python to create the next compiler artifact |
 | Snapshot decoding | `resolved_source_function_snapshot.py` decodes native records | Representation adapter | Python copy remains oracle evidence; production decoding/materialization moves behind the compiler artifact |
@@ -147,10 +148,10 @@ needed to produce the next usable compiler must be classified.
 
 | Requirement | Current state | Closure evidence |
 |---|---|---|
-| All 45 Merit modules are present in the manifest source closure | Proven by manifest glob and M9 isolated stage builds | Automated exact-inventory test rejects accidental omission/addition until deliberately reviewed |
+| All 46 Merit modules are present in the manifest source closure | Proven by manifest glob and M9 isolated stage builds; SH2 adds the reviewed project-request module | Automated exact-inventory test rejects accidental omission/addition until deliberately reviewed |
 | Compiler semantic entry is Merit-native | `emit_replacement_bundle(String)` is Merit source | Direct interpreter/native and prior-stage execution parity |
 | Compiler artifact has an ordinary executable entry | `compiler/Merit.toml` declares `stdin-string-i32` and `emit_replacement_bundle`; ordinary project build links the fixed generic adapter | Public project-build and native-driver tests produce and execute the compiler without bespoke host generation |
-| Project/module request is representable without Python source rewriting | Missing | Versioned request contract plus multi-module accepted/rejected parity |
+| Project/module request is representable without Python source rewriting | Closed in SH2 by `MPRQ` v1 and native bundle metadata v3 | Host framing oracle, malformed-request rejection, Windows binary transport, single/multi-module execution parity, and legacy Alpha.1 vector evidence |
 | Complete canonical MIR is materialized by Merit | Missing in the production path | Native MIR artifact comparison against the independent Python materializer |
 | Deterministic C and public header are emitted by Merit | Missing | Byte comparison with the established canonical emitter over the complete accepted corpus and compiler project |
 | Diagnostics and failures are represented without Python semantic guessing | Partial; Python currently infers source hints from wrapped statuses | Structured native diagnostics compared with the oracle contract |
@@ -184,11 +185,11 @@ needed to produce the next usable compiler must be classified.
 - [x] **SH0 — Inventory and contract**: merged as PR #128; locked the exact
   45-module source closure, public command, allowed host boundary, prohibited
   semantic seams, stage identities, and evidence requirements. No compiler code.
-- [ ] **SH1 — Ordinary compiler executable**: make the compiler project produce
+- [x] **SH1 — Ordinary compiler executable**: make the compiler project produce
   the versioned native compiler protocol as an ordinary executable artifact.
   Remove stage-builder ownership of the bespoke generated C host. Preserve the
   existing protocol and all frontend semantic evidence.
-- [ ] **SH2 — Native project request**: replace Python regex discovery,
+- [x] **SH2 — Native project request**: replace Python regex discovery,
   source flattening/desugaring, capability labeling, and diagnostic guessing
   with a versioned project request consumed and validated by the Merit compiler.
   Preserve multi-module source identity and fail closed on malformed requests.

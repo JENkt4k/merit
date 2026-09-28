@@ -88,7 +88,7 @@ def test_self_hosting_ledger_locks_complete_merit_source_inventory():
     manifest=tomllib.loads((project_root/'Merit.toml').read_text(encoding='utf-8'))
     assert manifest['package']['sources'] == ['src/**/*.mrt']
     assert documented == actual
-    assert len(actual) == 45
+    assert len(actual) == 46
 
 
 def test_self_hosting_ledger_defines_public_interface_seams_and_evidence():

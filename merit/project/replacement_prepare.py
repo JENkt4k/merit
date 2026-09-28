@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 
@@ -22,33 +21,18 @@ from merit.bootstrap.resolved_source_function_bundle import (
     ResolvedSourceFunctionBundleError,
     decode_resolved_source_function_bundle,
 )
-from merit.project.loader import LoadedProject, SourceUnit
-from merit.project.replacement_loader import ReplacementLoadedProject, ReplacementSourceUnit
+from merit.project.loader import LoadedProject
+from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
-from merit.project.replacement_source import canonical_replacement_project_source
+from merit.project.project_request import (
+    encode_loaded_project_request,
+)
 
-DRIVER_PROTOCOL = "resolved-source-function-bundle-v2"
+DRIVER_PROTOCOL = "merit-project-request-v1/resolved-source-function-bundle-v3"
 # Bounded per-unit ceiling, not evidence of acceptable compiler throughput.
 # The bootstrap-lexer M7 case still exceeds this limit; repeated native type
 # and callable analysis must be fixed rather than raising the timeout again.
 DRIVER_TIMEOUT_SECONDS = 900
-
-
-def _source_capability_names(source: str) -> dict[str, str]:
-    """Label native capability IDs using their canonical declaration order."""
-
-    names: dict[str, str] = {}
-    seen: set[str] = set()
-    for match in re.finditer(
-        r"^\s*capability\s+([A-Za-z_][A-Za-z0-9_]*)\s*;",
-        source,
-        re.MULTILINE,
-    ):
-        name = match.group(1)
-        if name not in seen:
-            names[str(len(names))] = name
-            seen.add(name)
-    return names
 
 
 @dataclass(frozen=True)
@@ -82,82 +66,38 @@ def _source_digest(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def _driver_environment(unit: SourceUnit | ReplacementSourceUnit) -> dict[str, str]:
+def _driver_environment(source_path: Path) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
         {
             "MERIT_REPLACEMENT_PROTOCOL": DRIVER_PROTOCOL,
-            "MERIT_REPLACEMENT_MODULE": unit.module,
-            "MERIT_REPLACEMENT_SOURCE_PATH": str(unit.path.resolve()),
+            "MERIT_REPLACEMENT_SOURCE_PATH": str(source_path.resolve()),
         }
     )
     environment.pop("MERIT_REPLACEMENT_FUNCTION_INDEX", None)
     return environment
 
 
-def _failure_source_candidates(source: str, status: int | None) -> str:
-    """Return compact source-location hints for native replacement failures.
-
-    This is diagnostics only. It does not participate in replacement semantic
-    lowering or alter the source presented to the native frontend.
-    """
-
-    patterns: tuple[str, ...]
-    stage = "unclassified"
-    if status == 4721:
-        # Additive native-stage status wrapping is not injective. In particular,
-        # 4721 can identify contract lowering as well as ownership lowering.
-        stage = "resolved function semantic lowering: colliding inner status 21"
-        patterns = (r"\brequires\b", r"\bensures\b", r"\bdrop\s*\(", r"\breturn\b")
-    elif status == 4368:
-        stage = "native source expression/call lowering"
-        patterns = (r"\bfile_read\s*\(", r"\bfile_write\s*\(", r"\bwith\s+capability\b")
-    elif status == 2105:
-        stage = "generic expansion/catalog lowering"
-        patterns = (r"<[^>]+>", r"\bVec\s*<", r"\bOption\s*<", r"\bResult\s*<")
-    elif status == 4905:
-        stage = "resolved numeric/ownership assembly"
-        patterns = (r"\bdecimal_", r"\bDecimal\b", r"\bdec\b", r"\bwith\s+capability\b")
-    else:
-        patterns = (r"\bdrop\s*\(", r"\breturn\b", r"\bwith\s+capability\b")
-
-    compiled = tuple(re.compile(pattern) for pattern in patterns)
-    hits: list[str] = []
-    for line_number, line in enumerate(source.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if any(pattern.search(line) for pattern in compiled):
-            hits.append(f"L{line_number}: {stripped[:180]}")
-            if len(hits) == 12:
-                break
-    if not hits:
-        return f"stage={stage}; source candidates=none"
-    return f"stage={stage}; source candidates=" + " | ".join(hits)
-
-
-def _driver_status(stderr: str) -> int | None:
-    match = re.search(r"replacement driver status\s+(-?\d+)", stderr)
-    if match is None:
-        return None
-    return int(match.group(1))
-
-
-def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit | ReplacementSourceUnit) -> tuple[tuple[int, ...], ...]:
+def _run_driver(
+    driver: NativeReplacementDriver,
+    request: bytes,
+    *,
+    project_name: str,
+    source_path: Path,
+):
     executable = driver.resolved()
     try:
         completed = subprocess.run(
             [str(executable)],
-            input=unit.parser_source.encode("utf-8"),
+            input=request,
             capture_output=True,
-            env=_driver_environment(unit),
+            env=_driver_environment(source_path),
             timeout=DRIVER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise ReplacementProjectError(
             f"replacement driver timed out after {DRIVER_TIMEOUT_SECONDS}s "
-            f"for module {unit.module!r}; "
-            f"{_failure_source_candidates(unit.parser_source, None)}"
+            f"for project {project_name!r}"
         ) from exc
     except OSError as exc:
         raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
@@ -166,12 +106,11 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit | ReplacementS
         stderr = completed.stderr.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ReplacementProjectError(
-            f"replacement driver emitted non-UTF-8 output for module {unit.module!r}"
+            f"replacement driver emitted non-UTF-8 output for project {project_name!r}"
         ) from exc
     if completed.returncode != 0:
         stderr = stderr.strip()
         stdout = stdout.strip()
-        status = _driver_status(stderr)
         streams = []
         if stderr:
             streams.append(f"stderr={stderr}")
@@ -179,28 +118,29 @@ def _run_driver(driver: NativeReplacementDriver, unit: SourceUnit | ReplacementS
             streams.append(f"stdout={stdout[-1200:]}")
         if not streams:
             streams.append("no driver output")
-        diagnostic = _failure_source_candidates(unit.parser_source, status)
         raise ReplacementProjectError(
-            f"replacement driver failed for module {unit.module!r} with exit code "
-            f"{completed.returncode}: {'; '.join(streams)}; {diagnostic}"
+            f"replacement driver failed for project {project_name!r} with exit code "
+            f"{completed.returncode}: {'; '.join(streams)}"
         )
     try:
         values = tuple(int(line.strip()) for line in stdout.splitlines() if line.strip())
     except ValueError as exc:
         raise ReplacementProjectError(
-            f"replacement driver emitted non-integer bundle data for module {unit.module!r}"
+            f"replacement driver emitted non-integer bundle data for project {project_name!r}"
         ) from exc
     if not values:
         raise ReplacementProjectError(
-            f"replacement driver emitted no bundle for module {unit.module!r}"
+            f"replacement driver emitted no bundle for project {project_name!r}"
         )
     try:
         bundle = decode_resolved_source_function_bundle(values)
     except ResolvedSourceFunctionBundleError as exc:
         raise ReplacementProjectError(
-            f"replacement driver emitted invalid bundle for module {unit.module!r}: {exc}"
+            f"replacement driver emitted invalid bundle for project {project_name!r}: {exc}"
         ) from exc
-    return bundle.encoded_snapshots
+    if not bundle.module_name:
+        raise ReplacementProjectError("replacement driver response has no native module identity")
+    return bundle
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -228,46 +168,37 @@ def prepare_replacement_artifacts(
     manifest_functions: list[dict[str, object]] = []
     snapshot_paths: list[Path] = []
 
-    if len(project.units) == 1:
-        driver_units = project.units
-        project_source = None
-    else:
-        project_source = canonical_replacement_project_source(project)
-        entry_unit = next(
-            unit for unit in project.units
-            if unit.path.resolve() == project.manifest.entry_path.resolve()
-        )
-        driver_units = (
-            ReplacementSourceUnit(
-                path=project.manifest.entry_path,
-                module=project.manifest.name,
-                imports=(),
-                parser_source=project_source,
-            ),
+    request = encode_loaded_project_request(project)
+    bundle = _run_driver(
+        driver,
+        request,
+        project_name=project.manifest.name,
+        source_path=project.manifest.entry_path,
+    )
+    try:
+        project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    except (IndexError, UnicodeDecodeError) as exc:
+        raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
+    digest = _source_digest(project_source)
+    capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}
+    for function_index, values in enumerate(bundle.encoded_snapshots):
+        filename = f"replacement-{bundle.module_name}-{function_index}.snapshot"
+        path = artifact_dir / filename
+        staged.append((path, "\n".join(str(value) for value in values) + "\n"))
+        snapshot_paths.append(path)
+        manifest_functions.append(
+            {
+                "module": bundle.module_name,
+                "function_index": function_index,
+                "snapshot": filename,
+                "source_sha256": digest,
+                "capability_names": capability_names,
+                "project_source": "replacement-project.source",
+                "request_sha256": hashlib.sha256(request).hexdigest(),
+            }
         )
 
-    for unit in driver_units:
-        snapshots = _run_driver(driver, unit)
-        digest = _source_digest(unit.parser_source)
-        capability_names = _source_capability_names(unit.parser_source)
-        for function_index, values in enumerate(snapshots):
-            filename = f"replacement-{unit.module}-{function_index}.snapshot"
-            path = artifact_dir / filename
-            staged.append((path, "\n".join(str(value) for value in values) + "\n"))
-            snapshot_paths.append(path)
-            manifest_functions.append(
-                {
-                    "module": unit.module,
-                    "function_index": function_index,
-                    "snapshot": filename,
-                    "source_sha256": digest,
-                    "capability_names": capability_names,
-                    **({"project_source": "replacement-project.source"} if project_source is not None else {}),
-                }
-            )
-
-    if project_source is not None:
-        staged.append((artifact_dir / "replacement-project.source", project_source))
+    staged.append((artifact_dir / "replacement-project.source", project_source))
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,

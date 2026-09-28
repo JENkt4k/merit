@@ -1,0 +1,396 @@
+module bootstrap_project_request
+import bootstrap_tokens;
+import bootstrap_lexer_core;
+
+capability allocate;
+
+// merit-project-request-v1: MPRQ, u32 version, length-prefixed package,
+// length-prefixed entry path, u32 unit count, then path/source byte fields.
+pub struct ProjectRequestUnitSpan {
+    source_start: i64;
+    source_length: i64;
+    module_start: i64;
+    module_length: i64;
+}
+
+fn project_request_span_equal(
+    borrow left: Buffer, left_start: i64, left_length: i64,
+    borrow right: Buffer, right_start: i64, right_length: i64
+) -> i32 {
+    if (left_length != right_length) { return 0; }
+    var offset: i64 = 0;
+    while (offset < left_length) {
+        if (buffer_get(left, checked_add(left_start, offset)) !=
+            buffer_get(right, checked_add(right_start, offset))) { return 0; }
+        offset = checked_add(offset, 1);
+    }
+    return 1;
+}
+
+fn project_request_read_u32(borrow input: Buffer, offset: i64) -> i64 {
+    if (offset < 0) { return -1; }
+    if (checked_add(offset, 4) > buffer_len(input)) { return -1; }
+    var value: i64 = buffer_get(input, offset);
+    value = checked_add(checked_mul(value, 256), buffer_get(input, checked_add(offset, 1)));
+    value = checked_add(checked_mul(value, 256), buffer_get(input, checked_add(offset, 2)));
+    value = checked_add(checked_mul(value, 256), buffer_get(input, checked_add(offset, 3)));
+    return value;
+}
+
+fn project_request_magic_matches(borrow input: Buffer) -> i32 {
+    if (buffer_len(input) < 8) { return 0; }
+    if (buffer_get(input, 0) != 77) { return 0; }
+    if (buffer_get(input, 1) != 80) { return 0; }
+    if (buffer_get(input, 2) != 82) { return 0; }
+    if (buffer_get(input, 3) != 81) { return 0; }
+    return 1;
+}
+
+fn project_request_token_matches(
+    borrow source: Buffer, borrow token: Token, borrow names: Buffer,
+    name_start: i64, name_length: i64
+) -> i32 {
+    return project_request_span_equal(
+        source, token_start(token), token_length(token), names, name_start, name_length
+    );
+}
+
+fn project_request_identifier_ascii(
+    borrow source: Buffer, borrow token: Token, a: i64, b: i64, c: i64, length: i64
+) -> i32 {
+    if (token_kind(token) != token_identifier_kind()) { return 0; }
+    if (token_length(token) != length) { return 0; }
+    if (length > 0) { if (buffer_get(source, token_start(token)) != a) { return 0; } }
+    if (length > 1) { if (buffer_get(source, checked_add(token_start(token), 1)) != b) { return 0; } }
+    if (length > 2) { if (buffer_get(source, checked_add(token_start(token), 2)) != c) { return 0; } }
+    return 1;
+}
+
+fn project_request_is_module(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_length(token) != 6) { return 0; }
+    if (project_request_identifier_ascii(source, token, 109, 111, 100, 6) == 0) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 3)) != 117) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 4)) != 108) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 5)) != 101) { return 0; }
+    return 1;
+}
+
+fn project_request_is_import(borrow source: Buffer, borrow token: Token) -> i32 {
+    if (token_length(token) != 6) { return 0; }
+    if (project_request_identifier_ascii(source, token, 105, 109, 112, 6) == 0) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 3)) != 111) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 4)) != 114) { return 0; }
+    if (buffer_get(source, checked_add(token_start(token), 5)) != 116) { return 0; }
+    return 1;
+}
+
+fn project_request_module_index(
+    borrow source: Buffer, borrow token: Token, borrow names: Buffer,
+    borrow units: Vec<ProjectRequestUnitSpan>
+) -> i64 {
+    var index: i64 = 0;
+    while (index < vec_len<ProjectRequestUnitSpan>(units)) {
+        let unit: ProjectRequestUnitSpan = vec_get<ProjectRequestUnitSpan>(units, index);
+        if (project_request_token_matches(
+            source, token, names, unit.module_start, unit.module_length
+        ) != 0) { return index; }
+        index = checked_add(index, 1);
+    }
+    return -1;
+}
+
+fn project_request_capability_seen(
+    borrow source: Buffer, borrow token: Token, borrow names: Buffer,
+    borrow starts: Vec<i64>, borrow lengths: Vec<i64>
+) -> i32 {
+    var index: i64 = 0;
+    while (index < vec_len<i64>(starts)) {
+        if (project_request_token_matches(
+            source, token, names, vec_get<i64>(starts, index), vec_get<i64>(lengths, index)
+        ) != 0) { return 1; }
+        index = checked_add(index, 1);
+    }
+    return 0;
+}
+
+fn project_request_append_ascii_module(borrow_mut output: Buffer) -> i32 requires_caps [allocate] {
+    buffer_push(output, 109); buffer_push(output, 111); buffer_push(output, 100);
+    buffer_push(output, 117); buffer_push(output, 108); buffer_push(output, 101);
+    buffer_push(output, 32); return 0;
+}
+
+fn project_request_append_normalized_source(
+    borrow_mut output: Buffer, borrow input: Buffer, start: i64, length: i64
+) -> i32 requires_caps [allocate] {
+    var offset: i64 = 0;
+    while (offset < length) {
+        let value: i64 = buffer_get(input, checked_add(start, offset));
+        if (value == 13) {
+            if (checked_add(offset, 1) < length) {
+                if (buffer_get(input, checked_add(checked_add(start, offset), 1)) == 10) {
+                    buffer_push(output, 10);
+                    offset = checked_add(offset, 2);
+                } else {
+                    bootstrap_buffer_append(output, input, checked_add(start, offset), 1);
+                    offset = checked_add(offset, 1);
+                }
+            } else {
+                bootstrap_buffer_append(output, input, checked_add(start, offset), 1);
+                offset = checked_add(offset, 1);
+            }
+        } else {
+            bootstrap_buffer_append(output, input, checked_add(start, offset), 1);
+            offset = checked_add(offset, 1);
+        }
+    }
+    return 0;
+}
+
+fn project_request_token_equals_string(
+    borrow source: Buffer, borrow token: Token, allocator: Allocator, expected: String
+) -> i32 requires_caps [allocate] {
+    if (token_kind(token) != token_identifier_kind()) { return 0; }
+    if (token_length(token) != string_len(expected)) { return 0; }
+    let expected_bytes: Buffer = buffer_from_string(allocator, expected);
+    let equal: i32 = project_request_span_equal(
+        source, token_start(token), token_length(token),
+        expected_bytes, 0, buffer_len(expected_bytes)
+    );
+    drop(expected_bytes);
+    return equal;
+}
+
+fn project_request_append_string(
+    borrow_mut output: Buffer, allocator: Allocator, value: String
+) -> i32 requires_caps [allocate] {
+    let bytes: Buffer = buffer_from_string(allocator, value);
+    bootstrap_buffer_append(output, bytes, 0, buffer_len(bytes));
+    drop(bytes);
+    return 0;
+}
+
+fn project_request_append_i64_generic(
+    borrow_mut output: Buffer, allocator: Allocator, base: String
+) -> i32 requires_caps [allocate] {
+    project_request_append_string(output, allocator, base);
+    buffer_push(output, 60);
+    project_request_append_string(output, allocator, "i64");
+    buffer_push(output, 62);
+    return 0;
+}
+
+fn project_request_rewrite_legacy_vector_token(
+    borrow_mut output: Buffer, allocator: Allocator,
+    borrow source: Buffer, borrow token: Token
+) -> i32 requires_caps [allocate] {
+    if (project_request_token_equals_string(source, token, allocator, "I64Vec") != 0) {
+        project_request_append_i64_generic(output, allocator, "Vec"); return 1;
+    }
+    if (project_request_token_equals_string(source, token, allocator, "i64vec_new") != 0) {
+        project_request_append_i64_generic(output, allocator, "vec_new"); return 1;
+    }
+    if (project_request_token_equals_string(source, token, allocator, "i64vec_push") != 0) {
+        project_request_append_i64_generic(output, allocator, "vec_push"); return 1;
+    }
+    if (project_request_token_equals_string(source, token, allocator, "i64vec_len") != 0) {
+        project_request_append_i64_generic(output, allocator, "vec_len"); return 1;
+    }
+    if (project_request_token_equals_string(source, token, allocator, "i64vec_get") != 0) {
+        project_request_append_i64_generic(output, allocator, "vec_get"); return 1;
+    }
+    if (project_request_token_equals_string(source, token, allocator, "i64vec_allocator") != 0) {
+        project_request_append_i64_generic(output, allocator, "vec_allocator"); return 1;
+    }
+    return 0;
+}
+
+pub fn prepare_native_project_source(
+    borrow input: Buffer, allocator: Allocator, borrow_mut output: Buffer
+) -> i32 requires_caps [allocate] {
+    if (project_request_magic_matches(input) == 0) {
+        bootstrap_buffer_append(output, input, 0, buffer_len(input));
+        return 0;
+    }
+    if (project_request_read_u32(input, 4) != 1) { return 7101; }
+    var cursor: i64 = 8;
+    let package_length: i64 = project_request_read_u32(input, cursor);
+    cursor = checked_add(cursor, 4);
+    if (package_length <= 0) { return 7102; }
+    if (checked_add(cursor, package_length) > buffer_len(input)) { return 7103; }
+    let package_start: i64 = cursor;
+    cursor = checked_add(cursor, package_length);
+    let entry_length: i64 = project_request_read_u32(input, cursor);
+    cursor = checked_add(cursor, 4);
+    if (entry_length <= 0) { return 7104; }
+    if (checked_add(cursor, entry_length) > buffer_len(input)) { return 7105; }
+    cursor = checked_add(cursor, entry_length);
+    let unit_count: i64 = project_request_read_u32(input, cursor);
+    cursor = checked_add(cursor, 4);
+    if (unit_count <= 0) { return 7106; }
+
+    var units: Vec<ProjectRequestUnitSpan> = vec_new<ProjectRequestUnitSpan>(allocator, unit_count);
+    var names: Buffer = buffer_new(allocator, 64);
+    var unit_index: i64 = 0;
+    while (unit_index < unit_count) {
+        let path_length: i64 = project_request_read_u32(input, cursor);
+        cursor = checked_add(cursor, 4);
+        if (path_length <= 0) { return 7107; }
+        if (checked_add(cursor, path_length) > buffer_len(input)) { return 7108; }
+        cursor = checked_add(cursor, path_length);
+        let source_length: i64 = project_request_read_u32(input, cursor);
+        cursor = checked_add(cursor, 4);
+        if (source_length <= 0) { return 7109; }
+        if (checked_add(cursor, source_length) > buffer_len(input)) { return 7110; }
+        let source_start: i64 = cursor;
+        var unit_source: Buffer = buffer_new(allocator, source_length);
+        project_request_append_normalized_source(unit_source, input, source_start, source_length);
+        let tokens: Vec<Token> = lex(unit_source, allocator);
+        if (vec_len<Token>(tokens) < 2) { return 7111; }
+        let module_token: Token = vec_get<Token>(tokens, 0);
+        let name_token: Token = vec_get<Token>(tokens, 1);
+        if (project_request_is_module(unit_source, module_token) == 0) { return 7112; }
+        if (token_kind(name_token) != token_identifier_kind()) { return 7113; }
+        let module_start: i64 = buffer_len(names);
+        bootstrap_buffer_append(names, unit_source, token_start(name_token), token_length(name_token));
+        vec_push<ProjectRequestUnitSpan>(units, ProjectRequestUnitSpan {
+            source_start: source_start,
+            source_length: source_length,
+            module_start: module_start,
+            module_length: token_length(name_token)
+        });
+        drop(tokens); drop(unit_source);
+        cursor = checked_add(cursor, source_length);
+        unit_index = checked_add(unit_index, 1);
+    }
+    if (cursor != buffer_len(input)) { return 7114; }
+
+    project_request_append_ascii_module(output);
+    bootstrap_buffer_append(output, input, package_start, package_length);
+    buffer_push(output, 10);
+    var capability_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var capability_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    var legacy_vector_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var legacy_vector_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
+    unit_index = 0;
+    while (unit_index < vec_len<ProjectRequestUnitSpan>(units)) {
+        let unit: ProjectRequestUnitSpan = vec_get<ProjectRequestUnitSpan>(units, unit_index);
+        var source: Buffer = buffer_new(allocator, unit.source_length);
+        project_request_append_normalized_source(source, input, unit.source_start, unit.source_length);
+        let tokens: Vec<Token> = lex(source, allocator);
+        var token_index: i64 = 0;
+        var raw_cursor: i64 = 0;
+        while (token_index < vec_len<Token>(tokens)) {
+            let token: Token = vec_get<Token>(tokens, token_index);
+            let start: i64 = token_start(token);
+            if (start > raw_cursor) {
+                bootstrap_buffer_append(output, source, raw_cursor, checked_sub(start, raw_cursor));
+            }
+            var consumed: i64 = 1;
+            var emitted: i32 = 0;
+            if (project_request_token_equals_string(
+                source, token, allocator, "I64Vec"
+            ) != 0) {
+                if (token_index >= 2) {
+                    let binding: Token = vec_get<Token>(tokens, checked_sub(token_index, 2));
+                    if (token_kind(binding) == token_identifier_kind()) {
+                        let saved_binding: i64 = buffer_len(names);
+                        bootstrap_buffer_append(
+                            names, source, token_start(binding), token_length(binding)
+                        );
+                        vec_push<i64>(legacy_vector_starts, saved_binding);
+                        vec_push<i64>(legacy_vector_lengths, token_length(binding));
+                    }
+                }
+            }
+            if (project_request_is_module(source, token) != 0) {
+                consumed = 2;
+            } else {
+                if (project_request_is_import(source, token) != 0) {
+                    consumed = 3;
+                } else {
+                    if (matches_capability(source, token) != 0) {
+                        if (checked_add(token_index, 2) < vec_len<Token>(tokens)) {
+                            let capability: Token = vec_get<Token>(tokens, checked_add(token_index, 1));
+                            let terminator: Token = vec_get<Token>(tokens, checked_add(token_index, 2));
+                            if (token_kind(terminator) == token_punctuation_kind()) {
+                                if (token_length(terminator) == 1) {
+                                    if (buffer_get(source, token_start(terminator)) == 59) {
+                                        if (project_request_capability_seen(
+                                            source, capability, names, capability_starts, capability_lengths
+                                        ) != 0) {
+                                            consumed = 3;
+                                        } else {
+                                            let saved: i64 = buffer_len(names);
+                                            bootstrap_buffer_append(names, source, token_start(capability), token_length(capability));
+                                            vec_push<i64>(capability_starts, saved);
+                                            vec_push<i64>(capability_lengths, token_length(capability));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (consumed == 1) {
+                        let module_index: i64 = project_request_module_index(source, token, names, units);
+                        if (module_index >= 0) {
+                            if (checked_add(token_index, 1) < vec_len<Token>(tokens)) {
+                                let dot: Token = vec_get<Token>(tokens, checked_add(token_index, 1));
+                                if (token_kind(dot) == token_punctuation_kind()) {
+                                    if (token_length(dot) == 1) {
+                                        if (buffer_get(source, token_start(dot)) == 46) { consumed = 2; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (consumed == 1) {
+                var legacy_drop: i32 = 0;
+                if (project_request_token_equals_string(
+                    source, token, allocator, "drop"
+                ) != 0) {
+                    if (checked_add(token_index, 2) < vec_len<Token>(tokens)) {
+                        let dropped: Token = vec_get<Token>(tokens, checked_add(token_index, 2));
+                        legacy_drop = project_request_capability_seen(
+                            source, dropped, names,
+                            legacy_vector_starts, legacy_vector_lengths
+                        );
+                    }
+                }
+                if (legacy_drop != 0) {
+                    project_request_append_i64_generic(output, allocator, "vec_drop");
+                } else {
+                    if (project_request_rewrite_legacy_vector_token(
+                        output, allocator, source, token
+                    ) == 0) {
+                        bootstrap_buffer_append(output, source, start, token_length(token));
+                    }
+                }
+                emitted = 1;
+            }
+            let last: Token = vec_get<Token>(tokens, checked_sub(checked_add(token_index, consumed), 1));
+            raw_cursor = checked_add(token_start(last), token_length(last));
+            if (emitted == 0) {
+                var blank: i64 = start;
+                while (blank < raw_cursor) {
+                    if (buffer_get(source, blank) == 10) { buffer_push(output, 10); }
+                    else { buffer_push(output, 32); }
+                    blank = checked_add(blank, 1);
+                }
+            }
+            token_index = checked_add(token_index, consumed);
+        }
+        if (raw_cursor < buffer_len(source)) {
+            bootstrap_buffer_append(output, source, raw_cursor, checked_sub(buffer_len(source), raw_cursor));
+        }
+        if (buffer_len(source) > 0) {
+            if (buffer_get(source, checked_sub(buffer_len(source), 1)) != 10) { buffer_push(output, 10); }
+        }
+        drop(tokens); drop(source);
+        unit_index = checked_add(unit_index, 1);
+    }
+    drop(legacy_vector_lengths); drop(legacy_vector_starts);
+    drop(capability_lengths); drop(capability_starts); drop(names); drop(units);
+    return 0;
+}

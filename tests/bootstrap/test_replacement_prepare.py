@@ -72,23 +72,42 @@ def _python_driver(tmp_path: Path, name: str, body: str) -> Path:
     return script
 
 
-def _driver(tmp_path: Path, *, exit_code: int = 0, function_count: int = 2) -> Path:
+def _driver(
+    tmp_path: Path,
+    *,
+    exit_code: int = 0,
+    function_count: int = 2,
+    capability_names: tuple[str, ...] = (),
+) -> Path:
     snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
-    values = encode_resolved_source_function_bundle(snapshot for _ in range(function_count))
+    source = "module main\nfn helper()->i64 { return 6; }\nfn main()->i32 { return 7; }\n"
+    values = encode_resolved_source_function_bundle(
+        (snapshot for _ in range(function_count)),
+        module_name="main",
+        capability_names=capability_names,
+    )
     body = (
         "import os, sys\n"
-        "source = sys.stdin.read()\n"
+        "from merit.project.project_request import decode_project_request\n"
+        "request = decode_project_request(sys.stdin.buffer.read())\n"
         f"assert os.environ['MERIT_REPLACEMENT_PROTOCOL'] == {DRIVER_PROTOCOL!r}\n"
-        "assert os.environ['MERIT_REPLACEMENT_MODULE'] == 'main'\n"
         "assert 'MERIT_REPLACEMENT_FUNCTION_INDEX' not in os.environ\n"
-        "assert 'fn helper' in source and 'fn main' in source\n"
+        "assert request.package == 'prepare_project'\n"
+        "assert request.entry == 'src/main.mrt'\n"
+        "assert b'fn helper' in request.units[0].source and b'fn main' in request.units[0].source\n"
         + (f"sys.exit({exit_code})\n" if exit_code else "")
         + f"print({repr(chr(10).join(str(value) for value in values))})\n"
     )
     return _python_driver(tmp_path, "replacement-driver", body)
 
 
-def _utf8_driver(tmp_path: Path, source: str, effective_source: str | None = None) -> Path:
+def _utf8_driver(
+    tmp_path: Path,
+    source: str,
+    effective_source: str | None = None,
+    *,
+    request_source: bytes | None = None,
+) -> Path:
     source_bytes = tuple((effective_source or source).encode("utf-8"))
     snapshot = (
         SNAPSHOT_MAGIC,
@@ -97,25 +116,44 @@ def _utf8_driver(tmp_path: Path, source: str, effective_source: str | None = Non
         len(source_bytes),
         *source_bytes,
     )
-    values = encode_resolved_source_function_bundle((snapshot, snapshot))
+    values = encode_resolved_source_function_bundle(
+        (snapshot, snapshot), module_name="main"
+    )
     body = (
         "import sys\n"
-        "actual_source = sys.stdin.buffer.read()\n"
-        f"assert actual_source == {source.encode('utf-8')!r}, actual_source\n"
+        "from merit.project.project_request import decode_project_request\n"
+        "request = decode_project_request(sys.stdin.buffer.read())\n"
+        "actual_source = request.units[0].source\n"
+        f"assert actual_source == {(request_source or source.encode('utf-8'))!r}, actual_source\n"
         + f"print({repr(chr(10).join(str(value) for value in values))})\n"
     )
     return _python_driver(tmp_path, "utf8-replacement-driver", body)
 
 
 def _multimodule_driver(tmp_path: Path) -> Path:
-    snapshot = (SNAPSHOT_MAGIC, SNAPSHOT_VERSION, *([0] * SNAPSHOT_SECTION_COUNT))
-    values = encode_resolved_source_function_bundle((snapshot, snapshot))
+    effective_source = (
+        "module prepare_multimodule_project\n"
+        "pub fn value()->i64 { return 6; }\n"
+        "fn main()->i32 { print(value()); return 0; }\n"
+    )
+    source_bytes = tuple(effective_source.encode("utf-8"))
+    snapshot = (
+        SNAPSHOT_MAGIC,
+        SNAPSHOT_VERSION,
+        *([0] * (SNAPSHOT_SECTION_COUNT - 1)),
+        len(source_bytes),
+        *source_bytes,
+    )
+    values = encode_resolved_source_function_bundle(
+        (snapshot, snapshot), module_name="prepare_multimodule_project"
+    )
     body = (
-        "import os, sys\n"
-        "source = sys.stdin.read()\n"
-        "assert os.environ['MERIT_REPLACEMENT_MODULE'] == 'prepare_multimodule_project'\n"
-        "assert source.count('module ') == 1\n"
-        "assert 'fn value' in source and 'fn main' in source\n"
+        "import sys\n"
+        "from merit.project.project_request import decode_project_request\n"
+        "request = decode_project_request(sys.stdin.buffer.read())\n"
+        "assert request.package == 'prepare_multimodule_project'\n"
+        "assert [unit.path for unit in request.units] == ['src/helper.mrt', 'src/main.mrt']\n"
+        "assert b'fn value' in request.units[0].source and b'fn main' in request.units[1].source\n"
         + f"print({repr(chr(10).join(str(value) for value in values))})\n"
     )
     return _python_driver(tmp_path, "multimodule-replacement-driver", body)
@@ -152,7 +190,10 @@ def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: 
     project = load_project(root / "Merit.toml")
 
     prepared = prepare_replacement_artifacts(
-        project, NativeReplacementDriver(_driver(tmp_path))
+        project,
+        NativeReplacementDriver(
+            _driver(tmp_path, capability_names=("allocate", "filesystem"))
+        ),
     )
 
     payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
@@ -173,7 +214,10 @@ def test_prepare_replacement_sends_source_to_native_driver_as_utf8(tmp_path: Pat
     project = load_project(root / "Merit.toml")
 
     prepared = prepare_replacement_artifacts(
-        project, NativeReplacementDriver(_utf8_driver(tmp_path, source))
+        project,
+        NativeReplacementDriver(
+            _utf8_driver(tmp_path, source, request_source=source_path.read_bytes())
+        ),
     )
 
     assert len(prepared.snapshot_paths) == 2
@@ -196,7 +240,14 @@ def test_compact_bundle_inputs_share_native_effective_source(tmp_path: Path) -> 
 
     prepare_replacement_artifacts(
         project,
-        NativeReplacementDriver(_utf8_driver(tmp_path, source, effective_source)),
+        NativeReplacementDriver(
+            _utf8_driver(
+                tmp_path,
+                source,
+                effective_source,
+                request_source=source_path.read_bytes(),
+            )
+        ),
     )
 
     inputs = load_replacement_inputs(project)

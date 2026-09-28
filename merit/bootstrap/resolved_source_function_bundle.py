@@ -23,8 +23,9 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
-BUNDLE_VERSION = 2
-_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, BUNDLE_VERSION})
+BUNDLE_VERSION = 3
+_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2, BUNDLE_VERSION})
+_METADATA_MAGIC = 0x4D455441  # "META"
 _BUNDLE_MAGIC_INDEX = 0
 _BUNDLE_VERSION_INDEX = 1
 _BUNDLE_FUNCTION_COUNT_INDEX = 2
@@ -39,10 +40,15 @@ class ResolvedSourceFunctionBundleError(ValueError):
 class ResolvedSourceFunctionBundle:
     functions: tuple[ResolvedSourceFunctionSnapshot, ...]
     encoded_snapshots: tuple[tuple[int, ...], ...]
+    module_name: str = ""
+    capability_names: tuple[str, ...] = ()
 
 
 def encode_resolved_source_function_bundle(
     snapshots: Iterable[Iterable[int]],
+    *,
+    module_name: str = "main",
+    capability_names: Iterable[str] = (),
 ) -> tuple[int, ...]:
     """Frame already-encoded snapshots after validating every nested payload."""
 
@@ -73,6 +79,11 @@ def encode_resolved_source_function_bundle(
             encoded_snapshot = snapshot[: -len(shared_source) - 1] + (0,)
         values.append(len(encoded_snapshot))
         values.extend(encoded_snapshot)
+    module_bytes = module_name.encode("utf-8")
+    encoded_capabilities = tuple(name.encode("utf-8") for name in capability_names)
+    values.extend((_METADATA_MAGIC, len(module_bytes), *module_bytes, len(encoded_capabilities)))
+    for name in encoded_capabilities:
+        values.extend((len(name), *name))
     return tuple(values)
 
 
@@ -138,6 +149,38 @@ def decode_resolved_source_function_bundle(
         decoded.append(snapshot)
         position = end
 
+    module_name = ""
+    capability_names: tuple[str, ...] = ()
+    if bundle_version >= 3:
+        if position >= len(data) or data[position] != _METADATA_MAGIC:
+            raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing metadata")
+        position += 1
+        try:
+            module_length = data[position]
+            position += 1
+            module_end = position + module_length
+            module_name = bytes(data[position:module_end]).decode("utf-8")
+            position = module_end
+            capability_count = data[position]
+            position += 1
+            names: list[str] = []
+            for _ in range(capability_count):
+                name_length = data[position]
+                position += 1
+                name_end = position + name_length
+                names.append(bytes(data[position:name_end]).decode("utf-8"))
+                position = name_end
+            capability_names = tuple(names)
+        except (IndexError, UnicodeDecodeError, ValueError) as exc:
+            raise ResolvedSourceFunctionBundleError(
+                "resolved source function bundle has invalid metadata"
+            ) from exc
+        if not module_name:
+            raise ResolvedSourceFunctionBundleError(
+                "resolved source function bundle metadata has no module name"
+            )
     if position != len(data):
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
-    return ResolvedSourceFunctionBundle(tuple(decoded), tuple(encoded))
+    return ResolvedSourceFunctionBundle(
+        tuple(decoded), tuple(encoded), module_name, capability_names
+    )

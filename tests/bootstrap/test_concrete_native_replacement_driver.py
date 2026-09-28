@@ -70,6 +70,16 @@ fn main()->i32 { with capability allocate {
     print(vec_len<i64>(values));print(vec_get<i64>(values,0));print(vec_pop<i64>(values));
 } return 0; }
 """
+LEGACY_I64VEC_SOURCE = """module main
+capability allocate;
+fn main()->i32 { with capability allocate {
+    let allocator:Allocator=system_allocator();
+    var values:I64Vec=i64vec_new(allocator,2);
+    i64vec_push(values,7);i64vec_push(values,11);
+    print(i64vec_len(values));print(i64vec_get(values,0));
+    drop(values);
+} return 0; }
+"""
 GENERIC_OWNERSHIP_SOURCE = """module main
 capability allocate;
 fn forward<T>(value:T)->T { return value; }
@@ -1087,6 +1097,33 @@ def test_build_concrete_native_driver_reaches_replacement_executable_without_pyt
     executed = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
     assert executed.returncode == 7
     assert executed.stdout == ""
+
+
+def test_native_project_request_rejects_unsupported_version_without_cleanup_failure(
+    driver: NativeReplacementDriver,
+) -> None:
+    completed = subprocess.run(
+        [str(driver.executable)],
+        input=b"MPRQ" + (2).to_bytes(4, "big"),
+        capture_output=True,
+    )
+
+    assert completed.returncode != 0
+    assert b"replacement driver status 7101" in completed.stderr
+
+
+def test_native_project_request_desugars_legacy_i64vec_without_python_rewrite(
+    tmp_path: Path, driver: NativeReplacementDriver,
+) -> None:
+    root = _project(tmp_path, LEGACY_I64VEC_SOURCE)
+    project = load_project(root / "Merit.toml")
+    prepare_replacement_artifacts(project, driver)
+
+    artifact = build_replacement_project(project, root / "build" / "legacy-vector")
+    completed = subprocess.run(
+        [str(artifact.executable)], text=True, capture_output=True, check=True,
+    )
+    assert completed.stdout == "2\n7\n"
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

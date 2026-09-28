@@ -43,7 +43,8 @@ def test_bundle_v2_deduplicates_and_rehydrates_effective_source() -> None:
 
     encoded = encode_resolved_source_function_bundle((snapshot, snapshot))
 
-    assert len(encoded) == 3 + 1 + len(snapshot) + 1 + len(_snapshot())
+    metadata_length = 1 + 1 + len("main") + 1
+    assert len(encoded) == 3 + 1 + len(snapshot) + 1 + len(_snapshot()) + metadata_length
     decoded = decode_resolved_source_function_bundle(encoded)
     assert decoded.encoded_snapshots == (snapshot, compact_snapshot)
     assert decoded.functions[0].effective_source_bytes == source
