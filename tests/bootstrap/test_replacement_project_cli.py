@@ -99,6 +99,8 @@ def test_replacement_mode_is_explicit_in_help(capsys) -> None:
     assert "--compiler {reference,replacement}" in output
     assert "default: replacement" in " ".join(output.split())
     assert "Python oracle explicitly" in " ".join(output.split())
+    assert "--compiler-path EXECUTABLE" in output
+    assert "--replacement-driver" in output
 
 
 def test_default_build_prepares_with_configured_native_driver_without_reference_parser(
@@ -124,7 +126,7 @@ def test_default_build_prepares_with_configured_native_driver_without_reference_
     monkeypatch.setattr("merit.project.cli.prepare_replacement_artifacts", fake_prepare)
     monkeypatch.setattr("merit.project.cli.build_replacement_project", fake_build)
 
-    status = main(["build", str(root), "--replacement-driver", str(driver)])
+    status = main(["build", str(root), "--compiler-path", str(driver)])
 
     assert status == 0
     assert observed == [

@@ -45,9 +45,14 @@ def main(argv: list[str] | None = None) -> int:
         help="compiler path (default: replacement); reference selects the Python oracle explicitly",
     )
     parser.add_argument(
+        "--compiler-path",
         "--replacement-driver",
+        dest="replacement_driver",
         metavar="EXECUTABLE",
-        help="native replacement frontend executable (also MERIT_REPLACEMENT_DRIVER or merit-replacement-frontend on PATH)",
+        help=(
+            "native compiler executable; --replacement-driver is a compatibility alias "
+            "(also MERIT_REPLACEMENT_DRIVER or merit-replacement-frontend on PATH)"
+        ),
     )
     parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)

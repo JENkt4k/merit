@@ -1,0 +1,11 @@
+[package]
+name = "bootstrap_compiler"
+entry = "../examples/projects/bootstrap_lexer/src/lexer.mrt"
+sources = ["../examples/projects/bootstrap_lexer/src/**/*.mrt"]
+
+[executable]
+adapter = "stdin-string-i32"
+entry = "emit_replacement_bundle"
+
+[build]
+c_flags = ["-O2"]

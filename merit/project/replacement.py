@@ -228,6 +228,22 @@ def build_replacement_project(project: LoadedProject | ReplacementLoadedProject,
 
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    if project.manifest.executable_adapter is not None:
+        from merit.project.executable_adapter import link_executable_adapter
+
+        c_path, _header_path, library = compile_replacement_shared_artifact(
+            artifact,
+            output.parent / f"{output.stem}-runtime",
+            header_exports=frozenset({project.manifest.executable_entry or ""}),
+            c_flags=project.manifest.c_flags,
+        )
+        executable = link_executable_adapter(
+            output,
+            library=library,
+            adapter=project.manifest.executable_adapter,
+            entry=project.manifest.executable_entry or "",
+        )
+        return ReplacementProjectArtifact(c_path=c_path, executable=executable)
     c_path, executable = compile_replacement_artifact(
         artifact,
         output,

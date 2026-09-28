@@ -267,6 +267,19 @@ def compile_cached_object(
 
 
 def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
+    if project.manifest.executable_adapter is not None:
+        from .executable_adapter import link_executable_adapter
+
+        output = _native_executable_path(output.resolve())
+        library_output = output.parent / f"{output.stem}-runtime"
+        c_path, h_path, library = build_shared(project, library_output)
+        executable = link_executable_adapter(
+            output,
+            library=library,
+            adapter=project.manifest.executable_adapter,
+            entry=project.manifest.executable_entry or "",
+        )
+        return c_path, h_path, executable
     check(project)
     output = _native_executable_path(output.resolve())
     output.parent.mkdir(parents=True, exist_ok=True)
