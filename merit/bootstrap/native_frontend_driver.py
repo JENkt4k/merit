@@ -17,15 +17,15 @@ internal generated types.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import shlex
 import shutil
-import subprocess
-import sys
 import tempfile
 
-from merit.project.build import NativeBuildError, build_shared
+from merit.project.build import build, build_shared
+from merit.project.executable_adapter import (
+    STDIN_STRING_I32_ADAPTER,
+    link_executable_adapter,
+)
 from merit.project.loader import load_project
 from merit.project.replacement import build_replacement_shared
 from merit.project.replacement_loader import load_replacement_project
@@ -35,6 +35,7 @@ from merit.project.replacement_prepare import prepare_replacement_artifacts
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_PROJECT = ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml"
+COMPILER_PROJECT = ROOT / "compiler" / "Merit.toml"
 REPLACEMENT_FRONTEND_ENTRYPOINT = "emit_replacement_bundle"
 
 
@@ -48,126 +49,23 @@ class ReplacementCompilerStage:
     library: Path
 
 
-def _compiler() -> str:
-    configured = os.environ.get("CC")
-    if configured:
-        if shutil.which(configured) is not None or Path(configured).is_file():
-            return configured
-        raise NativeBuildError(127, [configured], f"C compiler {configured!r} was not found")
-    for candidate in ("cc", "gcc", "clang"):
-        if shutil.which(candidate):
-            return candidate
-    raise NativeBuildError(127, ["cc"], "No supported C compiler was found for the replacement driver host")
-
-
-def _host_source() -> str:
-    # This declaration is the stable C representation already used by Merit's
-    # generated ABI for String. Keep the shim deliberately smaller than the
-    # generated bootstrap-project header: the driver consumes only this value
-    # type and one exported symbol.
-    return '''#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-typedef struct {
-    const char *data;
-    size_t len;
-} merit_String;
-
-extern int32_t merit_emit_replacement_bundle(merit_String source_text);
-
-int main(void) {
-    char *data = NULL;
-    size_t length = 0;
-    size_t capacity = 0;
-    unsigned char chunk[4096];
-    for (;;) {
-        size_t got = fread(chunk, 1, sizeof(chunk), stdin);
-        if (got != 0) {
-            size_t needed = length + got;
-            if (needed > capacity) {
-                size_t next = capacity ? capacity : 4096;
-                while (next < needed) {
-                    if (next > ((size_t)-1) / 2) { fputs("replacement driver input is too large\\n", stderr); free(data); return 64; }
-                    next *= 2;
-                }
-                char *grown = (char *)realloc(data, next);
-                if (grown == NULL) { fputs("replacement driver input allocation failed\\n", stderr); free(data); return 65; }
-                data = grown;
-                capacity = next;
-            }
-            for (size_t index = 0; index < got; ++index) data[length + index] = (char)chunk[index];
-            length = needed;
-        }
-        if (got < sizeof(chunk)) {
-            if (ferror(stdin)) { fputs("replacement driver could not read stdin\\n", stderr); free(data); return 66; }
-            break;
-        }
-    }
-    merit_String source = { data, length };
-    int32_t status = merit_emit_replacement_bundle(source);
-    if (status != 0) fprintf(stderr, "replacement driver status %d\\n", status);
-    free(data);
-    return (int)status;
-}
-'''
-
-
-def _link_native_replacement_driver(output: Path, header: Path, library: Path) -> NativeReplacementDriver:
-    output = output.expanduser().resolve()
-    if sys.platform.startswith("win") and output.suffix.lower() != ".exe":
-        output = output.with_suffix(".exe")
-    output.parent.mkdir(parents=True, exist_ok=True)
-
-    host = output.with_suffix(".host.c")
-    host.write_text(_host_source(), encoding="utf-8", newline="\n")
-
-    command = [
-        _compiler(),
-        "-std=c11",
-        "-Wall",
-        "-Wextra",
-        str(host),
-        str(library),
-    ]
-    if sys.platform == "darwin":
-        command.extend(("-Wl,-rpath,@loader_path",))
-    elif not sys.platform.startswith("win"):
-        command.extend(("-Wl,-rpath,$ORIGIN",))
-    command.extend(("-o", str(output)))
-
-    completed = subprocess.run(command, text=True, capture_output=True, errors="replace")
-    if completed.returncode != 0:
-        shown = subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
-        detail = [
-            f"native replacement driver host linking failed with exit code {completed.returncode}",
-            f"command: {shown}",
-            f"generated header (not included by minimal host): {header}",
-            f"frontend library: {library}",
-            f"host source: {host}",
-        ]
-        if completed.stdout:
-            detail.extend(("stdout:", completed.stdout.rstrip()))
-        if completed.stderr:
-            detail.extend(("stderr:", completed.stderr.rstrip()))
-        raise NativeBuildError(
-            completed.returncode,
-            command,
-            "\n".join(detail),
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-    return NativeReplacementDriver(output)
+def _link_native_replacement_driver(output: Path, library: Path) -> NativeReplacementDriver:
+    executable = link_executable_adapter(
+        output,
+        library=library,
+        adapter=STDIN_STRING_I32_ADAPTER,
+        entry=REPLACEMENT_FRONTEND_ENTRYPOINT,
+    )
+    return NativeReplacementDriver(executable)
 
 
 def build_native_replacement_driver(output: Path) -> NativeReplacementDriver:
     """Build the stage-0 Python-reference-produced frontend driver."""
 
     output = output.expanduser().resolve()
-    project = load_project(BOOTSTRAP_PROJECT)
-    _, header, library = build_shared(project, output.parent / "merit-replacement-frontend")
-    return _link_native_replacement_driver(output, header, library)
+    project = load_project(COMPILER_PROJECT)
+    _, _, executable = build(project, output)
+    return NativeReplacementDriver(executable)
 
 
 def _copy_isolated_compiler_source(destination: Path) -> None:
@@ -196,7 +94,7 @@ def build_replacement_compiler_stage(
             output.parent / f"{output.stem}-frontend",
             header_exports=frozenset({REPLACEMENT_FRONTEND_ENTRYPOINT}),
         )
-    driver = _link_native_replacement_driver(output, shared.header_path, shared.library)
+    driver = _link_native_replacement_driver(output, shared.library)
     return ReplacementCompilerStage(
         driver=driver,
         c_path=shared.c_path,

@@ -12,7 +12,7 @@ C for the self-hosted path.
 
 This campaign begins from `main` commit
 `a2a9f31dd3e1e2fee04c8ba3f557775a6582b841`, after the bounded post-Alpha.2
-cleanup closed. It does not authorize Alpha.3 language features.
+cleanup closed. SH0 merged as PR #128 at `34f8cc7`. This campaign does not authorize Alpha.3 language features.
 
 ## Definitions
 
@@ -50,18 +50,18 @@ acceptance projects, and reproducibility gates remain required.
 The ordinary installed-tool workflow is:
 
 ```text
-merit-project build examples/projects/bootstrap_lexer \
+merit-project build compiler \
   -o build/merit-replacement-frontend
 ```
 
 The explicit stage workflow is:
 
 ```text
-merit-project build examples/projects/bootstrap_lexer \
+merit-project build compiler \
   --compiler-path .merit/stages/stage-0/merit-replacement-frontend \
   -o .merit/stages/stage-1/merit-replacement-frontend
 
-merit-project build examples/projects/bootstrap_lexer \
+merit-project build compiler \
   --compiler-path .merit/stages/stage-1/merit-replacement-frontend \
   -o .merit/stages/stage-2/merit-replacement-frontend
 ```
@@ -89,14 +89,12 @@ versioned protocol, not in a privileged manifest kind.
 
 ## Complete Merit source inventory
 
-The current compiler project is
-`examples/projects/bootstrap_lexer/Merit.toml`. Its ordinary source glob contains
-45 Merit modules. M9 proves that the complete project can be compiled by the
-previous native stage, but the manifest entry still names `src/lexer.mrt`, whose
-`main` is a corpus/probe program. The usable compiler entry is instead the
+The canonical compiler project is `compiler/Merit.toml`. Its ordinary source
+glob references the same complete 45-module source closure under
+`examples/projects/bootstrap_lexer/src`. The executable contract names the
 exported `emit_replacement_bundle(String)` function in
-`src/native_replacement_driver.mrt` and is reached through a special generated C
-host.
+`src/native_replacement_driver.mrt`. The historical bootstrap manifest remains
+the corpus/probe project; it is not the documented compiler target.
 
 | Domain | Merit source modules | Current conclusion |
 |---|---|---|
@@ -106,7 +104,7 @@ host.
 | Function discovery, contracts, metadata, and assembly | `mir_source_function_records.mrt`, `mir_source_function_record_stats.mrt`, `mir_source_function_pipeline.mrt`, `mir_function_contracts.mrt`, `mir_function_clause_metadata.mrt`, `mir_function_instruction_source.mrt`, `mir_function_assembly_plan.mrt`, `mir_function_assembly.mrt`, `mir_resolved_source_function_pipeline.mrt`, `mir_resolved_source_function_assembly.mrt`, `mir_resolved_source_function_snapshot.mrt`, `mir_resolved_source_function_bundle.mrt` | Expressible in Merit; included in stage builds |
 | Ownership, lifecycle, control flow, and placement | `mir_ownership_flow.mrt`, `mir_source_ownership_metadata.mrt`, `mir_source_ownership_expression.mrt`, `mir_source_ownership_control.mrt`, `mir_source_ownership_lowering.mrt`, `mir_source_type_lifecycle.mrt`, `mir_statement_lowering.mrt`, `mir_structured_lowering.mrt`, `mir_match_capability_flow.mrt`, `mir_resolved_control_flow.mrt`, `mir_function_ownership_assembly.mrt` | Expressible in Merit; included in stage builds |
 | Generics and project types | `mir_generic_catalog.mrt`, `mir_generic_expansion.mrt`, `mir_project_payload_types.mrt` | Expressible in Merit; included in stage builds |
-| Native compiler protocol entry | `native_replacement_driver.mrt` | Merit-native semantic entry exists; not yet an ordinary executable target |
+| Native compiler protocol entry | `native_replacement_driver.mrt` | Merit-native semantic entry is exposed through the ordinary `stdin-string-i32` executable adapter |
 
 This list is the required compiler semantic-source closure for the initial
 self-hosting campaign. Moving or renaming it is not required. Any newly
@@ -131,8 +129,8 @@ is a privileged Python assembly path rather than the normal project UX.
 | MIR contract implementation | `merit/bootstrap/mir_contract.py` defines Python canonical MIR objects and validation | Oracle plus current production adapter | Retain as independent oracle; next-stage production must consume Merit-owned canonical MIR |
 | Deterministic C/header emission | `merit/bootstrap/mir_to_c.py` emits production C and headers | Backend semantic work | Must migrate behind the Merit compiler executable with byte-stable comparison evidence |
 | C compilation and linking | `replacement_build.py` invokes the external C11 compiler/linker | Permitted host/toolchain work | May remain generic and non-semantic; commands and failures must be deterministic and recorded |
-| Compiler process host | `native_frontend_driver.py` generates a bespoke C program that reads stdin and calls `merit_emit_replacement_bundle` | Runtime/ABI bridge | Replace with an ordinary executable entry/runtime boundary or a fixed generic host used by all equivalent executable targets |
-| Shared-library construction | `native_frontend_driver.py` privately calls `build_replacement_shared` with an export allow-list | Bootstrap-only build path | Eliminate from stage construction; public `merit-project build` must produce the usable compiler artifact |
+| Compiler process host | `merit/project/executable_adapter.py` provides the manifest-selected, generic `stdin-string-i32` process/ABI adapter; `native_frontend_driver.py` delegates to it | Permitted generic runtime/ABI bridge | Closed for SH1; keep semantic interpretation out of the adapter |
+| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the historical stage helper still calls `build_replacement_shared` | Bootstrap-only stage path remains | Eliminate the remaining private stage helper during SH4; public project build already produces a usable executable |
 | Source isolation | `native_frontend_driver.py` copies the compiler project while excluding `.merit`, build, and bytecode state | Trust orchestration | Retain and generalize in the reproducibility gate |
 | Stage comparison | `reproducibility.py` builds stages and compares C, header, and fixed probe output | Trust orchestration | Retain, then extend to invoke only the public project command and the self-hosting result schema |
 | CLI compiler discovery | `merit/project/cli.py` selects argument, environment, or `PATH` driver | Public UX with historical naming | Introduce `--compiler-path`, preserve deterministic discovery, and fail closed |
@@ -151,7 +149,7 @@ needed to produce the next usable compiler must be classified.
 |---|---|---|
 | All 45 Merit modules are present in the manifest source closure | Proven by manifest glob and M9 isolated stage builds | Automated exact-inventory test rejects accidental omission/addition until deliberately reviewed |
 | Compiler semantic entry is Merit-native | `emit_replacement_bundle(String)` is Merit source | Direct interpreter/native and prior-stage execution parity |
-| Compiler artifact has an ordinary executable entry | Missing; manifest entry runs the lexer probe and the compiler uses a C shim | Public project-build test produces and executes the compiler without private host generation |
+| Compiler artifact has an ordinary executable entry | `compiler/Merit.toml` declares `stdin-string-i32` and `emit_replacement_bundle`; ordinary project build links the fixed generic adapter | Public project-build and native-driver tests produce and execute the compiler without bespoke host generation |
 | Project/module request is representable without Python source rewriting | Missing | Versioned request contract plus multi-module accepted/rejected parity |
 | Complete canonical MIR is materialized by Merit | Missing in the production path | Native MIR artifact comparison against the independent Python materializer |
 | Deterministic C and public header are emitted by Merit | Missing | Byte comparison with the established canonical emitter over the complete accepted corpus and compiler project |
@@ -183,7 +181,7 @@ needed to produce the next usable compiler must be classified.
 
 ## Ordered milestones
 
-- [ ] **SH0 — Inventory and contract**: merge this ledger; lock the exact
+- [x] **SH0 — Inventory and contract**: merged as PR #128; locked the exact
   45-module source closure, public command, allowed host boundary, prohibited
   semantic seams, stage identities, and evidence requirements. No compiler code.
 - [ ] **SH1 — Ordinary compiler executable**: make the compiler project produce
@@ -231,6 +229,28 @@ milestone before its prerequisite is confirmed merged on current `main`.
 - This milestone changes planning, status, architecture, specification, and
   documentation tests only. It changes no compiler, runtime, serialization,
   ABI, or language behavior.
+
+### SH1 candidate evidence
+
+- `compiler/Merit.toml` is the canonical ordinary compiler target and resolves
+  the exact 45-module source closure while selecting the Merit-native
+  `emit_replacement_bundle(String) -> i32` entry.
+- `[executable] adapter = "stdin-string-i32"` is a general manifest contract;
+  both reference and replacement project builds use the same fixed transport
+  adapter, which reads bytes, constructs the stable `String` ABI value, invokes
+  one exported Merit function, and returns its status without inspecting source.
+- `native_frontend_driver.py` no longer owns a bespoke generated C host or C
+  compiler invocation. Stage 0 uses the ordinary compiler manifest and project
+  build, while the historical stage helper delegates final linking to the same
+  generic adapter pending SH4 removal of that private stage path.
+- The public spelling is `--compiler-path`; `--replacement-driver` remains a
+  compatibility alias. Compiler discovery remains deterministic and fail-closed.
+- The existing versioned stdout protocol and `replacement driver status N`
+  diagnostic remain unchanged. No language, serialization, or ABI surface is
+  broadened.
+- A black-box `merit-project build compiler --compiler reference -o <path>`
+  smoke test produces a directly executable compiler, and a valid Merit source
+  probe emits the established versioned replacement bundle through stdout.
 
 ## Per-PR evidence
 
