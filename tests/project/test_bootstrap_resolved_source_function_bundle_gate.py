@@ -275,6 +275,24 @@ fn main()->i32 {
 }
 '''
 
+NUMERIC_JSON_PROBE = r'''module numeric_json_probe
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"-12.5e+2");
+  var output:Buffer=buffer_new(allocator,16);
+  print(canonical_mir_append_json_source(output,source,0,8));print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(source);return 0;
+ }
+}
+'''
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -583,3 +601,17 @@ def test_merit_materializes_complete_builtin_type_catalog(tmp_path: Path) -> Non
         assert actual == json.dumps(MirType(name).to_data(), sort_keys=True, separators=(",", ":"))
         cursor += 2 + length
     assert values[cursor] == 1
+
+
+def test_merit_preserves_signed_decimal_numeric_spelling(tmp_path: Path) -> None:
+    root = _project(tmp_path, NUMERIC_JSON_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "numeric-json")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == json.dumps("-12.5e+2", separators=(",", ":"))

@@ -174,6 +174,9 @@ requires_caps [allocate]
     if(value==55){buffer_push(output,55);return 0;}
     if(value==56){buffer_push(output,56);return 0;}
     if(value==57){buffer_push(output,57);return 0;}
+    if(value==43){buffer_push(output,43);return 0;}
+    if(value==45){buffer_push(output,45);return 0;}
+    if(value==46){buffer_push(output,46);return 0;}
     if(value==65){buffer_push(output,65);return 0;}
     if(value==66){buffer_push(output,66);return 0;}
     if(value==67){buffer_push(output,67);return 0;}
@@ -230,7 +233,7 @@ requires_caps [allocate]
     return 1;
 }
 
-fn canonical_mir_append_json_source(
+pub fn canonical_mir_append_json_source(
     borrow_mut output:Buffer,borrow source:Buffer,start:i64,length:i64
 )->i32
 requires_caps [allocate]
@@ -245,9 +248,13 @@ requires_caps [allocate]
         // Identifiers, operators, and exact numeric spellings in this first
         // slice must not require JSON escaping. Reject instead of guessing.
         if(byte<32){return 2;}
-        if(byte==34){return 2;}
-        if(byte==92){return 2;}
+        if(byte==34){buffer_push(output,92);buffer_push(output,34);}
+        else{
+            if(byte==92){buffer_push(output,92);buffer_push(output,92);}
+            else{
         if(canonical_mir_push_identifier_or_numeric_byte(output,byte)!=0){return 3;}
+            }
+        }
         offset=checked_add(offset,1);
     }
     buffer_push(output,34);
