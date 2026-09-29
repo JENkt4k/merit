@@ -23,7 +23,12 @@ from merit.bootstrap.resolved_source_function_bundle import (
 )
 from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
-from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
+from merit.project.replacement import (
+    REPLACEMENT_MANIFEST,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+    REPLACEMENT_SCHEMA,
+    ReplacementProjectError,
+)
 from merit.project.project_request import (
     encode_loaded_project_request,
 )
@@ -60,6 +65,7 @@ class NativeReplacementDriver:
 class PreparedReplacementArtifacts:
     manifest_path: Path
     snapshot_paths: tuple[Path, ...]
+    project_artifact_paths: tuple[Path, ...] = ()
 
 
 def _source_digest(source: str) -> str:
@@ -157,6 +163,20 @@ def _atomic_write_text(path: Path, content: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def prepare_replacement_artifacts(
     project: LoadedProject | ReplacementLoadedProject,
     driver: NativeReplacementDriver,
@@ -167,6 +187,7 @@ def prepare_replacement_artifacts(
     staged: list[tuple[Path, str]] = []
     manifest_functions: list[dict[str, object]] = []
     snapshot_paths: list[Path] = []
+    project_artifact_paths: list[Path] = []
 
     request = encode_loaded_project_request(project)
     bundle = _run_driver(
@@ -200,11 +221,44 @@ def prepare_replacement_artifacts(
 
     staged.append((artifact_dir / "replacement-project.source", project_source))
 
+    producer_protocol = DRIVER_PROTOCOL
+    native_artifacts: dict[str, dict[str, str]] | None = None
+    if bundle.canonical_mir_bytes or bundle.c_source_bytes or bundle.c_header_bytes:
+        if not (bundle.canonical_mir_bytes and bundle.c_source_bytes and bundle.c_header_bytes):
+            raise ReplacementProjectError(
+                "replacement driver response has an incomplete native project artifact set"
+            )
+        try:
+            bundle.c_source_bytes.decode("utf-8")
+            bundle.c_header_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ReplacementProjectError(
+                "replacement driver response has non-UTF-8 C or header artifacts"
+            ) from exc
+        artifact_payloads = {
+            "canonical_mir": ("replacement-project.mir.json", bundle.canonical_mir_bytes),
+            "c_source": ("replacement-project.c", bundle.c_source_bytes),
+            "c_header": ("replacement-project.h", bundle.c_header_bytes),
+        }
+        native_artifacts = {}
+        for label, (filename, content) in artifact_payloads.items():
+            path = artifact_dir / filename
+            _atomic_write_bytes(path, content)
+            project_artifact_paths.append(path)
+            native_artifacts[label] = {
+                "path": filename,
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        producer_protocol = REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+
     payload = {
         "schema": REPLACEMENT_SCHEMA,
-        "producer_protocol": DRIVER_PROTOCOL,
+        "producer_protocol": producer_protocol,
+        "request_sha256": hashlib.sha256(request).hexdigest(),
         "functions": manifest_functions,
     }
+    if native_artifacts is not None:
+        payload["native_artifacts"] = native_artifacts
     manifest_path = artifact_dir / REPLACEMENT_MANIFEST
 
     # Publish snapshots first and the manifest last. Readers either see the old
@@ -213,4 +267,6 @@ def prepare_replacement_artifacts(
     for path, content in staged:
         _atomic_write_text(path, content)
     _atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    return PreparedReplacementArtifacts(manifest_path, tuple(snapshot_paths))
+    return PreparedReplacementArtifacts(
+        manifest_path, tuple(snapshot_paths), tuple(project_artifact_paths)
+    )

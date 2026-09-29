@@ -16,7 +16,14 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 from merit.project.cli import _replacement_driver_path, main
 from merit.project.loader import load_project
 from merit.project.project_request import encode_loaded_project_request
-from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, load_replacement_inputs
+from merit.project.replacement import (
+    REPLACEMENT_MANIFEST,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+    REPLACEMENT_SCHEMA,
+    ReplacementProjectError,
+    _load_native_project_artifact,
+    load_replacement_inputs,
+)
 
 
 def _project(tmp_path: Path) -> Path:
@@ -75,6 +82,52 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     assert isinstance(inputs[0], ReplacementFunctionInput)
     assert inputs[0].module_name == "main"
     assert inputs[0].snapshot_values == tuple(values)
+
+
+def test_replacement_manifest_loads_native_backend_artifacts_without_mir_materialization(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    artifact_dir = root / ".merit"
+    artifact_dir.mkdir()
+    contents = {
+        "canonical_mir": ("replacement-project.mir.json", b'{"schema":"bootstrap-mir-v1"}\n'),
+        "c_source": ("replacement-project.c", b"int merit_main(void) { return 0; }\n"),
+        "c_header": ("replacement-project.h", b"int merit_main(void);\n"),
+    }
+    native_artifacts = {}
+    for label, (filename, content) in contents.items():
+        (artifact_dir / filename).write_bytes(content)
+        native_artifacts[label] = {
+            "path": filename,
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+    (artifact_dir / REPLACEMENT_MANIFEST).write_text(
+        json.dumps(
+            {
+                "schema": REPLACEMENT_SCHEMA,
+                "producer_protocol": REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+                "request_sha256": hashlib.sha256(
+                    encode_loaded_project_request(project)
+                ).hexdigest(),
+                "functions": [],
+                "native_artifacts": native_artifacts,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    artifact = _load_native_project_artifact(project)
+
+    assert artifact is not None
+    assert artifact.module is None
+    assert artifact.c_source == contents["c_source"][1].decode("utf-8")
+    assert artifact.c_header == contents["c_header"][1].decode("utf-8")
+
+    (artifact_dir / "replacement-project.c").write_bytes(b"tampered\n")
+    with pytest.raises(ReplacementProjectError, match="digest does not match"):
+        _load_native_project_artifact(project)
 
 
 def test_replacement_cli_rejects_reference_only_commands(tmp_path: Path, capsys) -> None:

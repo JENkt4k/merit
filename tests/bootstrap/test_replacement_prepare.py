@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from merit.project.replacement import REPLACEMENT_MANIFEST, ReplacementProjectEr
 from merit.project.replacement_prepare import (
     DRIVER_PROTOCOL,
     NativeReplacementDriver,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
     prepare_replacement_artifacts,
 )
 
@@ -159,6 +161,30 @@ def _multimodule_driver(tmp_path: Path) -> Path:
     return _python_driver(tmp_path, "multimodule-replacement-driver", body)
 
 
+def _native_artifact_driver(tmp_path: Path) -> Path:
+    source = b"module main\nfn main()->i32 { return 0; }\n"
+    snapshot = (
+        SNAPSHOT_MAGIC,
+        SNAPSHOT_VERSION,
+        *([0] * (SNAPSHOT_SECTION_COUNT - 1)),
+        len(source),
+        *source,
+    )
+    values = encode_resolved_source_function_bundle(
+        (snapshot,),
+        module_name="main",
+        canonical_mir=b'{"schema":"bootstrap-mir-v1"}\n',
+        c_source=b"int32_t merit_main(void) { return 0; }\n",
+        c_header=b"int32_t merit_main(void);\n",
+    )
+    return _python_driver(
+        tmp_path,
+        "native-artifact-driver",
+        "import sys\nsys.stdin.buffer.read()\n"
+        + f"print({repr(chr(10).join(str(value) for value in values))})\n",
+    )
+
+
 def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_path: Path) -> None:
     root = _project(tmp_path)
     project = load_project(root / "Merit.toml")
@@ -177,6 +203,29 @@ def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_pa
     assert len(inputs) == 2
     assert [item.module_name for item in inputs] == ["main", "main"]
     assert all(item.snapshot_values[:2] == (SNAPSHOT_MAGIC, SNAPSHOT_VERSION) for item in inputs)
+
+
+def test_prepare_replacement_publishes_native_backend_artifacts_with_digests(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+
+    prepared = prepare_replacement_artifacts(
+        project, NativeReplacementDriver(_native_artifact_driver(tmp_path))
+    )
+
+    assert [path.name for path in prepared.project_artifact_paths] == [
+        "replacement-project.mir.json",
+        "replacement-project.c",
+        "replacement-project.h",
+    ]
+    payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
+    assert payload["producer_protocol"] == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+    for label, metadata in payload["native_artifacts"].items():
+        content = (root / ".merit" / metadata["path"]).read_bytes()
+        assert content
+        assert metadata["sha256"] == hashlib.sha256(content).hexdigest(), label
 
 
 def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: Path) -> None:

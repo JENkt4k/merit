@@ -19,6 +19,7 @@ from merit.bootstrap.resolved_source_function_snapshot import (
     decode_resolved_source_function_snapshot,
 )
 from merit.bootstrap.replacement_build import (
+    ReplacementBuildArtifact,
     ReplacementBuildError,
     compile_replacement_artifact,
     compile_replacement_shared_artifact,
@@ -31,6 +32,9 @@ from merit.project.project_request import encode_loaded_project_request
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
 REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v2"
+REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL = (
+    "merit-project-request-v1/resolved-source-function-bundle-v4"
+)
 
 
 class ReplacementProjectError(ReplacementBuildError):
@@ -48,6 +52,65 @@ class ReplacementSharedProjectArtifact:
     c_path: Path
     header_path: Path
     library: Path
+
+
+def _load_native_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+) -> ReplacementBuildArtifact | None:
+    """Load a complete native backend artifact without interpreting its MIR."""
+
+    manifest_path = project.manifest.root / ".merit" / REPLACEMENT_MANIFEST
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReplacementProjectError(f"invalid replacement build manifest: {manifest_path}") from exc
+    if not isinstance(payload, dict) or payload.get("schema") != REPLACEMENT_SCHEMA:
+        raise ReplacementProjectError(f"unsupported replacement build manifest schema: {manifest_path}")
+    if payload.get("producer_protocol") != REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL:
+        return None
+    expected_request_digest = payload.get("request_sha256")
+    actual_request_digest = hashlib.sha256(encode_loaded_project_request(project)).hexdigest()
+    if expected_request_digest != actual_request_digest:
+        raise ReplacementProjectError(
+            "native replacement project artifacts are stale after source changes; "
+            "run prepare-replacement again"
+        )
+    raw_artifacts = payload.get("native_artifacts")
+    expected = {"canonical_mir", "c_source", "c_header"}
+    if not isinstance(raw_artifacts, dict) or set(raw_artifacts) != expected:
+        raise ReplacementProjectError("native replacement artifact manifest is incomplete")
+    contents: dict[str, bytes] = {}
+    artifact_root = manifest_path.parent.resolve()
+    for label in sorted(expected):
+        metadata = raw_artifacts[label]
+        if not isinstance(metadata, dict):
+            raise ReplacementProjectError(f"native replacement {label} metadata is invalid")
+        relative = metadata.get("path")
+        expected_digest = metadata.get("sha256")
+        if not isinstance(relative, str) or not relative:
+            raise ReplacementProjectError(f"native replacement {label} path is invalid")
+        if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+            raise ReplacementProjectError(f"native replacement {label} digest is invalid")
+        path = (artifact_root / relative).resolve()
+        try:
+            path.relative_to(artifact_root)
+            content = path.read_bytes()
+        except (ValueError, OSError) as exc:
+            raise ReplacementProjectError(f"invalid native replacement {label}: {path}") from exc
+        if not content:
+            raise ReplacementProjectError(f"native replacement {label} is empty")
+        if hashlib.sha256(content).hexdigest() != expected_digest:
+            raise ReplacementProjectError(f"native replacement {label} digest does not match")
+        contents[label] = content
+    try:
+        contents["canonical_mir"].decode("utf-8")
+        c_source = contents["c_source"].decode("utf-8")
+        c_header = contents["c_header"].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReplacementProjectError("native replacement project artifacts must be UTF-8") from exc
+    return ReplacementBuildArtifact(module=None, c_source=c_source, c_header=c_header)
 
 
 def _type_names(raw: object) -> Mapping[int, MirType] | None:
@@ -223,8 +286,10 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
 def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
     """Build only from native-resolved snapshots; never invoke reference semantics."""
 
-    inputs = load_replacement_inputs(project)
-    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    artifact = _load_native_project_artifact(project)
+    if artifact is None:
+        inputs = load_replacement_inputs(project)
+        artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     if project.manifest.executable_adapter is not None:
         from merit.project.executable_adapter import link_executable_adapter
 
@@ -258,8 +323,10 @@ def build_replacement_shared(
 ) -> ReplacementSharedProjectArtifact:
     """Build a shared library solely from native-resolved replacement artifacts."""
 
-    inputs = load_replacement_inputs(project)
-    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    artifact = _load_native_project_artifact(project)
+    if artifact is None:
+        inputs = load_replacement_inputs(project)
+        artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     c_path, header_path, library = compile_replacement_shared_artifact(
         artifact,
         output,
