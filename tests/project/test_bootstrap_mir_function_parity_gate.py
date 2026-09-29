@@ -391,7 +391,26 @@ fn main() -> i32 {{
 '''
 
 
-def _project_with_probe(tmp_path: Path):
+def _canonical_probe_source() -> str:
+    source = _probe_source().replace(
+        "import bootstrap_mir_functions;",
+        "import bootstrap_mir_functions;\nimport bootstrap_mir_resolved_source_function_bundle;",
+    )
+    marker = "    drop(counters); drop(binding_lengths); drop(binding_starts); drop(output);"
+    replacement = (
+        "    var canonical:Buffer=buffer_new(allocator,1024);\n"
+        "    let canonical_status:i32=materialize_straight_line_canonical_mir(source,\"demo\",output,canonical);\n"
+        "    print(canonical_status); print(buffer_len(canonical));\n"
+        "    var canonical_index:i64=0;\n"
+        "    while(canonical_index<buffer_len(canonical)){print(buffer_get(canonical,canonical_index));canonical_index=checked_add(canonical_index,1);}\n"
+        "    drop(canonical);\n"
+        + marker
+    )
+    assert marker in source
+    return source.replace(marker, replacement)
+
+
+def _project_with_probe(tmp_path: Path, probe_source: str | None = None):
     project_root = tmp_path / "bootstrap_mir_function_parity"
     shutil.copytree(PROJECT, project_root, ignore=shutil.ignore_patterns("build"))
     lexer_path = project_root / "src/lexer.mrt"
@@ -401,7 +420,9 @@ def _project_with_probe(tmp_path: Path):
     )
     assert replacements == 1
     lexer_path.write_text(lexer, encoding="utf-8")
-    (project_root / "src/mir_function_probe.mrt").write_text(_probe_source(), encoding="utf-8")
+    (project_root / "src/mir_function_probe.mrt").write_text(
+        probe_source or _probe_source(), encoding="utf-8"
+    )
     manifest = project_root / "Merit.toml"
     text = manifest.read_text(encoding="utf-8").replace(
         'entry = "src/lexer.mrt"', 'entry = "src/mir_function_probe.mrt"'
@@ -439,3 +460,24 @@ def test_repository_straight_line_function_mir_has_real_interpreter_and_native_p
     )
     assert native == interpreted
     assert _canonical(native) == expected
+
+
+def test_merit_owned_straight_line_materializer_matches_canonical_oracle(tmp_path):
+    project, project_root = _project_with_probe(tmp_path, _canonical_probe_source())
+    interpreted = [int(value) for value in interpret(project).splitlines()]
+    count = interpreted[1]
+    artifact_start = 2 + count * 16
+    assert interpreted[artifact_start] == 0
+    length = interpreted[artifact_start + 1]
+    artifact = bytes(interpreted[artifact_start + 2:]).decode("utf-8")
+    assert len(artifact.encode("utf-8")) == length
+    assert artifact == canonical_mir_json(_reference_mir())
+
+    _, _, executable = build(project, project_root / "mir-function-canonical")
+    native = [
+        int(value)
+        for value in subprocess.run(
+            [str(executable)], check=True, text=True, capture_output=True
+        ).stdout.splitlines()
+    ]
+    assert native == interpreted

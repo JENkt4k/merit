@@ -7,6 +7,8 @@ import subprocess
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
+from merit.bootstrap.mir_contract import canonical_mir_json
+from merit.bootstrap.mir_function_parity import lower_native_function_mir_records
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
 
@@ -91,6 +93,32 @@ ARTIFACT_PROBE = PROBE.replace(
     "  drop(c_header); drop(c_source); drop(canonical_mir);\n"
     "  drop(metadata_capabilities); drop(metadata_source);",
 ).replace("print_resolved_source_function_bundle_header(2)", "print_resolved_source_function_project_artifact_bundle_header(1)")
+
+CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"module demo\nfn compute()->i64 { return 1; }\n");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(records,function_mir_header(12,31,15,7,1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(39,1,0,0,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(32,9,0,1));
+  var output:Buffer=buffer_new(allocator,256);
+  let status:i32=materialize_straight_line_canonical_mir(source,"demo",records,output);
+  print(status); print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(records);drop(source);
+  return status;
+ }
+}
+'''
 
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
@@ -223,3 +251,28 @@ def test_native_v4_bundle_carries_complete_project_artifacts(tmp_path: Path) -> 
     assert bundle.canonical_mir_bytes == b"mir\n"
     assert bundle.c_source_bytes == b"c\n"
     assert bundle.c_header_bytes == b"h\n"
+
+
+def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    assert values[1] == len(values) - 2
+    actual = bytes(values[2:]).decode("utf-8")
+    source = "module demo\nfn compute()->i64 { return 1; }\n"
+    records = (
+        (1, 12, 31, 0, -1, -1, -1, 15, 7, 0, 1, 0, -1, 0, -1, 0),
+        (3, 0, 0, 0, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (4, 39, 1, 0, 0, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
+        (7, 32, 9, 0, -1, 0, -1, -1, 0, 0, 0, 0, -1, 0, 1, 0),
+    )
+    expected = canonical_mir_json(
+        lower_native_function_mir_records(records, source, module_name="demo")
+    )
+    assert actual == expected
