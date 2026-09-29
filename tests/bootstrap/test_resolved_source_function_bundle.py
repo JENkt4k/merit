@@ -5,6 +5,7 @@ import pytest
 from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_MAGIC,
     BUNDLE_VERSION,
+    PROJECT_ARTIFACT_BUNDLE_VERSION,
     ResolvedSourceFunctionBundleError,
     decode_resolved_source_function_bundle,
     encode_resolved_source_function_bundle,
@@ -58,6 +59,40 @@ def test_bundle_v1_remains_decodable() -> None:
     decoded = decode_resolved_source_function_bundle(encoded)
 
     assert decoded.encoded_snapshots == (snapshot,)
+
+
+def test_bundle_v4_round_trips_native_project_artifacts() -> None:
+    encoded = encode_resolved_source_function_bundle(
+        (_snapshot(tuple(b"module main")),),
+        module_name="demo",
+        capability_names=("allocate",),
+        canonical_mir=b"mir-v1\n",
+        c_source=b"#include <stdint.h>\n",
+        c_header=b"#pragma once\n",
+    )
+
+    assert encoded[:3] == (BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION, 1)
+    decoded = decode_resolved_source_function_bundle(encoded)
+    assert decoded.module_name == "demo"
+    assert decoded.capability_names == ("allocate",)
+    assert decoded.canonical_mir_bytes == b"mir-v1\n"
+    assert decoded.c_source_bytes == b"#include <stdint.h>\n"
+    assert decoded.c_header_bytes == b"#pragma once\n"
+
+
+def test_bundle_v4_requires_all_nonempty_native_project_artifacts() -> None:
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="requires non-empty"):
+        encode_resolved_source_function_bundle(
+            (_snapshot(),), canonical_mir=b"mir", c_source=b"c"
+        )
+
+
+def test_bundle_v4_rejects_truncated_native_project_artifact() -> None:
+    encoded = encode_resolved_source_function_bundle(
+        (_snapshot(),), canonical_mir=b"mir", c_source=b"c", c_header=b"h"
+    )
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="truncated C header"):
+        decode_resolved_source_function_bundle(encoded[:-1])
 
 
 def test_bundle_rejects_empty_function_set() -> None:

@@ -24,8 +24,10 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
 BUNDLE_VERSION = 3
-_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2, BUNDLE_VERSION})
+PROJECT_ARTIFACT_BUNDLE_VERSION = 4
+_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2, BUNDLE_VERSION, PROJECT_ARTIFACT_BUNDLE_VERSION})
 _METADATA_MAGIC = 0x4D455441  # "META"
+_PROJECT_ARTIFACT_MAGIC = 0x4D434152  # "MCAR"
 _BUNDLE_MAGIC_INDEX = 0
 _BUNDLE_VERSION_INDEX = 1
 _BUNDLE_FUNCTION_COUNT_INDEX = 2
@@ -42,6 +44,9 @@ class ResolvedSourceFunctionBundle:
     encoded_snapshots: tuple[tuple[int, ...], ...]
     module_name: str = ""
     capability_names: tuple[str, ...] = ()
+    canonical_mir_bytes: bytes = b""
+    c_source_bytes: bytes = b""
+    c_header_bytes: bytes = b""
 
 
 def encode_resolved_source_function_bundle(
@@ -49,6 +54,9 @@ def encode_resolved_source_function_bundle(
     *,
     module_name: str = "main",
     capability_names: Iterable[str] = (),
+    canonical_mir: bytes | None = None,
+    c_source: bytes | None = None,
+    c_header: bytes | None = None,
 ) -> tuple[int, ...]:
     """Frame already-encoded snapshots after validating every nested payload."""
 
@@ -67,7 +75,14 @@ def encode_resolved_source_function_bundle(
             ) from exc
 
     shared_source = decoded_snapshots[0].effective_source_bytes
-    values: list[int] = [BUNDLE_MAGIC, BUNDLE_VERSION, len(encoded)]
+    artifact_fields = (canonical_mir, c_source, c_header)
+    carries_artifacts = any(value is not None for value in artifact_fields)
+    if carries_artifacts and any(not value for value in artifact_fields):
+        raise ResolvedSourceFunctionBundleError(
+            "project artifact bundle requires non-empty canonical MIR, C source, and C header"
+        )
+    version = PROJECT_ARTIFACT_BUNDLE_VERSION if carries_artifacts else BUNDLE_VERSION
+    values: list[int] = [BUNDLE_MAGIC, version, len(encoded)]
     for index, snapshot in enumerate(encoded):
         source = decoded_snapshots[index].effective_source_bytes
         if source != shared_source:
@@ -84,6 +99,11 @@ def encode_resolved_source_function_bundle(
     values.extend((_METADATA_MAGIC, len(module_bytes), *module_bytes, len(encoded_capabilities)))
     for name in encoded_capabilities:
         values.extend((len(name), *name))
+    if carries_artifacts:
+        values.append(_PROJECT_ARTIFACT_MAGIC)
+        for field in artifact_fields:
+            payload = bytes(field or b"")
+            values.extend((len(payload), *payload))
     return tuple(values)
 
 
@@ -151,6 +171,9 @@ def decode_resolved_source_function_bundle(
 
     module_name = ""
     capability_names: tuple[str, ...] = ()
+    canonical_mir_bytes = b""
+    c_source_bytes = b""
+    c_header_bytes = b""
     if bundle_version >= 3:
         if position >= len(data) or data[position] != _METADATA_MAGIC:
             raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing metadata")
@@ -179,8 +202,41 @@ def decode_resolved_source_function_bundle(
             raise ResolvedSourceFunctionBundleError(
                 "resolved source function bundle metadata has no module name"
             )
+    if bundle_version >= PROJECT_ARTIFACT_BUNDLE_VERSION:
+        if position >= len(data) or data[position] != _PROJECT_ARTIFACT_MAGIC:
+            raise ResolvedSourceFunctionBundleError(
+                "resolved source function bundle is missing project artifacts"
+            )
+        position += 1
+        artifacts: list[bytes] = []
+        try:
+            for label in ("canonical MIR", "C source", "C header"):
+                length = data[position]
+                position += 1
+                if length <= 0:
+                    raise ResolvedSourceFunctionBundleError(
+                        f"resolved source function bundle has empty {label}"
+                    )
+                end = position + length
+                if end > len(data):
+                    raise ResolvedSourceFunctionBundleError(
+                        f"resolved source function bundle has truncated {label}"
+                    )
+                payload = data[position:end]
+                if any(value < 0 or value > 255 for value in payload):
+                    raise ResolvedSourceFunctionBundleError(
+                        f"resolved source function bundle has invalid {label} byte"
+                    )
+                artifacts.append(bytes(payload))
+                position = end
+        except IndexError as exc:
+            raise ResolvedSourceFunctionBundleError(
+                "resolved source function bundle has truncated project artifacts"
+            ) from exc
+        canonical_mir_bytes, c_source_bytes, c_header_bytes = artifacts
     if position != len(data):
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
     return ResolvedSourceFunctionBundle(
-        tuple(decoded), tuple(encoded), module_name, capability_names
+        tuple(decoded), tuple(encoded), module_name, capability_names,
+        canonical_mir_bytes, c_source_bytes, c_header_bytes,
     )

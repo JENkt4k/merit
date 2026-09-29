@@ -9,7 +9,7 @@ import bootstrap_mir_cfg_placement;
 import bootstrap_mir_resolved_source_function_snapshot;
 import bootstrap_statement_semantics;
 
-// resolved-source-function-bundle-v3
+// resolved-source-function-bundle-v3/v4
 // magic "MRBF", version, function count, then for each function:
 // snapshot value count followed by a bootstrap-resolved-source-function-
 // snapshot-v9 payload. The first payload carries the canonical effective
@@ -18,7 +18,9 @@ import bootstrap_statement_semantics;
 fn resolved_source_function_bundle_magic()->i64{return 1297236550;}
 fn resolved_source_function_bundle_version()->i64{return 2;}
 fn resolved_source_function_project_bundle_version()->i64{return 3;}
+fn resolved_source_function_project_artifact_bundle_version()->i64{return 4;}
 fn resolved_source_function_bundle_metadata_magic()->i64{return 1296389185;}
+fn resolved_source_function_project_artifact_magic()->i64{return 1296253266;}
 
 pub fn resolved_source_function_snapshot_value_count(
     borrow effective_source: Buffer,
@@ -71,6 +73,45 @@ pub fn print_resolved_source_function_project_bundle_header(function_count: i64)
     print(resolved_source_function_bundle_magic());
     print(resolved_source_function_project_bundle_version());
     print(function_count);
+    return 0;
+}
+
+pub fn print_resolved_source_function_project_artifact_bundle_header(
+    function_count: i64
+) -> i32 {
+    if (function_count <= 0) { return 1; }
+    print(resolved_source_function_bundle_magic());
+    print(resolved_source_function_project_artifact_bundle_version());
+    print(function_count);
+    return 0;
+}
+
+fn print_resolved_source_function_artifact_bytes(borrow value: Buffer) -> i32 {
+    if (buffer_len(value) <= 0) { return 1; }
+    print(buffer_len(value));
+    var offset: i64 = 0;
+    while (offset < buffer_len(value)) {
+        print(buffer_get(value, offset));
+        offset = checked_add(offset, 1);
+    }
+    return 0;
+}
+
+pub fn print_resolved_source_function_project_artifacts(
+    borrow canonical_mir: Buffer,
+    borrow c_source: Buffer,
+    borrow c_header: Buffer
+) -> i32 {
+    if (buffer_len(canonical_mir) <= 0) { return 1; }
+    if (buffer_len(c_source) <= 0) { return 2; }
+    if (buffer_len(c_header) <= 0) { return 3; }
+    print(resolved_source_function_project_artifact_magic());
+    let mir_status: i32 = print_resolved_source_function_artifact_bytes(canonical_mir);
+    if (mir_status != 0) { return checked_add(10, mir_status); }
+    let source_status: i32 = print_resolved_source_function_artifact_bytes(c_source);
+    if (source_status != 0) { return checked_add(20, source_status); }
+    let header_status: i32 = print_resolved_source_function_artifact_bytes(c_header);
+    if (header_status != 0) { return checked_add(30, header_status); }
     return 0;
 }
 

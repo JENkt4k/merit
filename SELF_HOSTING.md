@@ -253,6 +253,27 @@ milestone before its prerequisite is confirmed merged on current `main`.
   smoke test produces a directly executable compiler, and a valid Merit source
   probe emits the established versioned replacement bundle through stdout.
 
+### SH3 implementation audit
+
+SH3 moves one vertical production boundary. It is not satisfied by wrapping
+the existing Python backend or by adding another host-side snapshot adapter.
+The current authorities and required final dispositions are:
+
+| Current production authority | Audited surface | SH3 disposition |
+|---|---:|---|
+| `resolved_source_function_snapshot.py` | 634 lines; snapshot decoding, type reconstruction, canonical MIR materialization | Retain only as an independent oracle; normal builds consume a Merit-produced canonical artifact without calling its decoder/materializer |
+| `replacement_project.py` | 173 lines; cross-function assembly, destructor merging, payloadless-enum normalization, call-target validation | Move project assembly and normalization into Merit; retain Python assembly only for differential evidence |
+| `mir_to_c.py` | 1,777 lines; 43 definitions covering types, runtime support, instructions, terminators, functions, destructors, C module, and public header | Implement the established deterministic emission contract in Merit and compare C/header bytes against this independent oracle |
+| `replacement_build.py` | 159 lines; current semantic artifact handoff plus permitted C compiler/linker launch | Remove semantic materialization/emission from the production call path; retain only generic artifact publication and external toolchain invocation |
+| `project/replacement.py` | Production reader currently imports the Python snapshot decoder, project assembler, and backend transitively | Cut over to versioned native C/header artifacts, validate framing/digests, publish atomically, then invoke only the generic C toolchain bridge |
+
+The target response extends the existing versioned native compiler protocol;
+it carries canonical MIR identity plus complete deterministic C and public-header
+bytes. Host Python may validate lengths, hashes, paths, and UTF-8 framing, but
+must not reconstruct MIR, choose C representations, patch emitted C, or derive
+header exports. Historical snapshot/bundle versions remain readable only by
+oracle and compatibility tests, not by the final SH3 production build path.
+
 ## Per-PR evidence
 
 Every implementation PR must record:
