@@ -41,7 +41,7 @@ def test_compiler_manifest_uses_complete_source_closure_and_generic_adapter() ->
         for path in manifest.root.glob(pattern)
         if path.is_file()
     }
-    assert len(sources) == 45
+    assert len(sources) == 46
 
 
 @pytest.mark.skipif(

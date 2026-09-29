@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 from merit.project.cli import _replacement_driver_path, main
 from merit.project.loader import load_project
+from merit.project.project_request import encode_loaded_project_request
 from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, load_replacement_inputs
 
 
@@ -51,10 +53,20 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     # rather than deriving semantic records from Program.
     values = [SNAPSHOT_MAGIC, SNAPSHOT_VERSION] + [0] * SNAPSHOT_SECTION_COUNT
     (artifact_dir / "main.snapshot").write_text("\n".join(map(str, values)) + "\n", encoding="utf-8")
+    (artifact_dir / "replacement-project.source").write_text(
+        "module main\nfn main()->i32 { return 0; }\n", encoding="utf-8"
+    )
     (artifact_dir / REPLACEMENT_MANIFEST).write_text(
         json.dumps({
             "schema": REPLACEMENT_SCHEMA,
-            "functions": [{"module": "main", "snapshot": "main.snapshot"}],
+            "functions": [{
+                "module": "main",
+                "snapshot": "main.snapshot",
+                "project_source": "replacement-project.source",
+                "request_sha256": hashlib.sha256(
+                    encode_loaded_project_request(project)
+                ).hexdigest(),
+            }],
         }),
         encoding="utf-8",
     )

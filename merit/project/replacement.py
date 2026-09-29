@@ -26,7 +26,7 @@ from merit.bootstrap.replacement_build import (
 from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
 from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
-from merit.project.replacement_source import canonical_replacement_project_source
+from merit.project.project_request import encode_loaded_project_request
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
@@ -129,7 +129,6 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
     if payload.get("producer_protocol") == REPLACEMENT_BUNDLE_PROTOCOL:
         _validate_bundle_indices(functions)
 
-    unit_by_module = {unit.module: unit for unit in project.units}
     canonical_project_source: str | None = None
     effective_sources: dict[str, str] = {}
     resolved: list[ReplacementFunctionInput] = []
@@ -157,31 +156,29 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
             raise ReplacementProjectError(f"invalid replacement snapshot: {snapshot_path}") from exc
         project_source_name = item.get("project_source")
         if project_source_name is None:
-            unit = unit_by_module.get(module_name)
-            if unit is None:
-                raise ReplacementProjectError(
-                    f"replacement function {index} references unknown module {module_name!r}"
-                )
-            source = unit.parser_source
+            raise ReplacementProjectError(
+                "replacement function is missing native effective project source"
+            )
         else:
-            if module_name != project.manifest.name or project_source_name != "replacement-project.source":
+            if project_source_name != "replacement-project.source":
                 raise ReplacementProjectError(
                     f"replacement function {index} has invalid canonical project source identity"
                 )
             if canonical_project_source is None:
-                canonical_project_source = canonical_replacement_project_source(project)
+                source_path = (manifest_path.parent / project_source_name).resolve()
+                try:
+                    source_path.relative_to(manifest_path.parent.resolve())
+                    canonical_project_source = source_path.read_text(encoding="utf-8")
+                except (ValueError, OSError) as exc:
+                    raise ReplacementProjectError(
+                        f"invalid replacement project source: {source_path}"
+                    ) from exc
             source = canonical_project_source
-            source_path = (manifest_path.parent / project_source_name).resolve()
-            try:
-                source_path.relative_to(manifest_path.parent.resolve())
-                published_source = source_path.read_text(encoding="utf-8")
-            except (ValueError, OSError) as exc:
+            expected_request_digest = item.get("request_sha256")
+            actual_request_digest = hashlib.sha256(encode_loaded_project_request(project)).hexdigest()
+            if expected_request_digest != actual_request_digest:
                 raise ReplacementProjectError(
-                    f"invalid replacement project source: {source_path}"
-                ) from exc
-            if published_source != source:
-                raise ReplacementProjectError(
-                    "replacement project source is stale after source changes; "
+                    "replacement project request is stale after source changes; "
                     "run prepare-replacement again"
                 )
         expected_digest = item.get("source_sha256")

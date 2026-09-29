@@ -24,6 +24,10 @@ def _stdin_string_i32_host_source(entry: str) -> str:
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 typedef struct {{
     const uint8_t *data;
@@ -33,6 +37,9 @@ typedef struct {{
 extern int32_t merit_{entry}(merit_String source_text);
 
 int main(void) {{
+#if defined(_WIN32)
+    if (_setmode(_fileno(stdin), _O_BINARY) == -1) {{ fputs("adapter could not select binary stdin\\n", stderr); return 67; }}
+#endif
     uint8_t *data = NULL;
     size_t length = 0;
     size_t capacity = 0;
