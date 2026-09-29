@@ -277,7 +277,7 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"{\"name\":\"");
     if(type_code==function_mir_i64_type_code()){canonical_mir_append_text(output,"i64");}
     else{
-        if(type_code==2){canonical_mir_append_text(output,"bool");}
+        if(type_code==function_mir_bool_type_code()){canonical_mir_append_text(output,"bool");}
         else{return 1;}
     }
     canonical_mir_append_text(output,"\"}");
@@ -287,16 +287,16 @@ requires_caps [allocate]
 fn canonical_mir_append_symbol(borrow_mut output:Buffer,symbol_code:i32)->i32
 requires_caps [allocate]
 {
-    if(symbol_code==1){canonical_mir_append_text(output,"+");return 0;}
-    if(symbol_code==2){canonical_mir_append_text(output,"-");return 0;}
-    if(symbol_code==3){canonical_mir_append_text(output,"*");return 0;}
-    if(symbol_code==4){canonical_mir_append_text(output,"/");return 0;}
-    if(symbol_code==5){canonical_mir_append_text(output,"==");return 0;}
-    if(symbol_code==6){canonical_mir_append_text(output,"!=");return 0;}
-    if(symbol_code==7){canonical_mir_append_text(output,">=");return 0;}
-    if(symbol_code==8){canonical_mir_append_text(output,"<=");return 0;}
-    if(symbol_code==9){canonical_mir_append_text(output,">");return 0;}
-    if(symbol_code==10){canonical_mir_append_text(output,"<");return 0;}
+    if(symbol_code==function_mir_binary_add_symbol()){canonical_mir_append_text(output,"+");return 0;}
+    if(symbol_code==function_mir_binary_subtract_symbol()){canonical_mir_append_text(output,"-");return 0;}
+    if(symbol_code==function_mir_binary_multiply_symbol()){canonical_mir_append_text(output,"*");return 0;}
+    if(symbol_code==function_mir_binary_divide_symbol()){canonical_mir_append_text(output,"/");return 0;}
+    if(symbol_code==function_mir_binary_equal_symbol()){canonical_mir_append_text(output,"==");return 0;}
+    if(symbol_code==function_mir_binary_not_equal_symbol()){canonical_mir_append_text(output,"!=");return 0;}
+    if(symbol_code==function_mir_binary_greater_equal_symbol()){canonical_mir_append_text(output,">=");return 0;}
+    if(symbol_code==function_mir_binary_less_equal_symbol()){canonical_mir_append_text(output,"<=");return 0;}
+    if(symbol_code==function_mir_binary_greater_symbol()){canonical_mir_append_text(output,">");return 0;}
+    if(symbol_code==function_mir_binary_less_symbol()){canonical_mir_append_text(output,"<");return 0;}
     return 1;
 }
 
@@ -337,8 +337,8 @@ requires_caps [allocate]
             }else{
                 if(kind==function_mir_kind_binary()){
                     canonical_mir_append_text(output,",\"kind\":\"binary\",\"numeric_policy\":\"");
-                    if(function_mir_numeric_policy(record)==1){canonical_mir_append_text(output,"exact");}
-                    else{if(function_mir_numeric_policy(record)==2){canonical_mir_append_text(output,"checked");}else{return 30;}}
+                    if(function_mir_numeric_policy(record)==function_mir_exact_numeric_policy()){canonical_mir_append_text(output,"exact");}
+                    else{if(function_mir_numeric_policy(record)==function_mir_checked_numeric_policy()){canonical_mir_append_text(output,"checked");}else{return 30;}}
                     canonical_mir_append_text(output,"\",\"operands\":[");
                     canonical_mir_append_i64(output,function_mir_left(record));buffer_push(output,44);
                     canonical_mir_append_i64(output,function_mir_right(record));
