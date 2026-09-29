@@ -130,6 +130,42 @@ fn main()->i32 {
 }
 '''
 
+CFG_MIR_PROBE = r'''module cfg_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"module demo\nfn compute()->i64 { return; }\n");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_header(12,29,15,7,1));
+  vec_push<MirFunctionRecord>(records,function_mir_return(32,7,-1,0));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,4);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));
+  vec_push<MirCfgRecord>(cfg,cfg_jump(0,1));
+  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));
+  vec_push<MirCfgRecord>(cfg,cfg_return_unit(1));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var output:Buffer=buffer_new(allocator,256);
+  let status:i32=materialize_empty_cfg_canonical_mir(source,"demo",records,cfg,placements,output);
+  print(status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(placements);drop(cfg);drop(records);drop(source);
+  return status;
+ }
+}
+'''
+
+INVALID_CFG_MIR_PROBE = CFG_MIR_PROBE.replace(
+    "cfg_jump(0,1)", "cfg_jump(0,9)"
+).replace("return status;", "return 0;")
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -284,3 +320,33 @@ def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) ->
         ), MirTerminator("return", operands=(0,), span=SourceSpan(32, 9))),), 0,
     ),)))
     assert actual == expected
+
+
+def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:
+    root = _project(tmp_path, CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    assert values[1] == len(actual.encode("utf-8"))
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (), (
+            MirBlock(0, (), MirTerminator("jump", targets=(1,))),
+            MirBlock(1, (), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_cfg_materializer_rejects_unknown_target(tmp_path: Path) -> None:
+    root = _project(tmp_path, INVALID_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "invalid-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    assert interpreted.splitlines()[0] == "12"

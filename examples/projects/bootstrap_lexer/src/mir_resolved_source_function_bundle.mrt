@@ -425,6 +425,106 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_mir_cfg_block_exists(borrow cfg:Vec<MirCfgRecord>,block_id:i64)->i32 {
+    var index:i64=0;
+    while(index<vec_len<MirCfgRecord>(cfg)){
+        let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,index);
+        if(cfg_kind(record)==cfg_block_kind()){
+            if(cfg_block_id(record)==block_id){return 1;}
+        }
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
+fn canonical_mir_append_empty_cfg_terminator(
+    borrow cfg:Vec<MirCfgRecord>,block_id:i64,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    var index:i64=0;
+    var found:i32=0;
+    while(index<vec_len<MirCfgRecord>(cfg)){
+        let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,index);
+        if(cfg_block_id(record)==block_id){
+            let kind:i32=cfg_kind(record);
+            if(kind==cfg_jump_kind()){
+                if(found!=0){return 1;}
+                if(canonical_mir_cfg_block_exists(cfg,cfg_target_a(record))==0){return 2;}
+                canonical_mir_append_text(output,"{\"kind\":\"jump\",\"operands\":[],\"targets\":[");
+                canonical_mir_append_i64(output,cfg_target_a(record));canonical_mir_append_text(output,"]}");
+                found=1;
+            }
+            if(kind==cfg_return_kind()){
+                if(found!=0){return 1;}
+                if(cfg_operand(record)>=0){return 3;}
+                canonical_mir_append_text(output,"{\"kind\":\"return\",\"operands\":[],\"targets\":[]}");
+                found=1;
+            }
+            if(kind==cfg_unreachable_kind()){
+                if(found!=0){return 1;}
+                canonical_mir_append_text(output,"{\"kind\":\"unreachable\",\"operands\":[],\"targets\":[]}");
+                found=1;
+            }
+            if(kind==cfg_branch_kind()){return 4;}
+            if(kind==cfg_switch_case_kind()){return 5;}
+            if(kind==cfg_switch_default_kind()){return 5;}
+        }
+        index=checked_add(index,1);
+    }
+    if(found==0){return 6;}
+    return 0;
+}
+
+// Bounded CFG slice: materialize explicit block topology for functions with no
+// instructions or locals. Instruction placement is added by the next SH3
+// slice; rejecting it here prevents topology from being inferred or reordered.
+pub fn materialize_empty_cfg_canonical_mir(
+    borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(validate_function_mir_records(records)!=0){return 1;}
+    if(vec_len<MirFunctionRecord>(records)!=2){return 2;}
+    if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}
+    let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
+    let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+    if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
+    if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
+
+    canonical_mir_append_text(output,"{\"functions\":[{\"blocks\":[");
+    var cfg_index:i64=0;
+    var block_count:i64=0;
+    while(cfg_index<vec_len<MirCfgRecord>(cfg)){
+        let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
+        if(cfg_kind(record)==cfg_block_kind()){
+            if(cfg_block_id(record)<0){return 6;}
+            if(cfg_ordinal(record)!=block_count){return 7;}
+            if(block_count>0){buffer_push(output,44);}
+            canonical_mir_append_text(output,"{\"id\":");
+            canonical_mir_append_i64(output,cfg_block_id(record));
+            canonical_mir_append_text(output,",\"instructions\":[],\"terminator\":");
+            let term_status:i32=canonical_mir_append_empty_cfg_terminator(cfg,cfg_block_id(record),output);
+            if(term_status!=0){return checked_add(10,term_status);}
+            buffer_push(output,125);
+            block_count=checked_add(block_count,1);
+        }
+        cfg_index=checked_add(cfg_index,1);
+    }
+    if(block_count==0){return 20;}
+    canonical_mir_append_text(output,"],\"capabilities\":[],\"entry_block\":0,\"locals\":[],\"name\":");
+    let name_status:i32=canonical_mir_append_json_source(output,source,function_mir_symbol_start(header),function_mir_symbol_length(header));
+    if(name_status!=0){return checked_add(30,name_status);}
+    canonical_mir_append_text(output,",\"return_type\":");
+    if(canonical_mir_append_type(output,function_mir_type_code(header))!=0){return 34;}
+    canonical_mir_append_text(output,"}],\"name\":");
+    if(canonical_mir_append_json_string(output,module_name)!=0){return 35;}
+    canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
+    return 0;
+}
+
 pub fn print_resolved_source_function_bundle_item_with_source_policy(
     borrow effective_source: Buffer,
     include_effective_source: i32,
