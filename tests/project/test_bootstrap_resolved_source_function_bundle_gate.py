@@ -67,15 +67,40 @@ fn main()->i32 {
 }
 '''
 
+ARTIFACT_PROBE = PROBE.replace(
+    "import bootstrap_mir_resolved_source_function_bundle;",
+    "import bootstrap_mir_resolved_source_function_bundle;\nimport bootstrap_statement_semantics;",
+).replace(
+    "  let header_status:i32=print_resolved_source_function_bundle_header(2);",
+    "  let header_status:i32=print_resolved_source_function_project_artifact_bundle_header(1);",
+).replace(
+    "  let second_status:i32=print_resolved_source_function_bundle_item(\n"
+    "    effective_source,body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,\n"
+    "    destructor_descriptors,destructor_body,destructor_cfg,destructor_placements\n"
+    "  );\n"
+    "  if(second_status!=0){ return checked_add(20,second_status); }",
+    "  let metadata_source:Buffer=buffer_from_string(allocator,\"demo\");\n"
+    "  var metadata_capabilities:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);\n"
+    "  let metadata_status:i32=print_resolved_source_function_bundle_metadata(metadata_source,0,4,metadata_capabilities);\n"
+    "  if(metadata_status!=0){ return checked_add(20,metadata_status); }\n"
+    "  let canonical_mir:Buffer=buffer_from_string(allocator,\"mir\\n\");\n"
+    "  let c_source:Buffer=buffer_from_string(allocator,\"c\\n\");\n"
+    "  let c_header:Buffer=buffer_from_string(allocator,\"h\\n\");\n"
+    "  let artifact_status:i32=print_resolved_source_function_project_artifacts(canonical_mir,c_source,c_header);\n"
+    "  if(artifact_status!=0){ return checked_add(30,artifact_status); }\n"
+    "  drop(c_header); drop(c_source); drop(canonical_mir);\n"
+    "  drop(metadata_capabilities); drop(metadata_source);",
+).replace("print_resolved_source_function_bundle_header(2)", "print_resolved_source_function_project_artifact_bundle_header(1)")
 
-def _project(tmp_path: Path) -> Path:
+
+def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
     shutil.copytree(PROJECT, root, ignore=shutil.ignore_patterns("build"))
     lexer = root / "src" / "lexer.mrt"
     text, count = re.subn(r"\nfn main\(\) -> i32 \{", "\nfn fixture_main() -> i32 {", lexer.read_text(), count=1)
     assert count == 1
     lexer.write_text(text)
-    (root / "src" / "resolved_source_function_bundle_probe.mrt").write_text(PROBE)
+    (root / "src" / "resolved_source_function_bundle_probe.mrt").write_text(probe)
     manifest = root / "Merit.toml"
     text = manifest.read_text()
     text, count = re.subn(
@@ -182,3 +207,19 @@ def test_large_nested_call_preserves_tail_scalar_and_return_status(tmp_path: Pat
     values = tuple(int(line) for line in native.splitlines())
     bundle = decode_resolved_source_function_bundle(values)
     assert len(bundle.functions) == 2
+
+
+def test_native_v4_bundle_carries_complete_project_artifacts(tmp_path: Path) -> None:
+    root = _project(tmp_path, ARTIFACT_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "native-artifact-bundle")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    bundle = decode_resolved_source_function_bundle(int(line) for line in native.splitlines())
+    assert bundle.module_name == "demo"
+    assert len(bundle.functions) == 1
+    assert bundle.canonical_mir_bytes == b"mir\n"
+    assert bundle.c_source_bytes == b"c\n"
+    assert bundle.c_header_bytes == b"h\n"
