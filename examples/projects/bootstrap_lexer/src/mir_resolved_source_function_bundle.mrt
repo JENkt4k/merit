@@ -321,6 +321,7 @@ requires_caps [allocate]
         if(kind==function_mir_kind_const()){is_instruction=1;}
         if(kind==function_mir_kind_binary()){is_instruction=1;}
         if(kind==function_mir_kind_copy_to_binding()){is_instruction=1;}
+        if(kind==function_mir_kind_print()){is_instruction=1;}
         if(is_instruction!=0){
             if(instruction_count>0){buffer_push(output,44);}
             canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
@@ -352,6 +353,13 @@ requires_caps [allocate]
                     if(symbol_status!=0){return 31;}
                     buffer_push(output,34);
                 }else{
+                    if(kind==function_mir_kind_print()){
+                        canonical_mir_append_text(output,",\"kind\":\"print\",\"numeric_policy\":\"none\",\"operands\":[");
+                        canonical_mir_append_i64(output,function_mir_left(record));
+                        canonical_mir_append_text(output,"],\"ownership\":\"none\",\"span\":[");
+                        canonical_mir_append_i64(output,function_mir_start(record));buffer_push(output,44);
+                        canonical_mir_append_i64(output,function_mir_length(record));buffer_push(output,93);
+                    }else{
                     canonical_mir_append_text(output,",\"kind\":\"copy\",\"numeric_policy\":\"none\",\"operands\":[");
                     canonical_mir_append_i64(output,function_mir_left(record));
                     canonical_mir_append_text(output,"],\"ownership\":\"none\",\"result\":");
@@ -359,6 +367,7 @@ requires_caps [allocate]
                     canonical_mir_append_text(output,",\"span\":[");
                     canonical_mir_append_i64(output,function_mir_start(record));buffer_push(output,44);
                     canonical_mir_append_i64(output,function_mir_length(record));buffer_push(output,93);
+                    }
                 }
             }
             buffer_push(output,125);

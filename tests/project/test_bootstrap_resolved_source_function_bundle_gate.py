@@ -7,8 +7,17 @@ import subprocess
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
-from merit.bootstrap.mir_contract import canonical_mir_json
-from merit.bootstrap.mir_function_parity import lower_native_function_mir_records
+from merit.bootstrap.mir_contract import (
+    MirBlock,
+    MirFunction,
+    MirInstruction,
+    MirLocal,
+    MirModule,
+    MirTerminator,
+    MirType,
+    SourceSpan,
+    canonical_mir_json,
+)
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
 
@@ -104,10 +113,11 @@ fn main()->i32 {
  with capability allocate {
   let allocator:Allocator=system_allocator();
   let source:Buffer=buffer_from_string(allocator,"module demo\nfn compute()->i64 { return 1; }\n");
-  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,5);
   vec_push<MirFunctionRecord>(records,function_mir_header(12,31,15,7,1));
   vec_push<MirFunctionRecord>(records,function_mir_temporary(0,1,0));
   vec_push<MirFunctionRecord>(records,function_mir_const(39,1,0,0,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_print(39,1,1,0,1));
   vec_push<MirFunctionRecord>(records,function_mir_return(32,9,0,1));
   var output:Buffer=buffer_new(allocator,256);
   let status:i32=materialize_straight_line_canonical_mir(source,"demo",records,output);
@@ -266,13 +276,11 @@ def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) ->
     assert values[1] == len(values) - 2
     actual = bytes(values[2:]).decode("utf-8")
     source = "module demo\nfn compute()->i64 { return 1; }\n"
-    records = (
-        (1, 12, 31, 0, -1, -1, -1, 15, 7, 0, 1, 0, -1, 0, -1, 0),
-        (3, 0, 0, 0, -1, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
-        (4, 39, 1, 0, 0, -1, -1, -1, 0, 0, 1, 0, -1, 0, 0, 0),
-        (7, 32, 9, 0, -1, 0, -1, -1, 0, 0, 0, 0, -1, 0, 1, 0),
-    )
-    expected = canonical_mir_json(
-        lower_native_function_mir_records(records, source, module_name="demo")
-    )
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+            MirInstruction(1, "print", operands=(0,), span=SourceSpan(39, 1)),
+        ), MirTerminator("return", operands=(0,), span=SourceSpan(32, 9))),), 0,
+    ),)))
     assert actual == expected
