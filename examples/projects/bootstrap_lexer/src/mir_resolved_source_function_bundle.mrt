@@ -271,14 +271,50 @@ requires_caps [allocate]
     return 0;
 }
 
-fn canonical_mir_append_type(borrow_mut output:Buffer,type_code:i32)->i32
+pub fn canonical_mir_append_type(borrow_mut output:Buffer,type_code:i32)->i32
 requires_caps [allocate]
 {
     canonical_mir_append_text(output,"{\"name\":\"");
     if(type_code==function_mir_i64_type_code()){canonical_mir_append_text(output,"i64");}
     else{
         if(type_code==function_mir_bool_type_code()){canonical_mir_append_text(output,"bool");}
-        else{return 1;}
+        else{
+            if(type_code==function_mir_allocator_type_code()){canonical_mir_append_text(output,"Allocator");}
+            else{
+                if(type_code==function_mir_buffer_type_code()){canonical_mir_append_text(output,"Buffer");}
+                else{
+                    if(type_code==function_mir_i8_type_code()){canonical_mir_append_text(output,"i8");}
+                    else{
+                        if(type_code==function_mir_i16_type_code()){canonical_mir_append_text(output,"i16");}
+                        else{
+                            if(type_code==function_mir_i32_type_code()){canonical_mir_append_text(output,"i32");}
+                            else{
+                                if(type_code==function_mir_u8_type_code()){canonical_mir_append_text(output,"u8");}
+                                else{
+                                    if(type_code==function_mir_u16_type_code()){canonical_mir_append_text(output,"u16");}
+                                    else{
+                                        if(type_code==function_mir_u32_type_code()){canonical_mir_append_text(output,"u32");}
+                                        else{
+                                            if(type_code==function_mir_u64_type_code()){canonical_mir_append_text(output,"u64");}
+                                            else{
+                                                if(type_code==function_mir_string_type_code()){canonical_mir_append_text(output,"String");}
+                                                else{
+                                                    if(type_code==function_mir_byte_slice_type_code()){canonical_mir_append_text(output,"ByteSlice");}
+                                                    else{
+                                                        if(type_code==function_mir_unit_type_code()){canonical_mir_append_text(output,"unit");}
+                                                        else{return 1;}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     canonical_mir_append_text(output,"\"}");
     return 0;

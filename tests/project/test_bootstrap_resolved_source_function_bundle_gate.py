@@ -252,6 +252,29 @@ fn main()->i32 {
 }
 '''
 
+BUILTIN_TYPE_PROBE = r'''module builtin_type_probe
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var code:i32=1;
+  while(code<=14){
+   var output:Buffer=buffer_new(allocator,32);
+   print(canonical_mir_append_type(output,code));print(buffer_len(output));
+   var index:i64=0;
+   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+   drop(output);code=code+1;
+  }
+  var invalid:Buffer=buffer_new(allocator,8);
+  print(canonical_mir_append_type(invalid,99));drop(invalid);
+  return 0;
+ }
+}
+'''
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -538,3 +561,25 @@ def test_merit_materializes_explicit_ownership_effects(tmp_path: Path) -> None:
         sort_keys=True, separators=(",", ":"),
     )
     assert values[drop_status_index + 2 + drop_length] == 3
+
+
+def test_merit_materializes_complete_builtin_type_catalog(tmp_path: Path) -> None:
+    root = _project(tmp_path, BUILTIN_TYPE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "builtin-types")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    names = (
+        "i64", "bool", "Allocator", "Buffer", "i8", "i16", "i32",
+        "u8", "u16", "u32", "u64", "String", "ByteSlice", "unit",
+    )
+    cursor = 0
+    for name in names:
+        assert values[cursor] == 0
+        length = values[cursor + 1]
+        actual = bytes(values[cursor + 2:cursor + 2 + length]).decode("utf-8")
+        assert actual == json.dumps(MirType(name).to_data(), sort_keys=True, separators=(",", ":"))
+        cursor += 2 + length
+    assert values[cursor] == 1
