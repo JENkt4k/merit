@@ -204,6 +204,14 @@ BRANCH_CFG_MIR_PROBE = PLACED_CFG_MIR_PROBE.replace(
     "  vec_push<MirCfgRecord>(cfg,cfg_return_unit(2));",
 )
 
+SWITCH_CFG_MIR_PROBE = BRANCH_CFG_MIR_PROBE.replace(
+    "vec_push<MirCfgRecord>(cfg,cfg_branch(0,0,1,2));",
+    "vec_push<MirCfgRecord>(cfg,cfg_switch_case(0,0,7,1,0));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));",
+).replace(
+    "vec_new<MirCfgRecord>(allocator,6)", "vec_new<MirCfgRecord>(allocator,7)"
+)
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -436,6 +444,28 @@ def test_merit_materializes_explicit_branch_topology(tmp_path: Path) -> None:
             MirBlock(0, (
                 MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
             ), MirTerminator("branch", operands=(0,), targets=(1, 2))),
+            MirBlock(1, (), MirTerminator("return")),
+            MirBlock(2, (), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_materializes_explicit_switch_topology(tmp_path: Path) -> None:
+    root = _project(tmp_path, SWITCH_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "switch-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("bool")),), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+            ), MirTerminator("switch", operands=(0,), targets=(1, 2), cases=(7,))),
             MirBlock(1, (), MirTerminator("return")),
             MirBlock(2, (), MirTerminator("return")),
         ), 0,

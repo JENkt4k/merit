@@ -479,8 +479,77 @@ requires_caps [allocate]
                 canonical_mir_append_i64(output,cfg_target_b(record));canonical_mir_append_text(output,"]}");
                 found=1;
             }
-            if(kind==cfg_switch_case_kind()){return 5;}
-            if(kind==cfg_switch_default_kind()){return 5;}
+            var is_switch:i32=0;
+            if(kind==cfg_switch_case_kind()){is_switch=1;}
+            if(kind==cfg_switch_default_kind()){is_switch=1;}
+            if(is_switch!=0){
+                if(cfg_ordinal(record)==0){
+                    if(found!=0){return 1;}
+                    if(cfg_operand(record)<0){return 5;}
+                    var switch_index:i64=0;
+                    var switch_ordinal:i64=0;
+                    var default_count:i64=0;
+                    var default_ordinal:i64=-1;
+                    while(switch_index<vec_len<MirCfgRecord>(cfg)){
+                        let item:MirCfgRecord=vec_get<MirCfgRecord>(cfg,switch_index);
+                        if(cfg_block_id(item)==block_id){
+                            let item_kind:i32=cfg_kind(item);
+                            var is_switch_item:i32=0;
+                            if(item_kind==cfg_switch_case_kind()){is_switch_item=1;}
+                            if(item_kind==cfg_switch_default_kind()){is_switch_item=1;}
+                            if(is_switch_item!=0){
+                                if(cfg_ordinal(item)!=switch_ordinal){return 5;}
+                                if(cfg_operand(item)!=cfg_operand(record)){return 5;}
+                                if(canonical_mir_cfg_block_exists(cfg,cfg_target_a(item))==0){return 2;}
+                                if(item_kind==cfg_switch_default_kind()){
+                                    default_count=checked_add(default_count,1);
+                                    default_ordinal=cfg_ordinal(item);
+                                }
+                                switch_ordinal=checked_add(switch_ordinal,1);
+                            }
+                        }
+                        switch_index=checked_add(switch_index,1);
+                    }
+                    if(default_count!=1){return 5;}
+                    if(default_ordinal!=checked_sub(switch_ordinal,1)){return 5;}
+                    canonical_mir_append_text(output,"{\"cases\":[");
+                    switch_index=0;
+                    var case_count:i64=0;
+                    while(switch_index<vec_len<MirCfgRecord>(cfg)){
+                        let item:MirCfgRecord=vec_get<MirCfgRecord>(cfg,switch_index);
+                        if(cfg_block_id(item)==block_id){
+                            if(cfg_kind(item)==cfg_switch_case_kind()){
+                                if(case_count>0){buffer_push(output,44);}
+                                canonical_mir_append_i64(output,cfg_case_value(item));
+                                case_count=checked_add(case_count,1);
+                            }
+                        }
+                        switch_index=checked_add(switch_index,1);
+                    }
+                    canonical_mir_append_text(output,"],\"kind\":\"switch\",\"operands\":[");
+                    canonical_mir_append_i64(output,cfg_operand(record));
+                    canonical_mir_append_text(output,"],\"targets\":[");
+                    switch_index=0;
+                    var target_count:i64=0;
+                    var default_target:i64=0;
+                    while(switch_index<vec_len<MirCfgRecord>(cfg)){
+                        let item:MirCfgRecord=vec_get<MirCfgRecord>(cfg,switch_index);
+                        if(cfg_block_id(item)==block_id){
+                            if(cfg_kind(item)==cfg_switch_case_kind()){
+                                if(target_count>0){buffer_push(output,44);}
+                                canonical_mir_append_i64(output,cfg_target_a(item));
+                                target_count=checked_add(target_count,1);
+                            }
+                            if(cfg_kind(item)==cfg_switch_default_kind()){default_target=cfg_target_a(item);}
+                        }
+                        switch_index=checked_add(switch_index,1);
+                    }
+                    if(target_count>0){buffer_push(output,44);}
+                    canonical_mir_append_i64(output,default_target);
+                    canonical_mir_append_text(output,"]}");
+                    found=1;
+                }
+            }
         }
         index=checked_add(index,1);
     }
