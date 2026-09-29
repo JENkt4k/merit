@@ -457,8 +457,9 @@ requires_caps [allocate]
             }
             if(kind==cfg_return_kind()){
                 if(found!=0){return 1;}
-                if(cfg_operand(record)>=0){return 3;}
-                canonical_mir_append_text(output,"{\"kind\":\"return\",\"operands\":[],\"targets\":[]}");
+                canonical_mir_append_text(output,"{\"kind\":\"return\",\"operands\":[");
+                if(cfg_operand(record)>=0){canonical_mir_append_i64(output,cfg_operand(record));}
+                canonical_mir_append_text(output,"],\"targets\":[]}");
                 found=1;
             }
             if(kind==cfg_unreachable_kind()){
@@ -476,10 +477,10 @@ requires_caps [allocate]
     return 0;
 }
 
-// Bounded CFG slice: materialize explicit block topology for functions with no
-// instructions or locals. Instruction placement is added by the next SH3
-// slice; rejecting it here prevents topology from being inferred or reordered.
-pub fn materialize_empty_cfg_canonical_mir(
+// Bounded CFG slice: materialize explicit block topology plus an optional
+// placed const instruction. Every emitted instruction must have one explicit
+// placement; later SH3 slices widen the accepted instruction/local catalog.
+pub fn materialize_bounded_cfg_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
     borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
     borrow_mut output:Buffer
@@ -487,16 +488,25 @@ pub fn materialize_empty_cfg_canonical_mir(
 requires_caps [allocate]
 {
     if(validate_function_mir_records(records)!=0){return 1;}
-    if(vec_len<MirFunctionRecord>(records)!=2){return 2;}
-    if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}
+    let record_count:i64=vec_len<MirFunctionRecord>(records);
+    if(record_count!=2){if(record_count!=4){return 2;}}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
-    let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+    let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,checked_sub(record_count,1));
     if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
     if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
+    if(record_count==2){if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}}
+    if(record_count==4){
+        if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}
+        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+        let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
+        if(function_mir_kind(local)!=function_mir_kind_temporary_local()){return 8;}
+        if(function_mir_kind(instruction)!=function_mir_kind_const()){return 9;}
+    }
 
     canonical_mir_append_text(output,"{\"functions\":[{\"blocks\":[");
     var cfg_index:i64=0;
     var block_count:i64=0;
+    var emitted_placement_count:i64=0;
     while(cfg_index<vec_len<MirCfgRecord>(cfg)){
         let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
         if(cfg_kind(record)==cfg_block_kind()){
@@ -505,7 +515,33 @@ requires_caps [allocate]
             if(block_count>0){buffer_push(output,44);}
             canonical_mir_append_text(output,"{\"id\":");
             canonical_mir_append_i64(output,cfg_block_id(record));
-            canonical_mir_append_text(output,",\"instructions\":[],\"terminator\":");
+            canonical_mir_append_text(output,",\"instructions\":[");
+            var placement_index:i64=0;
+            var block_placement_count:i64=0;
+            while(placement_index<vec_len<MirPlacementRecord>(placements)){
+                let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
+                if(placement_block_id(placement)==cfg_block_id(record)){
+                    if(placement_ordinal(placement)!=block_placement_count){return 21;}
+                    let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
+                    if(placement_instruction_id(placement)!=function_mir_id(instruction)){return 22;}
+                    if(block_placement_count>0){buffer_push(output,44);}
+                    canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
+                    canonical_mir_append_i64(output,function_mir_id(instruction));
+                    canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
+                    canonical_mir_append_i64(output,function_mir_result(instruction));
+                    canonical_mir_append_text(output,",\"span\":[");
+                    canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                    canonical_mir_append_i64(output,function_mir_length(instruction));
+                    canonical_mir_append_text(output,"],\"value\":");
+                    let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
+                    if(value_status!=0){return checked_add(23,value_status);}
+                    buffer_push(output,125);
+                    block_placement_count=checked_add(block_placement_count,1);
+                    emitted_placement_count=checked_add(emitted_placement_count,1);
+                }
+                placement_index=checked_add(placement_index,1);
+            }
+            canonical_mir_append_text(output,"],\"terminator\":");
             let term_status:i32=canonical_mir_append_empty_cfg_terminator(cfg,cfg_block_id(record),output);
             if(term_status!=0){return checked_add(10,term_status);}
             buffer_push(output,125);
@@ -514,7 +550,18 @@ requires_caps [allocate]
         cfg_index=checked_add(cfg_index,1);
     }
     if(block_count==0){return 20;}
-    canonical_mir_append_text(output,"],\"capabilities\":[],\"entry_block\":0,\"locals\":[],\"name\":");
+    if(emitted_placement_count!=vec_len<MirPlacementRecord>(placements)){return 28;}
+    canonical_mir_append_text(output,"],\"capabilities\":[],\"entry_block\":0,\"locals\":[");
+    if(record_count==4){
+        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+        canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
+        canonical_mir_append_text(output,",\"mutable\":false,\"name\":\"_t");
+        canonical_mir_append_i64(output,function_mir_hir_node_id(local));
+        canonical_mir_append_text(output,"\",\"ownership\":\"value\",\"type\":");
+        if(canonical_mir_append_type(output,function_mir_type_code(local))!=0){return 29;}
+        buffer_push(output,125);
+    }
+    canonical_mir_append_text(output,"],\"name\":");
     let name_status:i32=canonical_mir_append_json_source(output,source,function_mir_symbol_start(header),function_mir_symbol_length(header));
     if(name_status!=0){return checked_add(30,name_status);}
     canonical_mir_append_text(output,",\"return_type\":");
