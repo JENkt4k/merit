@@ -188,6 +188,22 @@ INVALID_PLACED_CFG_MIR_PROBE = PLACED_CFG_MIR_PROBE.replace(
     "mir_place(0,0,0)", "mir_place(9,0,0)"
 ).replace("return status;", "return 0;")
 
+BRANCH_CFG_MIR_PROBE = PLACED_CFG_MIR_PROBE.replace(
+    "function_mir_temporary(0,1,0)", "function_mir_temporary(0,2,0)"
+).replace(
+    "function_mir_const(39,1,0,0,1,0)", "function_mir_const(39,1,0,0,2,0)"
+).replace(
+    "vec_new<MirCfgRecord>(allocator,4)", "vec_new<MirCfgRecord>(allocator,6)"
+).replace(
+    "vec_push<MirCfgRecord>(cfg,cfg_jump(0,1));",
+    "vec_push<MirCfgRecord>(cfg,cfg_branch(0,0,1,2));",
+).replace(
+    "vec_push<MirCfgRecord>(cfg,cfg_return(1,0));",
+    "vec_push<MirCfgRecord>(cfg,cfg_return_unit(1));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(2,2));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_return_unit(2));",
+)
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -403,3 +419,25 @@ def test_merit_cfg_materializer_rejects_unplaced_instruction(tmp_path: Path) -> 
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     assert interpreted.splitlines()[0] == "28"
+
+
+def test_merit_materializes_explicit_branch_topology(tmp_path: Path) -> None:
+    root = _project(tmp_path, BRANCH_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "branch-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("bool")),), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+            ), MirTerminator("branch", operands=(0,), targets=(1, 2))),
+            MirBlock(1, (), MirTerminator("return")),
+            MirBlock(2, (), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert actual == expected

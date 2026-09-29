@@ -467,7 +467,18 @@ requires_caps [allocate]
                 canonical_mir_append_text(output,"{\"kind\":\"unreachable\",\"operands\":[],\"targets\":[]}");
                 found=1;
             }
-            if(kind==cfg_branch_kind()){return 4;}
+            if(kind==cfg_branch_kind()){
+                if(found!=0){return 1;}
+                if(cfg_operand(record)<0){return 4;}
+                if(canonical_mir_cfg_block_exists(cfg,cfg_target_a(record))==0){return 2;}
+                if(canonical_mir_cfg_block_exists(cfg,cfg_target_b(record))==0){return 2;}
+                canonical_mir_append_text(output,"{\"kind\":\"branch\",\"operands\":[");
+                canonical_mir_append_i64(output,cfg_operand(record));
+                canonical_mir_append_text(output,"],\"targets\":[");
+                canonical_mir_append_i64(output,cfg_target_a(record));buffer_push(output,44);
+                canonical_mir_append_i64(output,cfg_target_b(record));canonical_mir_append_text(output,"]}");
+                found=1;
+            }
             if(kind==cfg_switch_case_kind()){return 5;}
             if(kind==cfg_switch_default_kind()){return 5;}
         }
