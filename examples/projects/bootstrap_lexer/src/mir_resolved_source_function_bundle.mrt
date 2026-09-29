@@ -652,6 +652,46 @@ requires_caps [allocate]
     return 0;
 }
 
+// Materialize the canonical resource-effect instruction represented by one
+// validated Alpha.2 ownership record. This preserves semantic move/drop effects
+// without selecting a physical allocation, pointer, or address-stability policy.
+pub fn materialize_canonical_ownership_instruction(
+    borrow record:MirOwnershipRecord,global_id:i64,result_local:i64,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(global_id<0){return 1;}
+    let operand:i64=ownership_record_operand_local(record);
+    if(operand<0){return 2;}
+    let kind:i32=ownership_record_kind(record);
+    var is_move:i32=0;
+    if(kind==ownership_record_kind_move()){is_move=1;}
+    if(kind==ownership_record_kind_replace_move()){is_move=1;}
+    var is_drop:i32=0;
+    if(kind==ownership_record_kind_drop()){is_drop=1;}
+    if(kind==ownership_record_kind_replace_drop()){is_drop=1;}
+    if(kind==ownership_record_kind_implicit_drop()){is_drop=1;}
+    if(is_move==0){if(is_drop==0){return 3;}}
+    if(is_move!=0){if(result_local<0){return 4;}}
+    if(is_drop!=0){if(result_local>=0){return 5;}}
+
+    canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
+    canonical_mir_append_i64(output,global_id);
+    canonical_mir_append_text(output,",\"kind\":\"");
+    if(is_move!=0){canonical_mir_append_text(output,"move");}
+    else{canonical_mir_append_text(output,"drop");}
+    canonical_mir_append_text(output,"\",\"numeric_policy\":\"none\",\"operands\":[");
+    canonical_mir_append_i64(output,operand);
+    canonical_mir_append_text(output,"],\"ownership\":\"owned\"");
+    if(is_move!=0){
+        canonical_mir_append_text(output,",\"result\":");
+        canonical_mir_append_i64(output,result_local);
+    }
+    buffer_push(output,125);
+    return 0;
+}
+
 pub fn print_resolved_source_function_bundle_item_with_source_policy(
     borrow effective_source: Buffer,
     include_effective_source: i32,

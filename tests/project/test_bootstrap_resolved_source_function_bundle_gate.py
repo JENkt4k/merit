@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import json
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
@@ -211,6 +212,45 @@ SWITCH_CFG_MIR_PROBE = BRANCH_CFG_MIR_PROBE.replace(
 ).replace(
     "vec_new<MirCfgRecord>(allocator,6)", "vec_new<MirCfgRecord>(allocator,7)"
 )
+
+OWNERSHIP_MIR_PROBE = r'''module ownership_mir_probe
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn print_buffer(borrow value:Buffer)->i32 {
+ print(buffer_len(value));var index:i64=0;
+ while(index<buffer_len(value)){print(buffer_get(value,index));index=checked_add(index,1);}
+ return 0;
+}
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let move_record:MirOwnershipRecord=ownership_record(
+   ownership_record_kind_move(),0,1,2,0,0,ownership_state_live(),ownership_state_moved()
+  );
+  let drop_record:MirOwnershipRecord=ownership_record(
+   ownership_record_kind_implicit_drop(),1,2,ownership_record_no_other_binding_id(),1,1,
+   ownership_state_live(),ownership_state_dropped()
+  );
+  let activation:MirOwnershipRecord=ownership_record(
+   ownership_record_kind_activate(),ownership_record_no_instruction_id(),1,
+   ownership_record_no_other_binding_id(),0,0,ownership_state_uninitialized(),ownership_state_live()
+  );
+  var move_output:Buffer=buffer_new(allocator,128);
+  var drop_output:Buffer=buffer_new(allocator,128);
+  print(materialize_canonical_ownership_instruction(move_record,3,1,move_output));
+  print_buffer(move_output);
+  print(materialize_canonical_ownership_instruction(drop_record,4,-1,drop_output));
+  print_buffer(drop_output);
+  print(materialize_canonical_ownership_instruction(activation,5,-1,drop_output));
+  drop(drop_output);drop(move_output);
+  return 0;
+ }
+}
+'''
 
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
@@ -471,3 +511,30 @@ def test_merit_materializes_explicit_switch_topology(tmp_path: Path) -> None:
         ), 0,
     ),)))
     assert actual == expected
+
+
+def test_merit_materializes_explicit_ownership_effects(tmp_path: Path) -> None:
+    root = _project(tmp_path, OWNERSHIP_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "ownership-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    move_length = values[1]
+    move_json = bytes(values[2:2 + move_length]).decode("utf-8")
+    drop_status_index = 2 + move_length
+    assert values[drop_status_index] == 0
+    drop_length = values[drop_status_index + 1]
+    drop_json = bytes(values[drop_status_index + 2:drop_status_index + 2 + drop_length]).decode("utf-8")
+    assert move_json == json.dumps(
+        MirInstruction(3, "move", result=1, operands=(0,), ownership="owned").to_data(),
+        sort_keys=True, separators=(",", ":"),
+    )
+    assert len(drop_json.encode("utf-8")) == drop_length
+    assert drop_json == json.dumps(
+        MirInstruction(4, "drop", operands=(1,), ownership="owned").to_data(),
+        sort_keys=True, separators=(",", ":"),
+    )
+    assert values[drop_status_index + 2 + drop_length] == 3
