@@ -309,6 +309,33 @@ must not reconstruct MIR, choose C representations, patch emitted C, or derive
 header exports. Historical snapshot/bundle versions remain readable only by
 oracle and compatibility tests, not by the final SH3 production build path.
 
+### SH3 Python-oracle defect audit
+
+SH3 differential evidence depends on the Python reference compiler remaining a
+deterministic and faithful oracle. A focused audit of `merit/compiler.py` found
+the following pre-existing defects. These are repairs to the Alpha.2 contract,
+not new language features or authority for a general oracle refactor.
+
+| Finding | Audit result | SH3 handling and completion evidence |
+|---|---|---|
+| Generic specialization order depends on set iteration | Confirmed: eight fresh processes with distinct `PYTHONHASHSEED` values produced eight expanded-source hashes and specialization orders | Repair immediately by selecting a canonical order. Add a subprocess regression comparing expanded source and generated C across hash seeds. |
+| Generic templates are scanned and substituted as undifferentiated text | Confirmed: substituting `T` changed `"T marks the type"`, and `}` inside a string truncated the template | Repair immediately with string-aware template extent and token-aware substitution that leaves literals unchanged. Cover both reproductions plus existing generic diagnostics/source maps. |
+| Merit strings use JSON escaping at the C boundary | Confirmed by inspection: JSON `\u` escapes are not C byte escapes, non-BMP JSON surrogate pairs are not valid C scalar escapes, and printable trigraph sequences remain exposed | Repair immediately with deterministic byte-oriented C escaping and explicit byte lengths. Cover controls, NUL, non-ASCII/non-BMP UTF-8, quotes, slashes, and trigraph spelling with interpreter/native parity. |
+| Decimal precision above 18 has incompatible layout and codegen | Confirmed: `decimal Huge(19,0,...)` passes checking, reports `(16,16)` layout, but emits `int64_t` and `9999999999999999999LL` guards | Resolve before using the oracle as SH3 numeric evidence. First reconcile the published arbitrary-precision/exact-decimal contract and existing ABI; do not silently narrow accepted Alpha.2 programs or add new numeric semantics. Add accepted/rejected boundary, layout, interpreter/native, and generated-C tests for the chosen contract. |
+
+The following review observations remain bounded audit leads rather than
+confirmed SH3 defects: unbounded recursively growing generic instantiation,
+trait-method rewrite collisions, `verify` trap comparison, platform-default
+text encoding/newlines, and the documented GCC/Clang extension dependency.
+Investigate them with focused reproductions only when they affect the current
+SH3 evidence path; otherwise record them for the post-SH6 maintenance/RM0
+queue. Readability and typing improvements to the monolithic Python oracle are
+not SH3 scope by themselves.
+
+After these oracle repairs, resume the already planned SH3 source-local
+ownership-binding integration into the canonical MIR writer. Preserve all
+completed SH3 work and the frozen Alpha.2 observable semantics.
+
 ## Per-PR evidence
 
 Every implementation PR must record:

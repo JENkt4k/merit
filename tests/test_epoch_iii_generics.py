@@ -1,6 +1,8 @@
 import contextlib
 import io
+import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -89,3 +91,40 @@ def test_generic_variant_names_are_nominally_scoped():
     expanded = expand_generics(PROGRAM)
     assert 'Option__i64__Some' in expanded
     assert 'Result__i64__i32__Ok' in expanded
+
+
+def test_generic_expansion_is_stable_across_python_hash_seeds():
+    script = f"from merit.compiler import expand_generics; print(expand_generics({PROGRAM!r}))"
+    outputs = []
+    for seed in ("1", "2", "3"):
+        environment = {**os.environ, "PYTHONHASHSEED": seed}
+        outputs.append(
+            subprocess.run(
+                [sys.executable, "-c", script],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=environment,
+            ).stdout
+        )
+    assert outputs[0] == outputs[1] == outputs[2]
+
+
+def test_generic_substitution_does_not_rewrite_string_literals():
+    source = '''module generic_literal
+fn show<T: Copy>(value:T)->T { print("T marks the type"); return value; }
+fn main()->i32 { return show<i32>(1); }
+'''
+    expanded = expand_generics(source)
+    assert 'print("T marks the type")' in expanded
+    assert 'print("i32 marks the type")' not in expanded
+
+
+def test_generic_template_extent_ignores_braces_in_string_literals():
+    source = '''module generic_literal_brace
+fn show<T: Copy>(value:T)->T { print("}"); return value; }
+fn main()->i32 { return show<i32>(1); }
+'''
+    expanded = expand_generics(source)
+    assert 'fn show__i32(value:i32)->i32 { print("}"); return value; }' in expanded
+    Checker(parse(source)).check()

@@ -434,6 +434,37 @@ def _mangle_generic(name: str, args: list[str]) -> str:
         return re.sub(r'[^A-Za-z0-9_]', '_', x)
     return name + '__' + '__'.join(clean(a) for a in args)
 
+def _mask_string_literals(source: str) -> str:
+    """Preserve source offsets while hiding quoted contents from regex scans."""
+    chars=list(source); quote=None; escaped=False
+    for index,ch in enumerate(source):
+        if quote is None:
+            if ch in ('"', "'"):
+                quote=ch;chars[index]=' '
+        else:
+            if ch!='\n':chars[index]=' '
+            if escaped:escaped=False
+            elif ch=='\\':escaped=True
+            elif ch==quote:quote=None
+    return ''.join(chars)
+
+def _sub_code(pattern, replacement, source: str, count: int=0) -> str:
+    matches=list(re.finditer(pattern,_mask_string_literals(source)))
+    if count:matches=matches[:count]
+    for match in reversed(matches):
+        value=replacement(match) if callable(replacement) else match.expand(replacement)
+        source=source[:match.start()]+value+source[match.end():]
+    return source
+
+def _matching_code_brace(source: str, brace: int) -> int | None:
+    masked=_mask_string_literals(source);depth=0
+    for index in range(brace,len(source)):
+        if masked[index]=='{':depth+=1
+        elif masked[index]=='}':
+            depth-=1
+            if depth==0:return index+1
+    return None
+
 def _replace_builtin_vec_types(source: str) -> str:
     changed=True
     while changed:
@@ -442,7 +473,7 @@ def _replace_builtin_vec_types(source: str) -> str:
             nonlocal changed
             changed=True
             return _mangle_generic('Vec',[m.group(1).strip()])
-        source=re.sub(r'\bVec<([^<>]+)>', repl, source)
+        source=_sub_code(r'\bVec<([^<>]+)>', repl, source)
     return source
 
 def _extract_generic_templates(source: str):
@@ -450,16 +481,11 @@ def _extract_generic_templates(source: str):
     header=re.compile(r'\b(enum|struct|fn)\s+([A-Za-z_]\w*)\s*<([^>{}]+)>')
     pos=0
     while True:
-        m=header.search(source,pos)
+        m=header.search(_mask_string_literals(source),pos)
         if not m: break
-        brace=source.find('{',m.end())
+        brace=_mask_string_literals(source).find('{',m.end())
         if brace<0: break
-        depth=0; end=None
-        for i in range(brace,len(source)):
-            if source[i]=='{': depth+=1
-            elif source[i]=='}':
-                depth-=1
-                if depth==0: end=i+1; break
+        end=_matching_code_brace(source,brace)
         if end is None: raise CompileError(f'M7000: unterminated generic {m.group(1)} {m.group(2)}')
         params=[]; bounds={}
         for raw in _split_generic_args(m.group(3)):
@@ -484,7 +510,7 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
                     request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
                 return _mangle_generic(name,args)+'__'+m.group(2)
-            text=pat.sub(qrepl,text)
+            text=_sub_code(pat,qrepl,text)
         for name in templates:
             pat=re.compile(r'\b'+re.escape(name)+r'<([^<>]+)>')
             def repl(m):
@@ -494,7 +520,7 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
                     request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
                 return _mangle_generic(name,args)
-            text=pat.sub(repl,text)
+            text=_sub_code(pat,repl,text)
     return text
 
 def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
@@ -503,14 +529,9 @@ def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
 def _extract_trait_methods(source: str) -> dict[str,set[str]]:
     methods={}; header=re.compile(r'\btrait\s+([A-Za-z_]\w*)\s*\{'); pos=0
     while True:
-        m=header.search(source,pos)
+        m=header.search(_mask_string_literals(source),pos)
         if not m: break
-        depth=0; end=None
-        for i in range(m.end()-1,len(source)):
-            if source[i]=='{': depth+=1
-            elif source[i]=='}':
-                depth-=1
-                if depth==0: end=i+1; break
+        end=_matching_code_brace(source,m.end()-1)
         if end is None: raise CompileError(f'M7102: unterminated trait {m.group(1)}')
         body=source[m.end():end-1]
         methods[m.group(1)]={x.group(1) for x in re.finditer(r'\bfn\s+([A-Za-z_]\w*)\s*\(', body)}
@@ -544,7 +565,7 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
             notes=(DiagnosticNote('generic instantiated here',SourceSpan(request[0],request[1],request[0],request[2],source_name)),)
         raise CompileError(text,primary,notes)
     while True:
-        pending=[x for x in requested if x not in done]
+        pending=sorted(x for x in requested if x not in done)
         if not pending: break
         name,args=pending[0]; done.add((name,args)); t=templates[name]
         if len(args)!=len(t['params']): expansion_error(f'M7001: {name} expects {len(t["params"])} type arguments',name,args)
@@ -553,8 +574,8 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
                 if not _generic_trait_satisfied(arg,trait,trait_impls): expansion_error(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}',name,args)
         text=t['text']
         # Rewrite declaration header and substitute type parameters token-wise.
-        text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
-        for param,arg in zip(t['params'],args): text=re.sub(r'\b'+re.escape(param)+r'\b',arg,text)
+        text=_sub_code(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
+        for param,arg in zip(t['params'],args): text=_sub_code(r'\b'+re.escape(param)+r'\b',arg,text)
         if t['kind']=='fn':
             rewrite_targets={}
             for param,arg in zip(t['params'],args):
@@ -566,13 +587,13 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
                             expansion_error(f'M7003: ambiguous trait method {method} in generic {name}',name,args,True)
                         rewrite_targets[method]=target
             for method,target in rewrite_targets.items():
-                text=re.sub(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
+                text=_sub_code(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
         if t['kind']=='enum':
             # Constructor names are nominally scoped by the instantiated enum.
             head_end=text.find('{'); body=text[head_end+1:text.rfind('}')]
             variants=re.findall(r'\b([A-Za-z_]\w*)\s*(?:\(|,|\})', body+',')
             for variant in sorted(set(variants),key=len,reverse=True):
-                text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
+                text=_sub_code(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
         text=_replace_applications(text,templates,requested,request_lines,t['line'])
         generated.append(text);generated_origins.append(t['line']);generated_requests.append(request_lines.get((name,args)))
     expanded=_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
