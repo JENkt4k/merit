@@ -164,6 +164,16 @@ fn canonical_mir_push_identifier_or_numeric_byte(
 )->i32
 requires_caps [allocate]
 {
+    if(value==32){buffer_push(output,32);return 0;}
+    if(value==33){buffer_push(output,33);return 0;}
+    if(value==35){buffer_push(output,35);return 0;}
+    if(value==36){buffer_push(output,36);return 0;}
+    if(value==37){buffer_push(output,37);return 0;}
+    if(value==38){buffer_push(output,38);return 0;}
+    if(value==39){buffer_push(output,39);return 0;}
+    if(value==40){buffer_push(output,40);return 0;}
+    if(value==41){buffer_push(output,41);return 0;}
+    if(value==42){buffer_push(output,42);return 0;}
     if(value==48){buffer_push(output,48);return 0;}
     if(value==49){buffer_push(output,49);return 0;}
     if(value==50){buffer_push(output,50);return 0;}
@@ -175,8 +185,17 @@ requires_caps [allocate]
     if(value==56){buffer_push(output,56);return 0;}
     if(value==57){buffer_push(output,57);return 0;}
     if(value==43){buffer_push(output,43);return 0;}
+    if(value==44){buffer_push(output,44);return 0;}
     if(value==45){buffer_push(output,45);return 0;}
     if(value==46){buffer_push(output,46);return 0;}
+    if(value==47){buffer_push(output,47);return 0;}
+    if(value==58){buffer_push(output,58);return 0;}
+    if(value==59){buffer_push(output,59);return 0;}
+    if(value==60){buffer_push(output,60);return 0;}
+    if(value==61){buffer_push(output,61);return 0;}
+    if(value==62){buffer_push(output,62);return 0;}
+    if(value==63){buffer_push(output,63);return 0;}
+    if(value==64){buffer_push(output,64);return 0;}
     if(value==65){buffer_push(output,65);return 0;}
     if(value==66){buffer_push(output,66);return 0;}
     if(value==67){buffer_push(output,67);return 0;}
@@ -203,7 +222,11 @@ requires_caps [allocate]
     if(value==88){buffer_push(output,88);return 0;}
     if(value==89){buffer_push(output,89);return 0;}
     if(value==90){buffer_push(output,90);return 0;}
+    if(value==91){buffer_push(output,91);return 0;}
+    if(value==93){buffer_push(output,93);return 0;}
+    if(value==94){buffer_push(output,94);return 0;}
     if(value==95){buffer_push(output,95);return 0;}
+    if(value==96){buffer_push(output,96);return 0;}
     if(value==97){buffer_push(output,97);return 0;}
     if(value==98){buffer_push(output,98);return 0;}
     if(value==99){buffer_push(output,99);return 0;}
@@ -230,6 +253,10 @@ requires_caps [allocate]
     if(value==120){buffer_push(output,120);return 0;}
     if(value==121){buffer_push(output,121);return 0;}
     if(value==122){buffer_push(output,122);return 0;}
+    if(value==123){buffer_push(output,123);return 0;}
+    if(value==124){buffer_push(output,124);return 0;}
+    if(value==125){buffer_push(output,125);return 0;}
+    if(value==126){buffer_push(output,126);return 0;}
     return 1;
 }
 

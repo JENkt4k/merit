@@ -293,6 +293,11 @@ fn main()->i32 {
 }
 '''
 
+STRING_JSON_PROBE = NUMERIC_JSON_PROBE.replace(
+    'buffer_from_string(allocator,"-12.5e+2")',
+    'buffer_from_string(allocator,"\\\"hello, world!\\\"")',
+).replace("output,source,0,8", "output,source,0,15")
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -615,3 +620,17 @@ def test_merit_preserves_signed_decimal_numeric_spelling(tmp_path: Path) -> None
     actual = bytes(values[2:]).decode("utf-8")
     assert values[1] == len(actual.encode("utf-8"))
     assert actual == json.dumps("-12.5e+2", separators=(",", ":"))
+
+
+def test_merit_escapes_source_backed_string_spelling(tmp_path: Path) -> None:
+    root = _project(tmp_path, STRING_JSON_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "string-json")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == json.dumps('"hello, world!"', separators=(",", ":"))
