@@ -411,6 +411,37 @@ fn main()->i32 {
 }
 '''
 
+OWNED_SOURCE_LOCAL_MIR_PROBE = r'''module owned_source_local_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"owned item");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,10,0,5,14,0,-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_source_local(6,4,0,4,7,1));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,1,-1,0));
+  var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
+  vec_push<MirOwnershipBinding>(bindings,ownership_binding_with_drop(7,0,1,1,1));
+  var output:Buffer=buffer_new(allocator,320);
+  print(materialize_bound_straight_line_canonical_mir(source,"demo",records,bindings,output));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  var invalid_bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
+  vec_push<MirOwnershipBinding>(invalid_bindings,ownership_binding_with_drop(7,1,1,1,1));
+  var rejected:Buffer=buffer_new(allocator,32);
+  print(materialize_bound_straight_line_canonical_mir(source,"demo",records,invalid_bindings,rejected));
+  drop(rejected);drop(invalid_bindings);drop(output);drop(bindings);drop(records);drop(source);return 0;
+ }
+}
+'''
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -845,3 +876,23 @@ def test_merit_preserves_borrowed_temporary_mode(tmp_path: Path) -> None:
         parameters=(MirParameter(0, "borrowed"),), return_mode="borrowed", borrowed_origin=0,
     ),)))
     assert actual == expected
+
+
+def test_merit_materializes_owned_source_local_from_binding(tmp_path: Path) -> None:
+    root = _project(tmp_path, OWNED_SOURCE_LOCAL_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "owned-source-local-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    length = values[1]
+    actual = bytes(values[2:2 + length]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "owned", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+        ), (MirBlock(0, (), MirTerminator("return", span=SourceSpan(0, 1))),), 0,
+    ),)))
+    assert actual == expected
+    assert values[2 + length] == 8

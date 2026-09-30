@@ -379,8 +379,9 @@ requires_caps [allocate]
     return 1;
 }
 
-pub fn materialize_straight_line_canonical_mir(
+pub fn materialize_bound_straight_line_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow ownership_bindings:Vec<MirOwnershipBinding>,
     borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -389,6 +390,32 @@ requires_caps [allocate]
     if(vec_len<MirFunctionRecord>(records)<2){return 2;}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     if(function_mir_kind(header)!=function_mir_kind_function()){return 3;}
+    var ownership_binding_index:i64=0;
+    while(ownership_binding_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
+        let ownership_binding_value:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,ownership_binding_index);
+        if(ownership_binding_owned(ownership_binding_value)<0){return 4;}
+        if(ownership_binding_owned(ownership_binding_value)>1){return 4;}
+        if(ownership_binding_mutable(ownership_binding_value)<0){return 5;}
+        if(ownership_binding_mutable(ownership_binding_value)>1){return 5;}
+        if(ownership_binding_needs_drop(ownership_binding_value)<0){return 6;}
+        if(ownership_binding_needs_drop(ownership_binding_value)>1){return 6;}
+        if(ownership_binding_needs_drop(ownership_binding_value)>ownership_binding_owned(ownership_binding_value)){return 7;}
+        var ownership_local_matches:i64=0;
+        var ownership_record_index:i64=1;
+        while(ownership_record_index<vec_len<MirFunctionRecord>(records)){
+            let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,ownership_record_index);
+            if(function_mir_kind(ownership_local)==function_mir_kind_source_local()){
+                if(function_mir_binding_id(ownership_local)==ownership_binding_id(ownership_binding_value)){
+                    if(function_mir_id(ownership_local)==ownership_binding_local_id(ownership_binding_value)){
+                        ownership_local_matches=checked_add(ownership_local_matches,1);
+                    }
+                }
+            }
+            ownership_record_index=checked_add(ownership_record_index,1);
+        }
+        if(ownership_local_matches!=1){return 8;}
+        ownership_binding_index=checked_add(ownership_binding_index,1);
+    }
 
     canonical_mir_append_text(output,"{\"functions\":[{\"blocks\":[{\"id\":0,\"instructions\":[");
     var index:i64=1;
@@ -521,7 +548,28 @@ requires_caps [allocate]
             canonical_mir_append_text(output,",\"ownership\":\"");
             if(local_kind==function_mir_kind_parameter()){
                 if(canonical_mir_append_mode(output,function_mir_symbol_code(local))!=0){return 52;}
-            }else{canonical_mir_append_text(output,"value");}
+            }else{
+                var binding_matches:i64=0;
+                var binding_owned:i32=0;
+                var binding_index:i64=0;
+                while(binding_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
+                    let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_index);
+                    if(ownership_binding_id(binding)==function_mir_binding_id(local)){
+                        if(ownership_binding_local_id(binding)!=function_mir_id(local)){return 55;}
+                        if(ownership_binding_owned(binding)<0){return 56;}
+                        if(ownership_binding_owned(binding)>1){return 56;}
+                        if(ownership_binding_mutable(binding)!=function_mir_mutable(local)){return 57;}
+                        binding_owned=ownership_binding_owned(binding);
+                        binding_matches=checked_add(binding_matches,1);
+                    }
+                    binding_index=checked_add(binding_index,1);
+                }
+                if(vec_len<MirOwnershipBinding>(ownership_bindings)>0){
+                    if(binding_matches!=1){return 58;}
+                }
+                if(binding_owned==0){canonical_mir_append_text(output,"value");}
+                else{canonical_mir_append_text(output,"owned");}
+            }
             canonical_mir_append_text(output,"\",\"source_binding_id\":");
             canonical_mir_append_i64(output,function_mir_binding_id(local));
             canonical_mir_append_text(output,",\"type\":");
@@ -586,6 +634,21 @@ requires_caps [allocate]
     if(canonical_mir_append_json_string(output,module_name)!=0){return 64;}
     canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
     return 0;
+}
+
+pub fn materialize_straight_line_canonical_mir(
+    borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var ownership_bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,0);
+    let status:i32=materialize_bound_straight_line_canonical_mir(
+        source,module_name,records,ownership_bindings,output
+    );
+    drop(ownership_bindings);
+    return status;
 }
 
 fn canonical_mir_cfg_block_exists(borrow cfg:Vec<MirCfgRecord>,block_id:i64)->i32 {
