@@ -361,6 +361,32 @@ fn main()->i32 {
 }
 '''
 
+CALL_MIR_PROBE = r'''module call_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"caller callee arg");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,6);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,17,0,6,1,0,-1,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(14,3,0,1,7,0,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary_mode(1,1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_call(7,6,0,1,7,6,1,0,1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,1,1,2));
+  var output:Buffer=buffer_new(allocator,384);
+  print(materialize_straight_line_canonical_mir(source,"demo",records,output));print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(records);drop(source);return 0;
+ }
+}
+'''
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -751,5 +777,27 @@ def test_merit_materializes_callable_ownership_metadata(tmp_path: Path) -> None:
         (MirBlock(0, (), MirTerminator("return", operands=(0,), span=SourceSpan(0, 1))),),
         0, parameters=(MirParameter(0, "borrowed"),), return_mode="borrowed",
         borrowed_origin=0, exported=True,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_materializes_call_and_ordered_arguments(tmp_path: Path) -> None:
+    root = _project(tmp_path, CALL_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "call-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "caller", MirType("i64"), (
+            MirLocal(0, "arg", MirType("i64"), source_binding_id=7),
+            MirLocal(1, "_t0", MirType("i64")),
+        ), (MirBlock(0, (
+            MirInstruction(0, "call", result=1, operands=(0,), symbol="callee", span=SourceSpan(7, 6)),
+        ), MirTerminator("return", operands=(1,), span=SourceSpan(0, 1))),), 0,
+        parameters=(MirParameter(0, "value"),),
     ),)))
     assert actual == expected

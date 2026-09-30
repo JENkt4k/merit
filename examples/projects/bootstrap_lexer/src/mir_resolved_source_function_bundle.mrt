@@ -401,6 +401,7 @@ requires_caps [allocate]
         if(kind==function_mir_kind_binary()){is_instruction=1;}
         if(kind==function_mir_kind_copy_to_binding()){is_instruction=1;}
         if(kind==function_mir_kind_print()){is_instruction=1;}
+        if(kind==function_mir_kind_call()){is_instruction=1;}
         if(is_instruction!=0){
             if(instruction_count>0){buffer_push(output,44);}
             canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
@@ -432,6 +433,36 @@ requires_caps [allocate]
                     if(symbol_status!=0){return 31;}
                     buffer_push(output,34);
                 }else{
+                    if(kind==function_mir_kind_call()){
+                        canonical_mir_append_text(output,",\"kind\":\"call\",\"numeric_policy\":\"none\",\"operands\":[");
+                        var argument_ordinal:i64=0;
+                        var argument_index:i64=1;
+                        while(argument_index<vec_len<MirFunctionRecord>(records)){
+                            let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,argument_index);
+                            if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                                if(function_mir_id(argument)==function_mir_id(record)){
+                                    if(function_mir_ordinal(argument)!=argument_ordinal){return 32;}
+                                    if(argument_ordinal>0){buffer_push(output,44);}
+                                    canonical_mir_append_i64(output,function_mir_left(argument));
+                                    argument_ordinal=checked_add(argument_ordinal,1);
+                                }
+                            }
+                            argument_index=checked_add(argument_index,1);
+                        }
+                        canonical_mir_append_text(output,"],\"ownership\":\"none\"");
+                        if(function_mir_result(record)>=0){
+                            canonical_mir_append_text(output,",\"result\":");
+                            canonical_mir_append_i64(output,function_mir_result(record));
+                        }
+                        canonical_mir_append_text(output,",\"span\":[");
+                        canonical_mir_append_i64(output,function_mir_start(record));buffer_push(output,44);
+                        canonical_mir_append_i64(output,function_mir_length(record));
+                        canonical_mir_append_text(output,"],\"symbol\":");
+                        let callee_status:i32=canonical_mir_append_json_source(
+                            output,source,function_mir_symbol_start(record),function_mir_symbol_length(record)
+                        );
+                        if(callee_status!=0){return checked_add(33,callee_status);}
+                    }else{
                     if(kind==function_mir_kind_print()){
                         canonical_mir_append_text(output,",\"kind\":\"print\",\"numeric_policy\":\"none\",\"operands\":[");
                         canonical_mir_append_i64(output,function_mir_left(record));
@@ -446,6 +477,7 @@ requires_caps [allocate]
                     canonical_mir_append_text(output,",\"span\":[");
                     canonical_mir_append_i64(output,function_mir_start(record));buffer_push(output,44);
                     canonical_mir_append_i64(output,function_mir_length(record));buffer_push(output,93);
+                    }
                     }
                 }
             }
