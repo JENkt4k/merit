@@ -531,9 +531,15 @@ requires_caps [allocate]
         if(local_kind==function_mir_kind_temporary_local()){
             if(local_count>0){buffer_push(output,44);}
             canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
-            canonical_mir_append_text(output,",\"mutable\":false,\"name\":\"_t");
+            canonical_mir_append_text(output,",\"mutable\":");
+            if(function_mir_numeric_policy(local)==function_mir_mode_mutable_borrow()){
+                canonical_mir_append_text(output,"true");
+            }else{canonical_mir_append_text(output,"false");}
+            canonical_mir_append_text(output,",\"name\":\"_t");
             canonical_mir_append_i64(output,function_mir_hir_node_id(local));
-            canonical_mir_append_text(output,"\",\"ownership\":\"value\",\"type\":");
+            canonical_mir_append_text(output,"\",\"ownership\":\"");
+            if(canonical_mir_append_mode(output,function_mir_numeric_policy(local))!=0){return 54;}
+            canonical_mir_append_text(output,"\",\"type\":");
             if(canonical_mir_append_type(output,function_mir_type_code(local))!=0){return 54;}
             buffer_push(output,125);local_count=checked_add(local_count,1);
         }
