@@ -136,6 +136,7 @@ import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
 import bootstrap_mir_cfg_placement;
 import bootstrap_mir_resolved_source_function_bundle;
+import bootstrap_statement_semantics;
 
 capability allocate;
 
@@ -152,12 +153,16 @@ fn main()->i32 {
   vec_push<MirCfgRecord>(cfg,cfg_block(1,1));
   vec_push<MirCfgRecord>(cfg,cfg_return_unit(1));
   var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var required:Vec<i64>=vec_new<i64>(allocator,0);
+  var capability_catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
   var output:Buffer=buffer_new(allocator,256);
-  let status:i32=materialize_bounded_cfg_canonical_mir(source,"demo",records,cfg,placements,output);
+  let status:i32=materialize_bounded_cfg_canonical_mir(
+   source,"demo",records,cfg,placements,required,capability_catalog,output
+  );
   print(status);print(buffer_len(output));
   var index:i64=0;
   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
-  drop(output);drop(placements);drop(cfg);drop(records);drop(source);
+  drop(output);drop(capability_catalog);drop(required);drop(placements);drop(cfg);drop(records);drop(source);
   return status;
  }
 }
@@ -211,6 +216,15 @@ SWITCH_CFG_MIR_PROBE = BRANCH_CFG_MIR_PROBE.replace(
     "  vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));",
 ).replace(
     "vec_new<MirCfgRecord>(allocator,6)", "vec_new<MirCfgRecord>(allocator,7)"
+)
+
+CAPABLE_CFG_MIR_PROBE = PLACED_CFG_MIR_PROBE.replace(
+    "vec_new<i64>(allocator,0);",
+    "vec_new<i64>(allocator,1);vec_push<i64>(required,7);",
+).replace(
+    "vec_new<CapabilityCatalogEntry>(allocator,0);",
+    "vec_new<CapabilityCatalogEntry>(allocator,1);\n"
+    "  vec_push<CapabilityCatalogEntry>(capability_catalog,CapabilityCatalogEntry{capability_id:7,name_start:7,name_length:4});",
 )
 
 OWNERSHIP_MIR_PROBE = r'''module ownership_mir_probe
@@ -526,6 +540,27 @@ def test_merit_materializes_explicit_instruction_placement(tmp_path: Path) -> No
             ), MirTerminator("jump", targets=(1,))),
             MirBlock(1, (), MirTerminator("return", operands=(0,))),
         ), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_cfg_materializer_includes_required_capabilities(tmp_path: Path) -> None:
+    root = _project(tmp_path, CAPABLE_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "capable-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+            ), MirTerminator("jump", targets=(1,))),
+            MirBlock(1, (), MirTerminator("return", operands=(0,))),
+        ), 0, ("demo",),
     ),)))
     assert actual == expected
 

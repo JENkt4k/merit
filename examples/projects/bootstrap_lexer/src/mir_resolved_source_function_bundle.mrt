@@ -633,6 +633,7 @@ requires_caps [allocate]
 pub fn materialize_bounded_cfg_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
     borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow required:Vec<i64>,borrow capability_catalog:Vec<CapabilityCatalogEntry>,
     borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -701,7 +702,12 @@ requires_caps [allocate]
     }
     if(block_count==0){return 20;}
     if(emitted_placement_count!=vec_len<MirPlacementRecord>(placements)){return 28;}
-    canonical_mir_append_text(output,"],\"capabilities\":[],\"entry_block\":0,\"locals\":[");
+    canonical_mir_append_text(output,"],\"capabilities\":");
+    let capability_status:i32=materialize_canonical_capabilities(
+        source,required,capability_catalog,output
+    );
+    if(capability_status!=0){return checked_add(40,capability_status);}
+    canonical_mir_append_text(output,",\"entry_block\":0,\"locals\":[");
     if(record_count==4){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
