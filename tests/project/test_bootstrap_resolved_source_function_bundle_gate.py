@@ -14,6 +14,7 @@ from merit.bootstrap.mir_contract import (
     MirInstruction,
     MirLocal,
     MirModule,
+    MirParameter,
     MirTerminator,
     MirType,
     SourceSpan,
@@ -333,6 +334,29 @@ fn main()->i32 {
   vec_push<i64>(required,7);
   print(materialize_canonical_capabilities(source,required,catalog,output));
   drop(output);drop(required);drop(catalog);drop(source);return 0;
+ }
+}
+'''
+
+CALLABLE_MIR_PROBE = r'''module callable_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"identity value");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,14,0,8,1,1,0,1,1));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(9,5,0,1,7,0,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,1,0,0));
+  var output:Buffer=buffer_new(allocator,256);
+  print(materialize_straight_line_canonical_mir(source,"demo",records,output));print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(records);drop(source);return 0;
  }
 }
 '''
@@ -709,3 +733,23 @@ def test_merit_materializes_required_capability_names(tmp_path: Path) -> None:
     actual = bytes(values[2:2 + length]).decode("utf-8")
     assert actual == json.dumps(["allocate", "io"], separators=(",", ":"))
     assert values[2 + length] == 2
+
+
+def test_merit_materializes_callable_ownership_metadata(tmp_path: Path) -> None:
+    root = _project(tmp_path, CALLABLE_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "callable-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "identity", MirType("i64"),
+        (MirLocal(0, "value", MirType("i64"), ownership="borrowed", source_binding_id=7),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,), span=SourceSpan(0, 1))),),
+        0, parameters=(MirParameter(0, "borrowed"),), return_mode="borrowed",
+        borrowed_origin=0, exported=True,
+    ),)))
+    assert actual == expected
