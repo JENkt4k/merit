@@ -1010,7 +1010,7 @@ class Checker:
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
-            if d.precision<1 or d.scale<0 or d.scale>d.precision:self.fail(f'M1001: invalid decimal {d.name}',d)
+            if d.precision<1 or d.precision>18 or d.scale<0 or d.scale>d.precision:self.fail(f'M1001: invalid decimal {d.name}; precision must be 1..18 and scale must be 0..precision',d)
             if d.rounding not in ROUNDING:self.fail(f'M1002: unsupported rounding policy {d.rounding}',d)
         for b in self.p.bounded.values():
             lo,hi=INT_RANGES[b.base]
@@ -1614,7 +1614,7 @@ class LayoutEngine:
         return sorted(found,key=lambda name:(name.count('Vec__'),name))
     def size_align(self,t):
         if t in self.SIZES:return self.SIZES[t]
-        if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
+        if t in self.p.decimals:return (8,8)
         if t in self.p.bounded:return self.size_align(self.p.bounded[t].base)
         if t in ('String','ByteSlice'): return (16,8)
         if t=='Buffer': return (32,8)

@@ -2,7 +2,7 @@
 
 ## Exact decimal
 
-`decimal Name(precision, scale, rounding);` defines a fixed-scale exact decimal represented by a scaled integer. Literals exceeding the declared scale are rejected rather than silently rounded.
+`decimal Name(precision, scale, rounding);` defines a fixed-scale exact decimal represented by a signed 64-bit scaled integer. The Alpha.2 surface accepts precision from 1 through 18 and scale from zero through the declared precision. Declarations outside those bounds and literals exceeding the declared scale are rejected rather than silently narrowed or rounded.
 
 Implemented rounding policies are `half_even`, `half_up`, `down`, `ceiling`, and `floor`. Division uses the destination decimal policy. Checked integer and decimal addition/subtraction trap on overflow in both interpreted and native execution.
 

@@ -13,7 +13,7 @@ from decimal import (
 
 import pytest
 
-from merit.compiler import Checker, CompileError, Interpreter, compile_file, parse
+from merit.compiler import Checker, CompileError, Interpreter, LayoutEngine, compile_file, parse
 
 
 REFERENCE_ROUNDING = {
@@ -168,3 +168,19 @@ fn main()->i32 { let value:Window=999999999999999999999999999999999999; return 0
     program = parse(source)
     with pytest.raises(CompileError, match="outside Window range -300..300"):
         Checker(program).check()
+
+
+def test_decimal_precision_matches_signed_64_bit_runtime_layout():
+    accepted = parse(
+        "module decimal18\ndecimal Maximum(18,0,half_even);\n"
+        "fn main()->i32 { let value:Maximum=999999999999999999; return 0; }"
+    )
+    Checker(accepted).check()
+    assert LayoutEngine(accepted).size_align("Maximum") == (8, 8)
+
+    rejected = parse(
+        "module decimal19\ndecimal TooWide(19,0,half_even);\n"
+        "fn main()->i32 { return 0; }"
+    )
+    with pytest.raises(CompileError, match=r"M1001: invalid decimal TooWide; precision must be 1\.\.18"):
+        Checker(rejected).check()
