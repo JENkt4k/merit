@@ -439,8 +439,7 @@ def _mask_string_literals(source: str) -> str:
     chars=list(source); quote=None; escaped=False
     for index,ch in enumerate(source):
         if quote is None:
-            if ch in ('"', "'"):
-                quote=ch;chars[index]=' '
+            if ch=='"':quote=ch;chars[index]=' '
         else:
             if ch!='\n':chars[index]=' '
             if escaped:escaped=False
@@ -464,6 +463,10 @@ def _matching_code_brace(source: str, brace: int) -> int | None:
             depth-=1
             if depth==0:return index+1
     return None
+
+def _c_utf8_bytes(value: str) -> tuple[str,int]:
+    encoded=value.encode('utf-8')
+    return '"'+''.join(f'\\{byte:03o}' for byte in encoded)+'"',len(encoded)
 
 def _replace_builtin_vec_types(source: str) -> str:
     changed=True
@@ -2364,7 +2367,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             temp=f'_merit_print_{self.temp_counter}';self.temp_counter+=1
             lines=prelude+[f'{p}{self.ctype(t)} {temp} = {x};']
             if t=='String':
-                lines.append(f'{p}printf("%.*s\\n",(int){temp}.len,{temp}.data);')
+                lines.append(f"{p}fwrite({temp}.data,1,{temp}.len,stdout); fputc('\\n',stdout);")
             elif t=='Buffer':
                 lines.append(f"{p}fwrite({temp}.data,1,{temp}.len,stdout); fputc('\\n',stdout);")
             elif t in self.p.enums:
@@ -2451,7 +2454,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         if id(e) in self._expr_overrides:return self._expr_overrides[id(e)]
         node=self.p.node(e);kind=node.kind
         if kind=='string':
-            raw=json.dumps(node.atom_value); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
+            raw,length=_c_utf8_bytes(node.atom_value);return f'(merit_String){{{raw}, {length}}}'
         if kind=='number':
             value=int(Decimal(node.atom_value)*(10**self.p.decimals[expected].scale)) if expected in self.p.decimals else int(Decimal(node.atom_value))
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
@@ -2658,7 +2661,7 @@ def mir(p):
 
 
 def compile_file(path,out=None):
-    p=parse(path.read_text(),str(path));ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate());hpath.write_text(cg.header());subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
+    p=parse(path.read_text(encoding='utf-8'),str(path));ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate(),encoding='utf-8',newline='\n');hpath.write_text(cg.header(),encoding='utf-8',newline='\n');subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
 
 PROGRAM_TEMPLATE = """module {module}
 
@@ -2675,7 +2678,7 @@ def _create_project(target: Path, name: str | None = None) -> Path:
         module = 'merit_' + module
     target.mkdir(parents=True, exist_ok=False)
     (target / 'src').mkdir()
-    (target / 'src' / 'main.mrt').write_text(PROGRAM_TEMPLATE.format(module=module))
+    (target / 'src' / 'main.mrt').write_text(PROGRAM_TEMPLATE.format(module=module),encoding='utf-8',newline='\n')
     (target / 'README.md').write_text(
         f'# {module}\n\n'
         'Build and run:\n\n'
@@ -2684,7 +2687,7 @@ def _create_project(target: Path, name: str | None = None) -> Path:
         'merit verify src/main.mrt\n'
         'merit exec src/main.mrt\n'
         '```\n'
-    )
+    ,encoding='utf-8',newline='\n')
     return target / 'src' / 'main.mrt'
 
 def main(argv=None):
@@ -2708,7 +2711,7 @@ def main(argv=None):
             return 0
         path=Path(ns.source)
         if not path.exists(): raise FileNotFoundError(path)
-        p=parse(path.read_text(),str(path));ch=Checker(p).check()
+        source_text=path.read_text(encoding='utf-8');p=parse(source_text,str(path));ch=Checker(p).check()
         if ns.cmd=='check':print(f'ok: {p.module} ({len(p.functions)} functions, {len(p.structs)} structs)')
         elif ns.cmd=='run':Interpreter(p).run()
         elif ns.cmd=='verify':
@@ -2736,14 +2739,14 @@ def main(argv=None):
                 return completed.returncode
     except CompileError as e:
         from merit.diagnostics import diagnostic_from_exception,render_exception
-        if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text()).to_dict()),file=sys.stderr)
-        else:print(render_exception(e,path,path.read_text()),file=sys.stderr)
+        if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text(encoding='utf-8')).to_dict()),file=sys.stderr)
+        else:print(render_exception(e,path,path.read_text(encoding='utf-8')),file=sys.stderr)
         return 1
     except Exception as e:
         if getattr(ns,'diagnostic_format','text')=='json':
             from merit.diagnostics import diagnostic_from_exception
             diagnostic_path=locals().get('path',Path(getattr(ns,'source','<unknown>')))
-            source=diagnostic_path.read_text() if diagnostic_path.is_file() else ''
+            source=diagnostic_path.read_text(encoding='utf-8') if diagnostic_path.is_file() else ''
             print(json.dumps(diagnostic_from_exception(e,diagnostic_path,source).to_dict()),file=sys.stderr)
         else:print(f'error: {e}',file=sys.stderr)
         return 1
