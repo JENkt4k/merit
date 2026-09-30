@@ -762,6 +762,44 @@ requires_caps [allocate]
     return 0;
 }
 
+pub fn materialize_canonical_capabilities(
+    borrow source:Buffer,borrow required:Vec<i64>,
+    borrow catalog:Vec<CapabilityCatalogEntry>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    buffer_push(output,91);
+    var index:i64=0;
+    while(index<vec_len<i64>(required)){
+        let capability_id:i64=vec_get<i64>(required,index);
+        if(capability_id<0){return 1;}
+        var prior:i64=0;
+        while(prior<index){
+            if(vec_get<i64>(required,prior)==capability_id){return 2;}
+            prior=checked_add(prior,1);
+        }
+        var catalog_index:i64=0;
+        var found:i32=0;
+        var name_start:i64=0;
+        var name_length:i64=0;
+        while(catalog_index<vec_len<CapabilityCatalogEntry>(catalog)){
+            let entry:CapabilityCatalogEntry=vec_get<CapabilityCatalogEntry>(catalog,catalog_index);
+            if(entry.capability_id==capability_id){
+                if(found!=0){return 3;}
+                found=1;name_start=entry.name_start;name_length=entry.name_length;
+            }
+            catalog_index=checked_add(catalog_index,1);
+        }
+        if(found==0){return 4;}
+        if(index>0){buffer_push(output,44);}
+        let name_status:i32=canonical_mir_append_json_source(output,source,name_start,name_length);
+        if(name_status!=0){return checked_add(5,name_status);}
+        index=checked_add(index,1);
+    }
+    buffer_push(output,93);
+    return 0;
+}
+
 pub fn print_resolved_source_function_bundle_item_with_source_policy(
     borrow effective_source: Buffer,
     include_effective_source: i32,

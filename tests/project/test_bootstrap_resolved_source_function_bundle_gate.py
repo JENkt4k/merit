@@ -298,6 +298,31 @@ STRING_JSON_PROBE = NUMERIC_JSON_PROBE.replace(
     'buffer_from_string(allocator,"\\\"hello, world!\\\"")',
 ).replace("output,source,0,8", "output,source,0,15")
 
+CAPABILITY_JSON_PROBE = r'''module capability_json_probe
+import bootstrap_statement_semantics;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"allocate io");
+  var catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,2);
+  vec_push<CapabilityCatalogEntry>(catalog,CapabilityCatalogEntry{capability_id:7,name_start:0,name_length:8});
+  vec_push<CapabilityCatalogEntry>(catalog,CapabilityCatalogEntry{capability_id:8,name_start:9,name_length:2});
+  var required:Vec<i64>=vec_new<i64>(allocator,2);vec_push<i64>(required,7);vec_push<i64>(required,8);
+  var output:Buffer=buffer_new(allocator,32);
+  print(materialize_canonical_capabilities(source,required,catalog,output));print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  vec_push<i64>(required,7);
+  print(materialize_canonical_capabilities(source,required,catalog,output));
+  drop(output);drop(required);drop(catalog);drop(source);return 0;
+ }
+}
+'''
+
 
 def _project(tmp_path: Path, probe: str = PROBE) -> Path:
     root = tmp_path / "resolved_source_function_bundle"
@@ -634,3 +659,18 @@ def test_merit_escapes_source_backed_string_spelling(tmp_path: Path) -> None:
     actual = bytes(values[2:]).decode("utf-8")
     assert values[1] == len(actual.encode("utf-8"))
     assert actual == json.dumps('"hello, world!"', separators=(",", ":"))
+
+
+def test_merit_materializes_required_capability_names(tmp_path: Path) -> None:
+    root = _project(tmp_path, CAPABILITY_JSON_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "capability-json")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    length = values[1]
+    actual = bytes(values[2:2 + length]).decode("utf-8")
+    assert actual == json.dumps(["allocate", "io"], separators=(",", ":"))
+    assert values[2 + length] == 2
