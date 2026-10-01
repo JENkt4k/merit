@@ -7,11 +7,7 @@ __pycache__/
 build/
 dist/
 .merit-build/
-.merit/gates/
-.merit/logs/
-.merit/pytest-cache/
-.merit/pytest-*/
-.merit/test-native-object-cache/
+.merit/
 *.o
 *.obj
 *.exe
