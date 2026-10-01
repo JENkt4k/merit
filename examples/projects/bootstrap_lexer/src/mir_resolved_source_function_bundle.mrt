@@ -948,7 +948,11 @@ requires_caps [allocate]
         }
         if(function_mir_kind(instruction)!=function_mir_kind_const()){
             if(sourced==0){return 9;}
-            if(function_mir_kind(instruction)!=function_mir_kind_binary()){return 9;}
+            if(function_mir_kind(instruction)!=function_mir_kind_binary()){
+                if(function_mir_kind(instruction)!=function_mir_kind_copy_to_binding()){
+                    if(function_mir_kind(instruction)!=function_mir_kind_print()){return 9;}
+                }
+            }
         }
     }
     if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
@@ -1027,7 +1031,7 @@ requires_caps [allocate]
                                 canonical_mir_append_text(output,"],\"value\":");
                                 let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
                                 if(value_status!=0){return checked_add(41,value_status);}
-                            }else{
+                            }else{if(function_mir_kind(instruction)==function_mir_kind_binary()){
                                 if(function_mir_left(instruction)<0){return 47;}
                                 if(function_mir_right(instruction)<0){return 47;}
                                 canonical_mir_append_text(output,",\"kind\":\"binary\",\"numeric_policy\":\"");
@@ -1047,7 +1051,24 @@ requires_caps [allocate]
                                 canonical_mir_append_text(output,"],\"symbol\":\"");
                                 if(canonical_mir_append_symbol(output,function_mir_symbol_code(instruction))!=0){return 49;}
                                 buffer_push(output,34);
-                            }
+                            }else{
+                                if(function_mir_left(instruction)<0){return 47;}
+                                if(function_mir_kind(instruction)==function_mir_kind_copy_to_binding()){
+                                    if(function_mir_result(instruction)<0){return 47;}
+                                    canonical_mir_append_text(output,",\"kind\":\"copy\",\"numeric_policy\":\"none\",\"operands\":[");
+                                    canonical_mir_append_i64(output,function_mir_left(instruction));
+                                    canonical_mir_append_text(output,"],\"ownership\":\"none\",\"result\":");
+                                    canonical_mir_append_i64(output,function_mir_result(instruction));
+                                }else{
+                                    if(function_mir_result(instruction)>=0){return 47;}
+                                    canonical_mir_append_text(output,",\"kind\":\"print\",\"numeric_policy\":\"none\",\"operands\":[");
+                                    canonical_mir_append_i64(output,function_mir_left(instruction));
+                                    canonical_mir_append_text(output,"],\"ownership\":\"none\"");
+                                }
+                                canonical_mir_append_text(output,",\"span\":[");
+                                canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                                canonical_mir_append_i64(output,function_mir_length(instruction));buffer_push(output,93);
+                            }}
                             buffer_push(output,125);
                         }else{
                             if(assembly_source_kind(source_record)==assembly_source_contract_record_kind()){
