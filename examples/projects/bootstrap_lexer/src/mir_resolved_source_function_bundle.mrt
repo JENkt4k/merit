@@ -786,8 +786,11 @@ requires_caps [allocate]
 // Bounded CFG slice: materialize explicit block topology plus an optional
 // placed const instruction. Every emitted instruction must have one explicit
 // placement; later SH3 slices widen the accepted instruction/local catalog.
-pub fn materialize_bounded_cfg_canonical_mir(
+pub fn materialize_sourced_cfg_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow ownership_bindings:Vec<MirOwnershipBinding>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
     borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
     borrow required:Vec<i64>,borrow capability_catalog:Vec<CapabilityCatalogEntry>,
     borrow_mut output:Buffer
@@ -801,13 +804,50 @@ requires_caps [allocate]
     let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,checked_sub(record_count,1));
     if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
     if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
-    if(record_count==2){if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}}
+    let sourced:i32=vec_len<MirFunctionInstructionSource>(sources)>0;
+    if(sourced!=0){
+        if(validate_function_assembly_sources(sources)!=0){return 36;}
+        if(vec_len<MirPlacementRecord>(placements)!=vec_len<MirFunctionInstructionSource>(sources)){return 37;}
+        var source_index:i64=0;
+        while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
+            let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,source_index);
+            var source_placement_count:i64=0;
+            var source_placement_index:i64=0;
+            while(source_placement_index<vec_len<MirPlacementRecord>(placements)){
+                let source_placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,source_placement_index);
+                if(placement_instruction_id(source_placement)==assembly_source_global_id(source_record)){
+                    source_placement_count=checked_add(source_placement_count,1);
+                }
+                source_placement_index=checked_add(source_placement_index,1);
+            }
+            if(source_placement_count!=1){return 38;}
+            source_index=checked_add(source_index,1);
+        }
+    }
+    if(record_count==2){if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}}}
     if(record_count==4){
-        if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}
+        if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}}
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
         if(function_mir_kind(local)!=function_mir_kind_temporary_local()){return 8;}
         if(function_mir_kind(instruction)!=function_mir_kind_const()){return 9;}
+    }
+    if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
+    if(record_count==4){
+        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+        var binding_validation_index:i64=0;
+        while(binding_validation_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
+            let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_validation_index);
+            if(ownership_binding_id(binding)<0){return 61;}
+            if(ownership_binding_local_id(binding)!=function_mir_id(local)){return 62;}
+            if(ownership_binding_owned(binding)<0){return 63;}
+            if(ownership_binding_owned(binding)>1){return 63;}
+            if(ownership_binding_mutable(binding)<0){return 64;}
+            if(ownership_binding_mutable(binding)>1){return 64;}
+            if(ownership_binding_needs_drop(binding)<0){return 65;}
+            if(ownership_binding_needs_drop(binding)>ownership_binding_owned(binding)){return 65;}
+            binding_validation_index=checked_add(binding_validation_index,1);
+        }
     }
 
     canonical_mir_append_text(output,"{\"functions\":[{\"blocks\":[");
@@ -830,19 +870,56 @@ requires_caps [allocate]
                 if(placement_block_id(placement)==cfg_block_id(record)){
                     if(placement_ordinal(placement)!=block_placement_count){return 21;}
                     let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
-                    if(placement_instruction_id(placement)!=function_mir_id(instruction)){return 22;}
                     if(block_placement_count>0){buffer_push(output,44);}
-                    canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
-                    canonical_mir_append_i64(output,function_mir_id(instruction));
-                    canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
-                    canonical_mir_append_i64(output,function_mir_result(instruction));
-                    canonical_mir_append_text(output,",\"span\":[");
-                    canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
-                    canonical_mir_append_i64(output,function_mir_length(instruction));
-                    canonical_mir_append_text(output,"],\"value\":");
-                    let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
-                    if(value_status!=0){return checked_add(23,value_status);}
-                    buffer_push(output,125);
+                    if(sourced==0){
+                        if(placement_instruction_id(placement)!=function_mir_id(instruction)){return 22;}
+                        canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
+                        canonical_mir_append_i64(output,function_mir_id(instruction));
+                        canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
+                        canonical_mir_append_i64(output,function_mir_result(instruction));
+                        canonical_mir_append_text(output,",\"span\":[");
+                        canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                        canonical_mir_append_i64(output,function_mir_length(instruction));
+                        canonical_mir_append_text(output,"],\"value\":");
+                        let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
+                        if(value_status!=0){return checked_add(23,value_status);}
+                        buffer_push(output,125);
+                    }else{
+                        let global_id:i64=placement_instruction_id(placement);
+                        if(global_id<0){return 38;}
+                        if(global_id>=vec_len<MirFunctionInstructionSource>(sources)){return 38;}
+                        let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,global_id);
+                        if(assembly_source_global_id(source_record)!=global_id){return 39;}
+                        if(assembly_source_kind(source_record)==assembly_source_body_kind()){
+                            if(record_count!=4){return 40;}
+                            if(assembly_source_id(source_record)!=function_mir_id(instruction)){return 40;}
+                            canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
+                            canonical_mir_append_i64(output,global_id);
+                            canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
+                            canonical_mir_append_i64(output,function_mir_result(instruction));
+                            canonical_mir_append_text(output,",\"span\":[");
+                            canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                            canonical_mir_append_i64(output,function_mir_length(instruction));
+                            canonical_mir_append_text(output,"],\"value\":");
+                            let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
+                            if(value_status!=0){return checked_add(41,value_status);}
+                            buffer_push(output,125);
+                        }else{
+                            if(assembly_source_kind(source_record)!=assembly_source_ownership_kind()){return 42;}
+                            let ownership_id:i64=assembly_source_id(source_record);
+                            if(ownership_id<0){return 43;}
+                            if(ownership_id>=vec_len<MirOwnershipRecord>(ownership_records)){return 43;}
+                            let ownership_value:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,ownership_id);
+                            if(assembly_source_left(source_record)!=ownership_record_operand_local(ownership_value)){return 44;}
+                            if(record_count!=4){return 45;}
+                            let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+                            if(ownership_record_operand_local(ownership_value)!=function_mir_id(ownership_local)){return 46;}
+                            let ownership_status:i32=materialize_canonical_ownership_instruction(
+                                ownership_value,global_id,assembly_source_result(source_record),output
+                            );
+                            if(ownership_status!=0){return checked_add(50,ownership_status);}
+                        }
+                    }
                     block_placement_count=checked_add(block_placement_count,1);
                     emitted_placement_count=checked_add(emitted_placement_count,1);
                 }
@@ -867,9 +944,32 @@ requires_caps [allocate]
     if(record_count==4){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
-        canonical_mir_append_text(output,",\"mutable\":false,\"name\":\"_t");
+        canonical_mir_append_text(output,",\"mutable\":");
+        var local_mutable:i32=0;
+        var local_owned:i32=0;
+        var local_binding_id:i64=-1;
+        var binding_index:i64=0;
+        while(binding_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
+            let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_index);
+            if(ownership_binding_local_id(binding)==function_mir_id(local)){
+                if(local_binding_id>=0){return 60;}
+                local_binding_id=ownership_binding_id(binding);
+                local_mutable=ownership_binding_mutable(binding);
+                local_owned=ownership_binding_owned(binding);
+            }
+            binding_index=checked_add(binding_index,1);
+        }
+        if(local_mutable==0){canonical_mir_append_text(output,"false");}else{canonical_mir_append_text(output,"true");}
+        canonical_mir_append_text(output,",\"name\":\"_t");
         canonical_mir_append_i64(output,function_mir_hir_node_id(local));
-        canonical_mir_append_text(output,"\",\"ownership\":\"value\",\"type\":");
+        canonical_mir_append_text(output,"\",\"ownership\":\"");
+        if(local_owned==0){canonical_mir_append_text(output,"value");}else{canonical_mir_append_text(output,"owned");}
+        buffer_push(output,34);
+        if(local_binding_id>=0){
+            canonical_mir_append_text(output,",\"source_binding_id\":");
+            canonical_mir_append_i64(output,local_binding_id);
+        }
+        canonical_mir_append_text(output,",\"type\":");
         if(canonical_mir_append_type(output,function_mir_type_code(local))!=0){return 29;}
         buffer_push(output,125);
     }
@@ -882,6 +982,26 @@ requires_caps [allocate]
     if(canonical_mir_append_json_string(output,module_name)!=0){return 35;}
     canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
     return 0;
+}
+
+pub fn materialize_bounded_cfg_canonical_mir(
+    borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow required:Vec<i64>,borrow capability_catalog:Vec<CapabilityCatalogEntry>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,0);
+    var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+    var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+    let status:i32=materialize_sourced_cfg_canonical_mir(
+        source,module_name,records,bindings,ownership,sources,cfg,placements,
+        required,capability_catalog,output
+    );
+    drop(sources);drop(ownership);drop(bindings);
+    return status;
 }
 
 // Materialize the canonical resource-effect instruction represented by one

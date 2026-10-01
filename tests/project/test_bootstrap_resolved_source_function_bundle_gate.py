@@ -329,6 +329,66 @@ fn main()->i32 {
 }
 '''
 
+SOURCED_OWNERSHIP_CFG_MIR_PROBE = r'''module sourced_ownership_cfg_mir_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+import bootstrap_statement_semantics;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"module demo\nfn compute()->unit { return 1; }\n");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(records,function_mir_header(12,33,15,7,function_mir_unit_type_code()));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_buffer_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(40,1,0,0,function_mir_buffer_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(35,9,-1,0));
+  var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
+  vec_push<MirOwnershipBinding>(bindings,ownership_binding_with_drop(7,0,1,1,1));
+  var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
+  vec_push<MirOwnershipRecord>(ownership,ownership_record(
+   ownership_record_kind_implicit_drop(),0,7,ownership_record_no_other_binding_id(),0,1,
+   ownership_state_live(),ownership_state_dropped()
+  ));
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,2);
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:0,source_kind:assembly_source_body_kind(),source_id:0,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:0,left:assembly_source_absent_record_value(),right:assembly_source_absent_record_value()
+  });
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:assembly_source_absent_record_value(),left:0,right:assembly_source_absent_record_value()
+  });
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));
+  vec_push<MirCfgRecord>(cfg,cfg_return_unit(0));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,2);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));
+  var required:Vec<i64>=vec_new<i64>(allocator,0);
+  var capability_catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
+  var output:Buffer=buffer_new(allocator,512);
+  let status:i32=materialize_sourced_cfg_canonical_mir(
+   source,"demo",records,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
+  );
+  print(status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(capability_catalog);drop(required);drop(placements);drop(cfg);
+  drop(sources);drop(ownership);drop(bindings);drop(records);drop(source);
+  return status;
+ }
+}
+'''
+
 BUILTIN_TYPE_PROBE = r'''module builtin_type_probe
 import bootstrap_mir_resolved_source_function_bundle;
 
@@ -830,6 +890,30 @@ def test_merit_orders_ownership_effects_by_explicit_placement(tmp_path: Path) ->
     ))
     assert actual == expected
     assert values[2 + length] == 7
+
+
+def test_merit_materializes_owned_local_and_drop_in_complete_cfg(tmp_path: Path) -> None:
+    root = _project(tmp_path, SOURCED_OWNERSHIP_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sourced-ownership-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "_t0", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(40, 1), ownership="value"),
+                MirInstruction(1, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == expected
 
 
 def test_merit_materializes_complete_builtin_type_catalog(tmp_path: Path) -> None:
