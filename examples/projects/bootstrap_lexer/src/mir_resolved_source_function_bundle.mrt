@@ -159,6 +159,26 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_mir_append_i32(borrow_mut output:Buffer,value:i32)->i32
+requires_caps [allocate]
+{
+    var magnitude:i32=value;
+    if(magnitude<0){buffer_push(output,45);magnitude=checked_sub(0,magnitude);}
+    if(magnitude==0){buffer_push(output,48);return 0;}
+    var divisor:i32=1;
+    while((magnitude/divisor)>=10){divisor=checked_mul(divisor,10);}
+    while(divisor>0){
+        let digit:i32=magnitude/divisor;
+        if(digit==0){buffer_push(output,48);}if(digit==1){buffer_push(output,49);}
+        if(digit==2){buffer_push(output,50);}if(digit==3){buffer_push(output,51);}
+        if(digit==4){buffer_push(output,52);}if(digit==5){buffer_push(output,53);}
+        if(digit==6){buffer_push(output,54);}if(digit==7){buffer_push(output,55);}
+        if(digit==8){buffer_push(output,56);}if(digit==9){buffer_push(output,57);}
+        magnitude=checked_sub(magnitude,checked_mul(digit,divisor));divisor=divisor/10;
+    }
+    return 0;
+}
+
 fn canonical_mir_push_identifier_or_numeric_byte(
     borrow_mut output:Buffer,value:i64
 )->i32
@@ -783,39 +803,91 @@ requires_caps [allocate]
     return 0;
 }
 
-fn materialize_canonical_contract_instruction(
+pub fn materialize_canonical_contract_instruction(
     borrow source:Buffer,borrow record:MirFunctionContractRecord,
     borrow source_record:MirFunctionInstructionSource,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
-    if(function_contract_kind(record)!=function_contract_const_kind()){return 1;}
     if(function_contract_id(record)!=assembly_source_id(source_record)){return 2;}
     if(function_contract_contract_kind(record)!=assembly_source_contract_kind(source_record)){return 3;}
     if(function_contract_clause(record)!=assembly_source_clause(source_record)){return 4;}
-    if(function_contract_result(record)<0){return 5;}
     let phase:i32=function_contract_contract_kind(record);
     if(phase!=function_contract_precondition_phase()){
         if(phase!=function_contract_postcondition_phase()){
             if(phase!=function_contract_entry_snapshot_phase()){return 6;}
         }
     }
+    let kind:i32=function_contract_kind(record);
+    var has_contract_kind:i32=0;
+    if(kind==function_contract_const_kind()){has_contract_kind=1;}
+    if(kind==function_contract_check_kind()){has_contract_kind=1;}
     canonical_mir_append_text(output,"{\"contract_kind\":\"");
-    if(phase==function_contract_precondition_phase()){
+    if(has_contract_kind==0){canonical_mir_append_text(output,"none");}
+    else{if(phase==function_contract_precondition_phase()){
         canonical_mir_append_text(output,"precondition");
-    }else{canonical_mir_append_text(output,"postcondition");}
+    }else{canonical_mir_append_text(output,"postcondition");}}
     canonical_mir_append_text(output,"\",\"conversion_policy\":\"none\",\"id\":");
     canonical_mir_append_i64(output,assembly_source_global_id(source_record));
-    canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
-    canonical_mir_append_i64(output,function_contract_result(record));
+    canonical_mir_append_text(output,",\"kind\":\"");
+    if(kind==function_contract_const_kind()){canonical_mir_append_text(output,"const");}
+    else{if(kind==function_contract_binary_kind()){canonical_mir_append_text(output,"binary");}
+    else{if(kind==function_contract_check_kind()){canonical_mir_append_text(output,"contract_check");}
+    else{if(kind==function_contract_call_kind()){canonical_mir_append_text(output,"call");}
+    else{if(kind==function_contract_field_load_kind()){canonical_mir_append_text(output,"load_field");}
+    else{if(kind==function_contract_result_capture_kind()){canonical_mir_append_text(output,"copy");}
+    else{if(kind==function_contract_old_snapshot_kind()){canonical_mir_append_text(output,"copy");}
+    else{return 1;}}}}}}}
+    canonical_mir_append_text(output,"\",\"numeric_policy\":\"");
+    if(kind==function_contract_binary_kind()){
+        if(function_contract_policy(record)==function_mir_exact_numeric_policy()){canonical_mir_append_text(output,"exact");}
+        else{if(function_contract_policy(record)==function_mir_checked_numeric_policy()){canonical_mir_append_text(output,"checked");}else{return 7;}}
+    }else{canonical_mir_append_text(output,"none");}
+    canonical_mir_append_text(output,"\",\"operands\":[");
+    if(kind==function_contract_binary_kind()){
+        if(assembly_source_left(source_record)<0){return 8;}if(assembly_source_right(source_record)<0){return 8;}
+        canonical_mir_append_i64(output,assembly_source_left(source_record));buffer_push(output,44);
+        canonical_mir_append_i64(output,assembly_source_right(source_record));
+    }else{
+        if(kind!=function_contract_const_kind()){
+            if(assembly_source_left(source_record)<0){return 9;}
+            canonical_mir_append_i64(output,assembly_source_left(source_record));
+        }
+    }
+    canonical_mir_append_text(output,"],\"ownership\":\"");
+    if(kind==function_contract_const_kind()){canonical_mir_append_text(output,"value");}
+    else{canonical_mir_append_text(output,"none");}
+    buffer_push(output,34);
+    if(kind!=function_contract_check_kind()){
+        if(assembly_source_result(source_record)<0){return 5;}
+        canonical_mir_append_text(output,",\"result\":");
+        canonical_mir_append_i64(output,assembly_source_result(source_record));
+    }
     canonical_mir_append_text(output,",\"span\":[");
     canonical_mir_append_i64(output,function_contract_start(record));buffer_push(output,44);
     canonical_mir_append_i64(output,function_contract_length(record));
-    canonical_mir_append_text(output,"],\"value\":");
-    let value_status:i32=canonical_mir_append_json_source(
-        output,source,function_contract_start(record),function_contract_length(record)
-    );
-    if(value_status!=0){return checked_add(10,value_status);}
+    buffer_push(output,93);
+    if(kind==function_contract_binary_kind()){
+        canonical_mir_append_text(output,",\"symbol\":\"");
+        if(canonical_mir_append_symbol(output,function_contract_symbol(record))!=0){return 10;}
+        buffer_push(output,34);
+    }
+    if(kind==function_contract_call_kind()){
+        if(function_contract_symbol(record)!=13){return 11;}
+        canonical_mir_append_text(output,",\"symbol\":\"slice_len\"");
+    }
+    if(kind==function_contract_field_load_kind()){
+        if(function_contract_symbol(record)<0){return 12;}
+        canonical_mir_append_text(output,",\"symbol\":\"field_");
+        canonical_mir_append_i32(output,function_contract_symbol(record));buffer_push(output,34);
+    }
+    if(kind==function_contract_const_kind()){
+        canonical_mir_append_text(output,",\"value\":");
+        let value_status:i32=canonical_mir_append_json_source(
+            output,source,function_contract_start(record),function_contract_length(record)
+        );
+        if(value_status!=0){return checked_add(20,value_status);}
+    }
     buffer_push(output,125);
     return 0;
 }

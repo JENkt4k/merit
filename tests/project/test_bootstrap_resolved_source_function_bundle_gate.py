@@ -414,6 +414,69 @@ INVALID_SOURCED_CONTRACT_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace
     "   result:0,left:assembly_source_absent_record_value()",
 ).replace("return status;", "return 0;")
 
+CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn emit_one(
+ borrow source:Buffer,record:MirFunctionContractRecord,provenance:MirFunctionInstructionSource
+)->i32
+requires_caps [allocate]
+{
+ let allocator:Allocator=system_allocator();var output:Buffer=buffer_new(allocator,192);
+ let status:i32=materialize_canonical_contract_instruction(source,record,provenance,output);
+ print(status);print(buffer_len(output));var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return status;
+}
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();let source:Buffer=buffer_from_string(allocator,"1");
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_const_kind(),clause_ordinal:0,contract_kind:function_contract_precondition_phase(),
+   start:0,length:1,id:0,result:0,left:-1,right:-1,symbol:0,type_code:1,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:0,source_kind:assembly_source_contract_record_kind(),source_id:0,
+   contract_kind:function_contract_precondition_phase(),clause_ordinal:0,result:0,left:-1,right:-1}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_binary_kind(),clause_ordinal:0,contract_kind:function_contract_precondition_phase(),
+   start:0,length:1,id:1,result:0,left:0,right:0,symbol:1,type_code:1,numeric_policy:function_mir_exact_numeric_policy()
+  },MirFunctionInstructionSource{global_id:1,source_kind:assembly_source_contract_record_kind(),source_id:1,
+   contract_kind:function_contract_precondition_phase(),clause_ordinal:0,result:0,left:0,right:0}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_check_kind(),clause_ordinal:0,contract_kind:function_contract_postcondition_phase(),
+   start:0,length:1,id:2,result:-1,left:0,right:-1,symbol:0,type_code:2,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:2,source_kind:assembly_source_contract_record_kind(),source_id:2,
+   contract_kind:function_contract_postcondition_phase(),clause_ordinal:0,result:-1,left:0,right:-1}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_call_kind(),clause_ordinal:0,contract_kind:function_contract_precondition_phase(),
+   start:0,length:1,id:3,result:0,left:0,right:-1,symbol:13,type_code:1,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:3,source_kind:assembly_source_contract_record_kind(),source_id:3,
+   contract_kind:function_contract_precondition_phase(),clause_ordinal:0,result:0,left:0,right:-1}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_result_capture_kind(),clause_ordinal:0,contract_kind:function_contract_postcondition_phase(),
+   start:0,length:1,id:4,result:0,left:-1,right:-1,symbol:0,type_code:1,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:4,source_kind:assembly_source_contract_record_kind(),source_id:4,
+   contract_kind:function_contract_postcondition_phase(),clause_ordinal:0,result:0,left:0,right:-1}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_field_load_kind(),clause_ordinal:0,contract_kind:function_contract_postcondition_phase(),
+   start:0,length:1,id:5,result:0,left:0,right:-1,symbol:2,type_code:1,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:5,source_kind:assembly_source_contract_record_kind(),source_id:5,
+   contract_kind:function_contract_postcondition_phase(),clause_ordinal:0,result:0,left:0,right:-1}));
+  print(emit_one(source,MirFunctionContractRecord{
+   kind:function_contract_old_snapshot_kind(),clause_ordinal:0,contract_kind:function_contract_entry_snapshot_phase(),
+   start:0,length:1,id:6,result:0,left:0,right:-1,symbol:0,type_code:1,numeric_policy:0
+  },MirFunctionInstructionSource{global_id:6,source_kind:assembly_source_contract_record_kind(),source_id:6,
+   contract_kind:function_contract_entry_snapshot_phase(),clause_ordinal:0,result:0,left:0,right:-1}));
+  drop(source);return 0;
+ }
+}
+'''
+
 BUILTIN_TYPE_PROBE = r'''module builtin_type_probe
 import bootstrap_mir_resolved_source_function_bundle;
 
@@ -962,6 +1025,35 @@ def test_sourced_cfg_rejects_mismatched_contract_provenance(tmp_path: Path) -> N
     assert native == interpreted
     values = [int(value) for value in native.splitlines()]
     assert values[0] != 0
+
+
+def test_merit_materializes_complete_contract_instruction_catalog(tmp_path: Path) -> None:
+    root = _project(tmp_path, CONTRACT_INSTRUCTION_CATALOG_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "contract-instruction-catalog")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    expected = (
+        MirInstruction(0, "const", result=0, value="1", span=SourceSpan(0, 1), ownership="value", contract_kind="precondition"),
+        MirInstruction(1, "binary", result=0, operands=(0, 0), symbol="+", span=SourceSpan(0, 1), numeric_policy="exact"),
+        MirInstruction(2, "contract_check", operands=(0,), span=SourceSpan(0, 1), contract_kind="postcondition"),
+        MirInstruction(3, "call", result=0, operands=(0,), symbol="slice_len", span=SourceSpan(0, 1)),
+        MirInstruction(4, "copy", result=0, operands=(0,), span=SourceSpan(0, 1)),
+        MirInstruction(5, "load_field", result=0, operands=(0,), symbol="field_2", span=SourceSpan(0, 1)),
+        MirInstruction(6, "copy", result=0, operands=(0,), span=SourceSpan(0, 1)),
+    )
+    values = [int(value) for value in native.splitlines()]
+    cursor = 0
+    for instruction in expected:
+        assert values[cursor] == 0
+        length = values[cursor + 1]
+        actual = bytes(values[cursor + 2:cursor + 2 + length]).decode("utf-8")
+        assert actual == json.dumps(instruction.to_data(), sort_keys=True, separators=(",", ":"))
+        cursor += 2 + length
+        assert values[cursor] == 0
+        cursor += 1
+    assert cursor == len(values)
 
 
 def test_merit_materializes_complete_builtin_type_catalog(tmp_path: Path) -> None:
