@@ -267,6 +267,68 @@ fn main()->i32 {
 }
 '''
 
+OWNERSHIP_BLOCK_MIR_PROBE = r'''module ownership_block_mir_probe
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,2);
+  vec_push<MirOwnershipRecord>(ownership,ownership_record(
+   ownership_record_kind_move(),0,1,2,0,0,ownership_state_live(),ownership_state_moved()
+  ));
+  vec_push<MirOwnershipRecord>(ownership,ownership_record(
+   ownership_record_kind_implicit_drop(),1,2,ownership_record_no_other_binding_id(),1,1,
+   ownership_state_live(),ownership_state_dropped()
+  ));
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,3);
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:0,source_kind:assembly_source_body_kind(),source_id:0,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:0,left:assembly_source_absent_record_value(),right:assembly_source_absent_record_value()
+  });
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:1,left:0,right:assembly_source_absent_record_value()
+  });
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:2,source_kind:assembly_source_ownership_kind(),source_id:1,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:assembly_source_absent_record_value(),left:1,right:assembly_source_absent_record_value()
+  });
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,3);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));
+  var output:Buffer=buffer_new(allocator,256);
+  print(materialize_canonical_ownership_block_instructions(ownership,sources,placements,0,output));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  var invalid_sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,1);
+  vec_push<MirFunctionInstructionSource>(invalid_sources,MirFunctionInstructionSource{
+   global_id:0,source_kind:assembly_source_ownership_kind(),source_id:0,
+   contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+   result:1,left:9,right:assembly_source_absent_record_value()
+  });
+  var invalid_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(invalid_placements,mir_place(0,0,0));
+  var rejected:Buffer=buffer_new(allocator,32);
+  print(materialize_canonical_ownership_block_instructions(
+   ownership,invalid_sources,invalid_placements,0,rejected
+  ));
+  drop(rejected);drop(invalid_placements);drop(invalid_sources);drop(output);drop(placements);drop(sources);drop(ownership);
+  return 0;
+ }
+}
+'''
+
 BUILTIN_TYPE_PROBE = r'''module builtin_type_probe
 import bootstrap_mir_resolved_source_function_bundle;
 
@@ -749,6 +811,25 @@ def test_merit_materializes_explicit_ownership_effects(tmp_path: Path) -> None:
         sort_keys=True, separators=(",", ":"),
     )
     assert values[drop_status_index + 2 + drop_length] == 3
+
+
+def test_merit_orders_ownership_effects_by_explicit_placement(tmp_path: Path) -> None:
+    root = _project(tmp_path, OWNERSHIP_BLOCK_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "ownership-block-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    length = values[1]
+    actual = bytes(values[2:2 + length]).decode("utf-8")
+    expected = ",".join((
+        json.dumps(MirInstruction(1, "move", result=1, operands=(0,), ownership="owned").to_data(), sort_keys=True, separators=(",", ":")),
+        json.dumps(MirInstruction(2, "drop", operands=(1,), ownership="owned").to_data(), sort_keys=True, separators=(",", ":")),
+    ))
+    assert actual == expected
+    assert values[2 + length] == 7
 
 
 def test_merit_materializes_complete_builtin_type_catalog(tmp_path: Path) -> None:
