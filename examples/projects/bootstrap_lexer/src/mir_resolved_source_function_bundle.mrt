@@ -946,7 +946,10 @@ requires_caps [allocate]
         if(local_kind!=function_mir_kind_temporary_local()){
             if(local_kind!=function_mir_kind_source_local()){return 8;}
         }
-        if(function_mir_kind(instruction)!=function_mir_kind_const()){return 9;}
+        if(function_mir_kind(instruction)!=function_mir_kind_const()){
+            if(sourced==0){return 9;}
+            if(function_mir_kind(instruction)!=function_mir_kind_binary()){return 9;}
+        }
     }
     if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
     if(record_count==4){
@@ -1015,14 +1018,36 @@ requires_caps [allocate]
                             if(assembly_source_id(source_record)!=function_mir_id(instruction)){return 40;}
                             canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
                             canonical_mir_append_i64(output,global_id);
-                            canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
-                            canonical_mir_append_i64(output,function_mir_result(instruction));
-                            canonical_mir_append_text(output,",\"span\":[");
-                            canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
-                            canonical_mir_append_i64(output,function_mir_length(instruction));
-                            canonical_mir_append_text(output,"],\"value\":");
-                            let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
-                            if(value_status!=0){return checked_add(41,value_status);}
+                            if(function_mir_kind(instruction)==function_mir_kind_const()){
+                                canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
+                                canonical_mir_append_i64(output,function_mir_result(instruction));
+                                canonical_mir_append_text(output,",\"span\":[");
+                                canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                                canonical_mir_append_i64(output,function_mir_length(instruction));
+                                canonical_mir_append_text(output,"],\"value\":");
+                                let value_status:i32=canonical_mir_append_json_source(output,source,function_mir_start(instruction),function_mir_length(instruction));
+                                if(value_status!=0){return checked_add(41,value_status);}
+                            }else{
+                                if(function_mir_left(instruction)<0){return 47;}
+                                if(function_mir_right(instruction)<0){return 47;}
+                                canonical_mir_append_text(output,",\"kind\":\"binary\",\"numeric_policy\":\"");
+                                if(function_mir_numeric_policy(instruction)==function_mir_exact_numeric_policy()){
+                                    canonical_mir_append_text(output,"exact");
+                                }else{if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
+                                    canonical_mir_append_text(output,"checked");
+                                }else{return 48;}}
+                                canonical_mir_append_text(output,"\",\"operands\":[");
+                                canonical_mir_append_i64(output,function_mir_left(instruction));buffer_push(output,44);
+                                canonical_mir_append_i64(output,function_mir_right(instruction));
+                                canonical_mir_append_text(output,"],\"ownership\":\"none\",\"result\":");
+                                canonical_mir_append_i64(output,function_mir_result(instruction));
+                                canonical_mir_append_text(output,",\"span\":[");
+                                canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
+                                canonical_mir_append_i64(output,function_mir_length(instruction));
+                                canonical_mir_append_text(output,"],\"symbol\":\"");
+                                if(canonical_mir_append_symbol(output,function_mir_symbol_code(instruction))!=0){return 49;}
+                                buffer_push(output,34);
+                            }
                             buffer_push(output,125);
                         }else{
                             if(assembly_source_kind(source_record)==assembly_source_contract_record_kind()){
