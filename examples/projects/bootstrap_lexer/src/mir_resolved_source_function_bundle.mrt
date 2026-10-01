@@ -783,11 +783,49 @@ requires_caps [allocate]
     return 0;
 }
 
-// Bounded CFG slice: materialize explicit block topology plus an optional
-// placed const instruction. Every emitted instruction must have one explicit
-// placement; later SH3 slices widen the accepted instruction/local catalog.
+fn materialize_canonical_contract_instruction(
+    borrow source:Buffer,borrow record:MirFunctionContractRecord,
+    borrow source_record:MirFunctionInstructionSource,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_contract_kind(record)!=function_contract_const_kind()){return 1;}
+    if(function_contract_id(record)!=assembly_source_id(source_record)){return 2;}
+    if(function_contract_contract_kind(record)!=assembly_source_contract_kind(source_record)){return 3;}
+    if(function_contract_clause(record)!=assembly_source_clause(source_record)){return 4;}
+    if(function_contract_result(record)<0){return 5;}
+    let phase:i32=function_contract_contract_kind(record);
+    if(phase!=function_contract_precondition_phase()){
+        if(phase!=function_contract_postcondition_phase()){
+            if(phase!=function_contract_entry_snapshot_phase()){return 6;}
+        }
+    }
+    canonical_mir_append_text(output,"{\"contract_kind\":\"");
+    if(phase==function_contract_precondition_phase()){
+        canonical_mir_append_text(output,"precondition");
+    }else{canonical_mir_append_text(output,"postcondition");}
+    canonical_mir_append_text(output,"\",\"conversion_policy\":\"none\",\"id\":");
+    canonical_mir_append_i64(output,assembly_source_global_id(source_record));
+    canonical_mir_append_text(output,",\"kind\":\"const\",\"numeric_policy\":\"none\",\"operands\":[],\"ownership\":\"value\",\"result\":");
+    canonical_mir_append_i64(output,function_contract_result(record));
+    canonical_mir_append_text(output,",\"span\":[");
+    canonical_mir_append_i64(output,function_contract_start(record));buffer_push(output,44);
+    canonical_mir_append_i64(output,function_contract_length(record));
+    canonical_mir_append_text(output,"],\"value\":");
+    let value_status:i32=canonical_mir_append_json_source(
+        output,source,function_contract_start(record),function_contract_length(record)
+    );
+    if(value_status!=0){return checked_add(10,value_status);}
+    buffer_push(output,125);
+    return 0;
+}
+
+// Bounded CFG slice: materialize explicit block topology plus sourced body,
+// contract, and ownership instructions. Every emitted instruction must have
+// one explicit placement; later SH3 slices widen the accepted catalogs.
 pub fn materialize_sourced_cfg_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
+    borrow contracts:Vec<MirFunctionContractRecord>,
     borrow ownership_bindings:Vec<MirOwnershipBinding>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
     borrow sources:Vec<MirFunctionInstructionSource>,
@@ -807,6 +845,9 @@ requires_caps [allocate]
     let sourced:i32=vec_len<MirFunctionInstructionSource>(sources)>0;
     if(sourced!=0){
         if(validate_function_assembly_sources(sources)!=0){return 36;}
+        if(vec_len<MirFunctionContractRecord>(contracts)>0){
+            if(validate_function_contract_mir(contracts)!=0){return 35;}
+        }
         if(vec_len<MirPlacementRecord>(placements)!=vec_len<MirFunctionInstructionSource>(sources)){return 37;}
         var source_index:i64=0;
         while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
@@ -912,6 +953,24 @@ requires_caps [allocate]
                             if(value_status!=0){return checked_add(41,value_status);}
                             buffer_push(output,125);
                         }else{
+                            if(assembly_source_kind(source_record)==assembly_source_contract_record_kind()){
+                                var contract_index:i64=0;
+                                var contract_matches:i64=0;
+                                while(contract_index<vec_len<MirFunctionContractRecord>(contracts)){
+                                    let contract_record:MirFunctionContractRecord=vec_get<MirFunctionContractRecord>(contracts,contract_index);
+                                    if(function_contract_kind(contract_record)!=function_contract_temporary_local_kind()){
+                                        if(function_contract_id(contract_record)==assembly_source_id(source_record)){
+                                            let contract_status:i32=materialize_canonical_contract_instruction(
+                                                source,contract_record,source_record,output
+                                            );
+                                            if(contract_status!=0){return checked_add(70,contract_status);}
+                                            contract_matches=checked_add(contract_matches,1);
+                                        }
+                                    }
+                                    contract_index=checked_add(contract_index,1);
+                                }
+                                if(contract_matches!=1){return 69;}
+                            }else{
                             if(assembly_source_kind(source_record)!=assembly_source_ownership_kind()){return 42;}
                             let ownership_id:i64=assembly_source_id(source_record);
                             if(ownership_id<0){return 43;}
@@ -925,6 +984,7 @@ requires_caps [allocate]
                                 ownership_value,global_id,assembly_source_result(source_record),output
                             );
                             if(ownership_status!=0){return checked_add(50,ownership_status);}
+                            }
                         }
                     }
                     block_placement_count=checked_add(block_placement_count,1);
@@ -1020,13 +1080,14 @@ requires_caps [allocate]
 {
     let allocator:Allocator=system_allocator();
     var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,0);
+    var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
     var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
     var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
     let status:i32=materialize_sourced_cfg_canonical_mir(
-        source,module_name,records,bindings,ownership,sources,cfg,placements,
+        source,module_name,records,contracts,bindings,ownership,sources,cfg,placements,
         required,capability_catalog,output
     );
-    drop(sources);drop(ownership);drop(bindings);
+    drop(sources);drop(ownership);drop(contracts);drop(bindings);
     return status;
 }
 

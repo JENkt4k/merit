@@ -331,6 +331,7 @@ fn main()->i32 {
 
 SOURCED_OWNERSHIP_CFG_MIR_PROBE = r'''module sourced_ownership_cfg_mir_probe
 import bootstrap_mir_functions;
+import bootstrap_mir_function_contracts;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_cfg;
@@ -349,6 +350,12 @@ fn main()->i32 {
   vec_push<MirFunctionRecord>(records,function_mir_source_local(37,4,0,function_mir_buffer_type_code(),7,1));
   vec_push<MirFunctionRecord>(records,function_mir_const(57,1,0,0,function_mir_buffer_type_code(),0));
   vec_push<MirFunctionRecord>(records,function_mir_return(50,9,-1,0));
+  var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,1);
+  vec_push<MirFunctionContractRecord>(contracts,MirFunctionContractRecord{
+   kind:function_contract_const_kind(),clause_ordinal:0,contract_kind:function_contract_precondition_phase(),
+   start:57,length:1,id:0,result:0,left:-1,right:-1,symbol:0,
+   type_code:function_mir_buffer_type_code(),numeric_policy:0
+  });
   var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
   vec_push<MirOwnershipBinding>(bindings,ownership_binding_with_drop(7,0,1,1,1));
   var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
@@ -356,34 +363,40 @@ fn main()->i32 {
    ownership_record_kind_implicit_drop(),0,7,ownership_record_no_other_binding_id(),0,1,
    ownership_state_live(),ownership_state_dropped()
   ));
-  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,2);
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,3);
   vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
-   global_id:0,source_kind:assembly_source_body_kind(),source_id:0,
+   global_id:0,source_kind:assembly_source_contract_record_kind(),source_id:0,
+   contract_kind:function_contract_precondition_phase(),clause_ordinal:0,
+   result:0,left:assembly_source_absent_record_value(),right:assembly_source_absent_record_value()
+  });
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+   global_id:1,source_kind:assembly_source_body_kind(),source_id:0,
    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
    result:0,left:assembly_source_absent_record_value(),right:assembly_source_absent_record_value()
   });
   vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
-   global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0,
+   global_id:2,source_kind:assembly_source_ownership_kind(),source_id:0,
    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
    result:assembly_source_absent_record_value(),left:0,right:assembly_source_absent_record_value()
   });
   var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
   vec_push<MirCfgRecord>(cfg,cfg_block(0,0));
   vec_push<MirCfgRecord>(cfg,cfg_return_unit(0));
-  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,2);
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,3);
   vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
   vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));
   var required:Vec<i64>=vec_new<i64>(allocator,0);
   var capability_catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
   var output:Buffer=buffer_new(allocator,512);
   let status:i32=materialize_sourced_cfg_canonical_mir(
-   source,"demo",records,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
+   source,"demo",records,contracts,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
   );
   print(status);print(buffer_len(output));
   var index:i64=0;
   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
   drop(output);drop(capability_catalog);drop(required);drop(placements);drop(cfg);
-  drop(sources);drop(ownership);drop(bindings);drop(records);drop(source);
+  drop(sources);drop(ownership);drop(bindings);drop(contracts);drop(records);drop(source);
   return status;
  }
 }
@@ -392,6 +405,13 @@ fn main()->i32 {
 INVALID_SOURCED_OWNERSHIP_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
     "ownership_binding_with_drop(7,0,1,1,1)",
     "ownership_binding_with_drop(8,0,1,1,1)",
+).replace("return status;", "return 0;")
+
+INVALID_SOURCED_CONTRACT_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+    "contract_kind:function_contract_precondition_phase(),clause_ordinal:0,\n"
+    "   result:0,left:assembly_source_absent_record_value()",
+    "contract_kind:function_contract_postcondition_phase(),clause_ordinal:0,\n"
+    "   result:0,left:assembly_source_absent_record_value()",
 ).replace("return status;", "return 0;")
 
 BUILTIN_TYPE_PROBE = r'''module builtin_type_probe
@@ -912,8 +932,9 @@ def test_merit_materializes_owned_local_and_drop_in_complete_cfg(tmp_path: Path)
             MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
         ), (
             MirBlock(0, (
-                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value"),
-                MirInstruction(1, "drop", operands=(0,), ownership="owned"),
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value"),
+                MirInstruction(2, "drop", operands=(0,), ownership="owned"),
             ), MirTerminator("return")),
         ), 0,
     ),)))
@@ -926,6 +947,17 @@ def test_sourced_cfg_rejects_mismatched_source_binding_identity(tmp_path: Path) 
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "invalid-sourced-ownership-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] != 0
+
+
+def test_sourced_cfg_rejects_mismatched_contract_provenance(tmp_path: Path) -> None:
+    root = _project(tmp_path, INVALID_SOURCED_CONTRACT_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "invalid-sourced-contract-cfg-mir")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     values = [int(value) for value in native.splitlines()]
