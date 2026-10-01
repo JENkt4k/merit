@@ -829,7 +829,10 @@ requires_caps [allocate]
         if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}}
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
-        if(function_mir_kind(local)!=function_mir_kind_temporary_local()){return 8;}
+        let local_kind:i32=function_mir_kind(local);
+        if(local_kind!=function_mir_kind_temporary_local()){
+            if(local_kind!=function_mir_kind_source_local()){return 8;}
+        }
         if(function_mir_kind(instruction)!=function_mir_kind_const()){return 9;}
     }
     if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
@@ -840,6 +843,10 @@ requires_caps [allocate]
             let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_validation_index);
             if(ownership_binding_id(binding)<0){return 61;}
             if(ownership_binding_local_id(binding)!=function_mir_id(local)){return 62;}
+            if(function_mir_kind(local)==function_mir_kind_source_local()){
+                if(ownership_binding_id(binding)!=function_mir_binding_id(local)){return 62;}
+                if(ownership_binding_mutable(binding)!=function_mir_mutable(local)){return 64;}
+            }
             if(ownership_binding_owned(binding)<0){return 63;}
             if(ownership_binding_owned(binding)>1){return 63;}
             if(ownership_binding_mutable(binding)<0){return 64;}
@@ -951,7 +958,13 @@ requires_caps [allocate]
         var binding_index:i64=0;
         while(binding_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
             let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_index);
-            if(ownership_binding_local_id(binding)==function_mir_id(local)){
+            var binding_matches_local:i32=0;
+            if(function_mir_kind(local)==function_mir_kind_source_local()){
+                if(ownership_binding_id(binding)==function_mir_binding_id(local)){binding_matches_local=1;}
+            }else{
+                if(ownership_binding_local_id(binding)==function_mir_id(local)){binding_matches_local=1;}
+            }
+            if(binding_matches_local!=0){
                 if(local_binding_id>=0){return 60;}
                 local_binding_id=ownership_binding_id(binding);
                 local_mutable=ownership_binding_mutable(binding);
@@ -959,10 +972,23 @@ requires_caps [allocate]
             }
             binding_index=checked_add(binding_index,1);
         }
+        if(function_mir_kind(local)==function_mir_kind_source_local()){
+            if(local_binding_id<0){local_binding_id=function_mir_binding_id(local);}
+            if(vec_len<MirOwnershipBinding>(ownership_bindings)==0){local_mutable=function_mir_mutable(local);}
+        }
         if(local_mutable==0){canonical_mir_append_text(output,"false");}else{canonical_mir_append_text(output,"true");}
-        canonical_mir_append_text(output,",\"name\":\"_t");
-        canonical_mir_append_i64(output,function_mir_hir_node_id(local));
-        canonical_mir_append_text(output,"\",\"ownership\":\"");
+        canonical_mir_append_text(output,",\"name\":");
+        if(function_mir_kind(local)==function_mir_kind_source_local()){
+            let local_name_status:i32=canonical_mir_append_json_source(
+                output,source,function_mir_symbol_start(local),function_mir_symbol_length(local)
+            );
+            if(local_name_status!=0){return 66;}
+        }else{
+            canonical_mir_append_text(output,"\"_t");
+            canonical_mir_append_i64(output,function_mir_hir_node_id(local));
+            buffer_push(output,34);
+        }
+        canonical_mir_append_text(output,",\"ownership\":\"");
         if(local_owned==0){canonical_mir_append_text(output,"value");}else{canonical_mir_append_text(output,"owned");}
         buffer_push(output,34);
         if(local_binding_id>=0){
