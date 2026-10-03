@@ -364,9 +364,10 @@ fn canonical_c_has_feature(feature:i64,borrow features:Vec<i64>)->i32
 // private or exported i64 functions containing ordered scalar instructions and
 // one return block or a jump to an empty return block. Other shapes fail closed
 // extends this writer.
-pub fn canonical_c_append_scalar_function(
+pub fn canonical_c_append_scalar_function_with_catalog(
     borrow source:Buffer,
     borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
     borrow cfg:Vec<MirCfgRecord>,
     borrow placements:Vec<MirPlacementRecord>,
     borrow_mut prototypes:Buffer,
@@ -434,7 +435,16 @@ requires_caps [allocate]
                             if(kind==function_mir_kind_print()){
                                 instruction_count=checked_add(instruction_count,1);
                             }else{
-                                if(kind!=function_mir_kind_return()){return 14;}
+                                if(kind==function_mir_kind_call()){
+                                    if(function_mir_result(record)<0){return 60;}
+                                    if(function_mir_type_code(record)!=function_mir_i64_type_code()){return 61;}
+                                    if(function_mir_numeric_policy(record)!=function_mir_mode_value()){return 62;}
+                                    instruction_count=checked_add(instruction_count,1);
+                                }else{
+                                    if(kind!=function_mir_kind_call_argument()){
+                                        if(kind!=function_mir_kind_return()){return 14;}
+                                    }
+                                }
                             }
                         }
                     }
@@ -494,6 +504,7 @@ requires_caps [allocate]
             if(instruction_kind==function_mir_kind_copy_to_binding()){supported_instruction=1;}
             if(instruction_kind==function_mir_kind_binary()){supported_instruction=1;}
             if(instruction_kind==function_mir_kind_print()){supported_instruction=1;}
+            if(instruction_kind==function_mir_kind_call()){supported_instruction=1;}
             if(supported_instruction!=0){
                 if(function_mir_id(instruction)==instruction_id){
                     if(instruction_found!=0){return 20;}
@@ -557,6 +568,80 @@ requires_caps [allocate]
                         canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
                         canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
                     }
+                    if(instruction_kind==function_mir_kind_call()){
+                        var callee_found:i32=0;var callee_header:MirFunctionRecord=header;var callee_index:i64=0;
+                        var candidate_index:i64=0;
+                        while(candidate_index<vec_len<MirFunctionRecord>(callable_headers)){
+                            let candidate:MirFunctionRecord=vec_get<MirFunctionRecord>(callable_headers,candidate_index);
+                            if(function_mir_kind(candidate)!=function_mir_kind_function()){
+                                if(function_mir_kind(candidate)!=function_mir_kind_parameter()){return 63;}
+                            }
+                            if(function_mir_kind(candidate)==function_mir_kind_function()){
+                            if(function_mir_symbol_length(candidate)==function_mir_symbol_length(instruction)){
+                                var same:i32=1;var name_offset:i64=0;
+                                while(name_offset<function_mir_symbol_length(instruction)){
+                                    let left_byte:i64=buffer_get(source,checked_add(function_mir_symbol_start(candidate),name_offset));
+                                    let right_byte:i64=buffer_get(source,checked_add(function_mir_symbol_start(instruction),name_offset));
+                                    if(left_byte!=right_byte){same=0;}
+                                    name_offset=checked_add(name_offset,1);
+                                }
+                                if(same!=0){
+                                    if(callee_found!=0){return 64;}
+                                    callee_found=1;callee_header=candidate;callee_index=candidate_index;
+                                }
+                            }}
+                            candidate_index=checked_add(candidate_index,1);
+                        }
+                        if(callee_found==0){return 65;}
+                        if(function_mir_type_code(callee_header)!=function_mir_i64_type_code()){return 66;}
+                        var callee_parameter_ordinal:i64=0;
+                        while(callee_parameter_ordinal<function_mir_ordinal(callee_header)){
+                            let catalog_index:i64=checked_add(checked_add(callee_index,1),callee_parameter_ordinal);
+                            if(catalog_index>=vec_len<MirFunctionRecord>(callable_headers)){return 75;}
+                            let parameter:MirFunctionRecord=vec_get<MirFunctionRecord>(callable_headers,catalog_index);
+                            if(function_mir_kind(parameter)!=function_mir_kind_parameter()){return 71;}
+                            if(function_mir_ordinal(parameter)!=callee_parameter_ordinal){return 72;}
+                            if(function_mir_type_code(parameter)!=function_mir_i64_type_code()){return 73;}
+                            if(function_mir_symbol_code(parameter)!=function_mir_mode_value()){return 74;}
+                            callee_parameter_ordinal=checked_add(callee_parameter_ordinal,1);
+                        }
+                        canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
+                        canonical_mir_append_text(bodies," = ");canonical_c_append_function_name(source,callee_header,bodies);
+                        buffer_push(bodies,40);
+                        var argument_ordinal:i64=0;
+                        while(argument_ordinal<function_mir_ordinal(callee_header)){
+                            var argument_found:i32=0;var argument_index:i64=1;
+                            while(argument_index<vec_len<MirFunctionRecord>(records)){
+                                let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,argument_index);
+                                if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                                    if(function_mir_id(argument)==function_mir_id(instruction)){
+                                        if(function_mir_ordinal(argument)==argument_ordinal){
+                                            if(argument_found!=0){return 67;}
+                                            if(function_mir_symbol_code(argument)!=function_mir_mode_value()){return 68;}
+                                            if(argument_ordinal>0){canonical_mir_append_text(bodies,", ");}
+                                            canonical_mir_append_text(bodies,"m");canonical_mir_append_i64(bodies,function_mir_left(argument));
+                                            argument_found=1;
+                                        }
+                                    }
+                                }
+                                argument_index=checked_add(argument_index,1);
+                            }
+                            if(argument_found==0){return 69;}
+                            argument_ordinal=checked_add(argument_ordinal,1);
+                        }
+                        var argument_count:i64=0;var remaining_index:i64=1;
+                        while(remaining_index<vec_len<MirFunctionRecord>(records)){
+                            let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,remaining_index);
+                            if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                                if(function_mir_id(argument)==function_mir_id(instruction)){
+                                    argument_count=checked_add(argument_count,1);
+                                }
+                            }
+                            remaining_index=checked_add(remaining_index,1);
+                        }
+                        if(argument_count!=function_mir_ordinal(callee_header)){return 70;}
+                        canonical_mir_append_text(bodies,");\n");
+                    }
                 }
             }
             record_index=checked_add(record_index,1);
@@ -573,6 +658,22 @@ requires_caps [allocate]
     }
     canonical_mir_append_text(bodies,";\n}");
     return 0;
+}
+
+pub fn canonical_c_append_scalar_function(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    let empty_headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+    let status:i32=canonical_c_append_scalar_function_with_catalog(
+        source,records,empty_headers,cfg,placements,prototypes,bodies,public_header,features
+    );
+    drop(empty_headers);return status;
 }
 
 pub fn canonical_c_finish_scalar_module(

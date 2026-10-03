@@ -269,6 +269,42 @@ CANONICAL_C_JUMP_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));vec_push<MirCfgRecord>(cfg,cfg_return(1,2));",
 )
 
+CANONICAL_C_CALL_PROBE = CANONICAL_C_MULTIFUNCTION_PROBE.replace(
+    "vec_new<MirFunctionRecord>(allocator,4);",
+    "vec_new<MirFunctionRecord>(allocator,7);",
+).replace(
+    "  vec_push<MirFunctionRecord>(first,function_mir_return(5,1,0,0));",
+    "  vec_push<MirFunctionRecord>(first,function_mir_temporary(1,function_mir_i64_type_code(),1));\n"
+    "  vec_push<MirFunctionRecord>(first,function_mir_call(6,6,1,1,6,6,function_mir_i64_type_code(),function_mir_mode_value(),1));\n"
+    "  vec_push<MirFunctionRecord>(first,function_mir_call_argument(1,0,function_mir_mode_value(),0));\n"
+    "  vec_push<MirFunctionRecord>(first,function_mir_return(5,1,1,2));",
+).replace(
+    "vec_push<MirCfgRecord>(first_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(first_cfg,cfg_return(0,0));",
+    "vec_push<MirCfgRecord>(first_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(first_cfg,cfg_return(0,1));",
+).replace(
+    "var first_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);\n"
+    "  vec_push<MirPlacementRecord>(first_placements,mir_place(0,0,0));",
+    "var first_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,2);\n"
+    "  vec_push<MirPlacementRecord>(first_placements,mir_place(0,0,0));\n"
+    "  vec_push<MirPlacementRecord>(first_placements,mir_place(0,1,1));",
+).replace(
+    "  var features:Vec<i64>=vec_new<i64>(allocator,0);",
+    "  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);\n"
+    "  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(first,0));\n"
+    "  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(second,0));\n"
+    "  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(second,1));\n"
+    "  var features:Vec<i64>=vec_new<i64>(allocator,0);",
+).replace(
+    "canonical_c_append_scalar_function(source,first,first_cfg",
+    "canonical_c_append_scalar_function_with_catalog(source,first,headers,first_cfg",
+).replace(
+    "canonical_c_append_scalar_function(source,second,second_cfg",
+    "canonical_c_append_scalar_function_with_catalog(source,second,headers,second_cfg",
+).replace(
+    "  drop(features);drop(second_placements);",
+    "  drop(features);drop(headers);drop(second_placements);",
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1153,6 +1189,64 @@ def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+def test_merit_scalar_call_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_CALL_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-call")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (
+        MirFunction("first", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+        ), (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=1),
+            MirInstruction(1, "call", result=1, operands=(0,), symbol="second"),
+        ), MirTerminator("return", operands=(1,))),), 0),
+        MirFunction("second", MirType("i64"), (MirLocal(0, "value", MirType("i64")),),
+                    (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+                    parameters=(MirParameter(0),), exported=True),
+    ))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_scalar_call_c_backend_rejects_unknown_target(tmp_path: Path) -> None:
+    probe = CANONICAL_C_CALL_PROBE.replace(
+        "function_mir_call(6,6,1,1,6,6,",
+        "function_mir_call(6,6,1,1,0,6,",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-call-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 65
+    assert native.stdout == ""
+
+
+def test_merit_scalar_call_c_backend_rejects_borrowed_callee_parameter(tmp_path: Path) -> None:
+    probe = CANONICAL_C_CALL_PROBE.replace(
+        "function_mir_parameter(6,6,0,function_mir_i64_type_code(),0,0,function_mir_mode_value(),0)",
+        "function_mir_parameter(6,6,0,function_mir_i64_type_code(),0,0,function_mir_mode_borrowed(),0)",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-call-borrowed-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 74
+    assert native.stdout == ""
 
 
 @pytest.mark.parametrize(
