@@ -892,6 +892,81 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_mir_append_composite_body_tail(
+    borrow record:MirFunctionRecord,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let kind:i32=function_mir_kind(record);
+    if(function_mir_result(record)<0){return 1;}
+    var output_kind:i32=0;
+    if(kind==function_mir_kind_enum_construct()){output_kind=1;}
+    if(kind==function_mir_kind_enum_tag_load()){output_kind=2;}
+    if(kind==function_mir_kind_enum_payload_load()){output_kind=3;}
+    if(kind==function_mir_kind_struct_construct()){output_kind=4;}
+    if(kind==function_mir_kind_struct_field_load()){output_kind=5;}
+    if(kind==function_mir_kind_struct_field_store()){output_kind=6;}
+    if(output_kind==0){return 2;}
+    var enum_as_const:i32=0;
+    if(output_kind==1){
+        if(function_mir_symbol_code(record)<0){return 3;}
+        if(function_mir_type_code(record)==function_mir_i64_type_code()){
+            if(function_mir_left(record)!=function_mir_absent_record_value()){return 3;}
+            enum_as_const=1;
+        }else{
+            if(function_mir_type_code(record)<function_mir_copy_payload_enum_type_code(0)){return 3;}
+            if(function_mir_left(record)<function_mir_absent_record_value()){return 3;}
+        }
+    }else{if(function_mir_left(record)<0){return 4;}}
+    if(output_kind>=4){
+        if(function_mir_symbol_code(record)<0){return 5;}
+    }
+    canonical_mir_append_text(output,",\"kind\":\"");
+    if(enum_as_const!=0){canonical_mir_append_text(output,"const");}
+    else{if(output_kind==1){canonical_mir_append_text(output,"construct");}
+    else{if(output_kind==4){canonical_mir_append_text(output,"construct");}
+    else{if(output_kind==6){canonical_mir_append_text(output,"store_field");}
+    else{canonical_mir_append_text(output,"load_field");}}}}
+    canonical_mir_append_text(output,"\",\"numeric_policy\":\"none\",\"operands\":[");
+    if(enum_as_const==0){
+        if(output_kind==1){
+            if(function_mir_left(record)>=0){canonical_mir_append_i64(output,function_mir_left(record));}
+        }else{canonical_mir_append_i64(output,function_mir_left(record));}
+    }
+    canonical_mir_append_text(output,"],\"ownership\":\"");
+    if(enum_as_const!=0){canonical_mir_append_text(output,"value");}
+    else{if(output_kind==1){
+        if(function_mir_type_code(record)>=function_mir_owned_payload_enum_type_code(0,0)){canonical_mir_append_text(output,"owned");}
+        else{canonical_mir_append_text(output,"value");}
+    }else{if(output_kind==4){canonical_mir_append_text(output,"owned");}
+    else{if(output_kind==6){
+        if(function_mir_numeric_policy(record)==function_mir_field_store_replace_policy()){canonical_mir_append_text(output,"moved");}
+        else{if(function_mir_numeric_policy(record)==function_mir_field_store_initialize_policy()){canonical_mir_append_text(output,"owned");}else{return 6;}}
+    }else{canonical_mir_append_text(output,"none");}}}}
+    canonical_mir_append_text(output,"\",\"result\":");
+    canonical_mir_append_i64(output,function_mir_result(record));
+    canonical_mir_append_text(output,",\"span\":[");
+    canonical_mir_append_i64(output,function_mir_start(record));buffer_push(output,44);
+    canonical_mir_append_i64(output,function_mir_length(record));buffer_push(output,93);
+    if(enum_as_const!=0){
+        canonical_mir_append_text(output,",\"value\":");
+        canonical_mir_append_i32(output,function_mir_symbol_code(record));
+    }else{
+        canonical_mir_append_text(output,",\"symbol\":\"");
+        if(output_kind==2){canonical_mir_append_text(output,"tag");}
+        else{if(output_kind==3){
+            canonical_mir_append_text(output,"payload");
+            if(function_mir_right(record)>=0){buffer_push(output,95);canonical_mir_append_i64(output,function_mir_right(record));}
+        }else{
+            if(output_kind==1){canonical_mir_append_text(output,"variant_");}
+            else{canonical_mir_append_text(output,"field_");}
+            canonical_mir_append_i32(output,function_mir_symbol_code(record));
+        }}
+        buffer_push(output,34);
+    }
+    return 0;
+}
+
 // Bounded CFG slice: materialize explicit block topology plus sourced body,
 // contract, and ownership instructions. Every emitted instruction must have
 // one explicit placement; later SH3 slices widen the accepted catalogs.
@@ -947,16 +1022,21 @@ requires_caps [allocate]
         if(local_kind!=function_mir_kind_temporary_local()){
             if(local_kind!=function_mir_kind_source_local()){return 8;}
         }
-        if(function_mir_kind(instruction)!=function_mir_kind_const()){
-            if(sourced==0){return 9;}
-            if(function_mir_kind(instruction)!=function_mir_kind_binary()){
-                if(function_mir_kind(instruction)!=function_mir_kind_copy_to_binding()){
-                    if(function_mir_kind(instruction)!=function_mir_kind_print()){
-                        if(function_mir_kind(instruction)!=function_mir_kind_call()){return 9;}
-                    }
-                }
-            }
-        }
+        let instruction_kind:i32=function_mir_kind(instruction);
+        var supported_instruction:i32=0;
+        if(instruction_kind==function_mir_kind_const()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_binary()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_copy_to_binding()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_print()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_call()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_enum_construct()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_enum_tag_load()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_enum_payload_load()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_struct_construct()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_struct_field_load()){supported_instruction=1;}
+        if(instruction_kind==function_mir_kind_struct_field_store()){supported_instruction=1;}
+        if(supported_instruction==0){return 9;}
+        if(sourced==0){if(instruction_kind!=function_mir_kind_const()){return 9;}}
         if(record_count==5){
             let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,3);
             if(function_mir_kind(instruction)!=function_mir_kind_call()){return 10;}
@@ -1063,7 +1143,18 @@ requires_caps [allocate]
                                 if(canonical_mir_append_symbol(output,function_mir_symbol_code(instruction))!=0){return 49;}
                                 buffer_push(output,34);
                             }else{
-                                if(function_mir_kind(instruction)==function_mir_kind_call()){
+                                let body_kind:i32=function_mir_kind(instruction);
+                                var is_composite:i32=0;
+                                if(body_kind==function_mir_kind_enum_construct()){is_composite=1;}
+                                if(body_kind==function_mir_kind_enum_tag_load()){is_composite=1;}
+                                if(body_kind==function_mir_kind_enum_payload_load()){is_composite=1;}
+                                if(body_kind==function_mir_kind_struct_construct()){is_composite=1;}
+                                if(body_kind==function_mir_kind_struct_field_load()){is_composite=1;}
+                                if(body_kind==function_mir_kind_struct_field_store()){is_composite=1;}
+                                if(is_composite!=0){
+                                    let composite_status:i32=canonical_mir_append_composite_body_tail(instruction,output);
+                                    if(composite_status!=0){return checked_add(80,composite_status);}
+                                }else{if(function_mir_kind(instruction)==function_mir_kind_call()){
                                     canonical_mir_append_text(output,",\"kind\":\"call\",\"numeric_policy\":\"none\",\"operands\":[");
                                     var call_argument_ordinal:i64=0;
                                     var call_argument_index:i64=1;
@@ -1109,7 +1200,7 @@ requires_caps [allocate]
                                 canonical_mir_append_text(output,",\"span\":[");
                                 canonical_mir_append_i64(output,function_mir_start(instruction));buffer_push(output,44);
                                 canonical_mir_append_i64(output,function_mir_length(instruction));buffer_push(output,93);
-                                }}
+                                }}}
                             }
                             buffer_push(output,125);
                         }else{

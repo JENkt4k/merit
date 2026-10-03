@@ -328,6 +328,11 @@ The following review observations remain bounded audit leads rather than
 confirmed SH3 defects: unbounded recursively growing generic instantiation,
 trait-method rewrite collisions, `verify` trap comparison, and the documented
 GCC/Clang extension dependency.
+The sourced body-catalog audit also found that the flat Merit record validator
+currently requires a payload local for every enum-construction record, while the
+Python canonical adapter retains a payloadless construction branch. Existing
+accepted paths remain unchanged; reconcile or prove that representation seam
+before declaring the SH3 body catalog complete rather than weakening validation.
 Investigate them with focused reproductions only when they affect the current
 SH3 evidence path; otherwise record them for the post-SH6 maintenance/RM0
 queue. Readability and typing improvements to the monolithic Python oracle are

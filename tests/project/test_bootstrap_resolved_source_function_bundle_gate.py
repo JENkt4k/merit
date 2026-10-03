@@ -443,6 +443,34 @@ SOURCED_CALL_ARGUMENT_CFG_MIR_PROBE = SOURCED_CALL_CFG_MIR_PROBE.replace(
     "  vec_push<MirFunctionRecord>(records,function_mir_return(50,9,-1,0));",
 )
 
+def _sourced_body_probe(record: str) -> str:
+    return SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+        "function_mir_const(57,1,0,0,function_mir_buffer_type_code(),0)", record,
+    )
+
+
+SOURCED_ENUM_CONSTRUCT_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_construct(57,1,0,0,0,2,function_mir_copy_payload_enum_type_code(0),0)"
+)
+SOURCED_ENUM_TAG_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_enum_tag_load(57,1,0,0,0,0)"
+)
+SOURCED_ENUM_PAYLOAD_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_enum_payload_load(57,1,0,0,0,2,0)"
+)
+SOURCED_STRUCT_CONSTRUCT_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_struct_construct(57,1,0,0,0,2,function_mir_i64_struct_type_code(0),0)"
+)
+SOURCED_STRUCT_LOAD_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_struct_field_load(57,1,0,0,0,2,0)"
+)
+SOURCED_STRUCT_STORE_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_struct_field_store(57,1,0,0,0,2,function_mir_i64_struct_type_code(0),0)"
+)
+SOURCED_STRUCT_REPLACE_CFG_MIR_PROBE = _sourced_body_probe(
+    "function_mir_struct_field_replace(57,1,0,0,0,2,function_mir_i64_struct_type_code(0),0)"
+)
+
 CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_function_contracts;
@@ -1137,6 +1165,40 @@ def test_merit_materializes_ordered_sourced_call_arguments(tmp_path: Path) -> No
     ),)))
     assert values[1] == len(actual.encode("utf-8"))
     assert actual == expected
+
+
+def test_merit_materializes_sourced_composite_instruction_catalog(tmp_path: Path) -> None:
+    cases = (
+        ("enum-construct", SOURCED_ENUM_CONSTRUCT_CFG_MIR_PROBE, MirInstruction(1, "construct", result=0, operands=(0,), symbol="variant_2", span=SourceSpan(57, 1), ownership="value")),
+        ("enum-tag", SOURCED_ENUM_TAG_CFG_MIR_PROBE, MirInstruction(1, "load_field", result=0, operands=(0,), symbol="tag", span=SourceSpan(57, 1))),
+        ("enum-payload", SOURCED_ENUM_PAYLOAD_CFG_MIR_PROBE, MirInstruction(1, "load_field", result=0, operands=(0,), symbol="payload_2", span=SourceSpan(57, 1))),
+        ("struct-construct", SOURCED_STRUCT_CONSTRUCT_CFG_MIR_PROBE, MirInstruction(1, "construct", result=0, operands=(0,), symbol="field_2", span=SourceSpan(57, 1), ownership="owned")),
+        ("struct-load", SOURCED_STRUCT_LOAD_CFG_MIR_PROBE, MirInstruction(1, "load_field", result=0, operands=(0,), symbol="field_2", span=SourceSpan(57, 1))),
+        ("struct-store", SOURCED_STRUCT_STORE_CFG_MIR_PROBE, MirInstruction(1, "store_field", result=0, operands=(0,), symbol="field_2", span=SourceSpan(57, 1), ownership="owned")),
+        ("struct-replace", SOURCED_STRUCT_REPLACE_CFG_MIR_PROBE, MirInstruction(1, "store_field", result=0, operands=(0,), symbol="field_2", span=SourceSpan(57, 1), ownership="moved")),
+    )
+    for name, probe, body_instruction in cases:
+        root = _project(tmp_path / name, probe)
+        project = load_project(root / "Merit.toml")
+        interpreted = interpret(project)
+        _, _, executable = build(project, root / "build" / name)
+        native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+        assert native == interpreted
+        values = [int(value) for value in native.splitlines()]
+        assert values[0] == 0
+        actual = bytes(values[2:]).decode("utf-8")
+        expected = canonical_mir_json(MirModule("demo", (MirFunction(
+            "compute", MirType("unit"), (
+                MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+            ), (
+                MirBlock(0, (
+                    MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                    body_instruction,
+                    MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+                ), MirTerminator("return")),
+            ), 0,
+        ),)))
+        assert actual == expected
 
 
 def test_sourced_cfg_rejects_mismatched_source_binding_identity(tmp_path: Path) -> None:
