@@ -1059,6 +1059,12 @@ requires_caps [allocate]
                     binding_local_matches=checked_add(binding_local_matches,1);
                 }
             }
+            if(function_mir_kind(binding_local)==function_mir_kind_parameter()){
+                if(function_mir_binding_id(binding_local)==ownership_binding_id(binding)){
+                    if(function_mir_id(binding_local)!=ownership_binding_local_id(binding)){return 62;}
+                    binding_local_matches=checked_add(binding_local_matches,1);
+                }
+            }
             if(function_mir_kind(binding_local)==function_mir_kind_temporary_local()){
                 if(function_mir_id(binding_local)==ownership_binding_local_id(binding)){
                     binding_local_matches=checked_add(binding_local_matches,1);
@@ -1256,6 +1262,11 @@ requires_caps [allocate]
                                         ownership_local_matches=checked_add(ownership_local_matches,1);
                                     }
                                 }
+                                if(ownership_local_kind==function_mir_kind_parameter()){
+                                    if(ownership_record_operand_local(ownership_value)==function_mir_id(ownership_local)){
+                                        ownership_local_matches=checked_add(ownership_local_matches,1);
+                                    }
+                                }
                                 ownership_local_index=checked_add(ownership_local_index,1);
                             }
                             if(ownership_local_matches!=1){return 46;}
@@ -1281,12 +1292,19 @@ requires_caps [allocate]
     }
     if(block_count==0){return 20;}
     if(emitted_placement_count!=vec_len<MirPlacementRecord>(placements)){return 28;}
-    canonical_mir_append_text(output,"],\"capabilities\":");
+    buffer_push(output,93);
+    if(function_mir_symbol_code(header)!=function_mir_mode_value()){
+        canonical_mir_append_text(output,",\"borrowed_origin\":");
+        canonical_mir_append_i64(output,function_mir_left(header));
+    }
+    canonical_mir_append_text(output,",\"capabilities\":");
     let capability_status:i32=materialize_canonical_capabilities(
         source,required,capability_catalog,output
     );
     if(capability_status!=0){return checked_add(40,capability_status);}
-    canonical_mir_append_text(output,",\"entry_block\":0,\"locals\":[");
+    canonical_mir_append_text(output,",\"entry_block\":0");
+    if(function_mir_mutable(header)!=0){canonical_mir_append_text(output,",\"exported\":true");}
+    canonical_mir_append_text(output,",\"locals\":[");
     var local_record_index:i64=1;var emitted_local_count:i64=0;
     while(local_record_index<checked_sub(record_count,1)){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,local_record_index);
@@ -1294,6 +1312,7 @@ requires_caps [allocate]
         var emit_local:i32=0;
         if(emitted_local_kind==function_mir_kind_source_local()){emit_local=1;}
         if(emitted_local_kind==function_mir_kind_temporary_local()){emit_local=1;}
+        if(emitted_local_kind==function_mir_kind_parameter()){emit_local=1;}
         if(emit_local!=0){
         if(emitted_local_count>0){buffer_push(output,44);}
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
@@ -1301,15 +1320,18 @@ requires_caps [allocate]
         var local_mutable:i32=0;
         var local_owned:i32=0;
         var local_binding_id:i64=-1;
+        if(emitted_local_kind==function_mir_kind_parameter()){
+            local_mutable=function_mir_mutable(local);local_binding_id=function_mir_binding_id(local);
+        }
         var binding_index:i64=0;
         while(binding_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
             let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_index);
             var binding_matches_local:i32=0;
             if(function_mir_kind(local)==function_mir_kind_source_local()){
                 if(ownership_binding_id(binding)==function_mir_binding_id(local)){binding_matches_local=1;}
-            }else{
+            }else{if(function_mir_kind(local)==function_mir_kind_temporary_local()){
                 if(ownership_binding_local_id(binding)==function_mir_id(local)){binding_matches_local=1;}
-            }
+            }}
             if(binding_matches_local!=0){
                 if(local_binding_id>=0){return 60;}
                 local_binding_id=ownership_binding_id(binding);
@@ -1329,13 +1351,20 @@ requires_caps [allocate]
                 output,source,function_mir_symbol_start(local),function_mir_symbol_length(local)
             );
             if(local_name_status!=0){return 66;}
+        }else{if(function_mir_kind(local)==function_mir_kind_parameter()){
+            let parameter_name_status:i32=canonical_mir_append_json_source(
+                output,source,function_mir_symbol_start(local),function_mir_symbol_length(local)
+            );
+            if(parameter_name_status!=0){return 66;}
         }else{
             canonical_mir_append_text(output,"\"_t");
             canonical_mir_append_i64(output,function_mir_hir_node_id(local));
             buffer_push(output,34);
-        }
+        }}
         canonical_mir_append_text(output,",\"ownership\":\"");
-        if(local_owned==0){canonical_mir_append_text(output,"value");}else{canonical_mir_append_text(output,"owned");}
+        if(function_mir_kind(local)==function_mir_kind_parameter()){
+            if(canonical_mir_append_mode(output,function_mir_symbol_code(local))!=0){return 67;}
+        }else{if(local_owned==0){canonical_mir_append_text(output,"value");}else{canonical_mir_append_text(output,"owned");}}
         buffer_push(output,34);
         if(local_binding_id>=0){
             canonical_mir_append_text(output,",\"source_binding_id\":");
@@ -1351,6 +1380,35 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"],\"name\":");
     let name_status:i32=canonical_mir_append_json_source(output,source,function_mir_symbol_start(header),function_mir_symbol_length(header));
     if(name_status!=0){return checked_add(30,name_status);}
+    if(function_mir_ordinal(header)>0){
+        canonical_mir_append_text(output,",\"parameters\":[");
+        var parameter_ordinal:i64=0;
+        while(parameter_ordinal<function_mir_ordinal(header)){
+            var parameter_index:i64=1;var parameter_matches:i64=0;
+            while(parameter_index<checked_sub(record_count,1)){
+                let parameter:MirFunctionRecord=vec_get<MirFunctionRecord>(records,parameter_index);
+                if(function_mir_kind(parameter)==function_mir_kind_parameter()){
+                    if(function_mir_ordinal(parameter)==parameter_ordinal){
+                        if(parameter_matches>0){return 68;}
+                        if(parameter_ordinal>0){buffer_push(output,44);}
+                        canonical_mir_append_text(output,"{\"local\":");
+                        canonical_mir_append_i64(output,function_mir_id(parameter));
+                        canonical_mir_append_text(output,",\"mode\":\"");
+                        if(canonical_mir_append_mode(output,function_mir_symbol_code(parameter))!=0){return 68;}
+                        canonical_mir_append_text(output,"\"}");parameter_matches=checked_add(parameter_matches,1);
+                    }
+                }
+                parameter_index=checked_add(parameter_index,1);
+            }
+            if(parameter_matches!=1){return 68;}parameter_ordinal=checked_add(parameter_ordinal,1);
+        }
+        buffer_push(output,93);
+    }
+    if(function_mir_symbol_code(header)!=function_mir_mode_value()){
+        canonical_mir_append_text(output,",\"return_mode\":\"");
+        if(canonical_mir_append_mode(output,function_mir_symbol_code(header))!=0){return 69;}
+        buffer_push(output,34);
+    }
     canonical_mir_append_text(output,",\"return_type\":");
     if(canonical_mir_append_type(output,function_mir_type_code(header))!=0){return 34;}
     canonical_mir_append_text(output,"}],\"name\":");

@@ -502,6 +502,14 @@ SOURCED_MULTIPLE_LOCALS_CFG_MIR_PROBE = SOURCED_TWO_BODY_CFG_MIR_PROBE.replace(
     "  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),1));",
 )
 
+SOURCED_PARAMETER_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+    "function_mir_header(12,49,15,7,function_mir_unit_type_code())",
+    "function_mir_callable_header(12,49,15,7,function_mir_buffer_type_code(),function_mir_mode_borrowed(),0,1,1)",
+).replace(
+    "function_mir_source_local(37,4,0,function_mir_buffer_type_code(),7,1)",
+    "function_mir_parameter(37,4,0,function_mir_buffer_type_code(),7,1,function_mir_mode_borrowed(),0)",
+)
+
 CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_function_contracts;
@@ -1279,6 +1287,30 @@ def test_merit_materializes_multiple_sourced_locals(tmp_path: Path) -> None:
                 MirInstruction(3, "drop", operands=(0,), ownership="owned"),
             ), MirTerminator("return")),
         ), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_materializes_sourced_callable_parameters(tmp_path: Path) -> None:
+    root = _project(tmp_path, SOURCED_PARAMETER_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sourced-parameter-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("Buffer"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="borrowed", source_binding_id=7),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value"),
+                MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("return")),
+        ), 0, parameters=(MirParameter(0, "borrowed"),), return_mode="borrowed", borrowed_origin=0, exported=True,
     ),)))
     assert actual == expected
 
