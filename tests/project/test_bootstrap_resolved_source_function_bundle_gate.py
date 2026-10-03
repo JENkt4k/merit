@@ -315,6 +315,15 @@ CANONICAL_C_EQUAL_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "cfg_return(0,2)", "cfg_return(0,0)",
 )
 
+CANONICAL_C_BRANCH_PROBE = CANONICAL_C_EQUAL_PROBE.replace(
+    "vec_new<MirCfgRecord>(allocator,2);\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));",
+    "vec_new<MirCfgRecord>(allocator,6);\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_branch(0,2,1,2));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));vec_push<MirCfgRecord>(cfg,cfg_return(1,0));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(2,2));vec_push<MirCfgRecord>(cfg,cfg_return(2,1));",
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1283,6 +1292,41 @@ def test_merit_scalar_equality_c_backend_matches_python_oracle_bytes(tmp_path: P
             MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
             MirInstruction(3, "print", operands=(2,)),
         ), MirTerminator("return", operands=(0,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    assert "cfg_branch(0,2,1,2)" in CANONICAL_C_BRANCH_PROBE
+    root = _project(tmp_path, CANONICAL_C_BRANCH_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-branch")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("branch", operands=(2,), targets=(1, 2))),
+            MirBlock(1, (), MirTerminator("return", operands=(0,))),
+            MirBlock(2, (), MirTerminator("return", operands=(1,))),
+        ), 0, exported=True,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)

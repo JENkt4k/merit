@@ -400,15 +400,32 @@ requires_caps [allocate]
     if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){return 3;}
     var jumps_to_return:i32=0;
+    var branches_to_returns:i32=0;
     if(vec_len<MirCfgRecord>(cfg)!=2){
-        if(vec_len<MirCfgRecord>(cfg)!=4){return 4;}
-        jumps_to_return=1;
+        if(vec_len<MirCfgRecord>(cfg)==4){jumps_to_return=1;}
+        else{if(vec_len<MirCfgRecord>(cfg)==6){branches_to_returns=1;}
+        else{return 4;}}
     }
     let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,0);
     let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
     if(cfg_kind(block)!=cfg_block_kind()){return 5;}
     if(cfg_block_id(block)!=0){return 6;}
-    if(jumps_to_return==0){if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}}
+    if(branches_to_returns!=0){
+        if(cfg_kind(terminator)!=cfg_branch_kind()){return 78;}
+        if(cfg_target_a(terminator)!=1){return 79;}
+        if(cfg_target_b(terminator)!=2){return 80;}
+        var branch_index:i64=1;
+        while(branch_index<=2){
+            let branch_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_mul(branch_index,2));
+            let branch_return:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_add(checked_mul(branch_index,2),1));
+            if(cfg_kind(branch_block)!=cfg_block_kind()){return 81;}
+            if(cfg_block_id(branch_block)!=branch_index){return 82;}
+            if(cfg_kind(branch_return)!=cfg_return_kind()){return 83;}
+            if(cfg_block_id(branch_return)!=branch_index){return 84;}
+            if(cfg_operand(branch_return)<0){return 85;}
+            branch_index=checked_add(branch_index,1);
+        }
+    }else{if(jumps_to_return==0){if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}}
     else{
         if(cfg_kind(terminator)!=cfg_jump_kind()){return 7;}
         if(cfg_target_a(terminator)!=1){return 27;}
@@ -418,7 +435,7 @@ requires_caps [allocate]
         if(cfg_block_id(return_block)!=1){return 29;}
         if(cfg_kind(return_record)!=cfg_return_kind()){return 30;}
         if(cfg_block_id(return_record)!=1){return 31;}
-    }
+    }}
     if(cfg_block_id(terminator)!=0){return 8;}
     var local_count:i64=0;
     var instruction_count:i64=0;
@@ -475,11 +492,13 @@ requires_caps [allocate]
     }
     if(local_count<=0){return 15;}
     if(instruction_count!=vec_len<MirPlacementRecord>(placements)){return 16;}
-    if(jumps_to_return==0){if(cfg_operand(terminator)<0){return 17;}}
+    if(branches_to_returns!=0){
+        if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_bool_type_code()){return 86;}
+    }else{if(jumps_to_return==0){if(cfg_operand(terminator)<0){return 17;}}
     else{
         let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
         if(cfg_operand(return_record)<0){return 17;}
-    }
+    }}
     if(function_mir_ordinal(header)>local_count){return 26;}
     let prototype_status:i32=canonical_c_append_i64_prototype(source,header,records,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
@@ -685,13 +704,22 @@ requires_caps [allocate]
         if(instruction_found==0){return 21;}
         ordinal=checked_add(ordinal,1);
     }
+    if(branches_to_returns!=0){
+        canonical_mir_append_text(bodies,"    if (m");canonical_mir_append_i64(bodies,cfg_operand(terminator));
+        canonical_mir_append_text(bodies,") goto b1;\n    goto b2;\nb1:\n    return m");
+        let true_return:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
+        canonical_mir_append_i64(bodies,cfg_operand(true_return));
+        canonical_mir_append_text(bodies,";\nb2:\n    return m");
+        let false_return:MirCfgRecord=vec_get<MirCfgRecord>(cfg,5);
+        canonical_mir_append_i64(bodies,cfg_operand(false_return));
+    }else{
     if(jumps_to_return!=0){canonical_mir_append_text(bodies,"    goto b1;\nb1:\n");}
     canonical_mir_append_text(bodies,"    return m");
     if(jumps_to_return==0){canonical_mir_append_i64(bodies,cfg_operand(terminator));}
     else{
         let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
         canonical_mir_append_i64(bodies,cfg_operand(return_record));
-    }
+    }}
     canonical_mir_append_text(bodies,";\n}");
     return 0;
 }
