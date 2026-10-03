@@ -909,7 +909,7 @@ requires_caps [allocate]
 {
     if(validate_function_mir_records(records)!=0){return 1;}
     let record_count:i64=vec_len<MirFunctionRecord>(records);
-    if(record_count!=2){if(record_count!=4){return 2;}}
+    if(record_count!=2){if(record_count!=4){if(record_count!=5){return 2;}}}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,checked_sub(record_count,1));
     if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
@@ -938,7 +938,8 @@ requires_caps [allocate]
         }
     }
     if(record_count==2){if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}}}
-    if(record_count==4){
+    if(record_count>=4){
+        if(record_count==5){if(sourced==0){return 2;}}
         if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}}
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
@@ -956,9 +957,17 @@ requires_caps [allocate]
                 }
             }
         }
+        if(record_count==5){
+            let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,3);
+            if(function_mir_kind(instruction)!=function_mir_kind_call()){return 10;}
+            if(function_mir_kind(argument)!=function_mir_kind_call_argument()){return 10;}
+            if(function_mir_id(argument)!=function_mir_id(instruction)){return 10;}
+            if(function_mir_ordinal(argument)!=0){return 10;}
+            if(function_mir_left(argument)<0){return 10;}
+        }
     }
     if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
-    if(record_count==4){
+    if(record_count>=4){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         var binding_validation_index:i64=0;
         while(binding_validation_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
@@ -1020,7 +1029,7 @@ requires_caps [allocate]
                         let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,global_id);
                         if(assembly_source_global_id(source_record)!=global_id){return 39;}
                         if(assembly_source_kind(source_record)==assembly_source_body_kind()){
-                            if(record_count!=4){return 40;}
+                            if(record_count<4){return 40;}
                             if(assembly_source_id(source_record)!=function_mir_id(instruction)){return 40;}
                             canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
                             canonical_mir_append_i64(output,global_id);
@@ -1128,7 +1137,7 @@ requires_caps [allocate]
                             if(ownership_id>=vec_len<MirOwnershipRecord>(ownership_records)){return 43;}
                             let ownership_value:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,ownership_id);
                             if(assembly_source_left(source_record)!=ownership_record_operand_local(ownership_value)){return 44;}
-                            if(record_count!=4){return 45;}
+                            if(record_count<4){return 45;}
                             let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
                             if(ownership_record_operand_local(ownership_value)!=function_mir_id(ownership_local)){return 46;}
                             let ownership_status:i32=materialize_canonical_ownership_instruction(
@@ -1159,7 +1168,7 @@ requires_caps [allocate]
     );
     if(capability_status!=0){return checked_add(40,capability_status);}
     canonical_mir_append_text(output,",\"entry_block\":0,\"locals\":[");
-    if(record_count==4){
+    if(record_count>=4){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
         canonical_mir_append_text(output,",\"mutable\":");
