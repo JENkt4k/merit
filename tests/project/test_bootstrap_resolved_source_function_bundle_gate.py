@@ -171,22 +171,29 @@ capability allocate;
 fn main()->i32 {
  with capability allocate {
   let allocator:Allocator=system_allocator();
-  let source:Buffer=buffer_from_string(allocator,"compute1");
-  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
-  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,8,0,7,function_mir_i64_type_code(),function_mir_mode_value(),-1,0,1));
+  let source:Buffer=buffer_from_string(allocator,"compute23");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,8);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,9,0,7,function_mir_i64_type_code(),function_mir_mode_value(),-1,0,1));
   vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_i64_type_code(),2));
   vec_push<MirFunctionRecord>(records,function_mir_const(7,1,0,0,function_mir_i64_type_code(),0));
-  vec_push<MirFunctionRecord>(records,function_mir_return(7,1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(8,1,1,1,function_mir_i64_type_code(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_binary(7,2,2,2,0,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_print(7,2,3,2,3));
+  vec_push<MirFunctionRecord>(records,function_mir_return(7,2,2,4));
   var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
-  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));
-  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
-  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,2));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,4);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));vec_push<MirPlacementRecord>(placements,mir_place(0,3,3));
+  var features:Vec<i64>=vec_new<i64>(allocator,2);
   var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
   var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,512);
   var c_header:Buffer=buffer_new(allocator,256);
-  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);
   if(function_status!=0){return function_status;}
-  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,c_source);
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
   if(source_status!=0){return checked_add(100,source_status);}
   let header_status:i32=canonical_c_finish_public_header(declarations,c_header);
   if(header_status!=0){return checked_add(200,header_status);}
@@ -195,7 +202,7 @@ fn main()->i32 {
   print(buffer_len(c_header));index=0;
   while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
   drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
-  drop(placements);drop(cfg);drop(records);drop(source);
+  drop(features);drop(placements);drop(cfg);drop(records);drop(source);
  }
  return 0;
 }
@@ -1016,10 +1023,13 @@ def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> N
     c_header = bytes(values[2 + c_length:]).decode("utf-8")
     assert header_length == len(c_header.encode("utf-8"))
     module = MirModule("demo", (MirFunction(
-        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),),
+        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
         (MirBlock(0, (
-            MirInstruction(0, "const", result=0, value=1, span=SourceSpan(7, 1), ownership="value"),
-        ), MirTerminator("return", operands=(0,))),), 0, exported=True,
+            MirInstruction(0, "const", result=0, value=2, ownership="value"),
+            MirInstruction(1, "const", result=1, value=3, ownership="value"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="+", numeric_policy="checked"),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)

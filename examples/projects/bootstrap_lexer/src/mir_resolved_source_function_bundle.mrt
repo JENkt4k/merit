@@ -296,6 +296,30 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_checked_add_feature()->i64{return 1;}
+fn canonical_c_i64_print_feature()->i64{return 2;}
+
+fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
+requires_caps [allocate]
+{
+    var index:i64=0;
+    while(index<vec_len<i64>(features)){
+        if(vec_get<i64>(features,index)==feature){return 0;}
+        index=checked_add(index,1);
+    }
+    vec_push<i64>(features,feature);return 0;
+}
+
+fn canonical_c_has_feature(feature:i64,borrow features:Vec<i64>)->i32
+{
+    var index:i64=0;
+    while(index<vec_len<i64>(features)){
+        if(vec_get<i64>(features,index)==feature){return 1;}
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
 // First deterministic backend slice.  It consumes the same validated records
 // as the canonical-MIR writer and emits the exact oracle bytes for exported or
 // private, parameterless i64 functions containing ordered i64 constants and a
@@ -308,7 +332,8 @@ pub fn canonical_c_append_scalar_function(
     borrow placements:Vec<MirPlacementRecord>,
     borrow_mut prototypes:Buffer,
     borrow_mut bodies:Buffer,
-    borrow_mut public_header:Buffer
+    borrow_mut public_header:Buffer,
+    borrow_mut features:Vec<i64>
 )->i32
 requires_caps [allocate]
 {
@@ -324,7 +349,7 @@ requires_caps [allocate]
     if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}
     if(cfg_block_id(terminator)!=0){return 8;}
     var local_count:i64=0;
-    var const_count:i64=0;
+    var instruction_count:i64=0;
     var record_index:i64=1;
     while(record_index<vec_len<MirFunctionRecord>(records)){
         let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
@@ -341,16 +366,28 @@ requires_caps [allocate]
                 local_count=checked_add(local_count,1);
             }else{
                 if(kind==function_mir_kind_const()){
-                    const_count=checked_add(const_count,1);
+                    instruction_count=checked_add(instruction_count,1);
                 }else{
-                    if(kind!=function_mir_kind_return()){return 14;}
+                    if(kind==function_mir_kind_copy_to_binding()){
+                        instruction_count=checked_add(instruction_count,1);
+                    }else{
+                        if(kind==function_mir_kind_binary()){
+                            instruction_count=checked_add(instruction_count,1);
+                        }else{
+                            if(kind==function_mir_kind_print()){
+                                instruction_count=checked_add(instruction_count,1);
+                            }else{
+                                if(kind!=function_mir_kind_return()){return 14;}
+                            }
+                        }
+                    }
                 }
             }
         }
         record_index=checked_add(record_index,1);
     }
     if(local_count<=0){return 15;}
-    if(const_count!=vec_len<MirPlacementRecord>(placements)){return 16;}
+    if(instruction_count!=vec_len<MirPlacementRecord>(placements)){return 16;}
     if(cfg_operand(terminator)<0){return 17;}
     canonical_c_append_i64_prototype(source,header,prototypes);buffer_push(prototypes,10);
     if(function_mir_mutable(header)!=0){
@@ -382,17 +419,50 @@ requires_caps [allocate]
         var instruction_found:i32=0;record_index=1;
         while(record_index<vec_len<MirFunctionRecord>(records)){
             let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
-            if(function_mir_kind(instruction)==function_mir_kind_const()){
+            let instruction_kind:i32=function_mir_kind(instruction);
+            var supported_instruction:i32=0;
+            if(instruction_kind==function_mir_kind_const()){supported_instruction=1;}
+            if(instruction_kind==function_mir_kind_copy_to_binding()){supported_instruction=1;}
+            if(instruction_kind==function_mir_kind_binary()){supported_instruction=1;}
+            if(instruction_kind==function_mir_kind_print()){supported_instruction=1;}
+            if(supported_instruction!=0){
                 if(function_mir_id(instruction)==instruction_id){
                     if(instruction_found!=0){return 20;}
                     instruction_found=1;
-                    canonical_mir_append_text(bodies,"    m");
-                    canonical_mir_append_i64(bodies,function_mir_result(instruction));
-                    canonical_mir_append_text(bodies," = INT64_C(");
-                    bootstrap_buffer_append(
-                        bodies,source,function_mir_start(instruction),function_mir_length(instruction)
-                    );
-                    canonical_mir_append_text(bodies,");\n");
+                    if(instruction_kind==function_mir_kind_const()){
+                        canonical_mir_append_text(bodies,"    m");
+                        canonical_mir_append_i64(bodies,function_mir_result(instruction));
+                        canonical_mir_append_text(bodies," = INT64_C(");
+                        bootstrap_buffer_append(
+                            bodies,source,function_mir_start(instruction),function_mir_length(instruction)
+                        );
+                        canonical_mir_append_text(bodies,");\n");
+                    }
+                    if(instruction_kind==function_mir_kind_copy_to_binding()){
+                        canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
+                        canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                        canonical_mir_append_text(bodies,";\n");
+                    }
+                    if(instruction_kind==function_mir_kind_binary()){
+                        if(function_mir_symbol_code(instruction)!=function_mir_binary_add_symbol()){return 22;}
+                        canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
+                        if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
+                            canonical_c_require_feature(canonical_c_checked_add_feature(),features);
+                            canonical_mir_append_text(bodies," = merit_checked_add_i64(m");
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,", m");
+                            canonical_mir_append_i64(bodies,function_mir_right(instruction));canonical_mir_append_text(bodies,");\n");
+                        }else{
+                            if(function_mir_numeric_policy(instruction)!=function_mir_exact_numeric_policy()){return 23;}
+                            canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                            canonical_mir_append_text(bodies," + m");canonical_mir_append_i64(bodies,function_mir_right(instruction));
+                            canonical_mir_append_text(bodies,";\n");
+                        }
+                    }
+                    if(instruction_kind==function_mir_kind_print()){
+                        canonical_c_require_feature(canonical_c_i64_print_feature(),features);
+                        canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
+                        canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
+                    }
                 }
             }
             record_index=checked_add(record_index,1);
@@ -407,14 +477,20 @@ requires_caps [allocate]
 }
 
 pub fn canonical_c_finish_scalar_module(
-    borrow prototypes:Buffer,borrow bodies:Buffer,borrow_mut output:Buffer
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
-    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n");
+    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n#include <stdint.h>\n");
+    if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
+    else{if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}}
+    canonical_mir_append_text(output,"#include <stdlib.h>\n\n");
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
+    if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){
+        canonical_mir_append_text(output,"static void merit_numeric_failure(const char *operation) { fprintf(stderr, \"Merit %s\\n\", operation); exit(70); }\nstatic int64_t merit_checked_add_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a + (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 addition overflow\");\n    return (int64_t)result;\n}\n\n");
+    }
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
     return 0;
 }
