@@ -160,6 +160,47 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_BACKEND_PROBE = r'''module canonical_c_backend_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"compute1");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,8,0,7,function_mir_i64_type_code(),function_mir_mode_value(),-1,0,1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(7,1,0,0,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(7,1,0,0));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,512);
+  var c_header:Buffer=buffer_new(allocator,256);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(placements);drop(cfg);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -958,6 +999,31 @@ def test_merit_assembles_multiple_canonical_functions_without_python(tmp_path: P
         '{"functions":[{"name":"first"},{"name":"second"}],'
         '"name":"demo","schema":"bootstrap-mir-v1"}'
     )
+
+
+def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BACKEND_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-backend")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=1, span=SourceSpan(7, 1), ownership="value"),
+        ), MirTerminator("return", operands=(0,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
 
 
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:

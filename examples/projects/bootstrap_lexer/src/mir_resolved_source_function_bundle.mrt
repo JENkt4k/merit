@@ -273,6 +273,162 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_append_function_name(
+    borrow source:Buffer,borrow header:MirFunctionRecord,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_mutable(header)!=0){canonical_mir_append_text(output,"merit_");}
+    bootstrap_buffer_append(
+        output,source,function_mir_symbol_start(header),function_mir_symbol_length(header)
+    );
+    return 0;
+}
+
+fn canonical_c_append_i64_prototype(
+    borrow source:Buffer,borrow header:MirFunctionRecord,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,"int64_t ");
+    canonical_c_append_function_name(source,header,output);
+    canonical_mir_append_text(output,"(void);");
+    return 0;
+}
+
+// First deterministic backend slice.  It consumes the same validated records
+// as the canonical-MIR writer and emits the exact oracle bytes for exported or
+// private, parameterless i64 functions containing ordered i64 constants and a
+// single return block.  Every other shape fails closed until a later SH3 slice
+// extends this writer.
+pub fn canonical_c_append_scalar_function(
+    borrow source:Buffer,
+    borrow records:Vec<MirFunctionRecord>,
+    borrow cfg:Vec<MirCfgRecord>,
+    borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,
+    borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<MirFunctionRecord>(records)<3){return 1;}
+    let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
+    if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
+    if(function_mir_type_code(header)!=function_mir_i64_type_code()){return 3;}
+    if(vec_len<MirCfgRecord>(cfg)!=2){return 4;}
+    let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,0);
+    let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
+    if(cfg_kind(block)!=cfg_block_kind()){return 5;}
+    if(cfg_block_id(block)!=0){return 6;}
+    if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}
+    if(cfg_block_id(terminator)!=0){return 8;}
+    var local_count:i64=0;
+    var const_count:i64=0;
+    var record_index:i64=1;
+    while(record_index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+        let kind:i32=function_mir_kind(record);
+        if(kind==function_mir_kind_parameter()){return 9;}
+        if(kind==function_mir_kind_source_local()){
+            if(function_mir_type_code(record)!=function_mir_i64_type_code()){return 10;}
+            if(function_mir_id(record)!=local_count){return 11;}
+            local_count=checked_add(local_count,1);
+        }else{
+            if(kind==function_mir_kind_temporary_local()){
+                if(function_mir_type_code(record)!=function_mir_i64_type_code()){return 12;}
+                if(function_mir_id(record)!=local_count){return 13;}
+                local_count=checked_add(local_count,1);
+            }else{
+                if(kind==function_mir_kind_const()){
+                    const_count=checked_add(const_count,1);
+                }else{
+                    if(kind!=function_mir_kind_return()){return 14;}
+                }
+            }
+        }
+        record_index=checked_add(record_index,1);
+    }
+    if(local_count<=0){return 15;}
+    if(const_count!=vec_len<MirPlacementRecord>(placements)){return 16;}
+    if(cfg_operand(terminator)<0){return 17;}
+    canonical_c_append_i64_prototype(source,header,prototypes);buffer_push(prototypes,10);
+    if(function_mir_mutable(header)!=0){
+        canonical_c_append_i64_prototype(source,header,public_header);buffer_push(public_header,10);
+    }
+    canonical_mir_append_text(bodies,"int64_t ");
+    canonical_c_append_function_name(source,header,bodies);
+    canonical_mir_append_text(bodies,"(void) {\n");
+    var local_id:i64=0;
+    while(local_id<local_count){
+        canonical_mir_append_text(bodies,"    int64_t m");canonical_mir_append_i64(bodies,local_id);
+        canonical_mir_append_text(bodies," = 0;\n");local_id=checked_add(local_id,1);
+    }
+    canonical_mir_append_text(bodies,"    goto b0;\nb0:\n");
+    var ordinal:i64=0;
+    while(ordinal<vec_len<MirPlacementRecord>(placements)){
+        var placement_found:i32=0;var instruction_id:i64=-1;var placement_index:i64=0;
+        while(placement_index<vec_len<MirPlacementRecord>(placements)){
+            let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
+            if(placement_block_id(placement)==0){
+                if(placement_ordinal(placement)==ordinal){
+                    if(placement_found!=0){return 18;}
+                    placement_found=1;instruction_id=placement_instruction_id(placement);
+                }
+            }
+            placement_index=checked_add(placement_index,1);
+        }
+        if(placement_found==0){return 19;}
+        var instruction_found:i32=0;record_index=1;
+        while(record_index<vec_len<MirFunctionRecord>(records)){
+            let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+            if(function_mir_kind(instruction)==function_mir_kind_const()){
+                if(function_mir_id(instruction)==instruction_id){
+                    if(instruction_found!=0){return 20;}
+                    instruction_found=1;
+                    canonical_mir_append_text(bodies,"    m");
+                    canonical_mir_append_i64(bodies,function_mir_result(instruction));
+                    canonical_mir_append_text(bodies," = INT64_C(");
+                    bootstrap_buffer_append(
+                        bodies,source,function_mir_start(instruction),function_mir_length(instruction)
+                    );
+                    canonical_mir_append_text(bodies,");\n");
+                }
+            }
+            record_index=checked_add(record_index,1);
+        }
+        if(instruction_found==0){return 21;}
+        ordinal=checked_add(ordinal,1);
+    }
+    canonical_mir_append_text(bodies,"    return m");
+    canonical_mir_append_i64(bodies,cfg_operand(terminator));
+    canonical_mir_append_text(bodies,";\n}");
+    return 0;
+}
+
+pub fn canonical_c_finish_scalar_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(buffer_len(prototypes)<=0){return 1;}
+    if(buffer_len(bodies)<=0){return 2;}
+    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n");
+    bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
+    bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
+    return 0;
+}
+
+pub fn canonical_c_finish_public_header(
+    borrow declarations:Buffer,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,"#pragma once\n#include <stdbool.h>\n#include <stddef.h>\n#include <stdint.h>\n\n");
+    bootstrap_buffer_append(output,declarations,0,buffer_len(declarations));
+    return 0;
+}
+
 fn canonical_mir_push_identifier_or_numeric_byte(
     borrow_mut output:Buffer,value:i64
 )->i32
