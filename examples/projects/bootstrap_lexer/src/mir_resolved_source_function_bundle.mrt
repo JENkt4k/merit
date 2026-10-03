@@ -967,6 +967,21 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_mir_is_body_instruction(kind:i32)->i32{
+    if(kind==function_mir_kind_const()){return 1;}
+    if(kind==function_mir_kind_binary()){return 1;}
+    if(kind==function_mir_kind_copy_to_binding()){return 1;}
+    if(kind==function_mir_kind_print()){return 1;}
+    if(kind==function_mir_kind_call()){return 1;}
+    if(kind==function_mir_kind_enum_construct()){return 1;}
+    if(kind==function_mir_kind_enum_tag_load()){return 1;}
+    if(kind==function_mir_kind_enum_payload_load()){return 1;}
+    if(kind==function_mir_kind_struct_construct()){return 1;}
+    if(kind==function_mir_kind_struct_field_load()){return 1;}
+    if(kind==function_mir_kind_struct_field_store()){return 1;}
+    return 0;
+}
+
 // Bounded CFG slice: materialize explicit block topology plus sourced body,
 // contract, and ownership instructions. Every emitted instruction must have
 // one explicit placement; later SH3 slices widen the accepted catalogs.
@@ -1023,27 +1038,19 @@ requires_caps [allocate]
             if(local_kind!=function_mir_kind_source_local()){return 8;}
         }
         let instruction_kind:i32=function_mir_kind(instruction);
-        var supported_instruction:i32=0;
-        if(instruction_kind==function_mir_kind_const()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_binary()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_copy_to_binding()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_print()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_call()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_enum_construct()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_enum_tag_load()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_enum_payload_load()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_struct_construct()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_struct_field_load()){supported_instruction=1;}
-        if(instruction_kind==function_mir_kind_struct_field_store()){supported_instruction=1;}
-        if(supported_instruction==0){return 9;}
+        if(canonical_mir_is_body_instruction(instruction_kind)==0){return 9;}
         if(sourced==0){if(instruction_kind!=function_mir_kind_const()){return 9;}}
         if(record_count==5){
             let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,3);
-            if(function_mir_kind(instruction)!=function_mir_kind_call()){return 10;}
-            if(function_mir_kind(argument)!=function_mir_kind_call_argument()){return 10;}
-            if(function_mir_id(argument)!=function_mir_id(instruction)){return 10;}
-            if(function_mir_ordinal(argument)!=0){return 10;}
-            if(function_mir_left(argument)<0){return 10;}
+            if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                if(function_mir_kind(instruction)!=function_mir_kind_call()){return 10;}
+                if(function_mir_id(argument)!=function_mir_id(instruction)){return 10;}
+                if(function_mir_ordinal(argument)!=0){return 10;}
+                if(function_mir_left(argument)<0){return 10;}
+            }else{
+                if(canonical_mir_is_body_instruction(function_mir_kind(argument))==0){return 10;}
+                if(function_mir_id(argument)!=1){return 10;}
+            }
         }
     }
     if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
@@ -1087,7 +1094,7 @@ requires_caps [allocate]
                 let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
                 if(placement_block_id(placement)==cfg_block_id(record)){
                     if(placement_ordinal(placement)!=block_placement_count){return 21;}
-                    let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
+                    var instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
                     if(block_placement_count>0){buffer_push(output,44);}
                     if(sourced==0){
                         if(placement_instruction_id(placement)!=function_mir_id(instruction)){return 22;}
@@ -1110,7 +1117,18 @@ requires_caps [allocate]
                         if(assembly_source_global_id(source_record)!=global_id){return 39;}
                         if(assembly_source_kind(source_record)==assembly_source_body_kind()){
                             if(record_count<4){return 40;}
-                            if(assembly_source_id(source_record)!=function_mir_id(instruction)){return 40;}
+                            var body_match_count:i64=0;
+                            var body_record_index:i64=1;
+                            while(body_record_index<checked_sub(record_count,1)){
+                                let body_candidate:MirFunctionRecord=vec_get<MirFunctionRecord>(records,body_record_index);
+                                if(canonical_mir_is_body_instruction(function_mir_kind(body_candidate))!=0){
+                                    if(function_mir_id(body_candidate)==assembly_source_id(source_record)){
+                                        instruction=body_candidate;body_match_count=checked_add(body_match_count,1);
+                                    }
+                                }
+                                body_record_index=checked_add(body_record_index,1);
+                            }
+                            if(body_match_count!=1){return 40;}
                             canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
                             canonical_mir_append_i64(output,global_id);
                             if(function_mir_kind(instruction)==function_mir_kind_const()){
