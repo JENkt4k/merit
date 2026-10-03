@@ -494,6 +494,14 @@ SOURCED_TWO_BODY_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
     "  vec_push<MirPlacementRecord>(placements,mir_place(0,3,3));",
 )
 
+SOURCED_MULTIPLE_LOCALS_CFG_MIR_PROBE = SOURCED_TWO_BODY_CFG_MIR_PROBE.replace(
+    "vec_new<MirFunctionRecord>(allocator,5)", "vec_new<MirFunctionRecord>(allocator,6)",
+).replace(
+    "vec_push<MirFunctionRecord>(records,function_mir_source_local(37,4,0,function_mir_buffer_type_code(),7,1));",
+    "vec_push<MirFunctionRecord>(records,function_mir_source_local(37,4,0,function_mir_buffer_type_code(),7,1));\n"
+    "  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),1));",
+)
+
 CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_function_contracts;
@@ -1237,6 +1245,32 @@ def test_merit_materializes_multiple_sourced_body_instructions(tmp_path: Path) -
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("unit"), (
             MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value"),
+                MirInstruction(2, "print", operands=(0,), span=SourceSpan(57, 1)),
+                MirInstruction(3, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_materializes_multiple_sourced_locals(tmp_path: Path) -> None:
+    root = _project(tmp_path, SOURCED_MULTIPLE_LOCALS_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sourced-multiple-locals-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+            MirLocal(1, "_t1", MirType("i64")),
         ), (
             MirBlock(0, (
                 MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),

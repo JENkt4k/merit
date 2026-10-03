@@ -999,12 +999,13 @@ requires_caps [allocate]
 {
     if(validate_function_mir_records(records)!=0){return 1;}
     let record_count:i64=vec_len<MirFunctionRecord>(records);
-    if(record_count!=2){if(record_count!=4){if(record_count!=5){return 2;}}}
+    if(record_count<2){return 2;}
+    let sourced:i32=vec_len<MirFunctionInstructionSource>(sources)>0;
+    if(sourced==0){if(record_count!=2){if(record_count!=4){return 2;}}}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,checked_sub(record_count,1));
     if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
     if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
-    let sourced:i32=vec_len<MirFunctionInstructionSource>(sources)>0;
     if(sourced!=0){
         if(validate_function_assembly_sources(sources)!=0){return 36;}
         if(vec_len<MirFunctionContractRecord>(contracts)>0){
@@ -1028,9 +1029,8 @@ requires_caps [allocate]
         }
     }
     if(record_count==2){if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=0){return 3;}}}
-    if(record_count>=4){
-        if(record_count==5){if(sourced==0){return 2;}}
-        if(sourced==0){if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}}
+    if(sourced==0){
+        if(record_count==4){if(vec_len<MirPlacementRecord>(placements)!=1){return 3;}}
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
         let instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
         let local_kind:i32=function_mir_kind(local);
@@ -1040,39 +1040,34 @@ requires_caps [allocate]
         let instruction_kind:i32=function_mir_kind(instruction);
         if(canonical_mir_is_body_instruction(instruction_kind)==0){return 9;}
         if(sourced==0){if(instruction_kind!=function_mir_kind_const()){return 9;}}
-        if(record_count==5){
-            let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,3);
-            if(function_mir_kind(argument)==function_mir_kind_call_argument()){
-                if(function_mir_kind(instruction)!=function_mir_kind_call()){return 10;}
-                if(function_mir_id(argument)!=function_mir_id(instruction)){return 10;}
-                if(function_mir_ordinal(argument)!=0){return 10;}
-                if(function_mir_left(argument)<0){return 10;}
-            }else{
-                if(canonical_mir_is_body_instruction(function_mir_kind(argument))==0){return 10;}
-                if(function_mir_id(argument)!=1){return 10;}
-            }
-        }
     }
-    if(record_count==2){if(vec_len<MirOwnershipBinding>(ownership_bindings)!=0){return 60;}}
-    if(record_count>=4){
-        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
-        var binding_validation_index:i64=0;
-        while(binding_validation_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
-            let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_validation_index);
-            if(ownership_binding_id(binding)<0){return 61;}
-            if(ownership_binding_local_id(binding)!=function_mir_id(local)){return 62;}
-            if(function_mir_kind(local)==function_mir_kind_source_local()){
-                if(ownership_binding_id(binding)!=function_mir_binding_id(local)){return 62;}
-                if(ownership_binding_mutable(binding)!=function_mir_mutable(local)){return 64;}
+    var binding_validation_index:i64=0;
+    while(binding_validation_index<vec_len<MirOwnershipBinding>(ownership_bindings)){
+        let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_validation_index);
+        if(ownership_binding_id(binding)<0){return 61;}
+        if(ownership_binding_owned(binding)<0){return 63;}if(ownership_binding_owned(binding)>1){return 63;}
+        if(ownership_binding_mutable(binding)<0){return 64;}if(ownership_binding_mutable(binding)>1){return 64;}
+        if(ownership_binding_needs_drop(binding)<0){return 65;}
+        if(ownership_binding_needs_drop(binding)>ownership_binding_owned(binding)){return 65;}
+        var binding_local_matches:i64=0;var binding_record_index:i64=1;
+        while(binding_record_index<checked_sub(record_count,1)){
+            let binding_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,binding_record_index);
+            if(function_mir_kind(binding_local)==function_mir_kind_source_local()){
+                if(function_mir_binding_id(binding_local)==ownership_binding_id(binding)){
+                    if(function_mir_id(binding_local)!=ownership_binding_local_id(binding)){return 62;}
+                    if(function_mir_mutable(binding_local)!=ownership_binding_mutable(binding)){return 64;}
+                    binding_local_matches=checked_add(binding_local_matches,1);
+                }
             }
-            if(ownership_binding_owned(binding)<0){return 63;}
-            if(ownership_binding_owned(binding)>1){return 63;}
-            if(ownership_binding_mutable(binding)<0){return 64;}
-            if(ownership_binding_mutable(binding)>1){return 64;}
-            if(ownership_binding_needs_drop(binding)<0){return 65;}
-            if(ownership_binding_needs_drop(binding)>ownership_binding_owned(binding)){return 65;}
-            binding_validation_index=checked_add(binding_validation_index,1);
+            if(function_mir_kind(binding_local)==function_mir_kind_temporary_local()){
+                if(function_mir_id(binding_local)==ownership_binding_local_id(binding)){
+                    binding_local_matches=checked_add(binding_local_matches,1);
+                }
+            }
+            binding_record_index=checked_add(binding_record_index,1);
         }
+        if(binding_local_matches!=1){return 62;}
+        binding_validation_index=checked_add(binding_validation_index,1);
     }
 
     canonical_mir_append_text(output,"{\"functions\":[{\"blocks\":[");
@@ -1094,7 +1089,8 @@ requires_caps [allocate]
                 let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
                 if(placement_block_id(placement)==cfg_block_id(record)){
                     if(placement_ordinal(placement)!=block_placement_count){return 21;}
-                    var instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,2);
+                    var instruction:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+                    if(sourced==0){instruction=vec_get<MirFunctionRecord>(records,2);}
                     if(block_placement_count>0){buffer_push(output,44);}
                     if(sourced==0){
                         if(placement_instruction_id(placement)!=function_mir_id(instruction)){return 22;}
@@ -1116,7 +1112,7 @@ requires_caps [allocate]
                         let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,global_id);
                         if(assembly_source_global_id(source_record)!=global_id){return 39;}
                         if(assembly_source_kind(source_record)==assembly_source_body_kind()){
-                            if(record_count<4){return 40;}
+                            if(record_count<3){return 40;}
                             var body_match_count:i64=0;
                             var body_record_index:i64=1;
                             while(body_record_index<checked_sub(record_count,1)){
@@ -1246,9 +1242,23 @@ requires_caps [allocate]
                             if(ownership_id>=vec_len<MirOwnershipRecord>(ownership_records)){return 43;}
                             let ownership_value:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,ownership_id);
                             if(assembly_source_left(source_record)!=ownership_record_operand_local(ownership_value)){return 44;}
-                            if(record_count<4){return 45;}
-                            let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
-                            if(ownership_record_operand_local(ownership_value)!=function_mir_id(ownership_local)){return 46;}
+                            var ownership_local_matches:i64=0;var ownership_local_index:i64=1;
+                            while(ownership_local_index<checked_sub(record_count,1)){
+                                let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,ownership_local_index);
+                                let ownership_local_kind:i32=function_mir_kind(ownership_local);
+                                if(ownership_local_kind==function_mir_kind_source_local()){
+                                    if(ownership_record_operand_local(ownership_value)==function_mir_id(ownership_local)){
+                                        ownership_local_matches=checked_add(ownership_local_matches,1);
+                                    }
+                                }
+                                if(ownership_local_kind==function_mir_kind_temporary_local()){
+                                    if(ownership_record_operand_local(ownership_value)==function_mir_id(ownership_local)){
+                                        ownership_local_matches=checked_add(ownership_local_matches,1);
+                                    }
+                                }
+                                ownership_local_index=checked_add(ownership_local_index,1);
+                            }
+                            if(ownership_local_matches!=1){return 46;}
                             let ownership_status:i32=materialize_canonical_ownership_instruction(
                                 ownership_value,global_id,assembly_source_result(source_record),output
                             );
@@ -1277,8 +1287,15 @@ requires_caps [allocate]
     );
     if(capability_status!=0){return checked_add(40,capability_status);}
     canonical_mir_append_text(output,",\"entry_block\":0,\"locals\":[");
-    if(record_count>=4){
-        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,1);
+    var local_record_index:i64=1;var emitted_local_count:i64=0;
+    while(local_record_index<checked_sub(record_count,1)){
+        let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,local_record_index);
+        let emitted_local_kind:i32=function_mir_kind(local);
+        var emit_local:i32=0;
+        if(emitted_local_kind==function_mir_kind_source_local()){emit_local=1;}
+        if(emitted_local_kind==function_mir_kind_temporary_local()){emit_local=1;}
+        if(emit_local!=0){
+        if(emitted_local_count>0){buffer_push(output,44);}
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
         canonical_mir_append_text(output,",\"mutable\":");
         var local_mutable:i32=0;
@@ -1327,6 +1344,9 @@ requires_caps [allocate]
         canonical_mir_append_text(output,",\"type\":");
         if(canonical_mir_append_type(output,function_mir_type_code(local))!=0){return 29;}
         buffer_push(output,125);
+        emitted_local_count=checked_add(emitted_local_count,1);
+        }
+        local_record_index=checked_add(local_record_index,1);
     }
     canonical_mir_append_text(output,"],\"name\":");
     let name_status:i32=canonical_mir_append_json_source(output,source,function_mir_symbol_start(header),function_mir_symbol_length(header));
