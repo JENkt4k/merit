@@ -269,6 +269,10 @@ CANONICAL_C_JUMP_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));vec_push<MirCfgRecord>(cfg,cfg_return(1,2));",
 )
 
+CANONICAL_C_JUMP_TARGET_BODY_PROBE = CANONICAL_C_JUMP_PROBE.replace(
+    "mir_place(0,3,3)", "mir_place(1,3,0)",
+)
+
 CANONICAL_C_CALL_PROBE = CANONICAL_C_MULTIFUNCTION_PROBE.replace(
     "vec_new<MirFunctionRecord>(allocator,4);",
     "vec_new<MirFunctionRecord>(allocator,7);",
@@ -1208,6 +1212,58 @@ def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+def test_merit_scalar_jump_target_body_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    assert "mir_place(1,3,0)" in CANONICAL_C_JUMP_TARGET_BODY_PROBE
+    root = _project(tmp_path, CANONICAL_C_JUMP_TARGET_BODY_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-jump-target-body")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("i64")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="+", numeric_policy="checked"),
+            ), MirTerminator("jump", targets=(1,))),
+            MirBlock(1, (
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("return", operands=(2,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("placement", "status"),
+    [("mir_place(2,3,0)", 87), ("mir_place(1,3,1)", 19)],
+)
+def test_merit_scalar_jump_target_body_rejects_invalid_placement(
+    tmp_path: Path, placement: str, status: int,
+) -> None:
+    probe = CANONICAL_C_JUMP_TARGET_BODY_PROBE.replace("mir_place(1,3,0)", placement)
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-jump-target-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 def test_merit_scalar_call_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
