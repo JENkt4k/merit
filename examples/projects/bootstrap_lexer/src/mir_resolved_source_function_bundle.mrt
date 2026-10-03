@@ -358,8 +358,8 @@ fn canonical_c_has_feature(feature:i64,borrow features:Vec<i64>)->i32
 
 // First deterministic backend slice.  It consumes the same validated records
 // as the canonical-MIR writer and emits the exact oracle bytes for exported or
-// private, parameterless i64 functions containing ordered i64 constants and a
-// single return block.  Every other shape fails closed until a later SH3 slice
+// private or exported i64 functions containing ordered scalar instructions and
+// one return block or a jump to an empty return block. Other shapes fail closed
 // extends this writer.
 pub fn canonical_c_append_scalar_function(
     borrow source:Buffer,
@@ -377,12 +377,26 @@ requires_caps [allocate]
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){return 3;}
-    if(vec_len<MirCfgRecord>(cfg)!=2){return 4;}
+    var jumps_to_return:i32=0;
+    if(vec_len<MirCfgRecord>(cfg)!=2){
+        if(vec_len<MirCfgRecord>(cfg)!=4){return 4;}
+        jumps_to_return=1;
+    }
     let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,0);
     let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
     if(cfg_kind(block)!=cfg_block_kind()){return 5;}
     if(cfg_block_id(block)!=0){return 6;}
-    if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}
+    if(jumps_to_return==0){if(cfg_kind(terminator)!=cfg_return_kind()){return 7;}}
+    else{
+        if(cfg_kind(terminator)!=cfg_jump_kind()){return 7;}
+        if(cfg_target_a(terminator)!=1){return 27;}
+        let return_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,2);
+        let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
+        if(cfg_kind(return_block)!=cfg_block_kind()){return 28;}
+        if(cfg_block_id(return_block)!=1){return 29;}
+        if(cfg_kind(return_record)!=cfg_return_kind()){return 30;}
+        if(cfg_block_id(return_record)!=1){return 31;}
+    }
     if(cfg_block_id(terminator)!=0){return 8;}
     var local_count:i64=0;
     var instruction_count:i64=0;
@@ -428,7 +442,11 @@ requires_caps [allocate]
     }
     if(local_count<=0){return 15;}
     if(instruction_count!=vec_len<MirPlacementRecord>(placements)){return 16;}
-    if(cfg_operand(terminator)<0){return 17;}
+    if(jumps_to_return==0){if(cfg_operand(terminator)<0){return 17;}}
+    else{
+        let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
+        if(cfg_operand(return_record)<0){return 17;}
+    }
     if(function_mir_ordinal(header)>local_count){return 26;}
     let prototype_status:i32=canonical_c_append_i64_prototype(source,header,records,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
@@ -518,8 +536,13 @@ requires_caps [allocate]
         if(instruction_found==0){return 21;}
         ordinal=checked_add(ordinal,1);
     }
+    if(jumps_to_return!=0){canonical_mir_append_text(bodies,"    goto b1;\nb1:\n");}
     canonical_mir_append_text(bodies,"    return m");
-    canonical_mir_append_i64(bodies,cfg_operand(terminator));
+    if(jumps_to_return==0){canonical_mir_append_i64(bodies,cfg_operand(terminator));}
+    else{
+        let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,3);
+        canonical_mir_append_i64(bodies,cfg_operand(return_record));
+    }
     canonical_mir_append_text(bodies,";\n}");
     return 0;
 }

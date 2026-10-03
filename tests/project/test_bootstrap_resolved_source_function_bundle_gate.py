@@ -260,6 +260,14 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_JUMP_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
+    "vec_new<MirCfgRecord>(allocator,2);\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,2));",
+    "vec_new<MirCfgRecord>(allocator,4);\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_jump(0,1));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));vec_push<MirCfgRecord>(cfg,cfg_return(1,2));",
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1110,6 +1118,37 @@ def test_merit_multifunction_c_backend_matches_python_oracle_bytes(tmp_path: Pat
                     (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
                     parameters=(MirParameter(0),), exported=True),
     ))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_JUMP_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-jump")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
+        (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="+", numeric_policy="checked"),
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("jump", targets=(1,))),
+            MirBlock(1, (), MirTerminator("return", operands=(2,))),
+        ), 0, exported=True,
+    ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
