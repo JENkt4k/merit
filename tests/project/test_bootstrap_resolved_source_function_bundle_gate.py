@@ -429,6 +429,11 @@ SOURCED_PRINT_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
     "function_mir_print(57,1,0,0,0)",
 )
 
+SOURCED_CALL_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+    "function_mir_const(57,1,0,0,function_mir_buffer_type_code(),0)",
+    "function_mir_call(57,1,0,0,15,7,function_mir_buffer_type_code(),function_mir_mode_value(),0)",
+)
+
 CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_function_contracts;
@@ -1073,6 +1078,31 @@ def test_merit_materializes_sourced_copy_and_print_in_complete_cfg(tmp_path: Pat
         ),)))
         assert values[1] == len(actual.encode("utf-8"))
         assert actual == expected
+
+
+def test_merit_materializes_sourced_call_in_complete_cfg(tmp_path: Path) -> None:
+    root = _project(tmp_path, SOURCED_CALL_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sourced-call-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "call", result=0, symbol="compute", span=SourceSpan(57, 1)),
+                MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == expected
 
 
 def test_sourced_cfg_rejects_mismatched_source_binding_identity(tmp_path: Path) -> None:
