@@ -988,6 +988,7 @@ fn canonical_mir_is_body_instruction(kind:i32)->i32{
 pub fn materialize_sourced_cfg_canonical_mir(
     borrow source:Buffer,module_name:String,borrow records:Vec<MirFunctionRecord>,
     borrow contracts:Vec<MirFunctionContractRecord>,
+    borrow contract_locals:Vec<MirFunctionContractLocal>,
     borrow ownership_bindings:Vec<MirOwnershipBinding>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
     borrow sources:Vec<MirFunctionInstructionSource>,
@@ -1315,6 +1316,7 @@ requires_caps [allocate]
         if(emitted_local_kind==function_mir_kind_parameter()){emit_local=1;}
         if(emit_local!=0){
         if(emitted_local_count>0){buffer_push(output,44);}
+        if(function_mir_id(local)!=emitted_local_count){return 70;}
         canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,function_mir_id(local));
         canonical_mir_append_text(output,",\"mutable\":");
         var local_mutable:i32=0;
@@ -1377,6 +1379,24 @@ requires_caps [allocate]
         }
         local_record_index=checked_add(local_record_index,1);
     }
+    var contract_local_index:i64=0;
+    while(contract_local_index<vec_len<MirFunctionContractLocal>(contract_locals)){
+        let contract_local:MirFunctionContractLocal=vec_get<MirFunctionContractLocal>(contract_locals,contract_local_index);
+        if(assembly_local_id(contract_local)!=emitted_local_count){return 71;}
+        if(assembly_local_source_id(contract_local)<0){return 71;}
+        if(assembly_local_contract_kind(contract_local)<function_contract_precondition_phase()){return 71;}
+        if(assembly_local_contract_kind(contract_local)>function_contract_entry_snapshot_phase()){return 71;}
+        if(assembly_local_clause(contract_local)<0){return 71;}
+        if(emitted_local_count>0){buffer_push(output,44);}
+        canonical_mir_append_text(output,"{\"id\":");canonical_mir_append_i64(output,assembly_local_id(contract_local));
+        canonical_mir_append_text(output,",\"mutable\":false,\"name\":\"_contract_");
+        canonical_mir_append_i32(output,assembly_local_contract_kind(contract_local));buffer_push(output,95);
+        canonical_mir_append_i64(output,assembly_local_source_id(contract_local));
+        canonical_mir_append_text(output,"\",\"ownership\":\"value\",\"type\":");
+        if(canonical_mir_append_type(output,assembly_local_type(contract_local))!=0){return 72;}
+        buffer_push(output,125);emitted_local_count=checked_add(emitted_local_count,1);
+        contract_local_index=checked_add(contract_local_index,1);
+    }
     canonical_mir_append_text(output,"],\"name\":");
     let name_status:i32=canonical_mir_append_json_source(output,source,function_mir_symbol_start(header),function_mir_symbol_length(header));
     if(name_status!=0){return checked_add(30,name_status);}
@@ -1428,13 +1448,14 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,0);
     var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+    var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
     var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
     var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
     let status:i32=materialize_sourced_cfg_canonical_mir(
-        source,module_name,records,contracts,bindings,ownership,sources,cfg,placements,
+        source,module_name,records,contracts,contract_locals,bindings,ownership,sources,cfg,placements,
         required,capability_catalog,output
     );
-    drop(sources);drop(ownership);drop(contracts);drop(bindings);
+    drop(sources);drop(ownership);drop(contract_locals);drop(contracts);drop(bindings);
     return status;
 }
 

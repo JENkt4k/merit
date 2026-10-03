@@ -332,6 +332,7 @@ fn main()->i32 {
 SOURCED_OWNERSHIP_CFG_MIR_PROBE = r'''module sourced_ownership_cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_function_contracts;
+import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_ownership_flow;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_cfg;
@@ -356,6 +357,7 @@ fn main()->i32 {
    start:57,length:1,id:0,result:0,left:-1,right:-1,symbol:0,
    type_code:function_mir_buffer_type_code(),numeric_policy:0
   });
+  var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
   var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,1);
   vec_push<MirOwnershipBinding>(bindings,ownership_binding_with_drop(7,0,1,1,1));
   var ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
@@ -390,13 +392,13 @@ fn main()->i32 {
   var capability_catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
   var output:Buffer=buffer_new(allocator,512);
   let status:i32=materialize_sourced_cfg_canonical_mir(
-   source,"demo",records,contracts,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
+   source,"demo",records,contracts,contract_locals,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
   );
   print(status);print(buffer_len(output));
   var index:i64=0;
   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
   drop(output);drop(capability_catalog);drop(required);drop(placements);drop(cfg);
-  drop(sources);drop(ownership);drop(bindings);drop(contracts);drop(records);drop(source);
+  drop(sources);drop(ownership);drop(bindings);drop(contract_locals);drop(contracts);drop(records);drop(source);
   return status;
  }
 }
@@ -508,6 +510,15 @@ SOURCED_PARAMETER_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
 ).replace(
     "function_mir_source_local(37,4,0,function_mir_buffer_type_code(),7,1)",
     "function_mir_parameter(37,4,0,function_mir_buffer_type_code(),7,1,function_mir_mode_borrowed(),0)",
+)
+
+SOURCED_CONTRACT_LOCAL_CFG_MIR_PROBE = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+    "var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);",
+    "var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,1);\n"
+    "  vec_push<MirFunctionContractLocal>(contract_locals,MirFunctionContractLocal{\n"
+    "   local_id:1,source_local_id:10,type_code:function_mir_i64_type_code(),\n"
+    "   contract_kind:function_contract_precondition_phase(),clause_ordinal:0\n"
+    "  });",
 )
 
 CONTRACT_INSTRUCTION_CATALOG_PROBE = r'''module contract_instruction_catalog_probe
@@ -1311,6 +1322,31 @@ def test_merit_materializes_sourced_callable_parameters(tmp_path: Path) -> None:
                 MirInstruction(2, "drop", operands=(0,), ownership="owned"),
             ), MirTerminator("return")),
         ), 0, parameters=(MirParameter(0, "borrowed"),), return_mode="borrowed", borrowed_origin=0, exported=True,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_materializes_sourced_contract_locals(tmp_path: Path) -> None:
+    root = _project(tmp_path, SOURCED_CONTRACT_LOCAL_CFG_MIR_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sourced-contract-local-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned", source_binding_id=7),
+            MirLocal(1, "_contract_1_10", MirType("i64")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1), ownership="value"),
+                MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("return")),
+        ), 0,
     ),)))
     assert actual == expected
 
