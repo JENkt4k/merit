@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import json
+import pytest
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
 from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
@@ -1148,6 +1149,46 @@ def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path)
             ), MirTerminator("jump", targets=(1,))),
             MirBlock(1, (), MirTerminator("return", operands=(2,))),
         ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("record_symbol", "mir_symbol"),
+    [
+        ("function_mir_binary_subtract_symbol()", "-"),
+        ("function_mir_binary_multiply_symbol()", "*"),
+    ],
+)
+def test_merit_checked_i64_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, record_symbol: str, mir_symbol: str,
+) -> None:
+    probe = CANONICAL_C_BACKEND_PROBE.replace(
+        "function_mir_binary_add_symbol()", record_symbol,
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-checked")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=2, ownership="value"),
+            MirInstruction(1, "const", result=1, value=3, ownership="value"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol=mir_symbol, numeric_policy="checked"),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
