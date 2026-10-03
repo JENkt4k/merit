@@ -336,6 +336,7 @@ fn canonical_c_checked_add_feature()->i64{return 1;}
 fn canonical_c_i64_print_feature()->i64{return 2;}
 fn canonical_c_checked_multiply_feature()->i64{return 3;}
 fn canonical_c_checked_subtract_feature()->i64{return 4;}
+fn canonical_c_checked_divide_feature()->i64{return 5;}
 
 fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
 requires_caps [allocate]
@@ -515,7 +516,9 @@ requires_caps [allocate]
                         let binary_symbol:i32=function_mir_symbol_code(instruction);
                         if(binary_symbol!=function_mir_binary_add_symbol()){
                             if(binary_symbol!=function_mir_binary_subtract_symbol()){
-                                if(binary_symbol!=function_mir_binary_multiply_symbol()){return 22;}
+                                if(binary_symbol!=function_mir_binary_multiply_symbol()){
+                                    if(binary_symbol!=function_mir_binary_divide_symbol()){return 22;}
+                                }
                             }
                         }
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
@@ -527,6 +530,10 @@ requires_caps [allocate]
                             if(binary_symbol==function_mir_binary_multiply_symbol()){
                                 canonical_c_require_feature(canonical_c_checked_multiply_feature(),features);
                                 canonical_mir_append_text(bodies," = merit_checked_mul_i64(m");
+                            }
+                            if(binary_symbol==function_mir_binary_divide_symbol()){
+                                canonical_c_require_feature(canonical_c_checked_divide_feature(),features);
+                                canonical_mir_append_text(bodies," = merit_checked_div_i64(m");
                             }
                             if(binary_symbol==function_mir_binary_subtract_symbol()){
                                 canonical_c_require_feature(canonical_c_checked_subtract_feature(),features);
@@ -540,6 +547,7 @@ requires_caps [allocate]
                             if(binary_symbol==function_mir_binary_add_symbol()){canonical_mir_append_text(bodies," + m");}
                             if(binary_symbol==function_mir_binary_subtract_symbol()){canonical_mir_append_text(bodies," - m");}
                             if(binary_symbol==function_mir_binary_multiply_symbol()){canonical_mir_append_text(bodies," * m");}
+                            if(binary_symbol==function_mir_binary_divide_symbol()){canonical_mir_append_text(bodies," / m");}
                             canonical_mir_append_i64(bodies,function_mir_right(instruction));
                             canonical_mir_append_text(bodies,";\n");
                         }
@@ -578,6 +586,7 @@ requires_caps [allocate]
     var needs_stdio:i32=canonical_c_has_feature(canonical_c_checked_add_feature(),features);
     if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){needs_stdio=1;}
     if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){needs_stdio=1;}
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){needs_stdio=1;}
     if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){needs_stdio=1;}
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
     canonical_mir_append_text(output,"#include <stdlib.h>\n\n");
@@ -585,11 +594,18 @@ requires_caps [allocate]
     var needs_checked:i32=canonical_c_has_feature(canonical_c_checked_add_feature(),features);
     if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){needs_checked=1;}
     if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){needs_checked=1;}
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){needs_checked=1;}
     if(needs_checked!=0){
         canonical_mir_append_text(output,"static void merit_numeric_failure(const char *operation) { fprintf(stderr, \"Merit %s\\n\", operation); exit(70); }\n");
     }
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
+        canonical_mir_append_text(output,"static void merit_division_by_zero(void) { fprintf(stderr, \"Merit division by zero\\n\"); exit(72); }\n");
+    }
     if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){
         canonical_mir_append_text(output,"static int64_t merit_checked_add_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a + (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 addition overflow\");\n    return (int64_t)result;\n}\n");
+    }
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int64_t merit_checked_div_i64(int64_t a, int64_t b) {\n    if (b == 0) merit_division_by_zero();\n    if (a == INT64_MIN && b == -1) merit_numeric_failure(\"division overflow\");\n    return (int64_t)(a / b);\n}\n");
     }
     if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){
         canonical_mir_append_text(output,"static int64_t merit_checked_mul_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a * (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 multiplication overflow\");\n    return (int64_t)result;\n}\n");

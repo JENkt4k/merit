@@ -1160,6 +1160,7 @@ def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     [
         ("function_mir_binary_subtract_symbol()", "-"),
         ("function_mir_binary_multiply_symbol()", "*"),
+        ("function_mir_binary_divide_symbol()", "/"),
     ],
 )
 def test_merit_checked_i64_c_backend_matches_python_oracle_bytes(
