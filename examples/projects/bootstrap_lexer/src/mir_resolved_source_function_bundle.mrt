@@ -179,6 +179,84 @@ requires_caps [allocate]
     return 0;
 }
 
+// Project assembly deliberately consumes the canonical single-function bytes
+// produced by this module instead of reinterpreting the function records a
+// second time.  The fixed wrapper is validated byte-for-byte and stripped;
+// callers can therefore append functions while their lowering vectors are
+// still live, then release those vectors before lowering the next function.
+pub fn canonical_mir_begin_project(borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    if(buffer_len(output)!=0){return 1;}
+    return canonical_mir_append_text(output,"{\"functions\":[");
+}
+
+pub fn canonical_mir_append_project_function(
+    borrow single_function_module:Buffer,
+    function_ordinal:i64,
+    allocator:Allocator,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_ordinal<0){return 1;}
+    let prefix:Buffer=buffer_from_string(allocator,"{\"functions\":[");
+    let suffix:Buffer=buffer_from_string(allocator,"],\"name\":\"_\",\"schema\":\"bootstrap-mir-v1\"}");
+    let prefix_length:i64=buffer_len(prefix);
+    let suffix_length:i64=buffer_len(suffix);
+    var status:i32=0;
+    if(buffer_len(single_function_module)<=checked_add(prefix_length,suffix_length)){
+        status=2;
+    }
+    var index:i64=0;
+    if(status==0){
+        while(index<prefix_length){
+            if(buffer_get(single_function_module,index)!=buffer_get(prefix,index)){
+                status=3;index=prefix_length;
+            }else{
+                index=checked_add(index,1);
+            }
+        }
+    }
+    index=0;
+    if(status==0){
+        while(index<suffix_length){
+            let source_index:i64=checked_add(
+                checked_sub(buffer_len(single_function_module),suffix_length),index
+            );
+            if(buffer_get(single_function_module,source_index)!=buffer_get(suffix,index)){
+                status=4;index=suffix_length;
+            }else{
+                index=checked_add(index,1);
+            }
+        }
+    }
+    if(status==0){
+        if(function_ordinal>0){buffer_push(output,44);}
+        let body_end:i64=checked_sub(buffer_len(single_function_module),suffix_length);
+        bootstrap_buffer_append(
+            output,single_function_module,prefix_length,
+            checked_sub(body_end,prefix_length)
+        );
+    }
+    drop(suffix);drop(prefix);
+    return status;
+}
+
+pub fn canonical_mir_finish_project(
+    module_name:String,
+    function_count:i64,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_count<=0){return 1;}
+    canonical_mir_append_text(output,"],\"name\":");
+    if(canonical_mir_append_json_string(output,module_name)!=0){return 2;}
+    canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
+    return 0;
+}
+
 fn canonical_mir_push_identifier_or_numeric_byte(
     borrow_mut output:Buffer,value:i64
 )->i32

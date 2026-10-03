@@ -132,6 +132,34 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_PROJECT_ASSEMBLY_PROBE = r'''module canonical_project_assembly_probe
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let first:Buffer=buffer_from_string(allocator,"{\"functions\":[{\"name\":\"first\"}],\"name\":\"_\",\"schema\":\"bootstrap-mir-v1\"}");
+  let second:Buffer=buffer_from_string(allocator,"{\"functions\":[{\"name\":\"second\"}],\"name\":\"_\",\"schema\":\"bootstrap-mir-v1\"}");
+  var output:Buffer=buffer_new(allocator,256);
+  let begin_status:i32=canonical_mir_begin_project(output);
+  if(begin_status!=0){return begin_status;}
+  let first_status:i32=canonical_mir_append_project_function(first,0,allocator,output);
+  if(first_status!=0){return checked_add(10,first_status);}
+  let second_status:i32=canonical_mir_append_project_function(second,1,allocator,output);
+  if(second_status!=0){return checked_add(20,second_status);}
+  let finish_status:i32=canonical_mir_finish_project("demo",2,output);
+  if(finish_status!=0){return checked_add(30,finish_status);}
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(second);drop(first);
+ }
+ return 0;
+}
+'''
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -913,6 +941,23 @@ def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) ->
         ), MirTerminator("return", operands=(0,), span=SourceSpan(32, 9))),), 0,
     ),)))
     assert actual == expected
+
+
+def test_merit_assembles_multiple_canonical_functions_without_python(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_PROJECT_ASSEMBLY_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-project-assembly")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    actual = bytes(values[1:]).decode("utf-8")
+    assert values[0] == len(actual.encode("utf-8"))
+    assert actual == (
+        '{"functions":[{"name":"first"},{"name":"second"}],'
+        '"name":"demo","schema":"bootstrap-mir-v1"}'
+    )
 
 
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:
