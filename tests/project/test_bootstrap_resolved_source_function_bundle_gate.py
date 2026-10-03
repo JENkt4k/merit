@@ -208,6 +208,58 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_MULTIFUNCTION_PROBE = r'''module canonical_c_multifunction_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"first1second");
+  var first:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(first,function_mir_callable_header(0,6,0,5,function_mir_i64_type_code(),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(first,function_mir_temporary(0,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(first,function_mir_const(5,1,0,0,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(first,function_mir_return(5,1,0,0));
+  var second:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(second,function_mir_callable_header(6,6,6,6,function_mir_i64_type_code(),function_mir_mode_value(),-1,1,1));
+  vec_push<MirFunctionRecord>(second,function_mir_parameter(6,6,0,function_mir_i64_type_code(),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(second,function_mir_return(6,6,0,0));
+  var first_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(first_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(first_cfg,cfg_return(0,0));
+  var second_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(second_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(second_cfg,cfg_return(0,0));
+  var first_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(first_placements,mir_place(0,0,0));
+  var second_placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,512);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,1024);
+  var c_header:Buffer=buffer_new(allocator,256);
+  let first_status:i32=canonical_c_append_scalar_function(source,first,first_cfg,first_placements,prototypes,bodies,declarations,features);
+  if(first_status!=0){return first_status;}
+  let second_status:i32=canonical_c_append_scalar_function(source,second,second_cfg,second_placements,prototypes,bodies,declarations,features);
+  if(second_status!=0){return checked_add(100,second_status);}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(200,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,c_header);
+  if(header_status!=0){return checked_add(300,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(second_placements);drop(first_placements);drop(second_cfg);drop(first_cfg);
+  drop(second);drop(first);drop(source);
+ }
+ return 0;
+}
+'''
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1031,6 +1083,33 @@ def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> N
             MirInstruction(3, "print", operands=(2,)),
         ), MirTerminator("return", operands=(2,))),), 0, exported=True,
     ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_multifunction_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_MULTIFUNCTION_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-multifunction")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (
+        MirFunction("first", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),),
+                    (MirBlock(0, (MirInstruction(0, "const", result=0, value=1),),
+                              MirTerminator("return", operands=(0,))),), 0),
+        MirFunction("second", MirType("i64"), (MirLocal(0, "value", MirType("i64")),),
+                    (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+                    parameters=(MirParameter(0),), exported=True),
+    ))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
