@@ -652,11 +652,13 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                                     if (function_mir_is_enum_instruction(node) != 0) {
                                         if (node.id != next_instruction) { return function_mir_invalid_enum_id_status(); }
                                         if (node.result < 0) { return function_mir_invalid_enum_operand_status(); }
-                                        if (node.left < 0) { return function_mir_invalid_enum_operand_status(); }
                                         if (node.hir_node_id < 0) { return function_mir_invalid_enum_hir_status(); }
                                         if (function_mir_is_construct(node) != 0) {
                                             if (node.type_code < function_mir_copy_payload_enum_type_code(0)) { return function_mir_invalid_enum_type_status(); }
                                             if (node.symbol_code < 0) { return function_mir_invalid_enum_symbol_status(); }
+                                            if (node.left < function_mir_absent_record_value()) { return function_mir_invalid_enum_operand_status(); }
+                                        } else {
+                                            if (node.left < 0) { return function_mir_invalid_enum_operand_status(); }
                                         }
                                         next_instruction = checked_add(next_instruction, 1);
                                     } else {

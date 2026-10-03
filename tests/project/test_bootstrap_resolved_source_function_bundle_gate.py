@@ -452,7 +452,7 @@ def _sourced_body_probe(record: str) -> str:
 
 
 SOURCED_ENUM_CONSTRUCT_CFG_MIR_PROBE = _sourced_body_probe(
-    "function_mir_construct(57,1,0,0,0,2,function_mir_copy_payload_enum_type_code(0),0)"
+    "function_mir_construct(57,1,0,0,-1,2,function_mir_copy_payload_enum_type_code(0),0)"
 )
 SOURCED_ENUM_TAG_CFG_MIR_PROBE = _sourced_body_probe(
     "function_mir_enum_tag_load(57,1,0,0,0,0)"
@@ -1219,7 +1219,7 @@ def test_merit_materializes_ordered_sourced_call_arguments(tmp_path: Path) -> No
 
 def test_merit_materializes_sourced_composite_instruction_catalog(tmp_path: Path) -> None:
     cases = (
-        ("enum-construct", SOURCED_ENUM_CONSTRUCT_CFG_MIR_PROBE, MirInstruction(1, "construct", result=0, operands=(0,), symbol="variant_2", span=SourceSpan(57, 1), ownership="value")),
+        ("enum-construct", SOURCED_ENUM_CONSTRUCT_CFG_MIR_PROBE, MirInstruction(1, "construct", result=0, symbol="variant_2", span=SourceSpan(57, 1), ownership="value")),
         ("enum-tag", SOURCED_ENUM_TAG_CFG_MIR_PROBE, MirInstruction(1, "load_field", result=0, operands=(0,), symbol="tag", span=SourceSpan(57, 1))),
         ("enum-payload", SOURCED_ENUM_PAYLOAD_CFG_MIR_PROBE, MirInstruction(1, "load_field", result=0, operands=(0,), symbol="payload_2", span=SourceSpan(57, 1))),
         ("struct-construct", SOURCED_STRUCT_CONSTRUCT_CFG_MIR_PROBE, MirInstruction(1, "construct", result=0, operands=(0,), symbol="field_2", span=SourceSpan(57, 1), ownership="owned")),
