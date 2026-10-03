@@ -1268,8 +1268,22 @@ def test_merit_scalar_call_c_backend_rejects_borrowed_callee_parameter(tmp_path:
     assert native.stdout == ""
 
 
-def test_merit_scalar_equality_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_EQUAL_PROBE)
+@pytest.mark.parametrize(
+    ("record_symbol", "mir_symbol"),
+    [
+        ("function_mir_binary_equal_symbol()", "=="),
+        ("function_mir_binary_not_equal_symbol()", "!="),
+        ("function_mir_binary_greater_equal_symbol()", ">="),
+        ("function_mir_binary_less_equal_symbol()", "<="),
+        ("function_mir_binary_greater_symbol()", ">"),
+        ("function_mir_binary_less_symbol()", "<"),
+    ],
+)
+def test_merit_scalar_comparison_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, record_symbol: str, mir_symbol: str,
+) -> None:
+    probe = CANONICAL_C_EQUAL_PROBE.replace("function_mir_binary_equal_symbol()", record_symbol)
+    root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-equality")
@@ -1289,13 +1303,44 @@ def test_merit_scalar_equality_c_backend_matches_python_oracle_bytes(tmp_path: P
         ), (MirBlock(0, (
             MirInstruction(0, "const", result=0, value=2, ownership="value"),
             MirInstruction(1, "const", result=1, value=3, ownership="value"),
-            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol=mir_symbol, numeric_policy="exact"),
             MirInstruction(3, "print", operands=(2,)),
         ), MirTerminator("return", operands=(0,))),), 0, exported=True,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (
+            CANONICAL_C_EQUAL_PROBE.replace(
+                "function_mir_bool_type_code(),function_mir_exact_numeric_policy()",
+                "function_mir_bool_type_code(),function_mir_checked_numeric_policy()",
+            ),
+            76,
+        ),
+        (
+            CANONICAL_C_EQUAL_PROBE.replace(
+                "function_mir_temporary(2,function_mir_bool_type_code(),2)",
+                "function_mir_temporary(2,function_mir_i64_type_code(),2)",
+            ),
+            77,
+        ),
+    ],
+)
+def test_merit_scalar_comparison_c_backend_rejects_invalid_shape(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-comparison-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:

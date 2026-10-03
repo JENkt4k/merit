@@ -574,17 +574,40 @@ requires_caps [allocate]
                             if(binary_symbol!=function_mir_binary_subtract_symbol()){
                                 if(binary_symbol!=function_mir_binary_multiply_symbol()){
                                     if(binary_symbol!=function_mir_binary_divide_symbol()){
-                                        if(binary_symbol!=function_mir_binary_equal_symbol()){return 22;}
+                                        if(binary_symbol!=function_mir_binary_equal_symbol()){
+                                            if(binary_symbol!=function_mir_binary_not_equal_symbol()){
+                                                if(binary_symbol!=function_mir_binary_greater_equal_symbol()){
+                                                    if(binary_symbol!=function_mir_binary_less_equal_symbol()){
+                                                        if(binary_symbol!=function_mir_binary_greater_symbol()){
+                                                            if(binary_symbol!=function_mir_binary_less_symbol()){return 22;}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
-                        if(binary_symbol==function_mir_binary_equal_symbol()){
+                        var is_comparison:i32=0;
+                        if(binary_symbol==function_mir_binary_equal_symbol()){is_comparison=1;}
+                        if(binary_symbol==function_mir_binary_not_equal_symbol()){is_comparison=1;}
+                        if(binary_symbol==function_mir_binary_greater_equal_symbol()){is_comparison=1;}
+                        if(binary_symbol==function_mir_binary_less_equal_symbol()){is_comparison=1;}
+                        if(binary_symbol==function_mir_binary_greater_symbol()){is_comparison=1;}
+                        if(binary_symbol==function_mir_binary_less_symbol()){is_comparison=1;}
+                        if(is_comparison!=0){
                             if(function_mir_numeric_policy(instruction)!=function_mir_exact_numeric_policy()){return 76;}
                             if(canonical_c_scalar_local_type(records,function_mir_result(instruction))!=function_mir_bool_type_code()){return 77;}
                             canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,function_mir_left(instruction));
-                            canonical_mir_append_text(bodies," == m");canonical_mir_append_i64(bodies,function_mir_right(instruction));
+                            if(binary_symbol==function_mir_binary_equal_symbol()){canonical_mir_append_text(bodies," == m");}
+                            if(binary_symbol==function_mir_binary_not_equal_symbol()){canonical_mir_append_text(bodies," != m");}
+                            if(binary_symbol==function_mir_binary_greater_equal_symbol()){canonical_mir_append_text(bodies," >= m");}
+                            if(binary_symbol==function_mir_binary_less_equal_symbol()){canonical_mir_append_text(bodies," <= m");}
+                            if(binary_symbol==function_mir_binary_greater_symbol()){canonical_mir_append_text(bodies," > m");}
+                            if(binary_symbol==function_mir_binary_less_symbol()){canonical_mir_append_text(bodies," < m");}
+                            canonical_mir_append_i64(bodies,function_mir_right(instruction));
                             canonical_mir_append_text(bodies,";\n");
                         }else{
                         if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
