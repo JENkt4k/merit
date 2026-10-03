@@ -257,6 +257,22 @@ requires_caps [allocate]
     return 0;
 }
 
+pub fn canonical_mir_finish_project_source(
+    borrow source:Buffer,
+    module_start:i64,
+    module_length:i64,
+    function_count:i64,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_count<=0){return 1;}
+    canonical_mir_append_text(output,"],\"name\":");
+    if(canonical_mir_append_json_source(output,source,module_start,module_length)!=0){return 2;}
+    canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
+    return 0;
+}
+
 fn canonical_mir_push_identifier_or_numeric_byte(
     borrow_mut output:Buffer,value:i64
 )->i32

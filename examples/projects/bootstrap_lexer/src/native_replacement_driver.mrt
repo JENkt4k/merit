@@ -44,6 +44,10 @@ pub fn native_driver_numeric_descriptor_failure_status(status:i32)->i32{return c
 pub fn native_driver_assembly_failure_status(status:i32)->i32{return checked_add(1000,status);}
 pub fn native_driver_bundle_header_failure_status(status:i32)->i32{return checked_add(2000,status);}
 pub fn native_driver_bundle_item_failure_status(status:i32)->i32{return checked_add(3000,status);}
+pub fn native_driver_canonical_begin_failure_status(status:i32)->i32{return checked_add(4000,status);}
+pub fn native_driver_canonical_function_failure_status(status:i32)->i32{return checked_add(4100,status);}
+pub fn native_driver_canonical_append_failure_status(status:i32)->i32{return checked_add(4200,status);}
+pub fn native_driver_canonical_finish_failure_status(status:i32)->i32{return checked_add(4300,status);}
 
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     with capability allocate {
@@ -140,6 +144,11 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
         var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
         var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+        var canonical_project:Buffer=buffer_new(allocator,4096);
+        let canonical_begin_status:i32=canonical_mir_begin_project(canonical_project);
+        if(canonical_begin_status!=0){
+            return native_driver_canonical_begin_failure_status(canonical_begin_status);
+        }
         scan = 0;
         var emitted_functions: i64 = 0;
         while (scan < vec_len<Token>(tokens)) {
@@ -219,6 +228,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 var assembled: Vec<MirLowerEvent> = vec_new<MirLowerEvent>(allocator, 160);
                 var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
                 var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
+                var canonical_function:Buffer=buffer_new(allocator,1024);
 
                 var function_status: i32 = slice_status;
                 let resolved_match_enum_id: i64 = -1;
@@ -768,18 +778,34 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                             if (assembly_status != 0) {
                                 function_status = native_driver_assembly_failure_status(assembly_status);
                             } else {
-                                var include_effective_source: i32 = 0;
-                                if (emitted_functions == 0) { include_effective_source = 1; }
-                                let item_status: i32 = print_resolved_source_function_bundle_item_with_source_policy(
-                                    source, include_effective_source, body, contracts, contract_locals, sources, ownership,
-                                    ownership_records, cfg, placements, required, type_descriptors,
-                                    numeric_type_descriptors,
-                                    destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
+                                let canonical_status:i32=materialize_sourced_cfg_canonical_mir(
+                                    source,"_",body,contracts,contract_locals,ownership,
+                                    ownership_records,sources,cfg,placements,required,
+                                    capabilities,canonical_function
                                 );
-                                if (item_status != 0) {
-                                    function_status = native_driver_bundle_item_failure_status(item_status);
+                                if(canonical_status!=0){
+                                    function_status=native_driver_canonical_function_failure_status(canonical_status);
                                 } else {
-                                    emitted_functions = checked_add(emitted_functions, 1);
+                                    let append_status:i32=canonical_mir_append_project_function(
+                                        canonical_function,emitted_functions,allocator,canonical_project
+                                    );
+                                    if(append_status!=0){
+                                        function_status=native_driver_canonical_append_failure_status(append_status);
+                                    }else{
+                                        var include_effective_source: i32 = 0;
+                                        if (emitted_functions == 0) { include_effective_source = 1; }
+                                        let item_status: i32 = print_resolved_source_function_bundle_item_with_source_policy(
+                                            source, include_effective_source, body, contracts, contract_locals, sources, ownership,
+                                            ownership_records, cfg, placements, required, type_descriptors,
+                                            numeric_type_descriptors,
+                                            destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
+                                        );
+                                        if (item_status != 0) {
+                                            function_status = native_driver_bundle_item_failure_status(item_status);
+                                        } else {
+                                            emitted_functions = checked_add(emitted_functions, 1);
+                                        }
+                                    }
                                 }
                             }
                             }
@@ -788,6 +814,7 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                 // One ownership epilogue, one syntactic consumption per binding.
                 // This avoids branch-merge ambiguity in the current checker while
                 // still closing every scoped owned local before leaving the else.
+                drop(canonical_function);
                 drop(placements);
                 drop(cfg);
                 drop(assembled);
@@ -812,11 +839,19 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         }
         if (emitted_functions != function_count) { return native_driver_function_count_mismatch_status(); }
         let module_token: Token = vec_get<Token>(tokens, 1);
+        let canonical_finish_status:i32=canonical_mir_finish_project_source(
+            source,token_start(module_token),token_length(module_token),
+            emitted_functions,canonical_project
+        );
+        if(canonical_finish_status!=0){
+            return native_driver_canonical_finish_failure_status(canonical_finish_status);
+        }
         let metadata_status: i32 = print_resolved_source_function_bundle_metadata(
             source, token_start(module_token), token_length(module_token), capabilities
         );
         if (metadata_status != 0) { return checked_add(6000, metadata_status); }
         drop(callable_parameters);drop(callable_signatures);
+        drop(canonical_project);
         drop(capabilities);
         drop(destructor_placements);
         drop(destructor_cfg);
