@@ -458,6 +458,52 @@ CANONICAL_C_ALLOCATOR_CALL_PROBE = (
              '  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0))')
 )
 
+CANONICAL_C_ALLOCATOR_COMPATIBLE_PROBE = r'''module canonical_c_allocator_compatible_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"check allocator_compatible");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,6);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,5,0,5,function_mir_i32_type_code(),function_mir_mode_value(),-1,2,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,5,0,function_mir_allocator_type_code(),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,5,1,function_mir_allocator_type_code(),1,0,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_i32_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call(6,20,0,2,6,20,function_mir_i32_type_code(),function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,5,2,0));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,2));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,1024);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2580,6 +2626,84 @@ def test_merit_allocator_builtin_call_c_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+def test_merit_allocator_compatible_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_ALLOCATOR_COMPATIBLE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-allocator-compatible")
+    process = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert process.returncode == 0, process.stderr
+    native = process.stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "check", MirType("i32"), (
+            MirLocal(0, "left", MirType("Allocator")),
+            MirLocal(1, "right", MirType("Allocator")),
+            MirLocal(2, "result", MirType("i32")),
+        ), (MirBlock(0, (MirInstruction(
+            0, "call", result=2, operands=(0, 1), symbol="allocator_compatible",
+        ),), MirTerminator("return", operands=(2,))),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_allocator_compatible_generated_c_preserves_identity(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_ALLOCATOR_COMPATIBLE_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-allocator-compatible-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "allocator_compatible.c"
+    driver_c = tmp_path / "allocator_compatible_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "allocator_compatible.c"\n'
+        'int main(void) { merit_Allocator system = merit_system_allocator(); '
+        'merit_Allocator portable = merit_portable_allocator(); '
+        'return check(system, system) == 1 && check(system, portable) == 0 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "allocator-compatible-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_ALLOCATOR_COMPATIBLE_PROBE.replace(
+            "vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));", "",
+        ), 69),
+        (CANONICAL_C_ALLOCATOR_COMPATIBLE_PROBE.replace(
+            "function_mir_call_argument(0,1,function_mir_mode_value(),1)",
+            "function_mir_call_argument(0,2,function_mir_mode_value(),1)",
+        ), 96),
+    ],
+)
+def test_merit_allocator_compatible_backend_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-allocator-compatible-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 @pytest.mark.parametrize(

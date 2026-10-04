@@ -1242,24 +1242,79 @@ requires_caps [allocate]
                         if(callee_found==0){
                             let system_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"system_allocator");
                             let portable_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"portable_allocator");
-                            if(system_builtin==0){if(portable_builtin==0){return 65;}}
-                            if(function_mir_type_code(instruction)!=function_mir_allocator_type_code()){return 66;}
+                            let compatible_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"allocator_compatible");
+                            if(system_builtin==0){if(portable_builtin==0){if(compatible_builtin==0){return 65;}}}
+                            let expected_result_type:i32=canonical_c_scalar_local_type(records,function_mir_result(instruction));
+                            if(compatible_builtin!=0){
+                                if(function_mir_type_code(instruction)!=function_mir_i32_type_code()){return 66;}
+                                if(expected_result_type!=function_mir_i32_type_code()){return 95;}
+                            }else{
+                                if(function_mir_type_code(instruction)!=function_mir_allocator_type_code()){return 66;}
+                                if(expected_result_type!=function_mir_allocator_type_code()){return 95;}
+                            }
                             if(function_mir_numeric_policy(instruction)!=function_mir_mode_value()){return 66;}
-                            if(canonical_c_scalar_local_type(records,function_mir_result(instruction))!=function_mir_allocator_type_code()){return 95;}
-                            var builtin_argument_index:i64=1;
+                            var builtin_operand_ordinal:i64=0;
+                            if(compatible_builtin!=0){
+                                while(builtin_operand_ordinal<2){
+                                    var builtin_operand_found:i32=0;var builtin_argument_index:i64=1;
+                                    while(builtin_argument_index<vec_len<MirFunctionRecord>(records)){
+                                        let builtin_argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,builtin_argument_index);
+                                        if(function_mir_kind(builtin_argument)==function_mir_kind_call_argument()){
+                                            if(function_mir_id(builtin_argument)==function_mir_id(instruction)){
+                                                if(function_mir_ordinal(builtin_argument)==builtin_operand_ordinal){
+                                                    if(builtin_operand_found!=0){return 67;}
+                                                    if(function_mir_symbol_code(builtin_argument)!=function_mir_mode_value()){return 68;}
+                                                    if(canonical_c_scalar_local_type(records,function_mir_left(builtin_argument))!=function_mir_allocator_type_code()){return 96;}
+                                                    builtin_operand_found=1;
+                                                }
+                                            }
+                                        }
+                                        builtin_argument_index=checked_add(builtin_argument_index,1);
+                                    }
+                                    if(builtin_operand_found==0){return 69;}
+                                    builtin_operand_ordinal=checked_add(builtin_operand_ordinal,1);
+                                }
+                            }
+                            var builtin_argument_count:i64=0;var builtin_argument_index:i64=1;
                             while(builtin_argument_index<vec_len<MirFunctionRecord>(records)){
                                 let builtin_argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,builtin_argument_index);
                                 if(function_mir_kind(builtin_argument)==function_mir_kind_call_argument()){
-                                    if(function_mir_id(builtin_argument)==function_mir_id(instruction)){return 70;}
+                                    if(function_mir_id(builtin_argument)==function_mir_id(instruction)){
+                                        builtin_argument_count=checked_add(builtin_argument_count,1);
+                                    }
                                 }
                                 builtin_argument_index=checked_add(builtin_argument_index,1);
                             }
+                            if(builtin_argument_count!=builtin_operand_ordinal){return 70;}
                             canonical_mir_append_text(bodies,"    m");
                             canonical_mir_append_i64(bodies,function_mir_result(instruction));
                             canonical_mir_append_text(bodies," = ");
                             if(system_builtin!=0){canonical_mir_append_text(bodies,"merit_system_allocator");}
                             if(portable_builtin!=0){canonical_mir_append_text(bodies,"merit_portable_allocator");}
-                            canonical_mir_append_text(bodies,"();\n");
+                            if(compatible_builtin!=0){
+                                canonical_mir_append_text(bodies,"merit_allocator_compatible(");
+                                var compatible_ordinal:i64=0;
+                                while(compatible_ordinal<2){
+                                    var compatible_index:i64=1;var compatible_found:i32=0;
+                                    while(compatible_index<vec_len<MirFunctionRecord>(records)){
+                                        let compatible_argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,compatible_index);
+                                        if(function_mir_kind(compatible_argument)==function_mir_kind_call_argument()){
+                                            if(function_mir_id(compatible_argument)==function_mir_id(instruction)){
+                                                if(function_mir_ordinal(compatible_argument)==compatible_ordinal){
+                                                    if(compatible_ordinal>0){canonical_mir_append_text(bodies,", ");}
+                                                    canonical_mir_append_text(bodies,"m");
+                                                    canonical_mir_append_i64(bodies,function_mir_left(compatible_argument));
+                                                    compatible_found=1;
+                                                }
+                                            }
+                                        }
+                                        compatible_index=checked_add(compatible_index,1);
+                                    }
+                                    if(compatible_found==0){return 69;}
+                                    compatible_ordinal=checked_add(compatible_ordinal,1);
+                                }
+                                canonical_mir_append_text(bodies,");\n");
+                            }else{canonical_mir_append_text(bodies,"();\n");}
                         }else{
                         if(function_mir_type_code(callee_header)!=function_mir_type_code(instruction)){return 66;}
                         if(function_mir_type_code(instruction)!=function_mir_unit_type_code()){
