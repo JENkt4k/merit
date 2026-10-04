@@ -333,6 +333,21 @@ CANONICAL_C_BRANCH_ARM_BODY_PROBES = (
     CANONICAL_C_BRANCH_PROBE.replace("mir_place(0,3,3)", "mir_place(2,3,0)"),
 )
 
+CANONICAL_C_JOIN_PROBE = CANONICAL_C_BRANCH_ARM_BODY_PROBES[0].replace(
+    "vec_new<MirCfgRecord>(allocator,6);",
+    "vec_new<MirCfgRecord>(allocator,8);",
+).replace(
+    "cfg_return(1,0)", "cfg_jump(1,3)",
+).replace(
+    "vec_push<MirCfgRecord>(cfg,cfg_block(2,2));vec_push<MirCfgRecord>(cfg,cfg_return(2,1));",
+    "vec_push<MirCfgRecord>(cfg,cfg_block(2,2));vec_push<MirCfgRecord>(cfg,cfg_jump(2,3));\n"
+    "  vec_push<MirCfgRecord>(cfg,cfg_block(3,3));vec_push<MirCfgRecord>(cfg,cfg_return(3,0));",
+)
+
+CANONICAL_C_BACKEDGE_PROBE = CANONICAL_C_BRANCH_PROBE.replace(
+    "cfg_return(1,0)", "cfg_jump(1,0)",
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1493,6 +1508,134 @@ def test_merit_scalar_branch_arm_body_rejects_invalid_placement(
     native = subprocess.run([str(executable)], text=True, capture_output=True)
     assert native.returncode == status
     assert native.stdout == ""
+
+
+def test_merit_scalar_four_block_join_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    assert "cfg_jump(2,3)" in CANONICAL_C_JOIN_PROBE
+    root = _project(tmp_path, CANONICAL_C_JOIN_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-join")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+            ), MirTerminator("branch", operands=(2,), targets=(1, 2))),
+            MirBlock(1, (MirInstruction(3, "print", operands=(2,)),), MirTerminator("jump", targets=(3,))),
+            MirBlock(2, (), MirTerminator("jump", targets=(3,))),
+            MirBlock(3, (), MirTerminator("return", operands=(0,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "status"),
+    [
+        ("cfg_jump(2,3)", "cfg_jump(2,4)", 27),
+        ("cfg_branch(0,2,1,2)", "cfg_branch(0,0,1,2)", 86),
+        ("mir_place(1,3,0)", "mir_place(1,2,0)", 88),
+        ("cfg_return(3,0)", "cfg_return(3,2)", 89),
+    ],
+)
+def test_merit_scalar_general_cfg_rejects_invalid_shape(
+    tmp_path: Path, old: str, new: str, status: int,
+) -> None:
+    assert old in CANONICAL_C_JOIN_PROBE
+    root = _project(tmp_path, CANONICAL_C_JOIN_PROBE.replace(old, new))
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-cfg-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
+def test_merit_scalar_backedge_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    assert "cfg_jump(1,0)" in CANONICAL_C_BACKEDGE_PROBE
+    root = _project(tmp_path, CANONICAL_C_BACKEDGE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-backedge")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("branch", operands=(2,), targets=(1, 2))),
+            MirBlock(1, (), MirTerminator("jump", targets=(0,))),
+            MirBlock(2, (), MirTerminator("return", operands=(1,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("source_literal", "expected_stdout"),
+    [("compute23", ""), ("compute22", "1\n")],
+)
+def test_merit_scalar_join_generated_c_executes_both_paths(
+    tmp_path: Path, source_literal: str, expected_stdout: str,
+) -> None:
+    probe = CANONICAL_C_JOIN_PROBE.replace("compute23", source_literal)
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-join-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    generated_c = tmp_path / "generated.c"
+    generated_h = tmp_path / "generated.h"
+    driver_c = tmp_path / "driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    generated_h.write_text(c_header, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "generated.h"\nint main(void) { return merit_compute() == 2 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    executable = tmp_path / "generated-program"
+    subprocess.run(
+        [cc, "-std=c11", str(generated_c), str(driver_c), "-o", str(executable)],
+        check=True, text=True, capture_output=True,
+    )
+    result = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
+    assert result.stdout == expected_stdout
 
 
 @pytest.mark.parametrize(
