@@ -546,6 +546,151 @@ requires_caps [allocate]
     return 0;
 }
 
+// ASCII JSON spelling and UTF-8 output are representation boundaries.
+fn canonical_c_json_hex_digit(value:i64)->i64
+{
+    if(value>=48){if(value<=57){return checked_sub(value,48);}}
+    if(value>=65){if(value<=70){return checked_sub(value,55);}}
+    if(value>=97){if(value<=102){return checked_sub(value,87);}}
+    return -1;
+}
+
+fn canonical_c_json_unicode_codepoint(borrow source:Buffer,start:i64,end:i64)->i64
+{
+    if(start<0){return -1;}
+    if(checked_add(start,4)>end){return -1;}
+    var codepoint:i64=0;var index:i64=0;
+    while(index<4){
+        let digit:i64=canonical_c_json_hex_digit(buffer_get(source,checked_add(start,index)));
+        if(digit<0){return -1;}
+        codepoint=checked_add(checked_mul(codepoint,16),digit);
+        index=checked_add(index,1);
+    }
+    return codepoint;
+}
+
+fn canonical_c_append_hex_byte(value:i64,borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    if(value<0){return 1;}
+    if(value>255){return 1;}
+    buffer_push(output,92);buffer_push(output,120);
+    let high:i64=value/16;
+    let low:i64=checked_sub(value,checked_mul(high,16));
+    let digits:String="0123456789abcdef";
+    buffer_push(output,string_byte(digits,high));
+    buffer_push(output,string_byte(digits,low));
+    return 0;
+}
+
+fn canonical_c_append_utf8_codepoint(codepoint:i64,borrow_mut output:Buffer)->i64
+requires_caps [allocate]
+{
+    if(codepoint<0){return -1;}
+    if(codepoint>1114111){return -1;}
+    if(codepoint>=55296){if(codepoint<=57343){return -1;}}
+    if(codepoint<=127){canonical_c_append_hex_byte(codepoint,output);return 1;}
+    if(codepoint<=2047){
+        canonical_c_append_hex_byte(checked_add(192,codepoint/64),output);
+        canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint,checked_mul(codepoint/64,64))),output);
+        return 2;
+    }
+    if(codepoint<=65535){
+        canonical_c_append_hex_byte(checked_add(224,codepoint/4096),output);
+        canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint/64,checked_mul(codepoint/4096,64))),output);
+        canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint,checked_mul(codepoint/64,64))),output);
+        return 3;
+    }
+    canonical_c_append_hex_byte(checked_add(240,codepoint/262144),output);
+    canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint/4096,checked_mul(codepoint/262144,64))),output);
+    canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint/64,checked_mul(codepoint/4096,64))),output);
+    canonical_c_append_hex_byte(checked_add(128,checked_sub(codepoint,checked_mul(codepoint/64,64))),output);
+    return 4;
+}
+
+fn canonical_c_decode_json_string(
+    borrow source:Buffer,start:i64,length:i64,borrow_mut output:Buffer
+)->i64
+requires_caps [allocate]
+{
+    if(start<0){return -1;}
+    if(length<2){return -1;}
+    let end:i64=checked_add(start,length);
+    if(end>buffer_len(source)){return -1;}
+    if(buffer_get(source,start)!=34){return -1;}
+    let closing:i64=checked_sub(end,1);
+    if(buffer_get(source,closing)!=34){return -1;}
+    var cursor:i64=checked_add(start,1);
+    var decoded_length:i64=0;
+    while(cursor<closing){
+        let byte:i64=buffer_get(source,cursor);
+        if(byte<32){return -1;}
+        if(byte==34){return -1;}
+        if(byte!=92){
+            canonical_c_append_hex_byte(byte,output);
+            decoded_length=checked_add(decoded_length,1);
+            cursor=checked_add(cursor,1);
+        }else{
+            cursor=checked_add(cursor,1);
+            if(cursor>=closing){return -1;}
+            let escaped:i64=buffer_get(source,cursor);
+            if(escaped==117){
+                let high:i64=canonical_c_json_unicode_codepoint(source,checked_add(cursor,1),closing);
+                if(high<0){return -1;}
+                cursor=checked_add(cursor,5);
+                var codepoint:i64=high;
+                if(high>=55296){
+                    if(high<=56319){
+                        if(checked_add(cursor,6)>closing){return -1;}
+                        if(buffer_get(source,cursor)!=92){return -1;}
+                        if(buffer_get(source,checked_add(cursor,1))!=117){return -1;}
+                        let low:i64=canonical_c_json_unicode_codepoint(source,checked_add(cursor,2),closing);
+                        if(low<56320){return -1;}
+                        if(low>57343){return -1;}
+                        codepoint=checked_add(65536,checked_add(
+                            checked_mul(checked_sub(high,55296),1024),checked_sub(low,56320)
+                        ));
+                        cursor=checked_add(cursor,6);
+                    }else{if(high<=57343){return -1;}}
+                }
+                let appended:i64=canonical_c_append_utf8_codepoint(codepoint,output);
+                if(appended<0){return -1;}
+                decoded_length=checked_add(decoded_length,appended);
+            }else{
+                var translated:i64=-1;
+                if(escaped==34){translated=34;}
+                if(escaped==47){translated=47;}
+                if(escaped==92){translated=92;}
+                if(escaped==98){translated=8;}
+                if(escaped==102){translated=12;}
+                if(escaped==110){translated=10;}
+                if(escaped==114){translated=13;}
+                if(escaped==116){translated=9;}
+                if(translated<0){return -1;}
+                canonical_c_append_hex_byte(translated,output);
+                decoded_length=checked_add(decoded_length,1);
+                cursor=checked_add(cursor,1);
+            }
+        }
+    }
+    return decoded_length;
+}
+
+fn canonical_c_append_string_literal(
+    borrow source:Buffer,start:i64,length:i64,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(length<2){return 1;}
+    canonical_mir_append_text(output,"(merit_String){ (const uint8_t *)\"");
+    let decoded_length:i64=canonical_c_decode_json_string(source,start,length,output);
+    if(decoded_length<0){return 1;}
+    canonical_mir_append_text(output,"\", ");
+    canonical_mir_append_i64(output,decoded_length);
+    canonical_mir_append_text(output," }");
+    return 0;
+}
+
 // Bounded deterministic backend: consume validated scalar records and explicit
 // CFG placement, preserving the oracle's C/header bytes. Unsupported types,
 // resource effects, and instruction shapes fail closed until ported in SH3.
@@ -868,12 +1013,17 @@ requires_caps [allocate]
                                 source,function_mir_start(instruction),function_mir_length(instruction),bodies
                             )!=0){return 100;}
                         }
-                        else{
+                        else{if(constant_type==function_mir_string_type_code()){
+                            canonical_mir_append_text(bodies," = ");
+                            if(canonical_c_append_string_literal(
+                                source,function_mir_start(instruction),function_mir_length(instruction),bodies
+                            )!=0){return 107;}
+                        }else{
                             canonical_mir_append_text(bodies," = ");
                             if(canonical_c_append_scalar_integer_literal(
                                 source,function_mir_start(instruction),function_mir_length(instruction),constant_type,bodies
                             )!=0){return 106;}
-                        }
+                        }}
                         canonical_mir_append_text(bodies,";\n");
                     }
                     if(instruction_kind==function_mir_kind_copy_to_binding()){

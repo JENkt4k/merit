@@ -360,6 +360,55 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_STRING_CONST_PROBE = r'''module canonical_c_string_const_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,__SOURCE__);
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,4,0,4,function_mir_string_type_code(),function_mir_mode_value(),-1,0,1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_string_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(4,__LENGTH__,0,0,function_mir_string_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(4,__LENGTH__,0,1));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,512);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
+
+def _string_const_probe(literal: str) -> str:
+    source = "text" + literal
+    return CANONICAL_C_STRING_CONST_PROBE.replace(
+        "__SOURCE__", json.dumps(source, ensure_ascii=True),
+    ).replace("__LENGTH__", str(len(literal.encode("utf-8"))))
+
 CANONICAL_C_JUMP_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "vec_new<MirCfgRecord>(allocator,2);\n"
     "  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,2));",
@@ -2346,6 +2395,87 @@ def test_merit_string_value_backend_rejects_borrowed_mode(tmp_path: Path) -> Non
     native = subprocess.run([str(executable)], text=True, capture_output=True)
     assert native.returncode == 24
     assert native.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        pytest.param("plain", json.dumps("plain"), id="plain"),
+        pytest.param("what??!", json.dumps("what??!"), id="trigraph"),
+        pytest.param('nul:\x00 control:\x01 quote:" slash:\\',
+                     json.dumps('nul:\x00 control:\x01 quote:" slash:\\'), id="escaped-control"),
+        pytest.param("é 😀", json.dumps("é 😀"), id="unicode-escapes"),
+        pytest.param("é", json.dumps("é", ensure_ascii=False), id="direct-utf8"),
+    ],
+)
+def test_merit_string_constant_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, value: str, literal: str,
+) -> None:
+    root = _project(tmp_path, _string_const_probe(literal))
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-string-constant")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(item) for item in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "text", MirType("String"), (MirLocal(0, "_t0", MirType("String")),),
+        (MirBlock(0, (MirInstruction(0, "const", result=0, value=value, ownership="value"),),
+                  MirTerminator("return", operands=(0,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize("literal", [r'"bad\q"', r'"\ud800"'])
+def test_merit_string_constant_c_backend_rejects_invalid_literal(
+    tmp_path: Path, literal: str,
+) -> None:
+    root = _project(tmp_path, _string_const_probe(literal))
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-invalid-string")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 107
+    assert native.stdout == ""
+
+
+def test_merit_string_constant_generated_c_preserves_utf8_bytes(tmp_path: Path) -> None:
+    value = 'what??! nul:\x00 control:\x01 quote:" slash:\\ utf8:é 😀'
+    root = _project(tmp_path, _string_const_probe(json.dumps(value)))
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-string-constant-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(item) for item in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    generated_c = tmp_path / "string_constant.c"
+    generated_h = tmp_path / "string_constant.h"
+    driver_c = tmp_path / "string_constant_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    generated_h.write_text(c_header, encoding="utf-8", newline="\n")
+    expected = value.encode("utf-8")
+    expected_c = ", ".join(f"0x{byte:02x}" for byte in expected)
+    driver_c.write_text(
+        '#include "string_constant.h"\n#include <string.h>\n'
+        f'int main(void) {{ const uint8_t expected[] = {{ {expected_c} }}; '
+        'merit_String out = merit_text(); '
+        f'return out.len == {len(expected)} && memcmp(out.data, expected, {len(expected)}) == 0 ? 0 : 1; }}\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "string-constant-program"
+    subprocess.run(
+        [cc, "-std=c11", str(generated_c), str(driver_c), "-o", str(program)],
+        check=True, text=True, capture_output=True,
+    )
+    subprocess.run([str(program)], check=True, capture_output=True)
 
 
 @pytest.mark.parametrize(
