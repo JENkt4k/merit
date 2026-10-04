@@ -457,6 +457,85 @@ requires_caps [allocate]
     return 1;
 }
 
+fn canonical_c_append_scalar_integer_literal(
+    borrow source:Buffer,start:i64,length:i64,type_code:i32,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(start<0){return 1;}
+    if(length<=0){return 1;}
+    if(checked_add(start,length)>buffer_len(source)){return 1;}
+    var digit_start:i64=start;
+    var negative:i32=0;
+    let first:i64=buffer_get(source,start);
+    if(first==45){negative=1;digit_start=checked_add(digit_start,1);}
+    if(first==43){digit_start=checked_add(digit_start,1);}
+    let end:i64=checked_add(start,length);
+    if(digit_start>=end){return 1;}
+    var index:i64=digit_start;
+    while(index<end){
+        let digit:i64=buffer_get(source,index);
+        if(digit<48){return 1;}
+        if(digit>57){return 1;}
+        index=checked_add(index,1);
+    }
+    var scanning_zero:i32=1;
+    while(scanning_zero!=0){
+        if(digit_start>=checked_sub(end,1)){scanning_zero=0;}
+        else{
+            if(buffer_get(source,digit_start)==48){digit_start=checked_add(digit_start,1);}
+            else{scanning_zero=0;}
+        }
+    }
+    if(buffer_get(source,digit_start)==48){negative=0;}
+    if(type_code!=function_mir_i32_type_code()){
+        if(type_code!=function_mir_i64_type_code()){return 1;}
+    }
+    var limit:Buffer=buffer_new(system_allocator(),20);
+    if(type_code==function_mir_i32_type_code()){
+        if(negative!=0){canonical_mir_append_text(limit,"2147483648");}
+        else{canonical_mir_append_text(limit,"2147483647");}
+    }else{
+        if(negative!=0){canonical_mir_append_text(limit,"9223372036854775808");}
+        else{canonical_mir_append_text(limit,"9223372036854775807");}
+    }
+    let digits:i64=checked_sub(end,digit_start);
+    var valid:i32=1;
+    var minimum:i32=0;
+    if(digits>buffer_len(limit)){valid=0;}
+    if(digits==buffer_len(limit)){
+        index=0;var comparison:i32=0;
+        while(index<digits){
+            let actual:i64=buffer_get(source,checked_add(digit_start,index));
+            let maximum:i64=buffer_get(limit,index);
+            if(comparison==0){
+                if(actual>maximum){comparison=1;}
+                if(actual<maximum){comparison=-1;}
+            }
+            index=checked_add(index,1);
+        }
+        if(comparison>0){valid=0;}
+        if(comparison==0){
+            if(negative!=0){minimum=1;}
+        }
+    }
+    drop(limit);
+    if(valid==0){return 1;}
+    if(minimum!=0){
+        if(type_code==function_mir_i32_type_code()){
+            canonical_mir_append_text(output,"INT32_MIN");
+        }else{canonical_mir_append_text(output,"INT64_MIN");}
+        return 0;
+    }
+    if(type_code==function_mir_i32_type_code()){
+        canonical_mir_append_text(output,"INT32_C(");
+    }else{canonical_mir_append_text(output,"INT64_C(");}
+    if(negative!=0){buffer_push(output,45);}
+    bootstrap_buffer_append(output,source,digit_start,digits);
+    buffer_push(output,41);
+    return 0;
+}
+
 // First deterministic backend slice.  It consumes the same validated records
 // as the canonical-MIR writer and emits the exact oracle bytes for exported or
 // private or exported i64 functions containing ordered scalar instructions and
@@ -740,16 +819,13 @@ requires_caps [allocate]
                                 source,function_mir_start(instruction),function_mir_length(instruction),bodies
                             )!=0){return 100;}
                         }
-                        else{if(constant_type==function_mir_i32_type_code()){
-                            canonical_mir_append_text(bodies," = INT32_C(");
-                        }else{canonical_mir_append_text(bodies," = INT64_C(");}}
-                        if(constant_type!=function_mir_bool_type_code()){
-                            bootstrap_buffer_append(
-                                bodies,source,function_mir_start(instruction),function_mir_length(instruction)
-                            );
+                        else{
+                            canonical_mir_append_text(bodies," = ");
+                            if(canonical_c_append_scalar_integer_literal(
+                                source,function_mir_start(instruction),function_mir_length(instruction),constant_type,bodies
+                            )!=0){return 106;}
                         }
-                        if(constant_type==function_mir_bool_type_code()){canonical_mir_append_text(bodies,";\n");}
-                        else{canonical_mir_append_text(bodies,");\n");}
+                        canonical_mir_append_text(bodies,";\n");
                     }
                     if(instruction_kind==function_mir_kind_copy_to_binding()){
                         let copied_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));

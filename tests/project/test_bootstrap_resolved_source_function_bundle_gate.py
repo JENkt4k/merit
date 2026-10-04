@@ -2136,6 +2136,66 @@ def test_merit_scalar_copy_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     assert c_header == emit_c_header(module)
 
 
+def _scalar_literal_probe(literal: str, type_name: str) -> str:
+    probe = CANONICAL_C_BACKEND_PROBE.replace("compute23", f"compute{literal}3")
+    probe = probe.replace(
+        "function_mir_const(7,1,0,0,", f"function_mir_const(7,{len(literal)},0,0,",
+    ).replace(
+        "function_mir_const(8,1,1,1,", f"function_mir_const({7 + len(literal)},1,1,1,",
+    )
+    if type_name == "i32":
+        probe = probe.replace("function_mir_i64_type_code()", "function_mir_i32_type_code()")
+    return probe
+
+
+@pytest.mark.parametrize(
+    ("literal", "type_name"),
+    [("0002", "i32"), ("-2147483648", "i32"),
+     ("0002", "i64"), ("-9223372036854775808", "i64")],
+)
+def test_merit_scalar_integer_literal_c_backend_matches_oracle_bytes(
+    tmp_path: Path, literal: str, type_name: str,
+) -> None:
+    root = _project(tmp_path, _scalar_literal_probe(literal, type_name))
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-literal")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType(type_name), tuple(MirLocal(i, f"_t{i}", MirType(type_name)) for i in range(3)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=int(literal), ownership="value"),
+            MirInstruction(1, "const", result=1, value=3, ownership="value"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="+", numeric_policy="checked"),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("literal", "type_name"),
+    [("2147483648", "i32"), ("9223372036854775808", "i64"), ("00x2", "i64")],
+)
+def test_merit_scalar_integer_literal_c_backend_rejects_invalid_value(
+    tmp_path: Path, literal: str, type_name: str,
+) -> None:
+    root = _project(tmp_path, _scalar_literal_probe(literal, type_name))
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-invalid-literal")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 106
+    assert native.stdout == ""
+
+
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:
     root = _project(tmp_path, CFG_MIR_PROBE)
     project = load_project(root / "Merit.toml")
