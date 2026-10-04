@@ -1447,12 +1447,6 @@ def test_merit_scalar_call_c_backend_rejects_borrowed_callee_parameter(tmp_path:
             ),
             96,
         ),
-        (
-            CANONICAL_C_BACKEND_PROBE.replace(
-                "function_mir_i64_type_code()", "function_mir_i32_type_code()",
-            ),
-            99,
-        ),
     ],
 )
 def test_merit_i32_scalar_c_backend_rejects_mixed_width_records(
@@ -1882,17 +1876,21 @@ def test_merit_scalar_switch_c_backend_rejects_invalid_rows(
 @pytest.mark.parametrize(
     ("record_symbol", "mir_symbol"),
     [
+        ("function_mir_binary_add_symbol()", "+"),
         ("function_mir_binary_subtract_symbol()", "-"),
         ("function_mir_binary_multiply_symbol()", "*"),
         ("function_mir_binary_divide_symbol()", "/"),
     ],
 )
-def test_merit_checked_i64_c_backend_matches_python_oracle_bytes(
-    tmp_path: Path, record_symbol: str, mir_symbol: str,
+@pytest.mark.parametrize("type_name", ("i32", "i64"))
+def test_merit_checked_scalar_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, record_symbol: str, mir_symbol: str, type_name: str,
 ) -> None:
     probe = CANONICAL_C_BACKEND_PROBE.replace(
         "function_mir_binary_add_symbol()", record_symbol,
     )
+    if type_name == "i32":
+        probe = probe.replace("function_mir_i64_type_code()", "function_mir_i32_type_code()")
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
@@ -1907,7 +1905,7 @@ def test_merit_checked_i64_c_backend_matches_python_oracle_bytes(
     c_header = bytes(values[2 + c_length:]).decode("utf-8")
     assert header_length == len(c_header.encode("utf-8"))
     module = MirModule("demo", (MirFunction(
-        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
+        "compute", MirType(type_name), tuple(MirLocal(i, f"_t{i}", MirType(type_name)) for i in range(3)),
         (MirBlock(0, (
             MirInstruction(0, "const", result=0, value=2, ownership="value"),
             MirInstruction(1, "const", result=1, value=3, ownership="value"),
@@ -1918,6 +1916,38 @@ def test_merit_checked_i64_c_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+def test_merit_checked_i32_generated_c_executes(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BACKEND_PROBE.replace(
+        "function_mir_i64_type_code()", "function_mir_i32_type_code()",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-i32-checked-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    generated_c = tmp_path / "checked_i32.c"
+    generated_h = tmp_path / "checked_i32.h"
+    driver_c = tmp_path / "checked_i32_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    generated_h.write_text(c_header, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "checked_i32.h"\nint main(void) { return merit_compute() == 5 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "checked-i32-program"
+    subprocess.run(
+        [cc, "-std=c11", str(generated_c), str(driver_c), "-o", str(program)],
+        check=True, text=True, capture_output=True,
+    )
+    result = subprocess.run([str(program)], check=True, text=True, capture_output=True)
+    assert result.stdout == "5\n"
 
 
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:

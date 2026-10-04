@@ -357,6 +357,10 @@ fn canonical_c_i64_print_feature()->i64{return 2;}
 fn canonical_c_checked_multiply_feature()->i64{return 3;}
 fn canonical_c_checked_subtract_feature()->i64{return 4;}
 fn canonical_c_checked_divide_feature()->i64{return 5;}
+fn canonical_c_checked_i32_add_feature()->i64{return 6;}
+fn canonical_c_checked_i32_multiply_feature()->i64{return 7;}
+fn canonical_c_checked_i32_subtract_feature()->i64{return 8;}
+fn canonical_c_checked_i32_divide_feature()->i64{return 9;}
 
 fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
 requires_caps [allocate]
@@ -376,6 +380,19 @@ fn canonical_c_has_feature(feature:i64,borrow features:Vec<i64>)->i32
         if(vec_get<i64>(features,index)==feature){return 1;}
         index=checked_add(index,1);
     }
+    return 0;
+}
+
+fn canonical_c_has_checked_feature(borrow features:Vec<i64>)->i32
+{
+    if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_i32_add_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_i32_subtract_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_i32_multiply_feature(),features)!=0){return 1;}
+    if(canonical_c_has_feature(canonical_c_checked_i32_divide_feature(),features)!=0){return 1;}
     return 0;
 }
 
@@ -721,9 +738,6 @@ requires_caps [allocate]
                             }
                         }else{
                             if(result_type!=left_type){return 98;}
-                            if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
-                                if(result_type!=function_mir_i64_type_code()){return 99;}
-                            }
                         }
                         if(is_comparison!=0){
                             if(function_mir_numeric_policy(instruction)!=function_mir_exact_numeric_policy()){return 76;}
@@ -740,20 +754,40 @@ requires_caps [allocate]
                         }else{
                         if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
                             if(binary_symbol==function_mir_binary_add_symbol()){
-                                canonical_c_require_feature(canonical_c_checked_add_feature(),features);
-                                canonical_mir_append_text(bodies," = merit_checked_add_i64(m");
+                                if(result_type==function_mir_i32_type_code()){
+                                    canonical_c_require_feature(canonical_c_checked_i32_add_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_add_i32(m");
+                                }else{
+                                    canonical_c_require_feature(canonical_c_checked_add_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_add_i64(m");
+                                }
                             }
                             if(binary_symbol==function_mir_binary_multiply_symbol()){
-                                canonical_c_require_feature(canonical_c_checked_multiply_feature(),features);
-                                canonical_mir_append_text(bodies," = merit_checked_mul_i64(m");
+                                if(result_type==function_mir_i32_type_code()){
+                                    canonical_c_require_feature(canonical_c_checked_i32_multiply_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_mul_i32(m");
+                                }else{
+                                    canonical_c_require_feature(canonical_c_checked_multiply_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_mul_i64(m");
+                                }
                             }
                             if(binary_symbol==function_mir_binary_divide_symbol()){
-                                canonical_c_require_feature(canonical_c_checked_divide_feature(),features);
-                                canonical_mir_append_text(bodies," = merit_checked_div_i64(m");
+                                if(result_type==function_mir_i32_type_code()){
+                                    canonical_c_require_feature(canonical_c_checked_i32_divide_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_div_i32(m");
+                                }else{
+                                    canonical_c_require_feature(canonical_c_checked_divide_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_div_i64(m");
+                                }
                             }
                             if(binary_symbol==function_mir_binary_subtract_symbol()){
-                                canonical_c_require_feature(canonical_c_checked_subtract_feature(),features);
-                                canonical_mir_append_text(bodies," = merit_checked_sub_i64(m");
+                                if(result_type==function_mir_i32_type_code()){
+                                    canonical_c_require_feature(canonical_c_checked_i32_subtract_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_sub_i32(m");
+                                }else{
+                                    canonical_c_require_feature(canonical_c_checked_subtract_feature(),features);
+                                    canonical_mir_append_text(bodies," = merit_checked_sub_i64(m");
+                                }
                             }
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,", m");
                             canonical_mir_append_i64(bodies,function_mir_right(instruction));canonical_mir_append_text(bodies,");\n");
@@ -944,35 +978,43 @@ requires_caps [allocate]
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
     canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n#include <stdint.h>\n");
-    var needs_stdio:i32=canonical_c_has_feature(canonical_c_checked_add_feature(),features);
-    if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){needs_stdio=1;}
-    if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){needs_stdio=1;}
-    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){needs_stdio=1;}
+    var needs_stdio:i32=canonical_c_has_checked_feature(features);
     if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){needs_stdio=1;}
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
     canonical_mir_append_text(output,"#include <stdlib.h>\n\n");
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
-    var needs_checked:i32=canonical_c_has_feature(canonical_c_checked_add_feature(),features);
-    if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){needs_checked=1;}
-    if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){needs_checked=1;}
-    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){needs_checked=1;}
+    let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
         canonical_mir_append_text(output,"static void merit_numeric_failure(const char *operation) { fprintf(stderr, \"Merit %s\\n\", operation); exit(70); }\n");
     }
-    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
+    var needs_divide:i32=canonical_c_has_feature(canonical_c_checked_divide_feature(),features);
+    if(canonical_c_has_feature(canonical_c_checked_i32_divide_feature(),features)!=0){needs_divide=1;}
+    if(needs_divide!=0){
         canonical_mir_append_text(output,"static void merit_division_by_zero(void) { fprintf(stderr, \"Merit division by zero\\n\"); exit(72); }\n");
     }
-    if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){
-        canonical_mir_append_text(output,"static int64_t merit_checked_add_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a + (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 addition overflow\");\n    return (int64_t)result;\n}\n");
+    if(canonical_c_has_feature(canonical_c_checked_i32_multiply_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int32_t merit_checked_mul_i32(int32_t a, int32_t b) {\n    __int128 result = (__int128)a * (__int128)b;\n    if (result < INT32_MIN || result > INT32_MAX) merit_numeric_failure(\"i32 multiplication overflow\");\n    return (int32_t)result;\n}\n");
     }
-    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
-        canonical_mir_append_text(output,"static int64_t merit_checked_div_i64(int64_t a, int64_t b) {\n    if (b == 0) merit_division_by_zero();\n    if (a == INT64_MIN && b == -1) merit_numeric_failure(\"division overflow\");\n    return (int64_t)(a / b);\n}\n");
+    if(canonical_c_has_feature(canonical_c_checked_i32_add_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int32_t merit_checked_add_i32(int32_t a, int32_t b) {\n    __int128 result = (__int128)a + (__int128)b;\n    if (result < INT32_MIN || result > INT32_MAX) merit_numeric_failure(\"i32 addition overflow\");\n    return (int32_t)result;\n}\n");
+    }
+    if(canonical_c_has_feature(canonical_c_checked_i32_subtract_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int32_t merit_checked_sub_i32(int32_t a, int32_t b) {\n    __int128 result = (__int128)a - (__int128)b;\n    if (result < INT32_MIN || result > INT32_MAX) merit_numeric_failure(\"i32 subtraction overflow\");\n    return (int32_t)result;\n}\n");
+    }
+    if(canonical_c_has_feature(canonical_c_checked_i32_divide_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int32_t merit_checked_div_i32(int32_t a, int32_t b) {\n    if (b == 0) merit_division_by_zero();\n    if (a == INT32_MIN && b == -1) merit_numeric_failure(\"division overflow\");\n    return (int32_t)(a / b);\n}\n");
     }
     if(canonical_c_has_feature(canonical_c_checked_multiply_feature(),features)!=0){
         canonical_mir_append_text(output,"static int64_t merit_checked_mul_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a * (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 multiplication overflow\");\n    return (int64_t)result;\n}\n");
     }
+    if(canonical_c_has_feature(canonical_c_checked_add_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int64_t merit_checked_add_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a + (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 addition overflow\");\n    return (int64_t)result;\n}\n");
+    }
     if(canonical_c_has_feature(canonical_c_checked_subtract_feature(),features)!=0){
         canonical_mir_append_text(output,"static int64_t merit_checked_sub_i64(int64_t a, int64_t b) {\n    __int128 result = (__int128)a - (__int128)b;\n    if (result < INT64_MIN || result > INT64_MAX) merit_numeric_failure(\"i64 subtraction overflow\");\n    return (int64_t)result;\n}\n");
+    }
+    if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
+        canonical_mir_append_text(output,"static int64_t merit_checked_div_i64(int64_t a, int64_t b) {\n    if (b == 0) merit_division_by_zero();\n    if (a == INT64_MIN && b == -1) merit_numeric_failure(\"division overflow\");\n    return (int64_t)(a / b);\n}\n");
     }
     if(needs_checked!=0){buffer_push(output,10);}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
