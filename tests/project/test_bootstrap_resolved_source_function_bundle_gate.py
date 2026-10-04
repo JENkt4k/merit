@@ -402,6 +402,46 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_ALLOCATOR_VALUE_PROBE = r'''module canonical_c_allocator_value_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"identity");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,8,0,8,function_mir_allocator_type_code(),function_mir_mode_value(),-1,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,8,0,function_mir_allocator_type_code(),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,8,0,0));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,1024);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2476,6 +2516,83 @@ def test_merit_string_constant_generated_c_preserves_utf8_bytes(tmp_path: Path) 
         check=True, text=True, capture_output=True,
     )
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_allocator_value_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_ALLOCATOR_VALUE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-allocator-value")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "identity", MirType("Allocator"), (MirLocal(0, "value", MirType("Allocator")),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+        parameters=(MirParameter(0, "value"),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_allocator_value_backend_rejects_public_abi(tmp_path: Path) -> None:
+    probe = CANONICAL_C_ALLOCATOR_VALUE_PROBE.replace(
+        "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
+    )
+    assert probe != CANONICAL_C_ALLOCATOR_VALUE_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-public-allocator-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 3
+    assert native.stdout == ""
+
+
+def test_merit_allocator_value_generated_c_preserves_identity(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_ALLOCATOR_VALUE_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-allocator-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "allocator_value.c"
+    driver_c = tmp_path / "allocator_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "allocator_value.c"\n'
+        'int main(void) { merit_Allocator system = identity(merit_system_allocator()); '
+        'merit_Allocator portable = identity(merit_portable_allocator()); '
+        'return system.identity == 0 && portable.identity == 1 '
+        '&& !merit_allocator_compatible(system, portable) ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "allocator-value-program"
+    subprocess.run(
+        [cc, "-std=c11", str(driver_c), "-o", str(program)],
+        check=True, text=True, capture_output=True,
+    )
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_owned_buffer_backend_remains_fail_closed(tmp_path: Path) -> None:
+    probe = CANONICAL_C_ALLOCATOR_VALUE_PROBE.replace(
+        "function_mir_allocator_type_code()", "function_mir_buffer_type_code()",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-owned-buffer-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 3
+    assert native.stdout == ""
 
 
 @pytest.mark.parametrize(

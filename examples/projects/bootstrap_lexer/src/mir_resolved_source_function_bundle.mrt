@@ -303,6 +303,9 @@ requires_caps [allocate]
     if(type_code==function_mir_string_type_code()){
         canonical_mir_append_text(output,"merit_String");return 0;
     }
+    if(type_code==function_mir_allocator_type_code()){
+        canonical_mir_append_text(output,"merit_Allocator");return 0;
+    }
     return 1;
 }
 
@@ -342,7 +345,9 @@ requires_caps [allocate]
                     if(parameter_type!=function_mir_i64_type_code()){
                         if(parameter_type!=function_mir_i32_type_code()){
                             if(parameter_type!=function_mir_bool_type_code()){
-                                if(parameter_type!=function_mir_string_type_code()){return 3;}
+                                if(parameter_type!=function_mir_string_type_code()){
+                                    if(parameter_type!=function_mir_allocator_type_code()){return 3;}
+                                }
                             }
                         }
                     }
@@ -373,6 +378,7 @@ fn canonical_c_checked_i32_subtract_feature()->i64{return 8;}
 fn canonical_c_checked_i32_divide_feature()->i64{return 9;}
 fn canonical_c_text_feature()->i64{return 10;}
 fn canonical_c_public_string_feature()->i64{return 11;}
+fn canonical_c_buffer_runtime_feature()->i64{return 12;}
 
 fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
 requires_caps [allocate]
@@ -716,11 +722,17 @@ requires_caps [allocate]
         canonical_c_require_feature(canonical_c_text_feature(),features);
         if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
     }
+    if(function_mir_type_code(header)==function_mir_allocator_type_code()){
+        if(exported!=0){return 3;}
+        canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+    }
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){
         if(function_mir_type_code(header)!=function_mir_i32_type_code()){
             if(function_mir_type_code(header)!=function_mir_bool_type_code()){
                 if(function_mir_type_code(header)!=function_mir_unit_type_code()){
-                    if(function_mir_type_code(header)!=function_mir_string_type_code()){return 3;}
+                    if(function_mir_type_code(header)!=function_mir_string_type_code()){
+                        if(function_mir_type_code(header)!=function_mir_allocator_type_code()){return 3;}
+                    }
                 }
             }
         }
@@ -797,10 +809,16 @@ requires_caps [allocate]
                 canonical_c_require_feature(canonical_c_text_feature(),features);
                 if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
             }
+            if(function_mir_type_code(record)==function_mir_allocator_type_code()){
+                if(exported!=0){return 9;}
+                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+            }
             if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                 if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
-                        if(function_mir_type_code(record)!=function_mir_string_type_code()){return 9;}
+                        if(function_mir_type_code(record)!=function_mir_string_type_code()){
+                            if(function_mir_type_code(record)!=function_mir_allocator_type_code()){return 9;}
+                        }
                     }
                 }
             }
@@ -811,10 +829,15 @@ requires_caps [allocate]
             if(function_mir_type_code(record)==function_mir_string_type_code()){
                 canonical_c_require_feature(canonical_c_text_feature(),features);
             }
+            if(function_mir_type_code(record)==function_mir_allocator_type_code()){
+                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+            }
             if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                 if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
-                        if(function_mir_type_code(record)!=function_mir_string_type_code()){return 10;}
+                        if(function_mir_type_code(record)!=function_mir_string_type_code()){
+                            if(function_mir_type_code(record)!=function_mir_allocator_type_code()){return 10;}
+                        }
                     }
                 }
             }
@@ -825,10 +848,15 @@ requires_caps [allocate]
                 if(function_mir_type_code(record)==function_mir_string_type_code()){
                     canonical_c_require_feature(canonical_c_text_feature(),features);
                 }
+                if(function_mir_type_code(record)==function_mir_allocator_type_code()){
+                    canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                }
                 if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
                         if(function_mir_type_code(record)!=function_mir_i32_type_code()){
-                            if(function_mir_type_code(record)!=function_mir_string_type_code()){return 12;}
+                            if(function_mir_type_code(record)!=function_mir_string_type_code()){
+                                if(function_mir_type_code(record)!=function_mir_allocator_type_code()){return 12;}
+                            }
                         }
                     }
                 }
@@ -855,7 +883,9 @@ requires_caps [allocate]
                                         if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                                             if(function_mir_type_code(record)!=function_mir_bool_type_code()){
                                                 if(function_mir_type_code(record)!=function_mir_unit_type_code()){
-                                                    if(function_mir_type_code(record)!=function_mir_string_type_code()){return 61;}
+                                                    if(function_mir_type_code(record)!=function_mir_string_type_code()){
+                                                        if(function_mir_type_code(record)!=function_mir_allocator_type_code()){return 61;}
+                                                    }
                                                 }
                                             }
                                         }
@@ -951,9 +981,12 @@ requires_caps [allocate]
         )!=0){return 12;}
         canonical_mir_append_text(bodies," m");
         canonical_mir_append_i64(bodies,local_id);
-        if(canonical_c_scalar_local_type(records,local_id)==function_mir_string_type_code()){
+        let initialized_type:i32=canonical_c_scalar_local_type(records,local_id);
+        if(initialized_type==function_mir_string_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
-        }else{canonical_mir_append_text(bodies," = 0;\n");}
+        }else{if(initialized_type==function_mir_allocator_type_code()){
+            canonical_mir_append_text(bodies," = {0};\n");
+        }else{canonical_mir_append_text(bodies," = 0;\n");}}
         local_id=checked_add(local_id,1);
     }
     canonical_mir_append_text(bodies,"    goto b0;\n");
@@ -1069,6 +1102,7 @@ requires_caps [allocate]
                         if(result_type!=function_mir_type_code(instruction)){return 98;}
                         if(left_type==0){return 103;}
                         if(left_type!=right_type){return 98;}
+                        if(left_type==function_mir_allocator_type_code()){return 98;}
                         if(is_comparison!=0){
                             if(left_type!=function_mir_i64_type_code()){
                                 if(left_type!=function_mir_i32_type_code()){
@@ -1149,6 +1183,7 @@ requires_caps [allocate]
                     if(instruction_kind==function_mir_kind_print()){
                         let printed_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));
                         if(printed_type==0){return 105;}
+                        if(printed_type==function_mir_allocator_type_code()){return 105;}
                         canonical_c_require_feature(canonical_c_i64_print_feature(),features);
                         if(printed_type==function_mir_string_type_code()){
                             canonical_mir_append_text(bodies,"    fwrite(m");
@@ -1337,6 +1372,56 @@ requires_caps [allocate]
     drop(empty_headers);return status;
 }
 
+fn canonical_c_append_buffer_runtime(borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,"typedef struct { int32_t identity; } merit_Allocator;\n");
+    canonical_mir_append_text(output,"typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;\n");
+    canonical_mir_append_text(output,"static inline merit_Allocator merit_system_allocator(void) { return (merit_Allocator){0}; }\n");
+    canonical_mir_append_text(output,"static inline merit_Allocator merit_portable_allocator(void) { return (merit_Allocator){1}; }\n");
+    canonical_mir_append_text(output,"static inline int32_t merit_allocator_compatible(merit_Allocator left, merit_Allocator right) { return left.identity == right.identity; }\n");
+    canonical_mir_append_text(output,"static inline void merit_buffer_reserve(merit_Buffer *value, size_t needed) {\n");
+    canonical_mir_append_text(output,"    if (needed <= value->capacity) return;\n");
+    canonical_mir_append_text(output,"    size_t capacity = value->capacity ? value->capacity : 8;\n");
+    canonical_mir_append_text(output,"    while (capacity < needed) capacity *= 2;\n");
+    canonical_mir_append_text(output,"    void *data = realloc(value->data, capacity);\n");
+    canonical_mir_append_text(output,"    if (!data) { fprintf(stderr, \"Merit allocation failed\\n\"); exit(80); }\n");
+    canonical_mir_append_text(output,"    value->data = (uint8_t *)data; value->capacity = capacity;\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline merit_Buffer merit_buffer_new(merit_Allocator allocator, int64_t capacity) {\n");
+    canonical_mir_append_text(output,"    if (capacity < 0) { fprintf(stderr, \"Merit negative capacity\\n\"); exit(81); }\n");
+    canonical_mir_append_text(output,"    merit_Buffer result = {0}; result.allocator = allocator; merit_buffer_reserve(&result, (size_t)capacity);\n");
+    canonical_mir_append_text(output,"    return result;\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline merit_Buffer merit_buffer_from_string(merit_Allocator allocator, merit_String value) {\n");
+    canonical_mir_append_text(output,"    merit_Buffer result = merit_buffer_new(allocator, (int64_t)value.len);\n");
+    canonical_mir_append_text(output,"    if (value.len) { memcpy(result.data, value.data, value.len); result.len = value.len; } return result;\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline void merit_buffer_push(merit_Buffer *value, uint8_t byte) { merit_buffer_reserve(value, value->len + 1); value->data[value->len++] = byte; }\n");
+    canonical_mir_append_text(output,"static inline void merit_bootstrap_buffer_append(merit_Buffer *destination, const merit_Buffer *source, int64_t start, int64_t length) {\n");
+    canonical_mir_append_text(output,"    if (start < 0 || length < 0 || (size_t)start > source->len || (size_t)length > source->len - (size_t)start) { fprintf(stderr, \"Merit bootstrap buffer append range out of bounds\\n\"); exit(88); }\n");
+    canonical_mir_append_text(output,"    size_t offset = (size_t)start; size_t count = (size_t)length; merit_buffer_reserve(destination, destination->len + count);\n");
+    canonical_mir_append_text(output,"    if (count) { memcpy(destination->data + destination->len, source->data + offset, count); destination->len += count; }\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline int64_t merit_buffer_len(const merit_Buffer *value) { return (int64_t)value->len; }\n");
+    canonical_mir_append_text(output,"static inline int64_t merit_buffer_get(const merit_Buffer *value, int64_t index) {\n");
+    canonical_mir_append_text(output,"    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit buffer index out of bounds\\n\"); exit(82); }\n");
+    canonical_mir_append_text(output,"    return (int64_t)value->data[index];\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline merit_ByteSlice merit_buffer_slice(const merit_Buffer *value, int64_t start, int64_t length) {\n");
+    canonical_mir_append_text(output,"    if (start < 0 || length < 0 || (size_t)start > value->len || (size_t)length > value->len - (size_t)start) { fprintf(stderr, \"Merit slice out of bounds\\n\"); exit(85); }\n");
+    canonical_mir_append_text(output,"    return (merit_ByteSlice){value->data + (size_t)start, (size_t)length};\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline merit_Allocator merit_buffer_allocator(const merit_Buffer *value) { return value->allocator; }\n");
+    canonical_mir_append_text(output,"static inline int64_t merit_slice_len(merit_ByteSlice value) { return (int64_t)value.len; }\n");
+    canonical_mir_append_text(output,"static inline int64_t merit_slice_get(merit_ByteSlice value, int64_t index) {\n");
+    canonical_mir_append_text(output,"    if (index < 0 || (size_t)index >= value.len) { fprintf(stderr, \"Merit slice index out of bounds\\n\"); exit(85); }\n");
+    canonical_mir_append_text(output,"    return (int64_t)value.data[index];\n");
+    canonical_mir_append_text(output,"}\n");
+    canonical_mir_append_text(output,"static inline void merit_buffer_drop(merit_Buffer *value) { free(value->data); value->data = NULL; value->len = 0; value->capacity = 0; }\n\n");
+    return 0;
+}
+
 pub fn canonical_c_finish_scalar_module(
     borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,borrow_mut output:Buffer
 )->i32
@@ -1344,7 +1429,9 @@ requires_caps [allocate]
 {
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
-    let needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
+    let needs_buffer:i32=canonical_c_has_feature(canonical_c_buffer_runtime_feature(),features);
+    var needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
+    if(needs_buffer!=0){needs_text=1;}
     canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n");
     if(needs_text!=0){canonical_mir_append_text(output,"#include <stddef.h>\n");}
     canonical_mir_append_text(output,"#include <stdint.h>\n");
@@ -1352,10 +1439,13 @@ requires_caps [allocate]
     if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){needs_stdio=1;}
     if(needs_text!=0){needs_stdio=1;}
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
-    canonical_mir_append_text(output,"#include <stdlib.h>\n\n");
+    canonical_mir_append_text(output,"#include <stdlib.h>\n");
+    if(needs_buffer!=0){canonical_mir_append_text(output,"#include <string.h>\n");}
+    buffer_push(output,10);
     if(needs_text!=0){
         canonical_mir_append_text(output,"typedef struct { const uint8_t *data; size_t len; } merit_String;\ntypedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;\nstatic inline int64_t merit_string_len(merit_String value) { return (int64_t)value.len; }\nstatic inline uint8_t merit_string_byte(merit_String value, int64_t index) {\n    if (index < 0 || (size_t)index >= value.len) return 0;\n    return value.data[index];\n}\n\n");
     }
+    if(needs_buffer!=0){canonical_c_append_buffer_runtime(output);}
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
     let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
