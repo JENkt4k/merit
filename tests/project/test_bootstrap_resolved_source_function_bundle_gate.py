@@ -504,6 +504,69 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_STRING_LEN_PROBE = r'''module canonical_c_string_len_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"measure string_len");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,6);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,7,0,7,function_mir_i64_type_code(),function_mir_mode_value(),-1,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,0,function_mir_string_type_code(),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call(8,10,0,1,8,10,function_mir_i64_type_code(),function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_return(0,7,1,0));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,1));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,64);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,64);var c_source:Buffer=buffer_new(allocator,1024);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
+CANONICAL_C_STRING_BYTE_PROBE = (
+    CANONICAL_C_STRING_LEN_PROBE
+    .replace('"measure string_len"', '"byte string_byte"')
+    .replace('function_mir_callable_header(0,7,0,7,function_mir_i64_type_code(),function_mir_mode_value(),-1,1,0)',
+             'function_mir_callable_header(0,4,0,4,function_mir_u8_type_code(),function_mir_mode_value(),-1,2,0)')
+    .replace('function_mir_parameter(0,7,0,function_mir_string_type_code(),0,0,function_mir_mode_value(),0)',
+             'function_mir_parameter(0,4,0,function_mir_string_type_code(),0,0,function_mir_mode_value(),0));\n'
+             '  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,4,1,function_mir_i64_type_code(),1,0,function_mir_mode_value(),1)')
+    .replace('function_mir_temporary(1,function_mir_i64_type_code(),0)',
+             'function_mir_temporary(2,function_mir_u8_type_code(),0)')
+    .replace('function_mir_call(8,10,0,1,8,10,function_mir_i64_type_code(),function_mir_mode_value(),0)',
+             'function_mir_call(5,11,0,2,5,11,function_mir_u8_type_code(),function_mir_mode_value(),0)')
+    .replace('function_mir_call_argument(0,0,function_mir_mode_value(),0));',
+             'function_mir_call_argument(0,0,function_mir_mode_value(),0));\n'
+             '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));')
+    .replace('function_mir_return(0,7,1,0)', 'function_mir_return(0,4,2,0)')
+    .replace('cfg_return(0,1)', 'cfg_return(0,2)')
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2654,6 +2717,150 @@ def test_merit_allocator_compatible_c_backend_matches_python_oracle_bytes(tmp_pa
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+def test_merit_string_len_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_STRING_LEN_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-string-len")
+    process = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert process.returncode == 0, process.stderr
+    native = process.stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "measure", MirType("i64"), (
+            MirLocal(0, "value", MirType("String")), MirLocal(1, "result", MirType("i64")),
+        ), (MirBlock(0, (MirInstruction(
+            0, "call", result=1, operands=(0,), symbol="string_len",
+        ),), MirTerminator("return", operands=(1,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_string_byte_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_STRING_BYTE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-string-byte")
+    process = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert process.returncode == 0, process.stderr
+    native = process.stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "byte", MirType("u8"), (
+            MirLocal(0, "value", MirType("String")),
+            MirLocal(1, "index", MirType("i64")),
+            MirLocal(2, "result", MirType("u8")),
+        ), (MirBlock(0, (MirInstruction(
+            0, "call", result=2, operands=(0, 1), symbol="string_byte",
+        ),), MirTerminator("return", operands=(2,))),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_string_byte_generated_c_preserves_utf8_and_bounds(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_STRING_BYTE_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-string-byte-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "string_byte.c"
+    driver_c = tmp_path / "string_byte_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "string_byte.c"\n'
+        'int main(void) { const uint8_t text[] = {0xc3, 0xa9, 0x21}; '
+        'merit_String value = {text, 3}; '
+        'return byte(value, 0) == 0xc3 && byte(value, 1) == 0xa9 '
+        '&& byte(value, 3) == 0 && byte(value, -1) == 0 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "string-byte-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_string_byte_backend_rejects_wrong_index_type(tmp_path: Path) -> None:
+    probe = CANONICAL_C_STRING_BYTE_PROBE.replace(
+        "function_mir_call_argument(0,1,function_mir_mode_value(),1)",
+        "function_mir_call_argument(0,0,function_mir_mode_value(),1)",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-string-byte-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 96
+    assert native.stdout == ""
+
+
+def test_merit_string_len_generated_c_counts_utf8_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_STRING_LEN_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-string-len-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "string_len.c"
+    driver_c = tmp_path / "string_len_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "string_len.c"\n'
+        'int main(void) { const uint8_t text[] = {0xc3, 0xa9, 0x21}; '
+        'return measure((merit_String){text, 3}) == 3 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "string-len-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_STRING_LEN_PROBE.replace(
+            "vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));", "",
+        ), 69),
+        (CANONICAL_C_STRING_LEN_PROBE.replace(
+            "function_mir_call_argument(0,0,function_mir_mode_value(),0)",
+            "function_mir_call_argument(0,1,function_mir_mode_value(),0)",
+        ), 96),
+    ],
+)
+def test_merit_string_len_backend_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-string-len-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 def test_merit_allocator_compatible_generated_c_preserves_identity(tmp_path: Path) -> None:
