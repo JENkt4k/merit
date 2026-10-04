@@ -300,6 +300,9 @@ requires_caps [allocate]
     if(type_code==function_mir_unit_type_code()){
         canonical_mir_append_text(output,"void");return 0;
     }
+    if(type_code==function_mir_string_type_code()){
+        canonical_mir_append_text(output,"merit_String");return 0;
+    }
     return 1;
 }
 
@@ -338,7 +341,9 @@ requires_caps [allocate]
                     let parameter_type:i32=function_mir_type_code(parameter);
                     if(parameter_type!=function_mir_i64_type_code()){
                         if(parameter_type!=function_mir_i32_type_code()){
-                            if(parameter_type!=function_mir_bool_type_code()){return 3;}
+                            if(parameter_type!=function_mir_bool_type_code()){
+                                if(parameter_type!=function_mir_string_type_code()){return 3;}
+                            }
                         }
                     }
                     if(function_mir_symbol_code(parameter)!=function_mir_mode_value()){return 4;}
@@ -366,6 +371,8 @@ fn canonical_c_checked_i32_add_feature()->i64{return 6;}
 fn canonical_c_checked_i32_multiply_feature()->i64{return 7;}
 fn canonical_c_checked_i32_subtract_feature()->i64{return 8;}
 fn canonical_c_checked_i32_divide_feature()->i64{return 9;}
+fn canonical_c_text_feature()->i64{return 10;}
+fn canonical_c_public_string_feature()->i64{return 11;}
 
 fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
 requires_caps [allocate]
@@ -559,10 +566,17 @@ requires_caps [allocate]
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
     let unit_return:i32=function_mir_type_code(header)==function_mir_unit_type_code();
+    let exported:i32=function_mir_mutable(header);
+    if(function_mir_type_code(header)==function_mir_string_type_code()){
+        canonical_c_require_feature(canonical_c_text_feature(),features);
+        if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
+    }
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){
         if(function_mir_type_code(header)!=function_mir_i32_type_code()){
             if(function_mir_type_code(header)!=function_mir_bool_type_code()){
-                if(function_mir_type_code(header)!=function_mir_unit_type_code()){return 3;}
+                if(function_mir_type_code(header)!=function_mir_unit_type_code()){
+                    if(function_mir_type_code(header)!=function_mir_string_type_code()){return 3;}
+                }
             }
         }
     }
@@ -634,27 +648,43 @@ requires_caps [allocate]
         let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
         let kind:i32=function_mir_kind(record);
         if(kind==function_mir_kind_parameter()){
+            if(function_mir_type_code(record)==function_mir_string_type_code()){
+                canonical_c_require_feature(canonical_c_text_feature(),features);
+                if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
+            }
             if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                 if(function_mir_type_code(record)!=function_mir_i32_type_code()){
-                    if(function_mir_type_code(record)!=function_mir_bool_type_code()){return 9;}
+                    if(function_mir_type_code(record)!=function_mir_bool_type_code()){
+                        if(function_mir_type_code(record)!=function_mir_string_type_code()){return 9;}
+                    }
                 }
             }
             if(function_mir_symbol_code(record)!=function_mir_mode_value()){return 24;}
             if(function_mir_id(record)!=local_count){return 25;}
             local_count=checked_add(local_count,1);
         }else{if(kind==function_mir_kind_source_local()){
+            if(function_mir_type_code(record)==function_mir_string_type_code()){
+                canonical_c_require_feature(canonical_c_text_feature(),features);
+            }
             if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                 if(function_mir_type_code(record)!=function_mir_i32_type_code()){
-                    if(function_mir_type_code(record)!=function_mir_bool_type_code()){return 10;}
+                    if(function_mir_type_code(record)!=function_mir_bool_type_code()){
+                        if(function_mir_type_code(record)!=function_mir_string_type_code()){return 10;}
+                    }
                 }
             }
             if(function_mir_id(record)!=local_count){return 11;}
             local_count=checked_add(local_count,1);
         }else{
             if(kind==function_mir_kind_temporary_local()){
+                if(function_mir_type_code(record)==function_mir_string_type_code()){
+                    canonical_c_require_feature(canonical_c_text_feature(),features);
+                }
                 if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
-                        if(function_mir_type_code(record)!=function_mir_i32_type_code()){return 12;}
+                        if(function_mir_type_code(record)!=function_mir_i32_type_code()){
+                            if(function_mir_type_code(record)!=function_mir_string_type_code()){return 12;}
+                        }
                     }
                 }
                 if(function_mir_id(record)!=local_count){return 13;}
@@ -679,7 +709,9 @@ requires_caps [allocate]
                                     if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                                         if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                                             if(function_mir_type_code(record)!=function_mir_bool_type_code()){
-                                                if(function_mir_type_code(record)!=function_mir_unit_type_code()){return 61;}
+                                                if(function_mir_type_code(record)!=function_mir_unit_type_code()){
+                                                    if(function_mir_type_code(record)!=function_mir_string_type_code()){return 61;}
+                                                }
                                             }
                                         }
                                     }
@@ -774,7 +806,10 @@ requires_caps [allocate]
         )!=0){return 12;}
         canonical_mir_append_text(bodies," m");
         canonical_mir_append_i64(bodies,local_id);
-        canonical_mir_append_text(bodies," = 0;\n");local_id=checked_add(local_id,1);
+        if(canonical_c_scalar_local_type(records,local_id)==function_mir_string_type_code()){
+            canonical_mir_append_text(bodies," = {0};\n");
+        }else{canonical_mir_append_text(bodies," = 0;\n");}
+        local_id=checked_add(local_id,1);
     }
     canonical_mir_append_text(bodies,"    goto b0;\n");
     var emitted_placements:i64=0;
@@ -962,10 +997,19 @@ requires_caps [allocate]
                         }
                     }
                     if(instruction_kind==function_mir_kind_print()){
-                        if(canonical_c_scalar_local_type(records,function_mir_left(instruction))==0){return 105;}
+                        let printed_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));
+                        if(printed_type==0){return 105;}
                         canonical_c_require_feature(canonical_c_i64_print_feature(),features);
-                        canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
-                        canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
+                        if(printed_type==function_mir_string_type_code()){
+                            canonical_mir_append_text(bodies,"    fwrite(m");
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                            canonical_mir_append_text(bodies,".data, 1, m");
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                            canonical_mir_append_text(bodies,".len, stdout);\n    putchar('\\n');\n");
+                        }else{
+                            canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
+                        }
                     }
                     if(instruction_kind==function_mir_kind_call()){
                         var callee_found:i32=0;var callee_header:MirFunctionRecord=header;var callee_index:i64=0;
@@ -1005,7 +1049,9 @@ requires_caps [allocate]
                             if(function_mir_ordinal(parameter)!=callee_parameter_ordinal){return 72;}
                             if(function_mir_type_code(parameter)!=function_mir_i64_type_code()){
                                 if(function_mir_type_code(parameter)!=function_mir_i32_type_code()){
-                                    if(function_mir_type_code(parameter)!=function_mir_bool_type_code()){return 73;}
+                                    if(function_mir_type_code(parameter)!=function_mir_bool_type_code()){
+                                        if(function_mir_type_code(parameter)!=function_mir_string_type_code()){return 73;}
+                                    }
                                 }
                             }
                             if(function_mir_symbol_code(parameter)!=function_mir_mode_value()){return 74;}
@@ -1148,11 +1194,18 @@ requires_caps [allocate]
 {
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
-    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n#include <stdint.h>\n");
+    let needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
+    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n");
+    if(needs_text!=0){canonical_mir_append_text(output,"#include <stddef.h>\n");}
+    canonical_mir_append_text(output,"#include <stdint.h>\n");
     var needs_stdio:i32=canonical_c_has_checked_feature(features);
     if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){needs_stdio=1;}
+    if(needs_text!=0){needs_stdio=1;}
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
     canonical_mir_append_text(output,"#include <stdlib.h>\n\n");
+    if(needs_text!=0){
+        canonical_mir_append_text(output,"typedef struct { const uint8_t *data; size_t len; } merit_String;\ntypedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;\nstatic inline int64_t merit_string_len(merit_String value) { return (int64_t)value.len; }\nstatic inline uint8_t merit_string_byte(merit_String value, int64_t index) {\n    if (index < 0 || (size_t)index >= value.len) return 0;\n    return value.data[index];\n}\n\n");
+    }
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
     let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
@@ -1193,11 +1246,14 @@ requires_caps [allocate]
 }
 
 pub fn canonical_c_finish_public_header(
-    borrow declarations:Buffer,borrow_mut output:Buffer
+    borrow declarations:Buffer,borrow features:Vec<i64>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
     canonical_mir_append_text(output,"#pragma once\n#include <stdbool.h>\n#include <stddef.h>\n#include <stdint.h>\n\n");
+    if(canonical_c_has_feature(canonical_c_public_string_feature(),features)!=0){
+        canonical_mir_append_text(output,"typedef struct { const uint8_t *data; size_t len; } merit_String;\n\n");
+    }
     bootstrap_buffer_append(output,declarations,0,buffer_len(declarations));
     return 0;
 }
