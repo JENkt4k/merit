@@ -264,6 +264,9 @@ fn main()->i32 {
 CANONICAL_C_I32_MULTIFUNCTION_PROBE = CANONICAL_C_MULTIFUNCTION_PROBE.replace(
     "function_mir_i64_type_code()", "function_mir_i32_type_code()",
 )
+CANONICAL_C_BOOL_MULTIFUNCTION_PROBE = CANONICAL_C_MULTIFUNCTION_PROBE.replace(
+    "function_mir_i64_type_code()", "function_mir_bool_type_code()",
+)
 
 CANONICAL_C_JUMP_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "vec_new<MirCfgRecord>(allocator,2);\n"
@@ -320,6 +323,9 @@ CANONICAL_C_CALL_PROBE = CANONICAL_C_MULTIFUNCTION_PROBE.replace(
 CANONICAL_C_I32_CALL_PROBE = CANONICAL_C_CALL_PROBE.replace(
     "function_mir_i64_type_code()", "function_mir_i32_type_code()",
 )
+CANONICAL_C_BOOL_CALL_PROBE = CANONICAL_C_CALL_PROBE.replace(
+    "function_mir_i64_type_code()", "function_mir_bool_type_code()",
+)
 
 CANONICAL_C_EQUAL_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "function_mir_temporary(2,function_mir_i64_type_code(),2)",
@@ -329,6 +335,12 @@ CANONICAL_C_EQUAL_PROBE = CANONICAL_C_BACKEND_PROBE.replace(
     "function_mir_binary_equal_symbol(),function_mir_bool_type_code(),function_mir_exact_numeric_policy()",
 ).replace(
     "cfg_return(0,2)", "cfg_return(0,0)",
+)
+
+CANONICAL_C_BOOL_COMPARISON_PROBE = CANONICAL_C_EQUAL_PROBE.replace(
+    "compute23", "compute10",
+).replace(
+    "function_mir_i64_type_code()", "function_mir_bool_type_code()",
 )
 
 CANONICAL_C_BRANCH_PROBE = CANONICAL_C_EQUAL_PROBE.replace(
@@ -1199,7 +1211,11 @@ def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> N
 
 @pytest.mark.parametrize(
     ("probe", "type_name"),
-    [(CANONICAL_C_MULTIFUNCTION_PROBE, "i64"), (CANONICAL_C_I32_MULTIFUNCTION_PROBE, "i32")],
+    [
+        (CANONICAL_C_MULTIFUNCTION_PROBE, "i64"),
+        (CANONICAL_C_I32_MULTIFUNCTION_PROBE, "i32"),
+        (CANONICAL_C_BOOL_MULTIFUNCTION_PROBE, "bool"),
+    ],
 )
 def test_merit_multifunction_c_backend_matches_python_oracle_bytes(
     tmp_path: Path, probe: str, type_name: str,
@@ -1348,7 +1364,11 @@ def test_merit_scalar_jump_target_body_rejects_invalid_placement(
 
 @pytest.mark.parametrize(
     ("probe", "type_name"),
-    [(CANONICAL_C_CALL_PROBE, "i64"), (CANONICAL_C_I32_CALL_PROBE, "i32")],
+    [
+        (CANONICAL_C_CALL_PROBE, "i64"),
+        (CANONICAL_C_I32_CALL_PROBE, "i32"),
+        (CANONICAL_C_BOOL_CALL_PROBE, "bool"),
+    ],
 )
 def test_merit_scalar_call_c_backend_matches_python_oracle_bytes(
     tmp_path: Path, probe: str, type_name: str,
@@ -1385,10 +1405,11 @@ def test_merit_scalar_call_c_backend_matches_python_oracle_bytes(
     driver_c = tmp_path / "call_driver.c"
     generated_c.write_text(c_source, encoding="utf-8", newline="\n")
     generated_h.write_text(c_header, encoding="utf-8", newline="\n")
-    c_type = "int32_t" if type_name == "i32" else "int64_t"
+    c_type = {"i32": "int32_t", "i64": "int64_t", "bool": "bool"}[type_name]
+    call_check = "merit_second(false) == false" if type_name == "bool" else "merit_second(2) == 2"
     driver_c.write_text(
         f'#include "call.h"\n{c_type} first(void);\n'
-        'int main(void) { return first() == 1 && merit_second(2) == 2 ? 0 : 1; }\n',
+        f'int main(void) {{ return first() == 1 && {call_check} ? 0 : 1; }}\n',
         encoding="utf-8", newline="\n",
     )
     cc = shutil.which("cc") or shutil.which("gcc")
@@ -1459,6 +1480,104 @@ def test_merit_i32_scalar_c_backend_rejects_mixed_width_records(
     native = subprocess.run([str(executable)], text=True, capture_output=True)
     assert native.returncode == status
     assert native.stdout == ""
+
+
+def test_merit_bool_scalar_c_backend_rejects_non_boolean_literal(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BOOL_MULTIFUNCTION_PROBE.replace("first1second", "first2second")
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-bool-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 100
+    assert native.stdout == ""
+
+
+@pytest.mark.parametrize(("record_symbol", "mir_symbol"), [
+    ("function_mir_binary_equal_symbol()", "=="),
+    ("function_mir_binary_not_equal_symbol()", "!="),
+])
+def test_merit_bool_comparison_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, record_symbol: str, mir_symbol: str,
+) -> None:
+    probe = CANONICAL_C_BOOL_COMPARISON_PROBE.replace(
+        "function_mir_binary_equal_symbol()", record_symbol,
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-bool-comparison")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("bool"), tuple(MirLocal(i, f"_t{i}", MirType("bool")) for i in range(3)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=True, ownership="value"),
+            MirInstruction(1, "const", result=1, value=False, ownership="value"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol=mir_symbol, numeric_policy="exact"),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(0,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_bool_ordering_c_backend_fails_closed(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BOOL_COMPARISON_PROBE.replace(
+        "function_mir_binary_equal_symbol()", "function_mir_binary_greater_symbol()",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-bool-order-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 98
+    assert native.stdout == ""
+
+
+@pytest.mark.parametrize("spelling", ("true", "false"))
+def test_merit_textual_bool_constant_c_backend_matches_oracle(
+    tmp_path: Path, spelling: str,
+) -> None:
+    second_start = 5 + len(spelling)
+    probe = CANONICAL_C_BOOL_MULTIFUNCTION_PROBE.replace(
+        "first1second", f"first{spelling}second",
+    ).replace(
+        "function_mir_const(5,1,0,0", f"function_mir_const(5,{len(spelling)},0,0",
+    ).replace(
+        "function_mir_callable_header(6,6,6,6",
+        f"function_mir_callable_header({second_start},6,{second_start},6",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-textual-bool")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (
+        MirFunction("first", MirType("bool"), (MirLocal(0, "_t0", MirType("bool")),),
+                    (MirBlock(0, (MirInstruction(0, "const", result=0, value=spelling == "true"),),
+                              MirTerminator("return", operands=(0,))),), 0),
+        MirFunction("second", MirType("bool"), (MirLocal(0, "value", MirType("bool")),),
+                    (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+                    parameters=(MirParameter(0),), exported=True),
+    ))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
 
 
 @pytest.mark.parametrize(
