@@ -161,6 +161,33 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_INTEGER_FORMAT_PROBE = r'''module canonical_integer_format_probe
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var output:Buffer=buffer_new(allocator,128);
+  let minimum_i64:i64=checked_sub(checked_sub(0,9223372036854775807),1);
+  let minimum_i32:i32=checked_sub(checked_sub(0,2147483647),1);
+  canonical_mir_append_i64(output,minimum_i64);buffer_push(output,10);
+  canonical_mir_append_i64(output,9223372036854775807);buffer_push(output,10);
+  canonical_mir_append_i64(output,-9070);buffer_push(output,10);
+  canonical_mir_append_i64(output,0);buffer_push(output,10);
+  canonical_mir_append_i32(output,minimum_i32);buffer_push(output,10);
+  canonical_mir_append_i32(output,2147483647);buffer_push(output,10);
+  canonical_mir_append_i32(output,-9070);buffer_push(output,10);
+  canonical_mir_append_i32(output,0);buffer_push(output,10);
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_C_BACKEND_PROBE = r'''module canonical_c_backend_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1485,6 +1512,29 @@ def test_merit_assembles_multiple_canonical_functions_without_python(tmp_path: P
         '{"functions":[{"name":"first"},{"name":"second"}],'
         '"name":"demo","schema":"bootstrap-mir-v1"}'
     )
+
+
+def test_merit_canonical_integer_format_handles_signed_boundaries(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_INTEGER_FORMAT_PROBE)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    for name in ("canonical_mir_append_i64", "canonical_mir_append_i32"):
+        old = f"fn {name}("
+        assert source.count(old) == 1
+        source = source.replace(old, f"pub {old}", 1)
+    module_path.write_text(source, encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-integer-format")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    expected = (
+        "-9223372036854775808\n9223372036854775807\n-9070\n0\n"
+        "-2147483648\n2147483647\n-9070\n0\n"
+    ).encode("utf-8")
+    assert values[0] == len(expected)
+    assert bytes(values[1:]) == expected
 
 
 def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:

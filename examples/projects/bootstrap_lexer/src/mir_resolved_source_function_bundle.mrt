@@ -134,15 +134,13 @@ fn canonical_mir_append_i64(borrow_mut output:Buffer,value:i64)->i32
 requires_caps [allocate]
 {
     var magnitude:i64=value;
-    if(magnitude<0){
-        buffer_push(output,45);
-        magnitude=checked_sub(0,magnitude);
-    }
+    if(magnitude<0){buffer_push(output,45);}
+    else{magnitude=checked_sub(0,magnitude);}
     if(magnitude==0){buffer_push(output,48);return 0;}
     var divisor:i64=1;
-    while((magnitude/divisor)>=10){divisor=checked_mul(divisor,10);}
+    while((magnitude/divisor)<=-10){divisor=checked_mul(divisor,10);}
     while(divisor>0){
-        let digit:i64=magnitude/divisor;
+        let digit:i64=checked_sub(0,magnitude/divisor);
         if(digit==0){buffer_push(output,48);}
         if(digit==1){buffer_push(output,49);}
         if(digit==2){buffer_push(output,50);}
@@ -153,7 +151,7 @@ requires_caps [allocate]
         if(digit==7){buffer_push(output,55);}
         if(digit==8){buffer_push(output,56);}
         if(digit==9){buffer_push(output,57);}
-        magnitude=checked_sub(magnitude,checked_mul(digit,divisor));
+        magnitude=checked_add(magnitude,checked_mul(digit,divisor));
         divisor=divisor/10;
     }
     return 0;
@@ -163,18 +161,19 @@ fn canonical_mir_append_i32(borrow_mut output:Buffer,value:i32)->i32
 requires_caps [allocate]
 {
     var magnitude:i32=value;
-    if(magnitude<0){buffer_push(output,45);magnitude=checked_sub(0,magnitude);}
+    if(magnitude<0){buffer_push(output,45);}
+    else{magnitude=checked_sub(0,magnitude);}
     if(magnitude==0){buffer_push(output,48);return 0;}
     var divisor:i32=1;
-    while((magnitude/divisor)>=10){divisor=checked_mul(divisor,10);}
+    while((magnitude/divisor)<=-10){divisor=checked_mul(divisor,10);}
     while(divisor>0){
-        let digit:i32=magnitude/divisor;
+        let digit:i32=checked_sub(0,magnitude/divisor);
         if(digit==0){buffer_push(output,48);}if(digit==1){buffer_push(output,49);}
         if(digit==2){buffer_push(output,50);}if(digit==3){buffer_push(output,51);}
         if(digit==4){buffer_push(output,52);}if(digit==5){buffer_push(output,53);}
         if(digit==6){buffer_push(output,54);}if(digit==7){buffer_push(output,55);}
         if(digit==8){buffer_push(output,56);}if(digit==9){buffer_push(output,57);}
-        magnitude=checked_sub(magnitude,checked_mul(digit,divisor));divisor=divisor/10;
+        magnitude=checked_add(magnitude,checked_mul(digit,divisor));divisor=divisor/10;
     }
     return 0;
 }
