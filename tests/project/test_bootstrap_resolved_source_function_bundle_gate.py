@@ -442,6 +442,22 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_ALLOCATOR_CALL_PROBE = (
+    CANONICAL_C_ALLOCATOR_VALUE_PROBE
+    .replace('"identity"', '"make system_allocator"')
+    .replace('vec_new<MirFunctionRecord>(allocator,3)', 'vec_new<MirFunctionRecord>(allocator,3)')
+    .replace('function_mir_callable_header(0,8,0,8,', 'function_mir_callable_header(0,4,0,4,')
+    .replace('function_mir_mode_value(),-1,1,0)', 'function_mir_mode_value(),-1,0,0)')
+    .replace('function_mir_parameter(0,8,0,function_mir_allocator_type_code(),0,0,function_mir_mode_value(),0)',
+             'function_mir_temporary(0,function_mir_allocator_type_code(),0)')
+    .replace('vec_push<MirFunctionRecord>(records,function_mir_return(0,8,0,0));',
+             'vec_push<MirFunctionRecord>(records,function_mir_call(5,16,0,0,5,16,function_mir_allocator_type_code(),function_mir_mode_value(),0));\n'
+             '  vec_push<MirFunctionRecord>(records,function_mir_return(0,4,0,0));')
+    .replace('vec_new<MirFunctionRecord>(allocator,3)', 'vec_new<MirFunctionRecord>(allocator,4)')
+    .replace('vec_new<MirPlacementRecord>(allocator,0)', 'vec_new<MirPlacementRecord>(allocator,1);\n'
+             '  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0))')
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2537,6 +2553,58 @@ def test_merit_allocator_value_c_backend_matches_python_oracle_bytes(tmp_path: P
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize("allocator_name", ["system_allocator", "portable_allocator"])
+def test_merit_allocator_builtin_call_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, allocator_name: str,
+) -> None:
+    probe = CANONICAL_C_ALLOCATOR_CALL_PROBE.replace("system_allocator", allocator_name)
+    if allocator_name == "portable_allocator":
+        probe = probe.replace("function_mir_call(5,16,0,0,5,16,", "function_mir_call(5,18,0,0,5,18,")
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-allocator-call")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "make", MirType("Allocator"), (MirLocal(0, "result", MirType("Allocator")),),
+        (MirBlock(0, (MirInstruction(0, "call", result=0, symbol=allocator_name),),
+                  MirTerminator("return", operands=(0,))),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_ALLOCATOR_CALL_PROBE.replace('"make system_allocator"', '"make system_allocatox"'), 65),
+        (CANONICAL_C_ALLOCATOR_CALL_PROBE.replace(
+            "vec_new<MirFunctionRecord>(allocator,4)", "vec_new<MirFunctionRecord>(allocator,5)",
+        ).replace(
+            "vec_push<MirFunctionRecord>(records,function_mir_return(0,4,0,0));",
+            "vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));\n"
+            "  vec_push<MirFunctionRecord>(records,function_mir_return(0,4,0,0));",
+        ), 70),
+    ],
+)
+def test_merit_allocator_builtin_call_backend_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-allocator-call-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 def test_merit_allocator_value_backend_rejects_public_abi(tmp_path: Path) -> None:
