@@ -2106,6 +2106,36 @@ def test_merit_scalar_backend_rejects_boolean_arithmetic(tmp_path: Path) -> None
     assert native.stdout == ""
 
 
+def test_merit_scalar_copy_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BACKEND_PROBE.replace(
+        "function_mir_binary(7,2,2,2,0,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2)",
+        "function_mir_copy(7,2,2,2,0,0,2)",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-copy")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=2, ownership="value"),
+            MirInstruction(1, "const", result=1, value=3, ownership="value"),
+            MirInstruction(2, "copy", result=2, operands=(0,)),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:
     root = _project(tmp_path, CFG_MIR_PROBE)
     project = load_project(root / "Merit.toml")
