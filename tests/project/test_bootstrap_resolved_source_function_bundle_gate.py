@@ -328,6 +328,11 @@ CANONICAL_C_BRANCH_PROBE = CANONICAL_C_EQUAL_PROBE.replace(
     "  vec_push<MirCfgRecord>(cfg,cfg_block(2,2));vec_push<MirCfgRecord>(cfg,cfg_return(2,1));",
 )
 
+CANONICAL_C_BRANCH_ARM_BODY_PROBES = (
+    CANONICAL_C_BRANCH_PROBE.replace("mir_place(0,3,3)", "mir_place(1,3,0)"),
+    CANONICAL_C_BRANCH_PROBE.replace("mir_place(0,3,3)", "mir_place(2,3,0)"),
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1432,6 +1437,62 @@ def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Pat
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize("arm", (1, 2))
+def test_merit_scalar_branch_arm_body_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, arm: int,
+) -> None:
+    probe = CANONICAL_C_BRANCH_ARM_BODY_PROBES[arm - 1]
+    assert f"mir_place({arm},3,0)" in probe
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-branch-arm-body")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    print_instruction = MirInstruction(3, "print", operands=(2,))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+            ), MirTerminator("branch", operands=(2,), targets=(1, 2))),
+            MirBlock(1, (print_instruction,) if arm == 1 else (), MirTerminator("return", operands=(0,))),
+            MirBlock(2, (print_instruction,) if arm == 2 else (), MirTerminator("return", operands=(1,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("placement", "status"),
+    [("mir_place(3,3,0)", 87), ("mir_place(1,3,1)", 19)],
+)
+def test_merit_scalar_branch_arm_body_rejects_invalid_placement(
+    tmp_path: Path, placement: str, status: int,
+) -> None:
+    probe = CANONICAL_C_BRANCH_ARM_BODY_PROBES[0].replace("mir_place(1,3,0)", placement)
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-branch-arm-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 @pytest.mark.parametrize(
