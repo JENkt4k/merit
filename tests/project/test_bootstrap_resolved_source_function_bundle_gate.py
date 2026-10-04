@@ -2069,6 +2069,43 @@ def test_merit_checked_i32_generated_c_executes(tmp_path: Path) -> None:
     assert result.stdout == "5\n"
 
 
+@pytest.mark.parametrize(
+    ("old", "new", "status"),
+    [
+        ("function_mir_binary(7,2,2,2,0,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2)",
+         "function_mir_copy(7,2,2,2,99,0,2)", 101),
+        ("function_mir_binary(7,2,2,2,0,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2)",
+         "function_mir_copy(7,2,2,99,0,0,2)", 102),
+        ("function_mir_binary(7,2,2,2,0,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2)",
+         "function_mir_binary(7,2,2,2,99,1,function_mir_binary_add_symbol(),function_mir_i64_type_code(),function_mir_checked_numeric_policy(),2)", 103),
+        ("function_mir_print(7,2,3,2,3)", "function_mir_print(7,2,3,99,3)", 105),
+    ],
+)
+def test_merit_scalar_backend_rejects_invalid_local_references(
+    tmp_path: Path, old: str, new: str, status: int,
+) -> None:
+    assert old in CANONICAL_C_BACKEND_PROBE
+    root = _project(tmp_path, CANONICAL_C_BACKEND_PROBE.replace(old, new))
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-invalid-local")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
+def test_merit_scalar_backend_rejects_boolean_arithmetic(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BACKEND_PROBE.replace("compute23", "compute10")
+    probe = probe.replace("function_mir_i64_type_code()", "function_mir_bool_type_code()")
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-bool-arithmetic")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 104
+    assert native.stdout == ""
+
+
 def test_merit_materializes_explicit_empty_cfg_topology(tmp_path: Path) -> None:
     root = _project(tmp_path, CFG_MIR_PROBE)
     project = load_project(root / "Merit.toml")

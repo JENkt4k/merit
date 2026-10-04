@@ -752,6 +752,9 @@ requires_caps [allocate]
                         else{canonical_mir_append_text(bodies,");\n");}
                     }
                     if(instruction_kind==function_mir_kind_copy_to_binding()){
+                        let copied_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));
+                        if(copied_type==0){return 101;}
+                        if(copied_type!=canonical_c_scalar_local_type(records,function_mir_result(instruction))){return 102;}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
                         canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,function_mir_left(instruction));
                         canonical_mir_append_text(bodies,";\n");
@@ -789,6 +792,7 @@ requires_caps [allocate]
                         let left_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));
                         let right_type:i32=canonical_c_scalar_local_type(records,function_mir_right(instruction));
                         if(result_type!=function_mir_type_code(instruction)){return 98;}
+                        if(left_type==0){return 103;}
                         if(left_type!=right_type){return 98;}
                         if(is_comparison!=0){
                             if(left_type!=function_mir_i64_type_code()){
@@ -801,6 +805,7 @@ requires_caps [allocate]
                             }
                         }else{
                             if(result_type!=left_type){return 98;}
+                            if(left_type==function_mir_bool_type_code()){return 104;}
                         }
                         if(is_comparison!=0){
                             if(function_mir_numeric_policy(instruction)!=function_mir_exact_numeric_policy()){return 76;}
@@ -867,6 +872,7 @@ requires_caps [allocate]
                         }
                     }
                     if(instruction_kind==function_mir_kind_print()){
+                        if(canonical_c_scalar_local_type(records,function_mir_left(instruction))==0){return 105;}
                         canonical_c_require_feature(canonical_c_i64_print_feature(),features);
                         canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
                         canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
