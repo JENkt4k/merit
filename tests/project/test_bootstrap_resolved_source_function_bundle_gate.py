@@ -348,6 +348,15 @@ CANONICAL_C_BACKEDGE_PROBE = CANONICAL_C_BRANCH_PROBE.replace(
     "cfg_return(1,0)", "cfg_jump(1,0)",
 )
 
+CANONICAL_C_SWITCH_PROBE = CANONICAL_C_BRANCH_PROBE.replace(
+    "vec_new<MirCfgRecord>(allocator,6);",
+    "vec_new<MirCfgRecord>(allocator,7);",
+).replace(
+    "vec_push<MirCfgRecord>(cfg,cfg_branch(0,2,1,2));",
+    "vec_push<MirCfgRecord>(cfg,cfg_switch_case(0,0,2,1,0));"
+    "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));",
+)
+
 CFG_MIR_PROBE = r'''module cfg_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_cfg;
@@ -1636,6 +1645,121 @@ def test_merit_scalar_join_generated_c_executes_both_paths(
     )
     result = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
     assert result.stdout == expected_stdout
+
+
+@pytest.mark.parametrize("case_value", (2, 7))
+def test_merit_scalar_switch_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, case_value: int,
+) -> None:
+    probe = CANONICAL_C_SWITCH_PROBE.replace(
+        "cfg_switch_case(0,0,2,1,0)", f"cfg_switch_case(0,0,{case_value},1,0)",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-switch")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    header_length = values[1 + c_length]
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert header_length == len(c_header.encode("utf-8"))
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("switch", operands=(0,), targets=(1, 2), cases=(case_value,))),
+            MirBlock(1, (), MirTerminator("return", operands=(0,))),
+            MirBlock(2, (), MirTerminator("return", operands=(1,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+    generated_c = tmp_path / "switch.c"
+    generated_h = tmp_path / "switch.h"
+    driver_c = tmp_path / "switch_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    generated_h.write_text(c_header, encoding="utf-8", newline="\n")
+    expected_return = 2 if case_value == 2 else 3
+    driver_c.write_text(
+        f'#include "switch.h"\nint main(void) {{ return merit_compute() == {expected_return} ? 0 : 1; }}\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "switch-program"
+    subprocess.run(
+        [cc, "-std=c11", str(generated_c), str(driver_c), "-o", str(program)],
+        check=True, text=True, capture_output=True,
+    )
+    result = subprocess.run([str(program)], check=True, text=True, capture_output=True)
+    assert result.stdout == "0\n"
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));", "",
+            ),
+            92,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "cfg_switch_default(0,0,2,1)", "cfg_switch_default(0,0,2,2)",
+            ),
+            91,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "cfg_switch_default(0,0,2,1)", "cfg_switch_default(0,1,2,1)",
+            ),
+            90,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "cfg_switch_case(0,0,2,1,0)", "cfg_switch_case(0,0,2,9,0)",
+            ),
+            27,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace("cfg_switch_case(0,0,2,1,0)", "cfg_switch_case(0,2,2,1,0)")
+            .replace("cfg_switch_default(0,0,2,1)", "cfg_switch_default(0,2,2,1)"),
+            93,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "vec_new<MirCfgRecord>(allocator,7)", "vec_new<MirCfgRecord>(allocator,8)",
+            ).replace(
+                "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));",
+                "vec_push<MirCfgRecord>(cfg,cfg_switch_case(0,0,2,1,1));"
+                "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,2));",
+            ),
+            94,
+        ),
+    ],
+)
+def test_merit_scalar_switch_c_backend_rejects_invalid_rows(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-switch-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
 
 
 @pytest.mark.parametrize(

@@ -402,32 +402,59 @@ requires_caps [allocate]
     let cfg_record_count:i64=vec_len<MirCfgRecord>(cfg);
     if(cfg_record_count<2){return 4;}
     var cfg_block_count:i64=0;
-    var cfg_pair_index:i64=0;
-    while(cfg_pair_index<cfg_record_count){
-        if(checked_add(cfg_pair_index,1)>=cfg_record_count){return 4;}
-        cfg_block_count=checked_add(cfg_block_count,1);
-        cfg_pair_index=checked_add(cfg_pair_index,2);
-    }
     var cfg_index:i64=0;
-    while(cfg_index<cfg_block_count){
-        let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_mul(cfg_index,2));
-        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_add(checked_mul(cfg_index,2),1));
+    while(cfg_index<cfg_record_count){
+        let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
         if(cfg_kind(block)!=cfg_block_kind()){return 5;}
-        if(cfg_block_id(block)!=cfg_index){return 6;}
-        if(cfg_block_id(terminator)!=cfg_index){return 8;}
+        if(cfg_block_id(block)!=cfg_block_count){return 6;}
+        cfg_index=checked_add(cfg_index,1);
+        if(cfg_index>=cfg_record_count){return 4;}
+        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
+        if(cfg_block_id(terminator)!=cfg_block_count){return 8;}
         let term_kind:i32=cfg_kind(terminator);
         if(term_kind==cfg_return_kind()){
             if(cfg_operand(terminator)<0){return 17;}
-        }else{if(term_kind==cfg_jump_kind()){
-            if(cfg_target_a(terminator)<0){return 27;}
-            if(cfg_target_a(terminator)>=cfg_block_count){return 27;}
-        }else{if(term_kind==cfg_branch_kind()){
-            if(cfg_target_a(terminator)<0){return 79;}
-            if(cfg_target_a(terminator)>=cfg_block_count){return 79;}
-            if(cfg_target_b(terminator)<0){return 80;}
-            if(cfg_target_b(terminator)>=cfg_block_count){return 80;}
-        }else{return 7;}}}
-        cfg_index=checked_add(cfg_index,1);
+        }else{if(term_kind!=cfg_jump_kind()){
+            if(term_kind!=cfg_branch_kind()){
+                if(term_kind!=cfg_switch_case_kind()){
+                    if(term_kind!=cfg_switch_default_kind()){return 7;}
+                }
+            }
+        }}
+        if(term_kind==cfg_switch_case_kind()){
+            var switch_ordinal:i64=0;
+            var default_found:i32=0;
+            let switch_operand:i64=cfg_operand(terminator);
+            let switch_start:i64=cfg_index;
+            while(default_found==0){
+                if(cfg_index>=cfg_record_count){return 92;}
+                let item:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
+                if(cfg_kind(item)==cfg_switch_case_kind()){
+                    if(cfg_block_id(item)!=cfg_block_count){return 8;}
+                    if(cfg_operand(item)!=switch_operand){return 90;}
+                    if(cfg_ordinal(item)!=switch_ordinal){return 91;}
+                    var previous_case:i64=switch_start;
+                    while(previous_case<cfg_index){
+                        let previous:MirCfgRecord=vec_get<MirCfgRecord>(cfg,previous_case);
+                        if(cfg_case_value(previous)==cfg_case_value(item)){return 94;}
+                        previous_case=checked_add(previous_case,1);
+                    }
+                    switch_ordinal=checked_add(switch_ordinal,1);
+                    cfg_index=checked_add(cfg_index,1);
+                }else{if(cfg_kind(item)==cfg_switch_default_kind()){
+                    if(cfg_block_id(item)!=cfg_block_count){return 8;}
+                    if(cfg_operand(item)!=switch_operand){return 90;}
+                    if(cfg_ordinal(item)!=switch_ordinal){return 91;}
+                    default_found=1;cfg_index=checked_add(cfg_index,1);
+                }else{return 92;}}
+            }
+        }else{
+            if(term_kind==cfg_switch_default_kind()){
+                if(cfg_ordinal(terminator)!=0){return 91;}
+            }
+            cfg_index=checked_add(cfg_index,1);
+        }
+        cfg_block_count=checked_add(cfg_block_count,1);
     }
     var local_count:i64=0;
     var instruction_count:i64=0;
@@ -502,13 +529,31 @@ requires_caps [allocate]
         placement_scan=checked_add(placement_scan,1);
     }
     cfg_index=0;
-    while(cfg_index<cfg_block_count){
-        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_add(checked_mul(cfg_index,2),1));
-        if(cfg_kind(terminator)==cfg_branch_kind()){
+    while(cfg_index<cfg_record_count){
+        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
+        let term_kind:i32=cfg_kind(terminator);
+        if(term_kind==cfg_branch_kind()){
             if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_bool_type_code()){return 86;}
+            if(cfg_target_b(terminator)<0){return 80;}
+            if(cfg_target_b(terminator)>=cfg_block_count){return 80;}
         }
-        if(cfg_kind(terminator)==cfg_return_kind()){
+        if(term_kind==cfg_return_kind()){
             if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_i64_type_code()){return 89;}
+        }
+        if(term_kind==cfg_switch_case_kind()){
+            if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_i64_type_code()){return 93;}
+        }
+        if(term_kind==cfg_switch_default_kind()){
+            if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_i64_type_code()){return 93;}
+        }
+        var has_target:i32=0;
+        if(term_kind==cfg_jump_kind()){has_target=1;}
+        if(term_kind==cfg_branch_kind()){has_target=1;}
+        if(term_kind==cfg_switch_case_kind()){has_target=1;}
+        if(term_kind==cfg_switch_default_kind()){has_target=1;}
+        if(has_target!=0){
+            if(cfg_target_a(terminator)<0){return 27;}
+            if(cfg_target_a(terminator)>=cfg_block_count){return 27;}
         }
         cfg_index=checked_add(cfg_index,1);
     }
@@ -538,7 +583,11 @@ requires_caps [allocate]
     canonical_mir_append_text(bodies,"    goto b0;\n");
     var emitted_placements:i64=0;
     var active_block_id:i64=0;
+    var cfg_emit_index:i64=0;
     while(active_block_id<cfg_block_count){
+        let active_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_emit_index);
+        if(cfg_kind(active_block)!=cfg_block_kind()){return 5;}
+        if(cfg_block_id(active_block)!=active_block_id){return 6;}
         canonical_mir_append_text(bodies,"b");canonical_mir_append_i64(bodies,active_block_id);
         canonical_mir_append_text(bodies,":\n");
         var block_placement_count:i64=0;placement_scan=0;
@@ -754,9 +803,7 @@ requires_caps [allocate]
         active_ordinal=checked_add(active_ordinal,1);
         emitted_placements=checked_add(emitted_placements,1);
     }
-        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(
-            cfg,checked_add(checked_mul(active_block_id,2),1)
-        );
+        let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,checked_add(cfg_emit_index,1));
         if(cfg_kind(terminator)==cfg_return_kind()){
             canonical_mir_append_text(bodies,"    return m");
             canonical_mir_append_i64(bodies,cfg_operand(terminator));
@@ -776,6 +823,32 @@ requires_caps [allocate]
             canonical_mir_append_i64(bodies,cfg_target_b(terminator));
             canonical_mir_append_text(bodies,";\n");
         }
+        var is_switch:i32=0;
+        if(cfg_kind(terminator)==cfg_switch_case_kind()){is_switch=1;}
+        if(cfg_kind(terminator)==cfg_switch_default_kind()){is_switch=1;}
+        if(is_switch!=0){
+            canonical_mir_append_text(bodies,"    switch (m");
+            canonical_mir_append_i64(bodies,cfg_operand(terminator));
+            canonical_mir_append_text(bodies,") {\n");
+            var switch_index:i64=checked_add(cfg_emit_index,1);
+            var default_emitted:i32=0;
+            while(default_emitted==0){
+                let item:MirCfgRecord=vec_get<MirCfgRecord>(cfg,switch_index);
+                if(cfg_kind(item)==cfg_switch_case_kind()){
+                    canonical_mir_append_text(bodies,"    case ");
+                    canonical_mir_append_i64(bodies,cfg_case_value(item));
+                    canonical_mir_append_text(bodies,": goto b");
+                }else{
+                    canonical_mir_append_text(bodies,"    default: goto b");
+                    default_emitted=1;
+                }
+                canonical_mir_append_i64(bodies,cfg_target_a(item));
+                canonical_mir_append_text(bodies,";\n");
+                switch_index=checked_add(switch_index,1);
+            }
+            canonical_mir_append_text(bodies,"    }\n");
+            cfg_emit_index=switch_index;
+        }else{cfg_emit_index=checked_add(cfg_emit_index,2);}
         active_block_id=checked_add(active_block_id,1);
     }
     if(emitted_placements!=vec_len<MirPlacementRecord>(placements)){return 87;}
