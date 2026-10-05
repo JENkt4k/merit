@@ -529,7 +529,9 @@ requires_caps [allocate]
                                     if(parameter_type!=function_mir_allocator_type_code()){
                                     if(parameter_type!=function_mir_u8_type_code()){
                                         if(parameter_type!=function_mir_byte_slice_type_code()){
-                                            if(parameter_type!=function_mir_buffer_type_code()){return 3;}
+                                            if(parameter_type!=function_mir_buffer_type_code()){
+                                                if(parameter_type<function_mir_vector_type_code(0)){return 3;}
+                                            }
                                         }
                                     }
                                     }
@@ -651,9 +653,9 @@ fn canonical_c_resource_effect_failure_status(status:i32)->i32{return checked_ad
 
 // Lower only explicit, already-validated Alpha.2 resource effects. The MIR
 // effect remains independent of Buffer's physical allocation representation.
-pub fn canonical_c_append_buffer_resource_effect(
+pub fn canonical_c_append_resource_effect(
     borrow effect:MirOwnershipRecord,result_local:i64,
-    borrow records:Vec<MirFunctionRecord>,borrow_mut output:Buffer
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -669,12 +671,22 @@ requires_caps [allocate]
     if(is_move==0){if(is_drop==0){return canonical_c_resource_unsupported_effect_status();}}
     let operand_local:i64=ownership_record_operand_local(effect);
     if(operand_local<0){return canonical_c_resource_invalid_operand_status();}
-    if(canonical_c_scalar_local_type(records,operand_local)!=function_mir_buffer_type_code()){
-        return canonical_c_resource_invalid_operand_status();
+    let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
+    if(resource_type!=function_mir_buffer_type_code()){
+        if(resource_type<function_mir_vector_type_code(0)){
+            return canonical_c_resource_invalid_operand_status();
+        }
+    }
+    let allocator:Allocator=system_allocator();
+    var vector_name:Buffer=buffer_new(allocator,64);
+    if(resource_type>=function_mir_vector_type_code(0)){
+        if(canonical_c_append_vector_type_name(resource_type,descriptors,vector_name)!=0){
+            return canonical_c_resource_invalid_operand_status();
+        }
     }
     if(is_move!=0){
         if(result_local<0){return canonical_c_resource_invalid_result_status();}
-        if(canonical_c_scalar_local_type(records,result_local)!=function_mir_buffer_type_code()){
+        if(canonical_c_scalar_local_type(records,result_local)!=resource_type){
             return canonical_c_resource_invalid_result_status();
         }
         canonical_mir_append_text(output,"    m");
@@ -684,11 +696,32 @@ requires_caps [allocate]
         canonical_mir_append_text(output,";\n");
     }else{
         if(result_local>=0){return canonical_c_resource_invalid_result_status();}
-        canonical_mir_append_text(output,"    merit_buffer_drop(&(m");
+        if(resource_type==function_mir_buffer_type_code()){
+            canonical_mir_append_text(output,"    merit_buffer_drop(&(m");
+        }else{
+            canonical_mir_append_text(output,"    merit_vec_drop_");
+            let prefix_length:i64=string_len("merit_Vec_");
+            bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
+            canonical_mir_append_text(output,"(&(m");
+        }
         canonical_mir_append_i64(output,operand_local);
         canonical_mir_append_text(output,"));\n");
     }
+    drop(vector_name);
     return 0;
+}
+
+pub fn canonical_c_append_buffer_resource_effect(
+    borrow effect:MirOwnershipRecord,result_local:i64,
+    borrow records:Vec<MirFunctionRecord>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+    let status:i32=canonical_c_append_resource_effect(effect,result_local,records,descriptors,output);
+    drop(descriptors);
+    return status;
 }
 
 fn canonical_c_append_boolean_literal(
@@ -1094,6 +1127,11 @@ requires_caps [allocate]
                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 9;}
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
             }
+            if(function_mir_type_code(record)>=function_mir_vector_type_code(0)){
+                if(exported!=0){return 9;}
+                if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 9;}
+                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+            }
             if(function_mir_type_code(record)==function_mir_byte_slice_type_code()){
                 if(exported!=0){return 9;}
                 canonical_c_require_feature(canonical_c_slice_feature(),features);
@@ -1105,7 +1143,9 @@ requires_caps [allocate]
                             if(function_mir_type_code(record)!=function_mir_allocator_type_code()){
                                 if(function_mir_type_code(record)!=function_mir_u8_type_code()){
                                     if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){
-                                        if(function_mir_type_code(record)!=function_mir_buffer_type_code()){return 9;}
+                                        if(function_mir_type_code(record)!=function_mir_buffer_type_code()){
+                                            if(function_mir_type_code(record)<function_mir_vector_type_code(0)){return 9;}
+                                        }
                                     }
                                 }
                             }
@@ -1413,8 +1453,8 @@ requires_caps [allocate]
                 let placed_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
                 if(ownership_record_instruction_id(placed_effect)!=instruction_id){return canonical_c_resource_instruction_mismatch_status();}
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
-                let effect_status:i32=canonical_c_append_buffer_resource_effect(
-                    placed_effect,assembly_source_result(placed_source),records,bodies
+                let effect_status:i32=canonical_c_append_resource_effect(
+                    placed_effect,assembly_source_result(placed_source),records,type_descriptors,bodies
                 );
                 if(effect_status!=0){return canonical_c_resource_effect_failure_status(effect_status);}
                 instruction_found=1;record_index=vec_len<MirFunctionRecord>(records);
