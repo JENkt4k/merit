@@ -3099,6 +3099,31 @@ def test_merit_placed_buffer_construction_matches_python_oracle_bytes(tmp_path: 
     assert c_header == emit_c_header(module)
 
 
+def test_merit_placed_buffer_construction_generated_c_executes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_CONSTRUCTION_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-buffer-construction-emitter")
+    values = [int(value) for value in subprocess.run(
+        [str(emitter)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "placed_buffer_construction.c"
+    driver_c = tmp_path / "placed_buffer_construction_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "placed_buffer_construction.c"\n'
+        'int main(void) { create(merit_system_allocator(), 3); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "placed-buffer-construction-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
 @pytest.mark.parametrize(
     ("probe", "status"),
     [
