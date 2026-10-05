@@ -1020,6 +1020,14 @@ CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE = CANONICAL_C_VECTOR_BUILD_FUNCTION_PRO
     'vec_new<MirPlacementRecord>(allocator,7)', 'vec_new<MirPlacementRecord>(allocator,12)',
 ).replace('while(placement_id<7)', 'while(placement_id<12)')
 
+CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE = CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.replace(
+    'build_vecsystem_allocatorvec_new__i64vec_push__i64vec_len__i6417',
+    'build_vecsystem_allocatorvec_new__i64vec_push__i64vec_len__i6417values',
+).replace(
+    'function_mir_temporary(2,function_mir_vector_type_code(0),2)',
+    'function_mir_source_local(64,6,2,function_mir_vector_type_code(0),2,1)',
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -3714,6 +3722,70 @@ def test_merit_vector_new_push_len_and_drop_match_python_oracle_bytes(
     subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_owned_vector_source_local_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'canonical-vector-source-local')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType('i64'),))
+    module = MirModule('demo', (MirFunction(
+        'build_vec', MirType('i64'), (
+            MirLocal(0, '_t0', MirType('Allocator')),
+            MirLocal(1, '_t1', MirType('i64')),
+            MirLocal(2, 'values', vector_type, ownership='owned', mutable=True, source_binding_id=2),
+            MirLocal(3, '_t3', MirType('i64')),
+            MirLocal(4, '_t4', MirType('i64')),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'call', result=0, symbol='system_allocator'),
+            MirInstruction(1, 'const', result=1, value=1),
+            MirInstruction(2, 'call', result=2, operands=(0, 1), symbol='vec_new__i64'),
+            MirInstruction(3, 'const', result=3, value=7),
+            MirInstruction(4, 'call', operands=(2, 3), symbol='vec_push__i64'),
+            MirInstruction(5, 'call', result=4, operands=(2,), symbol='vec_len__i64'),
+            MirInstruction(6, 'drop', operands=(2,), ownership='owned'),
+        ), MirTerminator('return', operands=(4,))),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'vector_source_local.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'vector_source_local_driver.c'
+    driver.write_text('#include "vector_source_local.c"\nint main(void) { return build_vec() == 1 ? 0 : 1; }\n',
+                      encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'vector-source-local-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_owned_vector_source_local_requires_resource_effect_catalog(tmp_path: Path) -> None:
+    probe = CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE.replace(
+        '  vec_push<MirOwnershipRecord>(effects,ownership_record(\n'
+        '    ownership_record_kind_drop(),6,2,ownership_record_no_other_binding_id(),2,0,\n'
+        '    ownership_state_live(),ownership_state_dropped()\n'
+        '  ));',
+        '',
+    )
+    assert probe != CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'vector-source-local-without-effect')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 110
+    assert native.stdout == ''
 
 
 @pytest.mark.parametrize('element_type', ['i64', 'i32'])
