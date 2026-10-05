@@ -16,12 +16,8 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from typing import TYPE_CHECKING
 
-from merit.bootstrap.resolved_source_function_bundle import (
-    ResolvedSourceFunctionBundleError,
-    decode_resolved_source_function_bundle,
-)
-from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST,
@@ -32,6 +28,9 @@ from merit.project.replacement import (
 from merit.project.project_request import (
     encode_loaded_project_request,
 )
+
+if TYPE_CHECKING:
+    from merit.project.loader import LoadedProject
 
 DRIVER_PROTOCOL = "merit-project-request-v1/resolved-source-function-bundle-v3"
 # Bounded per-unit ceiling, not evidence of acceptable compiler throughput.
@@ -138,6 +137,11 @@ def _run_driver(
         raise ReplacementProjectError(
             f"replacement driver emitted no bundle for project {project_name!r}"
         )
+    from merit.bootstrap.resolved_source_function_bundle import (
+        ResolvedSourceFunctionBundleError,
+        decode_resolved_source_function_bundle,
+    )
+
     try:
         bundle = decode_resolved_source_function_bundle(values)
     except ResolvedSourceFunctionBundleError as exc:

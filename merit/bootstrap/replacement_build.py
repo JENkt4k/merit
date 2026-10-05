@@ -19,14 +19,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Iterable, Mapping
+from typing import TYPE_CHECKING, Iterable, Mapping
 
-from merit.bootstrap.mir_contract import MirModule, MirType
-from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
-from merit.bootstrap.resolved_source_function_snapshot import (
-    decode_resolved_source_function_snapshot,
-    materialize_resolved_source_function_snapshot,
-)
+if TYPE_CHECKING:
+    from merit.bootstrap.mir_contract import MirModule, MirType
 
 
 class ReplacementBuildError(RuntimeError):
@@ -55,6 +51,12 @@ def build_replacement_artifact(
     The source is used only for source-span/provenance reconstruction; every
     semantic decision must already be represented by ``snapshot_values``.
     """
+
+    from merit.bootstrap.mir_to_c import emit_c_module
+    from merit.bootstrap.resolved_source_function_snapshot import (
+        decode_resolved_source_function_snapshot,
+        materialize_resolved_source_function_snapshot,
+    )
 
     snapshot = decode_resolved_source_function_snapshot(snapshot_values)
     module = materialize_resolved_source_function_snapshot(
@@ -148,6 +150,8 @@ def compile_replacement_shared_artifact(
             raise ReplacementBuildError(
                 "replacement shared artifact has neither a native header nor canonical MIR"
             )
+        from merit.bootstrap.mir_to_c import emit_c_header
+
         header_source = emit_c_header(artifact.module, exported_names=header_exports)
     header_path.write_text(header_source, encoding="utf-8", newline="\n")
     command = [

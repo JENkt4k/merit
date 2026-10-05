@@ -12,22 +12,21 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
-from merit.bootstrap.mir_contract import MirType
-from merit.bootstrap.resolved_source_function_snapshot import (
-    decode_resolved_source_function_snapshot,
-)
 from merit.bootstrap.replacement_build import (
     ReplacementBuildArtifact,
     ReplacementBuildError,
     compile_replacement_artifact,
     compile_replacement_shared_artifact,
 )
-from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
-from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.project_request import encode_loaded_project_request
+
+if TYPE_CHECKING:
+    from merit.bootstrap.mir_contract import MirType
+    from merit.bootstrap.replacement_project import ReplacementFunctionInput
+    from merit.project.loader import LoadedProject
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
@@ -114,6 +113,8 @@ def _load_native_project_artifact(
 
 
 def _type_names(raw: object) -> Mapping[int, MirType] | None:
+    from merit.bootstrap.mir_contract import MirType
+
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -173,6 +174,8 @@ def _validate_bundle_indices(functions: list[object]) -> None:
 
 def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -> tuple[ReplacementFunctionInput, ...]:
     """Load native-produced replacement snapshots without semantic fallback."""
+
+    from merit.bootstrap.replacement_project import ReplacementFunctionInput
 
     manifest_path = project.manifest.root / ".merit" / REPLACEMENT_MANIFEST
     if not manifest_path.is_file():
@@ -259,6 +262,10 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
         materialization_source = source
         if payload.get("producer_protocol") == REPLACEMENT_BUNDLE_PROTOCOL:
             try:
+                from merit.bootstrap.resolved_source_function_snapshot import (
+                    decode_resolved_source_function_snapshot,
+                )
+
                 decoded_snapshot = decode_resolved_source_function_snapshot(snapshot_values)
                 if decoded_snapshot.effective_source_bytes:
                     materialization_source = bytes(
@@ -288,6 +295,8 @@ def build_replacement_project(project: LoadedProject | ReplacementLoadedProject,
 
     artifact = _load_native_project_artifact(project)
     if artifact is None:
+        from merit.bootstrap.replacement_project import build_replacement_project_artifact
+
         inputs = load_replacement_inputs(project)
         artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     if project.manifest.executable_adapter is not None:
@@ -325,6 +334,8 @@ def build_replacement_shared(
 
     artifact = _load_native_project_artifact(project)
     if artifact is None:
+        from merit.bootstrap.replacement_project import build_replacement_project_artifact
+
         inputs = load_replacement_inputs(project)
         artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     c_path, header_path, library = compile_replacement_shared_artifact(
