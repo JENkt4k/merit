@@ -946,13 +946,19 @@ requires_caps [allocate]
             if(function_mir_type_code(record)==function_mir_byte_slice_type_code()){
                 canonical_c_require_feature(canonical_c_slice_feature(),features);
             }
+            if(function_mir_type_code(record)==function_mir_buffer_type_code()){
+                if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 10;}
+                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+            }
             if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                 if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
                         if(function_mir_type_code(record)!=function_mir_string_type_code()){
                             if(function_mir_type_code(record)!=function_mir_allocator_type_code()){
                                 if(function_mir_type_code(record)!=function_mir_u8_type_code()){
-                                    if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){return 10;}
+                                    if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){
+                                        if(function_mir_type_code(record)!=function_mir_buffer_type_code()){return 10;}
+                                    }
                                 }
                             }
                         }
@@ -972,13 +978,19 @@ requires_caps [allocate]
                 if(function_mir_type_code(record)==function_mir_byte_slice_type_code()){
                     canonical_c_require_feature(canonical_c_slice_feature(),features);
                 }
+                if(function_mir_type_code(record)==function_mir_buffer_type_code()){
+                    if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 12;}
+                    canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                }
                 if(function_mir_type_code(record)!=function_mir_i64_type_code()){
                     if(function_mir_type_code(record)!=function_mir_bool_type_code()){
                         if(function_mir_type_code(record)!=function_mir_i32_type_code()){
                             if(function_mir_type_code(record)!=function_mir_string_type_code()){
                                 if(function_mir_type_code(record)!=function_mir_allocator_type_code()){
                                     if(function_mir_type_code(record)!=function_mir_u8_type_code()){
-                                        if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){return 12;}
+                                        if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){
+                                            if(function_mir_type_code(record)!=function_mir_buffer_type_code()){return 12;}
+                                        }
                                     }
                                 }
                             }
@@ -1011,7 +1023,9 @@ requires_caps [allocate]
                                                     if(function_mir_type_code(record)!=function_mir_string_type_code()){
                                                     if(function_mir_type_code(record)!=function_mir_allocator_type_code()){
                                                         if(function_mir_type_code(record)!=function_mir_u8_type_code()){
-                                                            if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){return 61;}
+                                                            if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){
+                                                                if(function_mir_type_code(record)!=function_mir_buffer_type_code()){return 61;}
+                                                            }
                                                         }
                                                     }
                                                     }
@@ -1129,7 +1143,9 @@ requires_caps [allocate]
             canonical_mir_append_text(bodies," = {0};\n");
         }else{if(initialized_type==function_mir_byte_slice_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
-        }else{canonical_mir_append_text(bodies," = 0;\n");}}}
+        }else{if(initialized_type==function_mir_buffer_type_code()){
+            canonical_mir_append_text(bodies," = {0};\n");
+        }else{canonical_mir_append_text(bodies," = 0;\n");}}}}
         local_id=checked_add(local_id,1);
     }
     canonical_mir_append_text(bodies,"    goto b0;\n");
@@ -1389,9 +1405,15 @@ requires_caps [allocate]
                             let string_byte_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"string_byte");
                             let slice_len_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"slice_len");
                             let slice_get_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"slice_get");
-                            if(system_builtin==0){if(portable_builtin==0){if(compatible_builtin==0){if(string_len_builtin==0){if(string_byte_builtin==0){if(slice_len_builtin==0){if(slice_get_builtin==0){return 65;}}}}}}}
+                            let buffer_new_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"buffer_new");
+                            if(system_builtin==0){if(portable_builtin==0){if(compatible_builtin==0){if(string_len_builtin==0){if(string_byte_builtin==0){if(slice_len_builtin==0){if(slice_get_builtin==0){if(buffer_new_builtin==0){return 65;}}}}}}}}
                             let expected_result_type:i32=canonical_c_scalar_local_type(records,function_mir_result(instruction));
-                            if(compatible_builtin!=0){
+                            if(buffer_new_builtin!=0){
+                                if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 66;}
+                                if(function_mir_type_code(instruction)!=function_mir_buffer_type_code()){return 66;}
+                                if(expected_result_type!=function_mir_buffer_type_code()){return 95;}
+                                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                            }else{if(compatible_builtin!=0){
                                 if(function_mir_type_code(instruction)!=function_mir_i32_type_code()){return 66;}
                                 if(expected_result_type!=function_mir_i32_type_code()){return 95;}
                             }else{if(string_byte_builtin!=0){
@@ -1407,7 +1429,7 @@ requires_caps [allocate]
                             }else{
                                 if(function_mir_type_code(instruction)!=function_mir_allocator_type_code()){return 66;}
                                 if(expected_result_type!=function_mir_allocator_type_code()){return 95;}
-                            }}}}}
+                            }}}}}}
                             if(function_mir_numeric_policy(instruction)!=function_mir_mode_value()){return 66;}
                             var builtin_operand_count:i64=0;
                             if(compatible_builtin!=0){builtin_operand_count=2;}
@@ -1415,6 +1437,7 @@ requires_caps [allocate]
                             if(string_byte_builtin!=0){builtin_operand_count=2;}
                             if(slice_len_builtin!=0){builtin_operand_count=1;}
                             if(slice_get_builtin!=0){builtin_operand_count=2;}
+                            if(buffer_new_builtin!=0){builtin_operand_count=2;}
                             var builtin_operand_ordinal:i64=0;
                             if(builtin_operand_count>0){
                                 while(builtin_operand_ordinal<builtin_operand_count){
@@ -1435,6 +1458,9 @@ requires_caps [allocate]
                                                     if(slice_len_builtin!=0){builtin_expected_type=function_mir_byte_slice_type_code();}
                                                     if(slice_get_builtin!=0){
                                                         if(builtin_operand_ordinal==0){builtin_expected_type=function_mir_byte_slice_type_code();}
+                                                        if(builtin_operand_ordinal==1){builtin_expected_type=function_mir_i64_type_code();}
+                                                    }
+                                                    if(buffer_new_builtin!=0){
                                                         if(builtin_operand_ordinal==1){builtin_expected_type=function_mir_i64_type_code();}
                                                     }
                                                     if(canonical_c_scalar_local_type(records,function_mir_left(builtin_argument))!=builtin_expected_type){return 96;}
@@ -1470,6 +1496,7 @@ requires_caps [allocate]
                                 if(string_byte_builtin!=0){canonical_mir_append_text(bodies,"merit_string_byte(");}
                                 if(slice_len_builtin!=0){canonical_mir_append_text(bodies,"merit_slice_len(");}
                                 if(slice_get_builtin!=0){canonical_mir_append_text(bodies,"merit_slice_get(");}
+                                if(buffer_new_builtin!=0){canonical_mir_append_text(bodies,"merit_buffer_new(");}
                                 var compatible_ordinal:i64=0;
                                 while(compatible_ordinal<builtin_operand_count){
                                     var compatible_index:i64=1;var compatible_found:i32=0;

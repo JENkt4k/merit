@@ -3034,6 +3034,99 @@ def test_merit_placed_buffer_drop_c_backend_matches_python_oracle_bytes(tmp_path
     assert c_header == emit_c_header(module)
 
 
+CANONICAL_C_BUFFER_CONSTRUCTION_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+    'buffer_from_string(allocator,"consume")',
+    'buffer_from_string(allocator,"create buffer_new")',
+).replace(
+    'function_mir_callable_header(0,7,0,7,function_mir_unit_type_code(),function_mir_mode_value(),-1,1,0)',
+    'function_mir_callable_header(0,6,0,6,function_mir_unit_type_code(),function_mir_mode_value(),-1,2,0)',
+).replace(
+    'function_mir_parameter(0,7,0,function_mir_buffer_type_code(),0,0,function_mir_mode_value(),0)',
+    'function_mir_parameter(0,6,0,function_mir_allocator_type_code(),0,0,function_mir_mode_value(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,6,1,function_mir_i64_type_code(),1,0,function_mir_mode_value(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_buffer_type_code(),-1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(7,10,0,2,7,10,function_mir_buffer_type_code(),function_mir_mode_value(),-1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1)',
+).replace(
+    'vec_new<MirFunctionRecord>(allocator,2)', 'vec_new<MirFunctionRecord>(allocator,6)',
+).replace(
+    'vec_new<MirFunctionInstructionSource>(allocator,1)',
+    'vec_new<MirFunctionInstructionSource>(allocator,2);\n'
+    '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{\n'
+    '    global_id:0,source_kind:assembly_source_body_kind(),source_id:0,\n'
+    '    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),\n'
+    '    result:2,left:-1,right:-1\n'
+    '  })',
+).replace(
+    'global_id:0,source_kind:assembly_source_ownership_kind(),source_id:0',
+    'global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0',
+).replace(
+    'ownership_record_kind_drop(),0,0,ownership_record_no_other_binding_id(),0,0,',
+    'ownership_record_kind_drop(),1,2,ownership_record_no_other_binding_id(),2,0,',
+).replace('result:-1,left:0,right:-1', 'result:-1,left:2,right:-1').replace(
+    'vec_new<MirPlacementRecord>(allocator,1)', 'vec_new<MirPlacementRecord>(allocator,2)',
+).replace(
+    'vec_push<MirPlacementRecord>(placements,mir_place(0,0,0))',
+    'vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));\n'
+    '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1))',
+)
+
+
+def test_merit_placed_buffer_construction_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_CONSTRUCTION_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-construction")
+    values = [int(value) for value in subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "create", MirType("unit"), (
+            MirLocal(0, "allocator", MirType("Allocator")),
+            MirLocal(1, "capacity", MirType("i64")),
+            MirLocal(2, "buffer", MirType("Buffer"), ownership="owned"),
+        ), (MirBlock(0, (
+            MirInstruction(0, "call", result=2, operands=(0, 1), symbol="buffer_new"),
+            MirInstruction(1, "drop", operands=(2,), ownership="owned"),
+        ), MirTerminator("return")),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_BUFFER_CONSTRUCTION_PROBE.replace(
+            'function_mir_call_argument(0,1,function_mir_mode_value(),1)',
+            'function_mir_call_argument(0,0,function_mir_mode_value(),1)',
+        ), 96),
+        (CANONICAL_C_BUFFER_CONSTRUCTION_PROBE.replace(
+            'function_mir_call(7,10,0,2,7,10,function_mir_buffer_type_code()',
+            'function_mir_call(7,10,0,2,7,10,function_mir_allocator_type_code()',
+        ), 66),
+        (CANONICAL_C_BUFFER_CONSTRUCTION_PROBE.replace(
+            'function_mir_call_argument(0,1,function_mir_mode_value(),1)',
+            'function_mir_call_argument(0,1,function_mir_mode_value(),2)',
+        ), 69),
+    ],
+)
+def test_merit_placed_buffer_construction_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-construction-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
 def test_merit_placed_buffer_drop_generated_c_executes_once(tmp_path: Path) -> None:
     root = _project(tmp_path, CANONICAL_C_RESOURCE_FUNCTION_PROBE)
     project = load_project(root / "Merit.toml")
