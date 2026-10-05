@@ -3445,6 +3445,174 @@ def test_merit_placed_bootstrap_buffer_append_fails_closed(
     assert native.stdout == ""
 
 
+CANONICAL_C_BUFFER_SLICE_PROBE = r'''module canonical_c_buffer_slice_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"read_slice buffer_from_string buffer_slice slice_get");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,19);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,10,0,10,function_mir_i64_type_code(),function_mir_mode_value(),-1,5,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,10,0,function_mir_allocator_type_code(),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,10,1,function_mir_string_type_code(),1,0,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,10,2,function_mir_i64_type_code(),2,0,function_mir_mode_value(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,10,3,function_mir_i64_type_code(),3,0,function_mir_mode_value(),3));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,10,4,function_mir_i64_type_code(),4,0,function_mir_mode_value(),4));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(5,function_mir_buffer_type_code(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(6,function_mir_byte_slice_type_code(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(7,function_mir_i64_type_code(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_call(11,18,0,5,11,18,function_mir_buffer_type_code(),function_mir_mode_value(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call(30,12,1,6,30,12,function_mir_byte_slice_type_code(),function_mir_mode_value(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,5,function_mir_mode_borrowed(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,2,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,3,function_mir_mode_value(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_call(43,9,2,7,43,9,function_mir_i64_type_code(),function_mir_mode_value(),-1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,6,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,4,function_mir_mode_value(),1));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,4);
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{global_id:0,source_kind:assembly_source_body_kind(),source_id:0,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),result:5,left:-1,right:-1});
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{global_id:1,source_kind:assembly_source_body_kind(),source_id:1,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),result:6,left:-1,right:-1});
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{global_id:2,source_kind:assembly_source_body_kind(),source_id:2,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),result:7,left:-1,right:-1});
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{global_id:3,source_kind:assembly_source_ownership_kind(),source_id:0,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),result:-1,left:5,right:-1});
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
+  vec_push<MirOwnershipRecord>(effects,ownership_record(ownership_record_kind_drop(),3,5,ownership_record_no_other_binding_id(),5,0,ownership_state_live(),ownership_state_dropped()));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,7));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,4);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));
+  vec_push<MirPlacementRecord>(placements,mir_place(0,3,3));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,2048);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_resource_function_with_catalog(source,records,headers,sources,effects,cfg,placements,prototypes,bodies,declarations,features);
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(200,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(300,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(effects);drop(sources);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
+
+def test_merit_placed_buffer_slice_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_SLICE_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-slice")
+    values = [int(value) for value in subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "read_slice", MirType("i64"), (
+            MirLocal(0, "allocator", MirType("Allocator")),
+            MirLocal(1, "input", MirType("String")),
+            MirLocal(2, "start", MirType("i64")),
+            MirLocal(3, "length", MirType("i64")),
+            MirLocal(4, "index", MirType("i64")),
+            MirLocal(5, "buffer", MirType("Buffer"), ownership="owned"),
+            MirLocal(6, "view", MirType("ByteSlice")),
+            MirLocal(7, "byte", MirType("i64")),
+        ), (MirBlock(0, (
+            MirInstruction(0, "call", result=5, operands=(0, 1), symbol="buffer_from_string"),
+            MirInstruction(1, "call", result=6, operands=(5, 2, 3), symbol="buffer_slice"),
+            MirInstruction(2, "call", result=7, operands=(6, 4), symbol="slice_get"),
+            MirInstruction(3, "drop", operands=(5,), ownership="owned"),
+        ), MirTerminator("return", operands=(7,))),), 0,
+        parameters=(MirParameter(0), MirParameter(1), MirParameter(2),
+                    MirParameter(3), MirParameter(4)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_placed_buffer_slice_generated_c_reads_view(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_SLICE_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-buffer-slice-emitter")
+    values = [int(value) for value in subprocess.run(
+        [str(emitter)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "placed_buffer_slice.c"
+    driver_c = tmp_path / "placed_buffer_slice_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "placed_buffer_slice.c"\n'
+        'int main(void) { merit_String input = { (const uint8_t *)"abcd", 4 }; '
+        'return read_slice(merit_system_allocator(), input, 1, 2, 1) == 99 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "placed-buffer-slice-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_BUFFER_SLICE_PROBE.replace(
+            'function_mir_call_argument(1,5,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,5,function_mir_mode_value(),0)',
+        ), 68),
+        (CANONICAL_C_BUFFER_SLICE_PROBE.replace(
+            'function_mir_call_argument(1,5,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,1,function_mir_mode_borrowed(),0)',
+        ), 96),
+        (CANONICAL_C_BUFFER_SLICE_PROBE.replace(
+            'function_mir_call_argument(1,2,function_mir_mode_value(),1)',
+            'function_mir_call_argument(1,1,function_mir_mode_value(),1)',
+        ), 96),
+        (CANONICAL_C_BUFFER_SLICE_PROBE.replace(
+            'function_mir_call(30,12,1,6,30,12,function_mir_byte_slice_type_code()',
+            'function_mir_call(30,12,1,6,30,12,function_mir_i64_type_code()',
+        ), 66),
+        (CANONICAL_C_BUFFER_SLICE_PROBE.replace(
+            'function_mir_call_argument(1,3,function_mir_mode_value(),2)',
+            'function_mir_call_argument(1,3,function_mir_mode_value(),3)',
+        ), 69),
+    ],
+    ids=["receiver-mode", "receiver-type", "start-type", "result-type", "length-ordinal"],
+)
+def test_merit_placed_buffer_slice_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-slice-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
 @pytest.mark.parametrize(
     ("probe", "status"),
     [
