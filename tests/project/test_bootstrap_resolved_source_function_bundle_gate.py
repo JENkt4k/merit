@@ -245,6 +245,39 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_VECTOR_RECORD_CATALOG_PROBE = r'''module canonical_c_vector_record_catalog_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var first:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(first,function_mir_header(0,1,0,1,function_mir_vector_type_code(0)));
+  vec_push<MirFunctionRecord>(first,function_mir_temporary(0,function_mir_vector_type_code(0),0));
+  vec_push<MirFunctionRecord>(first,function_mir_temporary(1,function_mir_i64_type_code(),1));
+  var second:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(second,function_mir_header(0,1,0,1,function_mir_unit_type_code()));
+  vec_push<MirFunctionRecord>(second,function_mir_parameter(0,1,0,function_mir_vector_type_code(1),0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(second,function_mir_source_local(0,1,1,function_mir_vector_type_code(0),1,0));
+  var catalog:Vec<i32>=vec_new<i32>(allocator,0);
+  print(canonical_c_collect_vector_types_from_records(first,catalog));
+  print(canonical_c_collect_vector_types_from_records(second,catalog));
+  print(vec_len<i32>(catalog));
+  print(vec_get<i32>(catalog,0)==function_mir_vector_type_code(0));
+  print(vec_get<i32>(catalog,1)==function_mir_vector_type_code(1));
+  var invalid:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(invalid,function_mir_temporary(0,function_mir_vector_type_code(2),0));
+  vec_push<MirFunctionRecord>(invalid,function_mir_temporary(1,function_mir_vector_type_code(2),1));
+  print(canonical_c_collect_vector_types_from_records(invalid,catalog));
+  print(vec_len<i32>(catalog));
+  drop(invalid);
+  drop(catalog);drop(second);drop(first);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -2115,9 +2148,22 @@ def test_merit_copy_vector_module_compiles_and_executes(tmp_path: Path) -> None:
     subprocess.run([str(program)], check=True, capture_output=True)
 
 
+def test_merit_vector_catalog_collects_module_local_types_without_duplicates(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_VECTOR_RECORD_CATALOG_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "vector-record-catalog")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    assert [int(line) for line in native.splitlines()] == [
+        0, 0, 2, 1, 1, 2, 2,
+    ]
+
+
 @pytest.mark.parametrize('reverse_catalog', [False, True])
+@pytest.mark.parametrize('catalog_from_records', [False, True])
 def test_merit_two_copy_vector_module_matches_oracle_order_and_executes(
-    tmp_path: Path, reverse_catalog: bool,
+    tmp_path: Path, reverse_catalog: bool, catalog_from_records: bool,
 ) -> None:
     probe = CANONICAL_C_TWO_VECTOR_MODULE_PROBE
     if reverse_catalog:
@@ -2127,6 +2173,19 @@ def test_merit_two_copy_vector_module_matches_oracle_order_and_executes(
             'vec_push<i32>(vector_types,function_mir_vector_type_code(1));\n'
             '  vec_push<i32>(vector_types,function_mir_vector_type_code(0));',
         )
+    if catalog_from_records:
+        first = probe.index('  vec_push<i32>(vector_types,function_mir_vector_type_code(')
+        last = probe.index('  var features:Vec<i64>', first)
+        probe = probe[:first] + '''  var first_records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(first_records,function_mir_header(0,1,0,1,function_mir_vector_type_code(0)));
+  vec_push<MirFunctionRecord>(first_records,function_mir_temporary(0,function_mir_vector_type_code(0),0));
+  var second_records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(second_records,function_mir_header(0,1,0,1,function_mir_unit_type_code()));
+  vec_push<MirFunctionRecord>(second_records,function_mir_parameter(0,1,0,function_mir_vector_type_code(1),0,0,function_mir_mode_value(),0));
+  if(canonical_c_collect_vector_types_from_records(first_records,vector_types)!=0){return 1;}
+  if(canonical_c_collect_vector_types_from_records(second_records,vector_types)!=0){return 2;}
+  drop(second_records);drop(first_records);
+''' + probe[last:]
     root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
     interpreted = interpret(project)
