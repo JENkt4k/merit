@@ -568,6 +568,11 @@ fn canonical_c_text_feature()->i64{return 10;}
 fn canonical_c_public_string_feature()->i64{return 11;}
 fn canonical_c_buffer_runtime_feature()->i64{return 12;}
 fn canonical_c_slice_feature()->i64{return 13;}
+fn canonical_c_vector_get_operation()->i32{return 1;}
+fn canonical_c_vector_set_operation()->i32{return 2;}
+fn canonical_c_vector_replace_operation()->i32{return 3;}
+fn canonical_c_vector_pop_operation()->i32{return 4;}
+fn canonical_c_vector_allocator_operation()->i32{return 5;}
 
 fn canonical_c_source_name_equals(borrow source:Buffer,start:i64,length:i64,name:String)->i32
 requires_caps [allocate]
@@ -1155,6 +1160,127 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"(&m");canonical_mir_append_i64(output,receiver_local);
     canonical_mir_append_text(output,", m");canonical_mir_append_i64(output,element_local);
     canonical_mir_append_text(output,");\n");
+    drop(vector_name);
+    return 0;
+}
+
+fn canonical_c_append_copy_vector_operation_call(
+    operation:i32,borrow instruction:MirFunctionRecord,borrow records:Vec<MirFunctionRecord>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_numeric_policy(instruction)!=function_mir_mode_value()){return 66;}
+    var expected_count:i64=1;
+    if(operation==canonical_c_vector_get_operation()){expected_count=2;}
+    if(operation==canonical_c_vector_set_operation()){expected_count=3;}
+    if(operation==canonical_c_vector_replace_operation()){expected_count=3;}
+    var receiver_local:i64=-1;var index_local:i64=-1;var element_local:i64=-1;
+    var argument_count:i64=0;var index:i64=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+            if(function_mir_id(argument)==function_mir_id(instruction)){
+                let ordinal:i64=function_mir_ordinal(argument);
+                if(ordinal<0){return 68;}
+                if(ordinal>=expected_count){return 68;}
+                var required_mode:i32=function_mir_mode_value();
+                if(ordinal==0){
+                    required_mode=function_mir_mode_borrowed();
+                    if(operation==canonical_c_vector_set_operation()){required_mode=function_mir_mode_mutable_borrow();}
+                    if(operation==canonical_c_vector_replace_operation()){required_mode=function_mir_mode_mutable_borrow();}
+                    if(operation==canonical_c_vector_pop_operation()){required_mode=function_mir_mode_mutable_borrow();}
+                }
+                if(function_mir_symbol_code(argument)!=required_mode){return 68;}
+                if(ordinal==0){receiver_local=function_mir_left(argument);}
+                if(ordinal==1){
+                    if(operation==canonical_c_vector_pop_operation()){return 68;}
+                    if(operation==canonical_c_vector_allocator_operation()){return 68;}
+                    index_local=function_mir_left(argument);
+                }
+                if(ordinal==2){element_local=function_mir_left(argument);}
+                argument_count=checked_add(argument_count,1);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(argument_count!=expected_count){return 70;}
+    let vector_type:i32=canonical_c_scalar_local_type(records,receiver_local);
+    if(vector_type<function_mir_vector_type_code(0)){return 96;}
+    let allocator:Allocator=system_allocator();
+    var vector_name:Buffer=buffer_new(allocator,64);
+    if(canonical_c_append_vector_type_name(vector_type,descriptors,vector_name)!=0){return 96;}
+    var element_type:i32=function_mir_unresolved_type_code();
+    index=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        if(function_mir_type_descriptor_code(descriptor)==vector_type){
+            element_type=function_mir_type_descriptor_child(descriptor);
+        }
+        index=checked_add(index,1);
+    }
+    if(function_mir_type_uses_ownership_transfer(element_type)!=0){return 96;}
+    if(operation==canonical_c_vector_get_operation()){
+        if(canonical_c_scalar_local_type(records,index_local)!=function_mir_i64_type_code()){return 96;}
+    }
+    if(operation==canonical_c_vector_set_operation()){
+        if(canonical_c_scalar_local_type(records,index_local)!=function_mir_i64_type_code()){return 96;}
+        if(canonical_c_scalar_local_type(records,element_local)!=element_type){return 96;}
+    }
+    if(operation==canonical_c_vector_replace_operation()){
+        if(canonical_c_scalar_local_type(records,index_local)!=function_mir_i64_type_code()){return 96;}
+        if(canonical_c_scalar_local_type(records,element_local)!=element_type){return 96;}
+    }
+    let result_local:i64=function_mir_result(instruction);
+    var expected_result:i32=element_type;
+    if(operation==canonical_c_vector_allocator_operation()){
+        expected_result=function_mir_allocator_type_code();
+    }
+    if(operation==canonical_c_vector_set_operation()){
+        expected_result=function_mir_unit_type_code();
+    }
+    if(operation==canonical_c_vector_replace_operation()){
+        expected_result=function_mir_unit_type_code();
+    }
+    if(function_mir_type_code(instruction)!=expected_result){return 66;}
+    if(expected_result==function_mir_unit_type_code()){
+        if(result_local!=-1){return 66;}
+    }else{
+        if(result_local<0){return 66;}
+        if(canonical_c_scalar_local_type(records,result_local)!=expected_result){return 95;}
+    }
+    canonical_mir_append_text(output,"    ");
+    if(expected_result!=function_mir_unit_type_code()){
+        canonical_mir_append_text(output,"m");canonical_mir_append_i64(output,result_local);
+        canonical_mir_append_text(output," = ");
+    }
+    let prefix_length:i64=string_len("merit_Vec_");
+    var suffix:Buffer=buffer_new(allocator,64);
+    bootstrap_buffer_append(suffix,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
+    if(operation==canonical_c_vector_get_operation()){
+        canonical_c_append_vector_symbol(output,"get",suffix);
+    }
+    if(operation==canonical_c_vector_set_operation()){
+        canonical_c_append_vector_symbol(output,"set",suffix);
+    }
+    if(operation==canonical_c_vector_replace_operation()){
+        canonical_c_append_vector_symbol(output,"replace",suffix);
+    }
+    if(operation==canonical_c_vector_pop_operation()){
+        canonical_c_append_vector_symbol(output,"pop",suffix);
+    }
+    if(operation==canonical_c_vector_allocator_operation()){
+        canonical_c_append_vector_symbol(output,"allocator",suffix);
+    }
+    canonical_mir_append_text(output,"(&m");canonical_mir_append_i64(output,receiver_local);
+    if(expected_count>1){
+        canonical_mir_append_text(output,", m");canonical_mir_append_i64(output,index_local);
+    }
+    if(expected_count>2){
+        canonical_mir_append_text(output,", m");canonical_mir_append_i64(output,element_local);
+    }
+    canonical_mir_append_text(output,");\n");
+    drop(suffix);
     drop(vector_name);
     return 0;
 }
@@ -1839,6 +1965,29 @@ requires_caps [allocate]
                             candidate_index=checked_add(candidate_index,1);
                         }
                         if(callee_found==0){
+                            var copy_vector_operation:i32=0;
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_get"
+                            )!=0){copy_vector_operation=canonical_c_vector_get_operation();}
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_set"
+                            )!=0){copy_vector_operation=canonical_c_vector_set_operation();}
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_replace"
+                            )!=0){copy_vector_operation=canonical_c_vector_replace_operation();}
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_pop"
+                            )!=0){copy_vector_operation=canonical_c_vector_pop_operation();}
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_allocator"
+                            )!=0){copy_vector_operation=canonical_c_vector_allocator_operation();}
+                            if(copy_vector_operation!=0){
+                                let vector_call_status:i32=canonical_c_append_copy_vector_operation_call(
+                                    copy_vector_operation,instruction,records,type_descriptors,bodies
+                                );
+                                if(vector_call_status!=0){return vector_call_status;}
+                                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                            }else{
                             if(canonical_c_source_vector_call_name(
                                 source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_new"
                             )!=0){
@@ -2093,7 +2242,7 @@ requires_caps [allocate]
                                 canonical_mir_append_text(bodies,");\n");
                             }else{canonical_mir_append_text(bodies,"();\n");}
                             }
-                            }}
+                            }}}
                         }else{
                         if(function_mir_type_code(callee_header)!=function_mir_type_code(instruction)){return 66;}
                         if(function_mir_type_code(instruction)!=function_mir_unit_type_code()){

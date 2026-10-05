@@ -974,6 +974,52 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE = CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.replace(
+    'build_vecsystem_allocatorvec_new__i64vec_push__i64vec_len__i6417',
+    'build_vecsystem_allocatorvec_new__i64vec_push__i64vec_len__i64'
+    'vec_set__i64vec_replace__i64vec_get__i64vec_pop__i64vec_allocator__i6407',
+).replace(
+    'vec_new<MirFunctionRecord>(allocator,16)', 'vec_new<MirFunctionRecord>(allocator,32)',
+).replace(
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(4,function_mir_i64_type_code(),4));',
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(4,function_mir_i64_type_code(),4));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(5,function_mir_i64_type_code(),5));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(6,function_mir_i64_type_code(),6));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(7,function_mir_allocator_type_code(),7));',
+).replace(
+    'function_mir_const(62,1,1,1', 'function_mir_const(132,1,1,1',
+).replace(
+    'function_mir_const(63,1,3,3', 'function_mir_const(133,1,3,3',
+).replace(
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(5,2,function_mir_mode_borrowed(),0));',
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(5,2,function_mir_mode_borrowed(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(62,12,6,-1,62,12,function_mir_unit_type_code(),function_mir_mode_value(),6));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(6,2,function_mir_mode_mutable_borrow(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(6,1,function_mir_mode_value(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(6,3,function_mir_mode_value(),2));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(74,16,7,-1,74,16,function_mir_unit_type_code(),function_mir_mode_value(),7));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(7,2,function_mir_mode_mutable_borrow(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(7,1,function_mir_mode_value(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(7,3,function_mir_mode_value(),2));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(90,12,8,5,90,12,function_mir_i64_type_code(),function_mir_mode_value(),8));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(8,2,function_mir_mode_borrowed(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(8,1,function_mir_mode_value(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(102,12,9,6,102,12,function_mir_i64_type_code(),function_mir_mode_value(),9));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(9,2,function_mir_mode_mutable_borrow(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(114,18,10,7,114,18,function_mir_allocator_type_code(),function_mir_mode_value(),10));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(10,2,function_mir_mode_borrowed(),0));',
+).replace(
+    'vec_new<MirFunctionInstructionSource>(allocator,7)',
+    'vec_new<MirFunctionInstructionSource>(allocator,12)',
+).replace('while(source_id<6)', 'while(source_id<11)').replace(
+    'global_id:6,source_kind:assembly_source_ownership_kind()',
+    'global_id:11,source_kind:assembly_source_ownership_kind()',
+).replace(
+    'ownership_record_kind_drop(),6,2,', 'ownership_record_kind_drop(),11,2,',
+).replace('cfg_return(0,4)', 'cfg_return(0,6)').replace(
+    'vec_new<MirPlacementRecord>(allocator,7)', 'vec_new<MirPlacementRecord>(allocator,12)',
+).replace('while(placement_id<7)', 'while(placement_id<12)')
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -3668,6 +3714,109 @@ def test_merit_vector_new_push_len_and_drop_match_python_oracle_bytes(
     subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize('element_type', ['i64', 'i32'])
+def test_merit_copy_vector_operations_match_python_oracle_bytes(
+    tmp_path: Path, element_type: str,
+) -> None:
+    probe = CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE
+    if element_type == 'i32':
+        probe = probe.replace('__i64', '__i32')
+        probe = probe.replace(
+            'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i64_type_code()',
+            'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i32_type_code()',
+        )
+        probe = probe.replace('function_mir_callable_header(0,9,0,9,function_mir_i64_type_code()',
+                              'function_mir_callable_header(0,9,0,9,function_mir_i32_type_code()')
+        for local_id in (3, 5, 6):
+            probe = probe.replace(
+                f'function_mir_temporary({local_id},function_mir_i64_type_code(),{local_id})',
+                f'function_mir_temporary({local_id},function_mir_i32_type_code(),{local_id})',
+            )
+        probe = probe.replace('function_mir_const(133,1,3,3,function_mir_i64_type_code(),3)',
+                              'function_mir_const(133,1,3,3,function_mir_i32_type_code(),3)')
+        probe = probe.replace('function_mir_call(90,12,8,5,90,12,function_mir_i64_type_code()',
+                              'function_mir_call(90,12,8,5,90,12,function_mir_i32_type_code()')
+        probe = probe.replace('function_mir_call(102,12,9,6,102,12,function_mir_i64_type_code()',
+                              'function_mir_call(102,12,9,6,102,12,function_mir_i32_type_code()')
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'canonical-vector-operations')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType(element_type),))
+    module = MirModule('demo', (MirFunction(
+        'build_vec', MirType(element_type), (
+            MirLocal(0, '_t0', MirType('Allocator')),
+            MirLocal(1, '_t1', MirType('i64')),
+            MirLocal(2, '_t2', vector_type, ownership='owned'),
+            MirLocal(3, '_t3', MirType(element_type)),
+            MirLocal(4, '_t4', MirType('i64')),
+            MirLocal(5, '_t5', MirType(element_type)),
+            MirLocal(6, '_t6', MirType(element_type)),
+            MirLocal(7, '_t7', MirType('Allocator')),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'call', result=0, symbol='system_allocator'),
+            MirInstruction(1, 'const', result=1, value=0),
+            MirInstruction(2, 'call', result=2, operands=(0, 1), symbol=f'vec_new__{element_type}'),
+            MirInstruction(3, 'const', result=3, value=7),
+            MirInstruction(4, 'call', operands=(2, 3), symbol=f'vec_push__{element_type}'),
+            MirInstruction(5, 'call', result=4, operands=(2,), symbol=f'vec_len__{element_type}'),
+            MirInstruction(6, 'call', operands=(2, 1, 3), symbol=f'vec_set__{element_type}'),
+            MirInstruction(7, 'call', operands=(2, 1, 3), symbol=f'vec_replace__{element_type}'),
+            MirInstruction(8, 'call', result=5, operands=(2, 1), symbol=f'vec_get__{element_type}'),
+            MirInstruction(9, 'call', result=6, operands=(2,), symbol=f'vec_pop__{element_type}'),
+            MirInstruction(10, 'call', result=7, operands=(2,), symbol=f'vec_allocator__{element_type}'),
+            MirInstruction(11, 'drop', operands=(2,), ownership='owned'),
+        ), MirTerminator('return', operands=(6,))),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'vector_operations.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'vector_operations_driver.c'
+    driver.write_text('#include "vector_operations.c"\nint main(void) { return build_vec() == 7 ? 0 : 1; }\n',
+                      encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'vector-operations-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(('probe', 'status'), [
+    (CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE.replace(
+        'function_mir_call_argument(8,2,function_mir_mode_borrowed(),0)',
+        'function_mir_call_argument(8,2,function_mir_mode_value(),0)',
+    ), 68),
+    (CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE.replace(
+        'function_mir_call_argument(9,2,function_mir_mode_mutable_borrow(),0)',
+        'function_mir_call_argument(9,2,function_mir_mode_borrowed(),0)',
+    ), 68),
+    (CANONICAL_C_VECTOR_COPY_OPERATIONS_PROBE.replace(
+        'function_mir_temporary(7,function_mir_allocator_type_code(),7)',
+        'function_mir_temporary(7,function_mir_i64_type_code(),7)',
+    ), 95),
+])
+def test_merit_copy_vector_operations_reject_invalid_call_contract(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'invalid-vector-operation')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ''
 
 
 @pytest.mark.parametrize(('probe', 'status'), [
