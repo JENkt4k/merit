@@ -249,18 +249,20 @@ def prepare_replacement_artifacts(
                 "replacement driver response has non-UTF-8 native project artifacts"
             ) from exc
         artifact_payloads = {
-            "canonical_mir": ("replacement-project.mir.json", bundle.canonical_mir_bytes),
-            "c_source": ("replacement-project.c", bundle.c_source_bytes),
-            "c_header": ("replacement-project.h", bundle.c_header_bytes),
+            "canonical_mir": ("mir.json", bundle.canonical_mir_bytes),
+            "c_source": ("c", bundle.c_source_bytes),
+            "c_header": ("h", bundle.c_header_bytes),
         }
         native_artifacts = {}
-        for label, (filename, content) in artifact_payloads.items():
+        for label, (extension, content) in artifact_payloads.items():
+            digest = hashlib.sha256(content).hexdigest()
+            filename = f"replacement-project-{digest}.{extension}"
             path = artifact_dir / filename
             _atomic_write_bytes(path, content)
             project_artifact_paths.append(path)
             native_artifacts[label] = {
                 "path": filename,
-                "sha256": hashlib.sha256(content).hexdigest(),
+                "sha256": digest,
             }
         producer_protocol = REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
 
@@ -274,9 +276,9 @@ def prepare_replacement_artifacts(
         payload["native_artifacts"] = native_artifacts
     manifest_path = artifact_dir / REPLACEMENT_MANIFEST
 
-    # Publish snapshots first and the manifest last. Readers either see the old
-    # complete generation or the new complete generation; the manifest is the
-    # commit point for a prepared replacement build.
+    # V4 artifacts have content-addressed paths, so old manifests remain valid
+    # while the next generation is written. The manifest is published last.
+    # The legacy snapshot path retains its historical fixed-name publication.
     for path, content in staged:
         _atomic_write_text(path, content)
     _atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")

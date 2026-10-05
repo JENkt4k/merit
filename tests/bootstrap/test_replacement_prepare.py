@@ -161,7 +161,9 @@ def _multimodule_driver(tmp_path: Path) -> Path:
     return _python_driver(tmp_path, "multimodule-replacement-driver", body)
 
 
-def _native_artifact_driver(tmp_path: Path) -> Path:
+def _native_artifact_driver(
+    tmp_path: Path, *, c_source: bytes = b"int32_t merit_main(void) { return 0; }\n"
+) -> Path:
     source = b"module main\nfn main()->i32 { return 0; }\n"
     snapshot = (
         SNAPSHOT_MAGIC,
@@ -174,7 +176,7 @@ def _native_artifact_driver(tmp_path: Path) -> Path:
         (snapshot,),
         module_name="main",
         canonical_mir=b'{"schema":"bootstrap-mir-v1"}\n',
-        c_source=b"int32_t merit_main(void) { return 0; }\n",
+        c_source=c_source,
         c_header=b"int32_t merit_main(void);\n",
     )
     return _python_driver(
@@ -215,10 +217,8 @@ def test_prepare_replacement_publishes_native_backend_artifacts_with_digests(
         project, NativeReplacementDriver(_native_artifact_driver(tmp_path))
     )
 
-    assert [path.name for path in prepared.project_artifact_paths] == [
-        "replacement-project.mir.json",
-        "replacement-project.c",
-        "replacement-project.h",
+    assert [path.suffix for path in prepared.project_artifact_paths] == [
+        ".json", ".c", ".h",
     ]
     assert prepared.snapshot_paths == ()
     assert not (root / ".merit" / "replacement-project.source").exists()
@@ -229,6 +229,26 @@ def test_prepare_replacement_publishes_native_backend_artifacts_with_digests(
         content = (root / ".merit" / metadata["path"]).read_bytes()
         assert content
         assert metadata["sha256"] == hashlib.sha256(content).hexdigest(), label
+        assert metadata["sha256"] in metadata["path"]
+
+
+def test_v4_republication_preserves_old_manifest_artifacts(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    driver = NativeReplacementDriver(_native_artifact_driver(tmp_path))
+    first = prepare_replacement_artifacts(project, driver)
+    old_manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+
+    replacement_driver = NativeReplacementDriver(_native_artifact_driver(
+        tmp_path, c_source=b"int32_t merit_main(void) { return 1; }\n"
+    ))
+    second = prepare_replacement_artifacts(project, replacement_driver)
+    new_manifest = json.loads(second.manifest_path.read_text(encoding="utf-8"))
+
+    assert old_manifest["native_artifacts"]["c_source"]["path"] != new_manifest["native_artifacts"]["c_source"]["path"]
+    for metadata in old_manifest["native_artifacts"].values():
+        content = (root / ".merit" / metadata["path"]).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == metadata["sha256"]
 
 
 def test_v4_preparation_never_imports_python_snapshot_semantics(tmp_path: Path) -> None:
