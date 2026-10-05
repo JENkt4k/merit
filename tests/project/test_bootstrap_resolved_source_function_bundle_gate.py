@@ -885,6 +885,95 @@ CANONICAL_C_VECTOR_LEN_FUNCTION_PROBE = CANONICAL_C_VECTOR_DROP_FUNCTION_PROBE.r
     '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
 )
 
+CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE = r'''module canonical_c_vector_build_function_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"build_vecsystem_allocatorvec_new__i64vec_push__i64vec_len__i6417");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,16);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,9,0,9,function_mir_i64_type_code(),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_allocator_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_vector_type_code(0),2));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(3,function_mir_i64_type_code(),3));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(4,function_mir_i64_type_code(),4));
+  vec_push<MirFunctionRecord>(records,function_mir_call(9,16,0,0,9,16,function_mir_allocator_type_code(),function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_const(62,1,1,1,function_mir_i64_type_code(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call(25,12,2,2,25,12,function_mir_vector_type_code(0),function_mir_mode_value(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,1,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_const(63,1,3,3,function_mir_i64_type_code(),3));
+  vec_push<MirFunctionRecord>(records,function_mir_call(37,13,4,-1,37,13,function_mir_unit_type_code(),function_mir_mode_value(),4));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(4,2,function_mir_mode_mutable_borrow(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(4,3,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call(50,12,5,4,50,12,function_mir_i64_type_code(),function_mir_mode_value(),5));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(5,2,function_mir_mode_borrowed(),0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,7);
+  var source_id:i64=0;
+  while(source_id<6){
+    vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+      global_id:source_id,source_kind:assembly_source_body_kind(),source_id:source_id,
+      contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+      result:-1,left:-1,right:-1
+    });
+    source_id=checked_add(source_id,1);
+  }
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+    global_id:6,source_kind:assembly_source_ownership_kind(),source_id:0,
+    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+    result:-1,left:2,right:-1
+  });
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
+  vec_push<MirOwnershipRecord>(effects,ownership_record(
+    ownership_record_kind_drop(),6,2,ownership_record_no_other_binding_id(),2,0,
+    ownership_state_live(),ownership_state_dropped()
+  ));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,4));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,7);
+  var placement_id:i64=0;
+  while(placement_id<7){
+    vec_push<MirPlacementRecord>(placements,mir_place(0,placement_id,placement_id));
+    placement_id=checked_add(placement_id,1);
+  }
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,1024);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,8192);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_resource_function_with_type_catalog(
+    source,records,headers,types,sources,effects,cfg,placements,prototypes,bodies,declarations,features
+  );
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_copy_vector_module(
+    prototypes,bodies,features,function_mir_vector_type_code(0),types,c_source
+  );
+  if(source_status!=0){return checked_add(200,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(300,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(effects);drop(sources);drop(types);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -3518,6 +3607,96 @@ def test_merit_placed_vector_len_c_backend_matches_python_oracle_bytes(tmp_path:
     subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize('element_type', ['i64', 'i32'])
+def test_merit_vector_new_push_len_and_drop_match_python_oracle_bytes(
+    tmp_path: Path, element_type: str,
+) -> None:
+    probe = CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE
+    if element_type == 'i32':
+        probe = probe.replace('vec_new__i64vec_push__i64vec_len__i64',
+                              'vec_new__i32vec_push__i32vec_len__i32')
+        probe = probe.replace('function_mir_temporary(3,function_mir_i64_type_code(),3)',
+                              'function_mir_temporary(3,function_mir_i32_type_code(),3)')
+        probe = probe.replace('function_mir_const(63,1,3,3,function_mir_i64_type_code(),3)',
+                              'function_mir_const(63,1,3,3,function_mir_i32_type_code(),3)')
+        probe = probe.replace(
+            'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i64_type_code()',
+            'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i32_type_code()',
+        )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'canonical-vector-build')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType(element_type),))
+    module = MirModule('demo', (MirFunction(
+        'build_vec', MirType('i64'), (
+            MirLocal(0, '_t0', MirType('Allocator')),
+            MirLocal(1, '_t1', MirType('i64')),
+            MirLocal(2, '_t2', vector_type, ownership='owned'),
+            MirLocal(3, '_t3', MirType(element_type)),
+            MirLocal(4, '_t4', MirType('i64')),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'call', result=0, symbol='system_allocator'),
+            MirInstruction(1, 'const', result=1, value=1),
+            MirInstruction(2, 'call', result=2, operands=(0, 1), symbol=f'vec_new__{element_type}'),
+            MirInstruction(3, 'const', result=3, value=7),
+            MirInstruction(4, 'call', operands=(2, 3), symbol=f'vec_push__{element_type}'),
+            MirInstruction(5, 'call', result=4, operands=(2,), symbol=f'vec_len__{element_type}'),
+            MirInstruction(6, 'drop', operands=(2,), ownership='owned'),
+        ), MirTerminator('return', operands=(4,))),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'vector_build.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'vector_build_driver.c'
+    driver.write_text('#include "vector_build.c"\nint main(void) { return build_vec() == 1 ? 0 : 1; }\n',
+                      encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'vector-build-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(('probe', 'status'), [
+    (CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.replace(
+        'function_mir_call_argument(2,0,function_mir_mode_value(),0)',
+        'function_mir_call_argument(2,0,function_mir_mode_borrowed(),0)',
+    ), 68),
+    (CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.replace(
+        'function_mir_call_argument(4,2,function_mir_mode_mutable_borrow(),0)',
+        'function_mir_call_argument(4,2,function_mir_mode_borrowed(),0)',
+    ), 68),
+    (CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.replace(
+        'function_mir_temporary(3,function_mir_i64_type_code(),3)',
+        'function_mir_temporary(3,function_mir_i32_type_code(),3)',
+    ).replace(
+        'function_mir_const(63,1,3,3,function_mir_i64_type_code(),3)',
+        'function_mir_const(63,1,3,3,function_mir_i32_type_code(),3)',
+    ), 96),
+])
+def test_merit_vector_new_push_backend_rejects_invalid_call_contract(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'invalid-vector-build')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ''
 
 
 @pytest.mark.parametrize(('probe', 'status'), [
