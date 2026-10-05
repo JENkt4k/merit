@@ -1473,6 +1473,9 @@ def emit_c_module(module: MirModule) -> str:
         for type_ in all_types
     )
     needs_text_runtime=any(type_.name in {"String","ByteSlice"} and not type_.arguments for type_ in all_types)
+    needs_slice_runtime = not needs_buffer_runtime and any(
+        type_.name == "ByteSlice" and not type_.arguments for type_ in all_types
+    )
     needs_decimal_runtime = any(_decimal_type(type_) is not None for type_ in all_types)
     filesystem_read_types: set[MirType] = set()
     filesystem_write_types: set[MirType] = set()
@@ -1554,6 +1557,14 @@ def emit_c_module(module: MirModule) -> str:
             "static inline void merit_buffer_drop(merit_Buffer *value) { free(value->data); value->data = NULL; value->len = 0; value->capacity = 0; }",
             "",
         ] if needs_buffer_runtime else []),
+        *([
+            "static inline int64_t merit_slice_len(merit_ByteSlice value) { return (int64_t)value.len; }",
+            "static inline int64_t merit_slice_get(merit_ByteSlice value, int64_t index) {",
+            '    if (index < 0 || (size_t)index >= value.len) { fprintf(stderr, "Merit slice index out of bounds\\n"); exit(85); }',
+            "    return (int64_t)value.data[index];",
+            "}",
+            "",
+        ] if needs_slice_runtime else []),
         *([
             "static void merit_print_u128(unsigned __int128 value) {",
             "    char digits[40]; int count = 0;",

@@ -594,6 +594,21 @@ CANONICAL_C_STRING_BYTE_PROBE = (
     .replace('cfg_return(0,1)', 'cfg_return(0,2)')
 )
 
+CANONICAL_C_SLICE_LEN_PROBE = (
+    CANONICAL_C_STRING_LEN_PROBE
+    .replace('"measure string_len"', '"measure slice_len"')
+    .replace('function_mir_string_type_code()', 'function_mir_byte_slice_type_code()')
+    .replace('function_mir_call(8,10,0,1,8,10,', 'function_mir_call(8,9,0,1,8,9,')
+)
+
+CANONICAL_C_SLICE_GET_PROBE = (
+    CANONICAL_C_STRING_BYTE_PROBE
+    .replace('string_byte', 'slice_get')
+    .replace('function_mir_string_type_code()', 'function_mir_byte_slice_type_code()')
+    .replace('function_mir_u8_type_code()', 'function_mir_i64_type_code()')
+    .replace('function_mir_call(5,11,0,2,5,11,', 'function_mir_call(5,9,0,2,5,9,')
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2821,6 +2836,87 @@ def test_merit_string_byte_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize(
+    ("probe", "name", "symbol", "parameter_types"),
+    [
+        (CANONICAL_C_SLICE_LEN_PROBE, "measure", "slice_len", ("ByteSlice",)),
+        (CANONICAL_C_SLICE_GET_PROBE, "byte", "slice_get", ("ByteSlice", "i64")),
+    ],
+)
+def test_merit_byte_slice_backend_matches_python_oracle_bytes(
+    tmp_path: Path, probe: str, name: str, symbol: str, parameter_types: tuple[str, ...],
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-c-byte-slice")
+    process = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == interpreted
+    values = [int(value) for value in process.stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    locals_ = tuple(MirLocal(index, f"argument_{index}", MirType(type_name))
+                    for index, type_name in enumerate(parameter_types))
+    result_id = len(parameter_types)
+    module = MirModule("demo", (MirFunction(
+        name, MirType("i64"), (*locals_, MirLocal(result_id, "result", MirType("i64"))),
+        (MirBlock(0, (MirInstruction(
+            0, "call", result=result_id, operands=tuple(range(result_id)), symbol=symbol,
+        ),), MirTerminator("return", operands=(result_id,))),), 0,
+        parameters=tuple(MirParameter(index) for index in range(result_id)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_byte_slice_generated_c_preserves_bytes_and_bounds(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_SLICE_GET_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-c-slice-get-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "slice_get.c"
+    driver_c = tmp_path / "slice_get_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "slice_get.c"\n'
+        'int main(int argc, char **argv) { (void)argv; '
+        'const uint8_t text[] = {0xc3, 0xa9, 0x21}; '
+        'merit_ByteSlice value = {text, 3}; '
+        'if (argc > 1) return byte(value, 3); '
+        'return byte(value, 0) == 0xc3 && byte(value, 1) == 0xa9 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "slice-get-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+    out_of_bounds = subprocess.run([str(program), "out-of-bounds"],
+                                   text=True, capture_output=True)
+    assert out_of_bounds.returncode == 85
+    assert "Merit slice index out of bounds" in out_of_bounds.stderr
+
+
+def test_merit_byte_slice_backend_rejects_public_abi(tmp_path: Path) -> None:
+    probe = CANONICAL_C_SLICE_LEN_PROBE.replace(
+        "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-c-slice-public-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 9
+    assert native.stdout == ""
 
 
 def test_merit_string_byte_generated_c_preserves_utf8_and_bounds(tmp_path: Path) -> None:
