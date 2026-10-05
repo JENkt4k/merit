@@ -118,6 +118,47 @@ ARTIFACT_ONLY_PROBE = ARTIFACT_PROBE.replace(
     "",
 )
 
+CANONICAL_C_VECTOR_NAME_PROBE = r'''module canonical_c_vector_name_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,3);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(1),function_mir_type_descriptor_vector_kind(),1,
+    function_mir_vector_type_code(0),0,0,0,0,0,0,0
+  ));
+  var name:Buffer=buffer_new(allocator,64);
+  let first:i32=canonical_c_append_vector_type_name(function_mir_vector_type_code(0),descriptors,name);
+  print(first);print(buffer_len(name));
+  var index:i64=0;
+  while(index<buffer_len(name)){print(buffer_get(name,index));index=checked_add(index,1);}
+  drop(name);
+  var nested:Buffer=buffer_new(allocator,64);
+  let second:i32=canonical_c_append_vector_type_name(function_mir_vector_type_code(1),descriptors,nested);
+  print(second);print(buffer_len(nested));
+  index=0;
+  while(index<buffer_len(nested)){print(buffer_get(nested,index));index=checked_add(index,1);}
+  drop(nested);
+  var rejected:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_vector_type_name(function_mir_vector_type_code(2),descriptors,rejected));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  print(canonical_c_append_vector_type_name(function_mir_vector_type_code(0),descriptors,rejected));
+  drop(rejected);drop(descriptors);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -725,6 +766,17 @@ CANONICAL_C_BUFFER_RETURN_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
     'ownership_record_kind_move(),0,0,1,0,0,\n'
     '    ownership_state_live(),ownership_state_moved()',
 ).replace('cfg_return(0,-1)', 'cfg_return(0,1)')
+
+CANONICAL_C_TYPED_BUFFER_RETURN_PROBE = CANONICAL_C_BUFFER_RETURN_PROBE.replace(
+    '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+    '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);\n'
+    '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);',
+).replace(
+    'canonical_c_append_resource_function_with_catalog(\n'
+    '    source,records,headers,sources,effects,cfg,placements,prototypes,bodies,declarations,features',
+    'canonical_c_append_resource_function_with_type_catalog(\n'
+    '    source,records,headers,types,sources,effects,cfg,placements,prototypes,bodies,declarations,features',
+).replace('drop(sources);drop(headers);drop(records);', 'drop(sources);drop(types);drop(headers);drop(records);')
 
 
 def _string_const_probe(literal: str) -> str:
@@ -1619,6 +1671,25 @@ def test_native_v4_bundle_can_publish_only_project_artifacts(tmp_path: Path) -> 
     assert bundle.canonical_mir_bytes == b"mir\n"
     assert bundle.c_source_bytes == b"c\n"
     assert bundle.c_header_bytes == b"h\n"
+
+
+def test_merit_vector_type_names_use_native_catalog_and_oracle_mangle(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_VECTOR_NAME_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-vector-names")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    from merit.bootstrap.mir_to_c import _vector_c_name
+
+    for element in (MirType("i64"), MirType("Vec", (MirType("i64"),))):
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        actual = bytes(values[:length]).decode("utf-8")
+        del values[:length]
+        assert actual == _vector_c_name(MirType("Vec", (element,)))
+    assert values == [5, 3]  # Missing and duplicate native catalog rows reject.
 
 
 def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) -> None:
@@ -3077,8 +3148,9 @@ def test_merit_placed_buffer_drop_c_backend_matches_python_oracle_bytes(tmp_path
     assert c_header == emit_c_header(module)
 
 
-def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_BUFFER_RETURN_PROBE)
+@pytest.mark.parametrize("probe", (CANONICAL_C_BUFFER_RETURN_PROBE, CANONICAL_C_TYPED_BUFFER_RETURN_PROBE))
+def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(tmp_path: Path, probe: str) -> None:
+    root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     _, _, emitter = build(project, root / "build" / "canonical-buffer-return")

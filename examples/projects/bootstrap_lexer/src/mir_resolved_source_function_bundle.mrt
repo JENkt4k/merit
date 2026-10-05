@@ -319,22 +319,89 @@ requires_caps [allocate]
     return 1;
 }
 
-fn canonical_c_append_scalar_prototype(
-    borrow source:Buffer,borrow header:MirFunctionRecord,
-    borrow records:Vec<MirFunctionRecord>,borrow_mut output:Buffer
+// Resolve vector identity from the native type catalog. The C spelling is the
+// existing oracle's UTF-8 type-name mangle; no host-side type reconstruction
+// or positional inference is allowed at this boundary.
+pub fn canonical_c_append_vector_type_name(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
-    if(canonical_c_append_scalar_type(output,function_mir_type_code(header))!=0){return 3;}
+    if(type_code<function_mir_vector_type_code(0)){return 1;}
+    canonical_mir_append_text(output,"merit_Vec_");
+    var current:i32=type_code;
+    var depth:i64=0;
+    while(current>=function_mir_vector_type_code(0)){
+        if(depth>=vec_len<MirTypeDescriptor>(descriptors)){return 2;}
+        var found:i32=0;
+        var index:i64=0;
+        var child:i32=0;
+        while(index<vec_len<MirTypeDescriptor>(descriptors)){
+            let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+            if(function_mir_type_descriptor_code(descriptor)==current){
+                if(found!=0){return 3;}
+                if(function_mir_type_descriptor_kind(descriptor)!=function_mir_type_descriptor_vector_kind()){
+                    return 4;
+                }
+                if(function_mir_type_descriptor_identity(descriptor)!=checked_sub(current,function_mir_vector_type_code(0))){
+                    return 4;
+                }
+                if(function_mir_type_descriptor_destructor_policy(descriptor)!=0){return 4;}
+                if(function_mir_type_descriptor_ordinal(descriptor)!=0){return 4;}
+                child=function_mir_type_descriptor_child(descriptor);
+                found=1;
+            }
+            index=checked_add(index,1);
+        }
+        if(found==0){return 5;}
+        if(depth>0){canonical_mir_append_text(output,"566563_a_");}
+        current=child;
+        depth=checked_add(depth,1);
+    }
+    if(current==function_mir_i64_type_code()){canonical_mir_append_text(output,"693634");return 0;}
+    if(current==function_mir_bool_type_code()){canonical_mir_append_text(output,"626f6f6c");return 0;}
+    if(current==function_mir_allocator_type_code()){canonical_mir_append_text(output,"416c6c6f6361746f72");return 0;}
+    if(current==function_mir_buffer_type_code()){canonical_mir_append_text(output,"427566666572");return 0;}
+    if(current==function_mir_i8_type_code()){canonical_mir_append_text(output,"6938");return 0;}
+    if(current==function_mir_i16_type_code()){canonical_mir_append_text(output,"693136");return 0;}
+    if(current==function_mir_i32_type_code()){canonical_mir_append_text(output,"693332");return 0;}
+    if(current==function_mir_u8_type_code()){canonical_mir_append_text(output,"7538");return 0;}
+    if(current==function_mir_u16_type_code()){canonical_mir_append_text(output,"753136");return 0;}
+    if(current==function_mir_u32_type_code()){canonical_mir_append_text(output,"753332");return 0;}
+    if(current==function_mir_u64_type_code()){canonical_mir_append_text(output,"753634");return 0;}
+    if(current==function_mir_string_type_code()){canonical_mir_append_text(output,"537472696e67");return 0;}
+    if(current==function_mir_byte_slice_type_code()){canonical_mir_append_text(output,"42797465536c696365");return 0;}
+    if(current==function_mir_unit_type_code()){canonical_mir_append_text(output,"756e6974");return 0;}
+    return 6;
+}
+
+fn canonical_c_append_type_with_catalog(
+    borrow_mut output:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(type_code>=function_mir_vector_type_code(0)){
+        return canonical_c_append_vector_type_name(type_code,descriptors,output);
+    }
+    return canonical_c_append_scalar_type(output,type_code);
+}
+
+fn canonical_c_append_scalar_prototype(
+    borrow source:Buffer,borrow header:MirFunctionRecord,
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(canonical_c_append_type_with_catalog(output,function_mir_type_code(header),descriptors)!=0){return 3;}
     buffer_push(output,32);
     canonical_c_append_function_name(source,header,output);
-    if(canonical_c_append_scalar_parameters(records,output)!=0){return 4;}
+    if(canonical_c_append_scalar_parameters(records,descriptors,output)!=0){return 4;}
     buffer_push(output,59);
     return 0;
 }
 
 fn canonical_c_append_scalar_parameters(
-    borrow records:Vec<MirFunctionRecord>,borrow_mut output:Buffer
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -375,7 +442,7 @@ requires_caps [allocate]
         }
         if(found==0){return 5;}
         if(ordinal>0){canonical_mir_append_text(output,", ");}
-        if(canonical_c_append_scalar_type(output,matched_type)!=0){return 3;}
+        if(canonical_c_append_type_with_catalog(output,matched_type,descriptors)!=0){return 3;}
         canonical_mir_append_text(output," m");canonical_mir_append_i64(output,ordinal);
         ordinal=checked_add(ordinal,1);
     }
@@ -792,6 +859,7 @@ fn canonical_c_append_function_core(
     borrow source:Buffer,
     borrow records:Vec<MirFunctionRecord>,
     borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
     borrow cfg:Vec<MirCfgRecord>,
@@ -1163,26 +1231,26 @@ requires_caps [allocate]
         cfg_index=checked_add(cfg_index,1);
     }
     if(function_mir_ordinal(header)>local_count){return 26;}
-    let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,prototypes);
+    let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
     buffer_push(prototypes,10);
     if(function_mir_mutable(header)!=0){
-        let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,public_header);
+        let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,public_header);
         if(header_status!=0){return checked_add(40,header_status);}
         buffer_push(public_header,10);
     }
     if(buffer_len(bodies)>0){canonical_mir_append_text(bodies,"\n\n");}
-    if(canonical_c_append_scalar_type(bodies,function_mir_type_code(header))!=0){return 3;}
+    if(canonical_c_append_type_with_catalog(bodies,function_mir_type_code(header),type_descriptors)!=0){return 3;}
     buffer_push(bodies,32);
     canonical_c_append_function_name(source,header,bodies);
-    let parameters_status:i32=canonical_c_append_scalar_parameters(records,bodies);
+    let parameters_status:i32=canonical_c_append_scalar_parameters(records,type_descriptors,bodies);
     if(parameters_status!=0){return checked_add(50,parameters_status);}
     canonical_mir_append_text(bodies," {\n");
     var local_id:i64=function_mir_ordinal(header);
     while(local_id<local_count){
         canonical_mir_append_text(bodies,"    ");
-        if(canonical_c_append_scalar_type(
-            bodies,canonical_c_scalar_local_type(records,local_id)
+        if(canonical_c_append_type_with_catalog(
+            bodies,canonical_c_scalar_local_type(records,local_id),type_descriptors
         )!=0){return 12;}
         canonical_mir_append_text(bodies," m");
         canonical_mir_append_i64(bodies,local_id);
@@ -1821,11 +1889,32 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     let empty_sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
     let empty_effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+    let empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
     let status:i32=canonical_c_append_function_core(
-        source,records,callable_headers,empty_sources,empty_effects,cfg,placements,
+        source,records,callable_headers,empty_types,empty_sources,empty_effects,cfg,placements,
         prototypes,bodies,public_header,features
     );
-    drop(empty_effects);drop(empty_sources);return status;
+    drop(empty_types);drop(empty_effects);drop(empty_sources);return status;
+}
+
+pub fn canonical_c_append_resource_function_with_type_catalog(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<MirFunctionInstructionSource>(sources)==0){return canonical_c_resource_missing_catalog_status();}
+    if(vec_len<MirOwnershipRecord>(ownership_records)==0){return canonical_c_resource_missing_effect_status();}
+    return canonical_c_append_function_core(
+        source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
+        prototypes,bodies,public_header,features
+    );
 }
 
 pub fn canonical_c_append_resource_function_with_catalog(
@@ -1839,12 +1928,12 @@ pub fn canonical_c_append_resource_function_with_catalog(
 )->i32
 requires_caps [allocate]
 {
-    if(vec_len<MirFunctionInstructionSource>(sources)==0){return canonical_c_resource_missing_catalog_status();}
-    if(vec_len<MirOwnershipRecord>(ownership_records)==0){return canonical_c_resource_missing_effect_status();}
-    return canonical_c_append_function_core(
-        source,records,callable_headers,sources,ownership_records,cfg,placements,
+    let empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_resource_function_with_type_catalog(
+        source,records,callable_headers,empty_types,sources,ownership_records,cfg,placements,
         prototypes,bodies,public_header,features
     );
+    drop(empty_types);return status;
 }
 
 pub fn canonical_c_append_scalar_function(
