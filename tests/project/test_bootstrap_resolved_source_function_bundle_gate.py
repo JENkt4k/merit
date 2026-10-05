@@ -3085,6 +3085,129 @@ CANONICAL_C_BUFFER_FROM_STRING_PROBE = CANONICAL_C_BUFFER_CONSTRUCTION_PROBE.rep
 )
 
 
+CANONICAL_C_BUFFER_LEN_PROBE = CANONICAL_C_BUFFER_FROM_STRING_PROBE.replace(
+    'buffer_from_string(allocator,"create buffer_from_string")',
+    'buffer_from_string(allocator,"create buffer_from_string buffer_len")',
+).replace(
+    'function_mir_callable_header(0,6,0,6,function_mir_unit_type_code()',
+    'function_mir_callable_header(0,6,0,6,function_mir_i64_type_code()',
+).replace(
+    'cfg_return(0,-1)', 'cfg_return(0,3)',
+).replace(
+    'vec_new<MirFunctionRecord>(allocator,6)', 'vec_new<MirFunctionRecord>(allocator,9)',
+).replace(
+    'vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_buffer_type_code(),-1));',
+    'vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_buffer_type_code(),-1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(3,function_mir_i64_type_code(),-1));',
+).replace(
+    'vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));',
+    'vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(26,10,1,3,26,10,function_mir_i64_type_code(),function_mir_mode_value(),-1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,2,function_mir_mode_value(),0));',
+).replace(
+    'vec_new<MirFunctionInstructionSource>(allocator,2)',
+    'vec_new<MirFunctionInstructionSource>(allocator,3)',
+).replace(
+    'global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0',
+    'global_id:1,source_kind:assembly_source_body_kind(),source_id:1,\n'
+    '    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),\n'
+    '    result:3,left:-1,right:-1\n'
+    '  });\n'
+    '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{\n'
+    '    global_id:2,source_kind:assembly_source_ownership_kind(),source_id:0',
+).replace(
+    'ownership_record_kind_drop(),1,2,', 'ownership_record_kind_drop(),2,2,',
+).replace(
+    'vec_new<MirPlacementRecord>(allocator,2)', 'vec_new<MirPlacementRecord>(allocator,3)',
+).replace(
+    'vec_push<MirPlacementRecord>(placements,mir_place(0,1,1))',
+    'vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));\n'
+    '  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2))',
+)
+
+
+def test_merit_placed_buffer_len_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_LEN_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-len")
+    values = [int(value) for value in subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "create", MirType("i64"), (
+            MirLocal(0, "allocator", MirType("Allocator")),
+            MirLocal(1, "input", MirType("String")),
+            MirLocal(2, "buffer", MirType("Buffer"), ownership="owned"),
+            MirLocal(3, "length", MirType("i64")),
+        ), (MirBlock(0, (
+            MirInstruction(0, "call", result=2, operands=(0, 1), symbol="buffer_from_string"),
+            MirInstruction(1, "call", result=3, operands=(2,), symbol="buffer_len"),
+            MirInstruction(2, "drop", operands=(2,), ownership="owned"),
+        ), MirTerminator("return", operands=(3,))),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_placed_buffer_len_generated_c_returns_length(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_BUFFER_LEN_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-buffer-len-emitter")
+    values = [int(value) for value in subprocess.run(
+        [str(emitter)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "placed_buffer_len.c"
+    driver_c = tmp_path / "placed_buffer_len_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "placed_buffer_len.c"\n'
+        'int main(void) { merit_String input = { (const uint8_t *)"abc", 3 }; '
+        'return create(merit_system_allocator(), input) == 3 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "placed-buffer-len-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_BUFFER_LEN_PROBE.replace(
+            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,1,function_mir_mode_value(),0)',
+        ), 96),
+        (CANONICAL_C_BUFFER_LEN_PROBE.replace(
+            'function_mir_call(26,10,1,3,26,10,function_mir_i64_type_code()',
+            'function_mir_call(26,10,1,3,26,10,function_mir_buffer_type_code()',
+        ), 66),
+        (CANONICAL_C_BUFFER_LEN_PROBE.replace(
+            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_value(),1)',
+        ), 69),
+    ],
+)
+def test_merit_placed_buffer_len_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "canonical-buffer-len-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
 @pytest.mark.parametrize(
     ("probe", "parameter_type", "symbol"),
     [
