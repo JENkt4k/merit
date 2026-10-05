@@ -210,6 +210,41 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_TWO_VECTOR_MODULE_PROBE = r'''module canonical_c_two_vector_module_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(1),function_mir_type_descriptor_vector_kind(),1,
+    function_mir_i32_type_code(),0,0,0,0,0,0,0
+  ));
+  var vector_types:Vec<i32>=vec_new<i32>(allocator,2);
+  vec_push<i32>(vector_types,function_mir_vector_type_code(0));
+  vec_push<i32>(vector_types,function_mir_vector_type_code(1));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  let prototypes:Buffer=buffer_from_string(allocator,"void consume(merit_Vec_693332 m0, merit_Vec_693634 m1);\n");
+  let bodies:Buffer=buffer_from_string(allocator,"void consume(merit_Vec_693332 m0, merit_Vec_693634 m1) {\n    goto b0;\nb0:\n    merit_vec_drop_693332(&(m0));\n    merit_vec_drop_693634(&(m1));\n    return;\n}");
+  var output:Buffer=buffer_new(allocator,16384);
+  let status:i32=canonical_c_finish_copy_vector_catalog_module(
+    prototypes,bodies,features,vector_types,descriptors,output
+  );
+  print(status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(bodies);drop(prototypes);drop(features);drop(vector_types);drop(descriptors);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -2078,6 +2113,92 @@ def test_merit_copy_vector_module_compiles_and_executes(tmp_path: Path) -> None:
     subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize('reverse_catalog', [False, True])
+def test_merit_two_copy_vector_module_matches_oracle_order_and_executes(
+    tmp_path: Path, reverse_catalog: bool,
+) -> None:
+    probe = CANONICAL_C_TWO_VECTOR_MODULE_PROBE
+    if reverse_catalog:
+        probe = probe.replace(
+            'vec_push<i32>(vector_types,function_mir_vector_type_code(0));\n'
+            '  vec_push<i32>(vector_types,function_mir_vector_type_code(1));',
+            'vec_push<i32>(vector_types,function_mir_vector_type_code(1));\n'
+            '  vec_push<i32>(vector_types,function_mir_vector_type_code(0));',
+        )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'two-vector-module')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    actual = bytes(values).decode('utf-8')
+    vector_i32 = MirType('Vec', (MirType('i32'),))
+    vector_i64 = MirType('Vec', (MirType('i64'),))
+    module = MirModule('demo', (MirFunction(
+        'consume', MirType('unit'), (
+            MirLocal(0, 'first', vector_i32, ownership='owned'),
+            MirLocal(1, 'second', vector_i64, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'drop', operands=(0,), ownership='owned'),
+            MirInstruction(1, 'drop', operands=(1,), ownership='owned'),
+        ), MirTerminator('return')),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert actual == emit_c_module(module)
+    assert actual.index('merit_Vec_693332;') < actual.index('merit_Vec_693634;')
+    assert actual.index('static void merit_vec_reserve_693332') < actual.index('static void merit_vec_reserve_693634')
+
+    generated = tmp_path / 'two_vector_module.c'
+    generated.write_text(actual, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'two_vector_driver.c'
+    driver.write_text(
+        '#include "two_vector_module.c"\n'
+        'int main(void) { merit_Allocator allocator = merit_system_allocator(); '
+        'merit_Vec_693332 first = merit_vec_new_693332(allocator, 1); '
+        'merit_Vec_693634 second = merit_vec_new_693634(allocator, 1); '
+        'merit_vec_push_693332(&first, 7); merit_vec_push_693634(&second, 11); '
+        'consume(first, second); return 0; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'two-vector-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(('probe', 'status'), [
+    (CANONICAL_C_TWO_VECTOR_MODULE_PROBE.replace(
+        'vec_push<i32>(vector_types,function_mir_vector_type_code(1));',
+        'vec_push<i32>(vector_types,function_mir_vector_type_code(0));',
+    ), 6),
+    (CANONICAL_C_TWO_VECTOR_MODULE_PROBE.replace(
+        'function_mir_i32_type_code(),0,0,0,0,0,0,0',
+        'function_mir_i64_type_code(),0,0,0,0,0,0,0',
+    ), 6),
+    (CANONICAL_C_TWO_VECTOR_MODULE_PROBE.replace(
+        'function_mir_i32_type_code(),0,0,0,0,0,0,0',
+        'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
+    ), 7),
+])
+def test_merit_two_copy_vector_module_rejects_duplicate_or_owned_catalog(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'invalid-two-vector-module')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    assert [int(line) for line in native.splitlines()] == [status, 0]
 
 
 def test_merit_copy_vector_module_rejects_owned_element_without_output(tmp_path: Path) -> None:

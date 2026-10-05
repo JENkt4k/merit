@@ -2520,25 +2520,97 @@ requires_caps [allocate]
     return 0;
 }
 
-fn canonical_c_finish_module_with_copy_vector(
+fn canonical_c_buffer_compare(borrow left:Buffer,borrow right:Buffer)->i32
+requires_caps [allocate]
+{
+    var index:i64=0;
+    while(index<buffer_len(left)){
+        if(index>=buffer_len(right)){return 1;}
+        let left_byte:i64=buffer_get(left,index);
+        let right_byte:i64=buffer_get(right,index);
+        if(left_byte<right_byte){return -1;}
+        if(left_byte>right_byte){return 1;}
+        index=checked_add(index,1);
+    }
+    if(index<buffer_len(right)){return -1;}
+    return 0;
+}
+
+fn canonical_c_vector_code_selected(code:i32,borrow selected:Vec<i32>)->i32
+requires_caps [allocate]
+{
+    var index:i64=0;
+    while(index<vec_len<i32>(selected)){
+        if(vec_get<i32>(selected,index)==code){return 1;}
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
+fn canonical_c_finish_module_with_copy_vectors(
     borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
-    vector_type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+    borrow vector_type_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
     var needs_vector:i32=0;
-    if(vector_type_code>=function_mir_vector_type_code(0)){needs_vector=1;}
+    if(vec_len<i32>(vector_type_codes)>0){needs_vector=1;}
     let allocator:Allocator=system_allocator();
-    var vector_name:Buffer=buffer_new(allocator,64);
+    var sorted_codes:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(vector_type_codes));
+    var vector_typedefs:Buffer=buffer_new(allocator,1024);
     var vector_runtime:Buffer=buffer_new(allocator,4096);
-    if(needs_vector!=0){
+    var selected_count:i64=0;
+    while(selected_count<vec_len<i32>(vector_type_codes)){
+        var best_code:i32=function_mir_unresolved_type_code();
+        var candidate_index:i64=0;
+        while(candidate_index<vec_len<i32>(vector_type_codes)){
+            let candidate_code:i32=vec_get<i32>(vector_type_codes,candidate_index);
+            if(candidate_code<function_mir_vector_type_code(0)){return 3;}
+            if(canonical_c_vector_code_selected(candidate_code,sorted_codes)==0){
+                var candidate_name:Buffer=buffer_new(allocator,64);
+                let candidate_status:i32=canonical_c_append_vector_type_name(candidate_code,descriptors,candidate_name);
+                if(candidate_status!=0){return candidate_status;}
+                if(best_code==function_mir_unresolved_type_code()){
+                    best_code=candidate_code;
+                }else{
+                    var best_name:Buffer=buffer_new(allocator,64);
+                    let best_status:i32=canonical_c_append_vector_type_name(best_code,descriptors,best_name);
+                    if(best_status!=0){return best_status;}
+                    if(canonical_c_buffer_compare(candidate_name,best_name)<0){best_code=candidate_code;}
+                    drop(best_name);
+                }
+                drop(candidate_name);
+            }
+            candidate_index=checked_add(candidate_index,1);
+        }
+        if(best_code==function_mir_unresolved_type_code()){return 6;}
+        vec_push<i32>(sorted_codes,best_code);
+        selected_count=checked_add(selected_count,1);
+    }
+    var sorted_index:i64=0;
+    while(sorted_index<vec_len<i32>(sorted_codes)){
+        let vector_type_code:i32=vec_get<i32>(sorted_codes,sorted_index);
+        var vector_name:Buffer=buffer_new(allocator,64);
         let name_status:i32=canonical_c_append_vector_type_name(vector_type_code,descriptors,vector_name);
         if(name_status!=0){return name_status;}
+        if(sorted_index>0){
+            let prior_code:i32=vec_get<i32>(sorted_codes,checked_sub(sorted_index,1));
+            var prior_name:Buffer=buffer_new(allocator,64);
+            if(canonical_c_append_vector_type_name(prior_code,descriptors,prior_name)!=0){return 6;}
+            if(canonical_c_buffer_compare(vector_name,prior_name)==0){return 6;}
+            drop(prior_name);
+        }
+        canonical_mir_append_text(vector_typedefs,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
+        bootstrap_buffer_append(vector_typedefs,vector_name,0,buffer_len(vector_name));
+        canonical_mir_append_text(vector_typedefs,";\n");
         let runtime_status:i32=canonical_c_append_copy_vector_runtime(vector_type_code,descriptors,vector_runtime);
         if(runtime_status!=0){return runtime_status;}
+        drop(vector_name);
+        sorted_index=checked_add(sorted_index,1);
     }
+    if(needs_vector!=0){buffer_push(vector_typedefs,10);}
     var needs_buffer:i32=canonical_c_has_feature(canonical_c_buffer_runtime_feature(),features);
     if(needs_vector!=0){needs_buffer=1;}
     let needs_slice:i32=canonical_c_has_feature(canonical_c_slice_feature(),features);
@@ -2567,9 +2639,7 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"}\n\n");
     }}
     if(needs_vector!=0){
-        canonical_mir_append_text(output,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
-        bootstrap_buffer_append(output,vector_name,0,buffer_len(vector_name));
-        canonical_mir_append_text(output,";\n\n");
+        bootstrap_buffer_append(output,vector_typedefs,0,buffer_len(vector_typedefs));
     }
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
     let needs_checked:i32=canonical_c_has_checked_feature(features);
@@ -2611,7 +2681,7 @@ requires_caps [allocate]
     if(needs_checked!=0){buffer_push(output,10);}
     if(needs_vector!=0){if(needs_checked==0){buffer_push(output,10);}}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
-    drop(vector_runtime);drop(vector_name);
+    drop(vector_runtime);drop(vector_typedefs);drop(sorted_codes);
     return 0;
 }
 
@@ -2622,10 +2692,11 @@ requires_caps [allocate]
 {
     let allocator:Allocator=system_allocator();
     var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
-    let status:i32=canonical_c_finish_module_with_copy_vector(
-        prototypes,bodies,features,function_mir_unresolved_type_code(),descriptors,output
+    var vector_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    let status:i32=canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,descriptors,output
     );
-    drop(descriptors);
+    drop(vector_type_codes);drop(descriptors);
     return status;
 }
 
@@ -2636,8 +2707,26 @@ pub fn canonical_c_finish_copy_vector_module(
 requires_caps [allocate]
 {
     if(vector_type_code<function_mir_vector_type_code(0)){return 3;}
-    return canonical_c_finish_module_with_copy_vector(
-        prototypes,bodies,features,vector_type_code,descriptors,output
+    let allocator:Allocator=system_allocator();
+    var vector_type_codes:Vec<i32>=vec_new<i32>(allocator,1);
+    vec_push<i32>(vector_type_codes,vector_type_code);
+    let status:i32=canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,descriptors,output
+    );
+    drop(vector_type_codes);
+    return status;
+}
+
+// The canonical module assembler supplies only vector types used by its MIR;
+// sorting and runtime validation remain native, with no C-text inference.
+pub fn canonical_c_finish_copy_vector_catalog_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    borrow vector_type_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,descriptors,output
     );
 }
 
