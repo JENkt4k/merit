@@ -820,6 +820,11 @@ requires_caps [allocate]
         if(exported!=0){return 3;}
         canonical_c_require_feature(canonical_c_slice_feature(),features);
     }
+    if(function_mir_type_code(header)==function_mir_buffer_type_code()){
+        if(exported!=0){return 3;}
+        if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
+        canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+    }
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){
         if(function_mir_type_code(header)!=function_mir_i32_type_code()){
             if(function_mir_type_code(header)!=function_mir_bool_type_code()){
@@ -827,7 +832,9 @@ requires_caps [allocate]
                     if(function_mir_type_code(header)!=function_mir_string_type_code()){
                         if(function_mir_type_code(header)!=function_mir_allocator_type_code()){
                             if(function_mir_type_code(header)!=function_mir_u8_type_code()){
-                                if(function_mir_type_code(header)!=function_mir_byte_slice_type_code()){return 3;}
+                                if(function_mir_type_code(header)!=function_mir_byte_slice_type_code()){
+                                    if(function_mir_type_code(header)!=function_mir_buffer_type_code()){return 3;}
+                                }
                             }
                         }
                     }
@@ -1066,6 +1073,47 @@ requires_caps [allocate]
         }
     }
     if(checked_add(instruction_count,resource_instruction_count)!=vec_len<MirPlacementRecord>(placements)){return 16;}
+    if(function_mir_type_code(header)==function_mir_buffer_type_code()){
+        // This bounded owned-return form is proven by the placed move that
+        // produces the return local. Multi-block resource dataflow remains
+        // fail-closed until its full ownership proof is represented here.
+        if(cfg_block_count!=1){return canonical_c_resource_missing_effect_status();}
+        let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
+        if(cfg_kind(return_record)!=cfg_return_kind()){
+            return canonical_c_resource_missing_effect_status();
+        }
+        var return_move_count:i64=0;
+        var return_source_index:i64=0;
+        while(return_source_index<vec_len<MirFunctionInstructionSource>(sources)){
+            let return_source:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,return_source_index);
+            if(assembly_source_kind(return_source)==assembly_source_ownership_kind()){
+                if(assembly_source_result(return_source)==cfg_operand(return_record)){
+                    let effect_id:i64=assembly_source_id(return_source);
+                    if(effect_id<0){return canonical_c_resource_missing_effect_status();}
+                    if(effect_id>=vec_len<MirOwnershipRecord>(ownership_records)){
+                        return canonical_c_resource_missing_effect_status();
+                    }
+                    let return_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
+                    if(ownership_record_kind(return_effect)==ownership_record_kind_move()){
+                        var placed:i64=0;
+                        var return_placement_index:i64=0;
+                        while(return_placement_index<vec_len<MirPlacementRecord>(placements)){
+                            let return_placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,return_placement_index);
+                            if(placement_instruction_id(return_placement)==assembly_source_global_id(return_source)){
+                                if(placement_block_id(return_placement)==cfg_block_id(return_record)){
+                                    placed=checked_add(placed,1);
+                                }
+                            }
+                            return_placement_index=checked_add(return_placement_index,1);
+                        }
+                        if(placed==1){return_move_count=checked_add(return_move_count,1);}
+                    }
+                }
+            }
+            return_source_index=checked_add(return_source_index,1);
+        }
+        if(return_move_count!=1){return canonical_c_resource_missing_effect_status();}
+    }
     var placement_scan:i64=0;
     while(placement_scan<vec_len<MirPlacementRecord>(placements)){
         let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_scan);
