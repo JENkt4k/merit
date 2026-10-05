@@ -2105,14 +2105,27 @@ requires_caps [allocate]
     return 0;
 }
 
-pub fn canonical_c_finish_scalar_module(
-    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,borrow_mut output:Buffer
+fn canonical_c_finish_module_with_copy_vector(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    vector_type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
     if(buffer_len(prototypes)<=0){return 1;}
     if(buffer_len(bodies)<=0){return 2;}
-    let needs_buffer:i32=canonical_c_has_feature(canonical_c_buffer_runtime_feature(),features);
+    var needs_vector:i32=0;
+    if(vector_type_code>=function_mir_vector_type_code(0)){needs_vector=1;}
+    let allocator:Allocator=system_allocator();
+    var vector_name:Buffer=buffer_new(allocator,64);
+    var vector_runtime:Buffer=buffer_new(allocator,4096);
+    if(needs_vector!=0){
+        let name_status:i32=canonical_c_append_vector_type_name(vector_type_code,descriptors,vector_name);
+        if(name_status!=0){return name_status;}
+        let runtime_status:i32=canonical_c_append_copy_vector_runtime(vector_type_code,descriptors,vector_runtime);
+        if(runtime_status!=0){return runtime_status;}
+    }
+    var needs_buffer:i32=canonical_c_has_feature(canonical_c_buffer_runtime_feature(),features);
+    if(needs_vector!=0){needs_buffer=1;}
     let needs_slice:i32=canonical_c_has_feature(canonical_c_slice_feature(),features);
     var needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
     if(needs_buffer!=0){needs_text=1;}
@@ -2138,6 +2151,11 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"    return (int64_t)value.data[index];\n");
         canonical_mir_append_text(output,"}\n\n");
     }}
+    if(needs_vector!=0){
+        canonical_mir_append_text(output,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
+        bootstrap_buffer_append(output,vector_name,0,buffer_len(vector_name));
+        canonical_mir_append_text(output,";\n\n");
+    }
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
     let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
@@ -2172,9 +2190,40 @@ requires_caps [allocate]
     if(canonical_c_has_feature(canonical_c_checked_divide_feature(),features)!=0){
         canonical_mir_append_text(output,"static int64_t merit_checked_div_i64(int64_t a, int64_t b) {\n    if (b == 0) merit_division_by_zero();\n    if (a == INT64_MIN && b == -1) merit_numeric_failure(\"division overflow\");\n    return (int64_t)(a / b);\n}\n");
     }
+    if(needs_vector!=0){
+        bootstrap_buffer_append(output,vector_runtime,0,buffer_len(vector_runtime));
+    }
     if(needs_checked!=0){buffer_push(output,10);}
+    if(needs_vector!=0){if(needs_checked==0){buffer_push(output,10);}}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
+    drop(vector_runtime);drop(vector_name);
     return 0;
+}
+
+pub fn canonical_c_finish_scalar_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+    let status:i32=canonical_c_finish_module_with_copy_vector(
+        prototypes,bodies,features,function_mir_unresolved_type_code(),descriptors,output
+    );
+    drop(descriptors);
+    return status;
+}
+
+pub fn canonical_c_finish_copy_vector_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    vector_type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(vector_type_code<function_mir_vector_type_code(0)){return 3;}
+    return canonical_c_finish_module_with_copy_vector(
+        prototypes,bodies,features,vector_type_code,descriptors,output
+    );
 }
 
 pub fn canonical_c_finish_public_header(

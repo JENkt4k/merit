@@ -182,6 +182,34 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_COPY_VECTOR_MODULE_PROBE = r'''module canonical_c_copy_vector_module_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  let prototypes:Buffer=buffer_from_string(allocator,"int64_t sample(void);\n");
+  let bodies:Buffer=buffer_from_string(allocator,"int64_t sample(void) { merit_Allocator allocator = {0}; merit_Vec_693634 values = merit_vec_new_693634(allocator, 1); merit_vec_push_693634(&values, 7); int64_t result = merit_vec_get_693634(&values, 0); merit_vec_drop_693634(&values); return result; }\n");
+  var output:Buffer=buffer_new(allocator,8192);
+  let status:i32=canonical_c_finish_copy_vector_module(
+    prototypes,bodies,features,function_mir_vector_type_code(0),descriptors,output
+  );
+  print(status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(bodies);drop(prototypes);drop(features);drop(descriptors);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -1805,6 +1833,51 @@ def test_merit_copy_vector_runtime_uses_descriptor_element_type(tmp_path: Path) 
 
     expected = "\n".join(_vector_runtime((MirType("Vec", (MirType("i32"),)),), {})) + "\n"
     assert bytes(values).decode("utf-8") == expected
+
+
+def test_merit_copy_vector_module_compiles_and_executes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_COPY_VECTOR_MODULE_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "copy-vector-module")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    actual = bytes(values).decode("utf-8")
+    assert "typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Vec_693634;\n" in actual
+    assert actual.index("merit_Vec_693634;\n") < actual.index("int64_t sample(void);")
+    assert actual.index("int64_t sample(void);\n") < actual.index("static void merit_vec_reserve_693634")
+    assert actual.index("static void merit_vec_reserve_693634") < actual.index("int64_t sample(void) {")
+
+    generated = tmp_path / "copy_vector_module.c"
+    generated.write_text(actual, encoding="utf-8", newline="\n")
+    driver = tmp_path / "copy_vector_module_driver.c"
+    driver.write_text('#include "copy_vector_module.c"\nint main(void) { return sample() == 7 ? 0 : 1; }\n',
+                      encoding="utf-8", newline="\n")
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "copy-vector-module-program"
+    subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_copy_vector_module_rejects_owned_element_without_output(tmp_path: Path) -> None:
+    probe = CANONICAL_C_COPY_VECTOR_MODULE_PROBE.replace(
+        'function_mir_i64_type_code(),0,0,0,0,0,0,0',
+        'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
+    )
+    assert probe != CANONICAL_C_COPY_VECTOR_MODULE_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "owned-vector-module-rejected")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    assert [int(line) for line in native.splitlines()] == [7, 0]
 
 
 def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) -> None:
