@@ -609,6 +609,95 @@ CANONICAL_C_SLICE_GET_PROBE = (
     .replace('function_mir_call(5,11,0,2,5,11,', 'function_mir_call(5,9,0,2,5,9,')
 )
 
+CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE = r'''module canonical_c_buffer_resource_effect_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,1,0,1,function_mir_unit_type_code(),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_buffer_type_code(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_buffer_type_code(),1));
+  let move_effect:MirOwnershipRecord=ownership_record(
+    ownership_record_kind_move(),0,0,1,0,0,ownership_state_live(),ownership_state_moved()
+  );
+  let drop_effect:MirOwnershipRecord=ownership_record(
+    ownership_record_kind_drop(),1,1,ownership_record_no_other_binding_id(),1,0,
+    ownership_state_live(),ownership_state_dropped()
+  );
+  var output:Buffer=buffer_new(allocator,128);
+  let move_status:i32=canonical_c_append_buffer_resource_effect(move_effect,1,records,output);
+  let drop_status:i32=canonical_c_append_buffer_resource_effect(drop_effect,-1,records,output);
+  print(move_status);print(drop_status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(records);
+ }
+ return 0;
+}
+'''
+
+CANONICAL_C_RESOURCE_FUNCTION_PROBE = r'''module canonical_c_resource_function_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"consume");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,7,0,7,function_mir_unit_type_code(),function_mir_mode_value(),-1,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,0,function_mir_buffer_type_code(),0,0,function_mir_mode_value(),0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,1);
+  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+    global_id:0,source_kind:assembly_source_ownership_kind(),source_id:0,
+    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),
+    result:-1,left:0,right:-1
+  });
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,1);
+  vec_push<MirOwnershipRecord>(effects,ownership_record(
+    ownership_record_kind_drop(),0,0,ownership_record_no_other_binding_id(),0,0,
+    ownership_state_live(),ownership_state_dropped()
+  ));
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,-1));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,2048);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_resource_function_with_catalog(
+    source,records,headers,sources,effects,cfg,placements,prototypes,bodies,declarations,features
+  );
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(200,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(300,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(effects);drop(sources);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -2872,6 +2961,161 @@ def test_merit_byte_slice_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
+@pytest.mark.parametrize("move_kind", [
+    "ownership_record_kind_move()", "ownership_record_kind_replace_move()",
+])
+@pytest.mark.parametrize("drop_kind", [
+    "ownership_record_kind_drop()", "ownership_record_kind_replace_drop()",
+    "ownership_record_kind_implicit_drop()",
+])
+def test_merit_buffer_resource_effect_c_lines_match_python_oracle(
+    tmp_path: Path, move_kind: str, drop_kind: str,
+) -> None:
+    probe = CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
+        "ownership_record_kind_move()", move_kind,
+    ).replace("ownership_record_kind_drop()", drop_kind)
+    if move_kind == "ownership_record_kind_replace_move()":
+        probe = probe.replace(
+            "ownership_state_live(),ownership_state_moved()",
+            "ownership_state_dropped(),ownership_state_live()",
+        )
+    if drop_kind == "ownership_record_kind_implicit_drop()":
+        probe = probe.replace(
+            "ownership_record_no_other_binding_id(),1,0,\n    ownership_state_live()",
+            "ownership_record_no_other_binding_id(),1,1,\n    ownership_state_live()",
+        )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-buffer-effects")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:2] == [0, 0]
+    emitted = bytes(values[3:]).decode("utf-8")
+    assert values[2] == len(emitted.encode("utf-8"))
+    assert emitted == "    m1 = m0;\n    merit_buffer_drop(&(m1));\n"
+    module = MirModule("demo", (MirFunction(
+        "consume", MirType("unit"), (
+            MirLocal(0, "source", MirType("Buffer"), ownership="owned"),
+            MirLocal(1, "target", MirType("Buffer"), ownership="owned"),
+        ), (MirBlock(0, (
+            MirInstruction(0, "move", result=1, operands=(0,), ownership="owned"),
+            MirInstruction(1, "drop", operands=(1,), ownership="owned"),
+        ), MirTerminator("return")),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert emitted in emit_c_module(module)
+
+
+def test_merit_placed_buffer_drop_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_RESOURCE_FUNCTION_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-placed-buffer-drop")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "consume", MirType("unit"), (
+            MirLocal(0, "value", MirType("Buffer"), ownership="owned"),
+        ), (MirBlock(0, (
+            MirInstruction(0, "drop", operands=(0,), ownership="owned"),
+        ), MirTerminator("return")),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+
+def test_merit_placed_buffer_drop_generated_c_executes_once(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_RESOURCE_FUNCTION_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, emitter = build(project, root / "build" / "canonical-placed-buffer-emitter")
+    encoded = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    values = [int(value) for value in encoded.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    generated_c = tmp_path / "placed_buffer_drop.c"
+    driver_c = tmp_path / "placed_buffer_drop_driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "placed_buffer_drop.c"\n'
+        'int main(void) { merit_Buffer value = merit_buffer_new(merit_system_allocator(), 1); '
+        'merit_buffer_push(&value, 42); consume(value); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "placed-buffer-drop-program"
+    subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ("probe", "status"),
+    [
+        (CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+            "source_kind:assembly_source_ownership_kind(),source_id:0",
+            "source_kind:assembly_source_ownership_kind(),source_id:1",
+        ), 110),
+        (CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+            "ownership_record_kind_drop(),0,0,", "ownership_record_kind_drop(),1,0,",
+        ), 111),
+        (CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+            "result:-1,left:0,right:-1", "result:-1,left:1,right:-1",
+        ), 112),
+        (CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+            "canonical_c_append_resource_function_with_catalog(\n    source,records,headers,sources,effects,cfg",
+            "canonical_c_append_scalar_function_with_catalog(\n    source,records,headers,cfg",
+        ), 9),
+    ],
+)
+def test_merit_placed_buffer_drop_backend_fails_closed(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    assert interpret(project) == ""
+    _, _, executable = build(project, root / "build" / "canonical-placed-buffer-drop-rejected")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("probe", "expected_statuses"),
+    [
+        (CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
+            "function_mir_buffer_type_code()", "function_mir_string_type_code()",
+        ), (2, 2)),
+        (CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
+            "ownership_record_kind_move()", "ownership_record_kind_activate()",
+        ), (1, 0)),
+        (CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
+            "canonical_c_append_buffer_resource_effect(move_effect,1,records,output)",
+            "canonical_c_append_buffer_resource_effect(move_effect,-1,records,output)",
+        ), (3, 0)),
+    ],
+)
+def test_merit_buffer_resource_effect_backend_fails_closed(
+    tmp_path: Path, probe: str, expected_statuses: tuple[int, int],
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "canonical-buffer-effect-rejected")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert tuple(values[:2]) == expected_statuses
 
 
 def test_merit_byte_slice_generated_c_preserves_bytes_and_bounds(tmp_path: Path) -> None:
