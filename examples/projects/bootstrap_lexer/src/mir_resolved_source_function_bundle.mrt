@@ -386,6 +386,109 @@ requires_caps [allocate]
     return canonical_c_append_scalar_type(output,type_code);
 }
 
+fn canonical_c_append_vector_symbol(
+    borrow_mut output:Buffer,operation:String,borrow suffix:Buffer
+)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,"merit_vec_");
+    canonical_mir_append_text(output,operation);
+    buffer_push(output,95);
+    bootstrap_buffer_append(output,suffix,0,buffer_len(suffix));
+    return 0;
+}
+
+// Complete oracle-shaped runtime for vectors of Copy scalar elements. Owned
+// element cleanup must use the separately proven recursive lifecycle path.
+pub fn canonical_c_append_copy_vector_runtime(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var vector_type:Buffer=buffer_new(allocator,64);
+    let name_status:i32=canonical_c_append_vector_type_name(type_code,descriptors,vector_type);
+    if(name_status!=0){return name_status;}
+    var child:i32=function_mir_unresolved_type_code();
+    var index:i64=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        if(function_mir_type_descriptor_code(descriptor)==type_code){
+            child=function_mir_type_descriptor_child(descriptor);
+        }
+        index=checked_add(index,1);
+    }
+    if(function_mir_type_uses_ownership_transfer(child)!=0){return 7;}
+    if(child==function_mir_unit_type_code()){return 7;}
+    var element_type:Buffer=buffer_new(allocator,32);
+    if(canonical_c_append_scalar_type(element_type,child)!=0){
+        return 7;
+    }
+    var suffix:Buffer=buffer_new(allocator,64);
+    let prefix_length:i64=string_len("merit_Vec_");
+    bootstrap_buffer_append(suffix,vector_type,prefix_length,checked_sub(buffer_len(vector_type),prefix_length));
+    // The vector typedef is emitted before prototypes; this complete helper
+    // family follows prototypes, in the oracle's fixed order.
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"reserve",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value, size_t needed) {\n    if (needed <= value->capacity) return;\n    size_t capacity = value->capacity ? value->capacity : 8;\n    while (capacity < needed) capacity *= 2;\n    void *data = realloc(value->data, capacity * sizeof(");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output,"));\n    if (!data) { fprintf(stderr, \"Merit allocation failed\\n\"); exit(80); }\n    value->data = data; value->capacity = capacity;\n}\n");
+    canonical_mir_append_text(output,"static ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    buffer_push(output,32);canonical_c_append_vector_symbol(output,"new",suffix);
+    canonical_mir_append_text(output,"(merit_Allocator allocator, int64_t capacity) {\n    if (capacity < 0) { fprintf(stderr, \"Merit negative capacity\\n\"); exit(81); }\n    ");
+    bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," result = {0}; result.allocator = allocator; ");
+    canonical_c_append_vector_symbol(output,"reserve",suffix);
+    canonical_mir_append_text(output,"(&result, (size_t)capacity);\n    return result;\n}\n");
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"push",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value, ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," element) {\n    ");canonical_c_append_vector_symbol(output,"reserve",suffix);
+    canonical_mir_append_text(output,"(value, value->len + 1); ((");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," *)value->data)[value->len++] = element;\n}\n");
+    canonical_mir_append_text(output,"static int64_t ");canonical_c_append_vector_symbol(output,"len",suffix);
+    canonical_mir_append_text(output,"(const ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value) { return (int64_t)value->len; }\n");
+    canonical_mir_append_text(output,"static merit_Allocator ");canonical_c_append_vector_symbol(output,"allocator",suffix);
+    canonical_mir_append_text(output,"(const ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value) { return value->allocator; }\n");
+    canonical_mir_append_text(output,"static ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    buffer_push(output,32);canonical_c_append_vector_symbol(output,"get",suffix);
+    canonical_mir_append_text(output,"(const ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value, int64_t index) {\n    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit vector index out of bounds\\n\"); exit(86); }\n    return ((const ");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," *)value->data)[index];\n}\n");
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"set",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value, int64_t index, ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," element) {\n    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit vector index out of bounds\\n\"); exit(86); }\n    ((");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," *)value->data)[index] = element;\n}\n");
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"replace",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value, int64_t index, ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," element) {\n    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit vector index out of bounds\\n\"); exit(86); }\n    /* explicit no-op in scalar bootstrap C subset */\n    ((");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," *)value->data)[index] = element;\n}\n");
+    canonical_mir_append_text(output,"static ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    buffer_push(output,32);canonical_c_append_vector_symbol(output,"pop",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value) {\n    if (!value->len) { fprintf(stderr, \"Merit vector pop from empty\\n\"); exit(86); }\n    return ((");
+    bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
+    canonical_mir_append_text(output," *)value->data)[--value->len];\n}\n");
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"drop",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *value) {\n    for (size_t index = 0; index < value->len; ++index) {\n        /* explicit no-op in scalar bootstrap C subset */\n    }\n    free(value->data); value->data = NULL; value->len = 0; value->capacity = 0;\n}\n");
+    canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"transfer",suffix);
+    buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *destination, ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
+    canonical_mir_append_text(output," *source) {\n    if (destination == source) { fprintf(stderr, \"Merit vector transfer aliases itself\\n\"); exit(90); }\n    if (!merit_allocator_compatible(destination->allocator, source->allocator)) { fprintf(stderr, \"Merit incompatible vector allocators\\n\"); exit(90); }\n    if (destination->len) { fprintf(stderr, \"Merit vector transfer destination is not empty\\n\"); exit(90); }\n    free(destination->data); destination->data = source->data; destination->len = source->len; destination->capacity = source->capacity;\n    source->data = NULL; source->len = 0; source->capacity = 0;\n}\n");
+    drop(suffix);drop(element_type);drop(vector_type);
+    return 0;
+}
+
 fn canonical_c_append_scalar_prototype(
     borrow source:Buffer,borrow header:MirFunctionRecord,
     borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer

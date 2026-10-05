@@ -159,6 +159,29 @@ fn main()->i32 {
 }
 '''
 
+CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE = r'''module canonical_c_copy_vector_runtime_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+    function_mir_i64_type_code(),0,0,0,0,0,0,0
+  ));
+  var output:Buffer=buffer_new(allocator,4096);
+  let status:i32=canonical_c_append_copy_vector_runtime(function_mir_vector_type_code(0),descriptors,output);
+  print(status);print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(descriptors);
+ }
+ return 0;
+}
+'''
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -1690,6 +1713,98 @@ def test_merit_vector_type_names_use_native_catalog_and_oracle_mangle(tmp_path: 
         del values[:length]
         assert actual == _vector_c_name(MirType("Vec", (element,)))
     assert values == [5, 3]  # Missing and duplicate native catalog rows reject.
+
+
+def test_merit_copy_vector_runtime_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "copy-vector-runtime")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    actual = bytes(values).decode("utf-8")
+    from merit.bootstrap.mir_to_c import _vector_runtime
+
+    vector_type = MirType("Vec", (MirType("i64"),))
+    expected = "\n".join(_vector_runtime((vector_type,), {})) + "\n"
+    assert actual == expected
+
+    generated = tmp_path / "copy_vector_runtime.c"
+    generated.write_text(
+        "#include <stdint.h>\n#include <stddef.h>\n#include <stdio.h>\n#include <stdlib.h>\n"
+        "typedef struct { int32_t identity; } merit_Allocator;\n"
+        "typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Vec_693634;\n"
+        "static inline int32_t merit_allocator_compatible(merit_Allocator a, merit_Allocator b) { return a.identity == b.identity; }\n"
+        + actual,
+        encoding="utf-8", newline="\n",
+    )
+    driver = tmp_path / "copy_vector_driver.c"
+    driver.write_text(
+        '#include "copy_vector_runtime.c"\n'
+        'int main(void) { merit_Allocator allocator = {0}; '
+        'merit_Vec_693634 values = merit_vec_new_693634(allocator, 1); '
+        'merit_vec_push_693634(&values, 7); merit_vec_push_693634(&values, 11); '
+        'merit_vec_set_693634(&values, 1, 13); '
+        'if (merit_vec_len_693634(&values) != 2 || merit_vec_get_693634(&values, 1) != 13) return 1; '
+        'merit_vec_replace_693634(&values, 0, 17); '
+        'if (merit_vec_pop_693634(&values) != 13) return 2; '
+        'merit_Vec_693634 destination = merit_vec_new_693634(allocator, 0); '
+        'merit_vec_transfer_693634(&destination, &values); '
+        'int ok = merit_vec_len_693634(&destination) == 1 '
+        '&& merit_vec_get_693634(&destination, 0) == 17 '
+        '&& merit_vec_allocator_693634(&destination).identity == 0; '
+        'merit_vec_drop_693634(&destination); merit_vec_drop_693634(&values); '
+        'return ok ? 0 : 3; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "copy-vector-program"
+    subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_copy_vector_runtime_rejects_owned_elements(tmp_path: Path) -> None:
+    probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
+        'function_mir_i64_type_code(),0,0,0,0,0,0,0',
+        'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
+    )
+    assert probe != CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "owned-vector-runtime-rejected")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values == [7, 0]
+
+
+def test_merit_copy_vector_runtime_uses_descriptor_element_type(tmp_path: Path) -> None:
+    probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
+        'function_mir_i64_type_code(),0,0,0,0,0,0,0',
+        'function_mir_i32_type_code(),0,0,0,0,0,0,0',
+    )
+    assert probe != CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "i32-vector-runtime")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    from merit.bootstrap.mir_to_c import _vector_runtime
+
+    expected = "\n".join(_vector_runtime((MirType("Vec", (MirType("i32"),)),), {})) + "\n"
+    assert bytes(values).decode("utf-8") == expected
 
 
 def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) -> None:
