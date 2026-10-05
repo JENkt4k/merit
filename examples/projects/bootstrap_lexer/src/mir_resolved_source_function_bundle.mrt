@@ -1406,9 +1406,13 @@ requires_caps [allocate]
                             let slice_len_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"slice_len");
                             let slice_get_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"slice_get");
                             let buffer_new_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"buffer_new");
-                            if(system_builtin==0){if(portable_builtin==0){if(compatible_builtin==0){if(string_len_builtin==0){if(string_byte_builtin==0){if(slice_len_builtin==0){if(slice_get_builtin==0){if(buffer_new_builtin==0){return 65;}}}}}}}}
+                            let buffer_from_string_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"buffer_from_string");
+                            if(system_builtin==0){if(portable_builtin==0){if(compatible_builtin==0){if(string_len_builtin==0){if(string_byte_builtin==0){if(slice_len_builtin==0){if(slice_get_builtin==0){if(buffer_new_builtin==0){if(buffer_from_string_builtin==0){return 65;}}}}}}}}}
                             let expected_result_type:i32=canonical_c_scalar_local_type(records,function_mir_result(instruction));
-                            if(buffer_new_builtin!=0){
+                            var buffer_constructor_builtin:i32=0;
+                            if(buffer_new_builtin!=0){buffer_constructor_builtin=1;}
+                            if(buffer_from_string_builtin!=0){buffer_constructor_builtin=1;}
+                            if(buffer_constructor_builtin!=0){
                                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 66;}
                                 if(function_mir_type_code(instruction)!=function_mir_buffer_type_code()){return 66;}
                                 if(expected_result_type!=function_mir_buffer_type_code()){return 95;}
@@ -1438,6 +1442,7 @@ requires_caps [allocate]
                             if(slice_len_builtin!=0){builtin_operand_count=1;}
                             if(slice_get_builtin!=0){builtin_operand_count=2;}
                             if(buffer_new_builtin!=0){builtin_operand_count=2;}
+                            if(buffer_from_string_builtin!=0){builtin_operand_count=2;}
                             var builtin_operand_ordinal:i64=0;
                             if(builtin_operand_count>0){
                                 while(builtin_operand_ordinal<builtin_operand_count){
@@ -1462,6 +1467,9 @@ requires_caps [allocate]
                                                     }
                                                     if(buffer_new_builtin!=0){
                                                         if(builtin_operand_ordinal==1){builtin_expected_type=function_mir_i64_type_code();}
+                                                    }
+                                                    if(buffer_from_string_builtin!=0){
+                                                        if(builtin_operand_ordinal==1){builtin_expected_type=function_mir_string_type_code();}
                                                     }
                                                     if(canonical_c_scalar_local_type(records,function_mir_left(builtin_argument))!=builtin_expected_type){return 96;}
                                                     builtin_operand_found=1;
@@ -1497,6 +1505,7 @@ requires_caps [allocate]
                                 if(slice_len_builtin!=0){canonical_mir_append_text(bodies,"merit_slice_len(");}
                                 if(slice_get_builtin!=0){canonical_mir_append_text(bodies,"merit_slice_get(");}
                                 if(buffer_new_builtin!=0){canonical_mir_append_text(bodies,"merit_buffer_new(");}
+                                if(buffer_from_string_builtin!=0){canonical_mir_append_text(bodies,"merit_buffer_from_string(");}
                                 var compatible_ordinal:i64=0;
                                 while(compatible_ordinal<builtin_operand_count){
                                     var compatible_index:i64=1;var compatible_found:i32=0;

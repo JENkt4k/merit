@@ -3073,8 +3073,30 @@ CANONICAL_C_BUFFER_CONSTRUCTION_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.repl
 )
 
 
-def test_merit_placed_buffer_construction_matches_python_oracle_bytes(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_BUFFER_CONSTRUCTION_PROBE)
+CANONICAL_C_BUFFER_FROM_STRING_PROBE = CANONICAL_C_BUFFER_CONSTRUCTION_PROBE.replace(
+    'buffer_from_string(allocator,"create buffer_new")',
+    'buffer_from_string(allocator,"create buffer_from_string")',
+).replace(
+    'function_mir_parameter(0,6,1,function_mir_i64_type_code()',
+    'function_mir_parameter(0,6,1,function_mir_string_type_code()',
+).replace(
+    'function_mir_call(7,10,0,2,7,10,',
+    'function_mir_call(7,18,0,2,7,18,',
+)
+
+
+@pytest.mark.parametrize(
+    ("probe", "parameter_type", "symbol"),
+    [
+        (CANONICAL_C_BUFFER_CONSTRUCTION_PROBE, "i64", "buffer_new"),
+        (CANONICAL_C_BUFFER_FROM_STRING_PROBE, "String", "buffer_from_string"),
+    ],
+    ids=["buffer-new", "buffer-from-string"],
+)
+def test_merit_placed_buffer_construction_matches_python_oracle_bytes(
+    tmp_path: Path, probe: str, parameter_type: str, symbol: str,
+) -> None:
+    root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     _, _, executable = build(project, root / "build" / "canonical-buffer-construction")
     values = [int(value) for value in subprocess.run(
@@ -3086,10 +3108,10 @@ def test_merit_placed_buffer_construction_matches_python_oracle_bytes(tmp_path: 
     module = MirModule("demo", (MirFunction(
         "create", MirType("unit"), (
             MirLocal(0, "allocator", MirType("Allocator")),
-            MirLocal(1, "capacity", MirType("i64")),
+            MirLocal(1, "input", MirType(parameter_type)),
             MirLocal(2, "buffer", MirType("Buffer"), ownership="owned"),
         ), (MirBlock(0, (
-            MirInstruction(0, "call", result=2, operands=(0, 1), symbol="buffer_new"),
+            MirInstruction(0, "call", result=2, operands=(0, 1), symbol=symbol),
             MirInstruction(1, "drop", operands=(2,), ownership="owned"),
         ), MirTerminator("return")),), 0,
         parameters=(MirParameter(0), MirParameter(1)),
@@ -3099,8 +3121,18 @@ def test_merit_placed_buffer_construction_matches_python_oracle_bytes(tmp_path: 
     assert c_header == emit_c_header(module)
 
 
-def test_merit_placed_buffer_construction_generated_c_executes(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_BUFFER_CONSTRUCTION_PROBE)
+@pytest.mark.parametrize(
+    ("probe", "argument"),
+    [
+        (CANONICAL_C_BUFFER_CONSTRUCTION_PROBE, "3"),
+        (CANONICAL_C_BUFFER_FROM_STRING_PROBE, "(merit_String){ (const uint8_t *)\"abc\", 3 }"),
+    ],
+    ids=["buffer-new", "buffer-from-string"],
+)
+def test_merit_placed_buffer_construction_generated_c_executes(
+    tmp_path: Path, probe: str, argument: str,
+) -> None:
+    root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     _, _, emitter = build(project, root / "build" / "canonical-buffer-construction-emitter")
     values = [int(value) for value in subprocess.run(
@@ -3113,7 +3145,7 @@ def test_merit_placed_buffer_construction_generated_c_executes(tmp_path: Path) -
     generated_c.write_text(c_source, encoding="utf-8", newline="\n")
     driver_c.write_text(
         '#include "placed_buffer_construction.c"\n'
-        'int main(void) { create(merit_system_allocator(), 3); return 0; }\n',
+        f'int main(void) {{ create(merit_system_allocator(), {argument}); return 0; }}\n',
         encoding="utf-8", newline="\n",
     )
     cc = shutil.which("cc") or shutil.which("gcc")
@@ -3139,6 +3171,10 @@ def test_merit_placed_buffer_construction_generated_c_executes(tmp_path: Path) -
             'function_mir_call_argument(0,1,function_mir_mode_value(),1)',
             'function_mir_call_argument(0,1,function_mir_mode_value(),2)',
         ), 69),
+        (CANONICAL_C_BUFFER_FROM_STRING_PROBE.replace(
+            'function_mir_call_argument(0,1,function_mir_mode_value(),1)',
+            'function_mir_call_argument(0,0,function_mir_mode_value(),1)',
+        ), 96),
     ],
 )
 def test_merit_placed_buffer_construction_fails_closed(
