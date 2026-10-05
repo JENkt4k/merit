@@ -1325,6 +1325,11 @@ requires_caps [allocate]
         if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
+    if(function_mir_type_code(header)>=function_mir_vector_type_code(0)){
+        if(exported!=0){return 3;}
+        if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
+        canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+    }
     if(function_mir_type_code(header)!=function_mir_i64_type_code()){
         if(function_mir_type_code(header)!=function_mir_i32_type_code()){
             if(function_mir_type_code(header)!=function_mir_bool_type_code()){
@@ -1333,7 +1338,9 @@ requires_caps [allocate]
                         if(function_mir_type_code(header)!=function_mir_allocator_type_code()){
                             if(function_mir_type_code(header)!=function_mir_u8_type_code()){
                                 if(function_mir_type_code(header)!=function_mir_byte_slice_type_code()){
-                                    if(function_mir_type_code(header)!=function_mir_buffer_type_code()){return 3;}
+                                    if(function_mir_type_code(header)!=function_mir_buffer_type_code()){
+                                        if(function_mir_type_code(header)<function_mir_vector_type_code(0)){return 3;}
+                                    }
                                 }
                             }
                         }
@@ -1594,7 +1601,10 @@ requires_caps [allocate]
         }
     }
     if(checked_add(instruction_count,resource_instruction_count)!=vec_len<MirPlacementRecord>(placements)){return 16;}
-    if(function_mir_type_code(header)==function_mir_buffer_type_code()){
+    var owned_return:i32=0;
+    if(function_mir_type_code(header)==function_mir_buffer_type_code()){owned_return=1;}
+    if(function_mir_type_code(header)>=function_mir_vector_type_code(0)){owned_return=1;}
+    if(owned_return!=0){
         // This bounded owned-return form is proven by the placed move that
         // produces the return local. Multi-block resource dataflow remains
         // fail-closed until its full ownership proof is represented here.

@@ -1028,6 +1028,22 @@ CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE = CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE.
     'function_mir_source_local(64,6,2,function_mir_vector_type_code(0),2,1)',
 )
 
+CANONICAL_C_VECTOR_RETURN_PROBE = CANONICAL_C_TYPED_BUFFER_RETURN_PROBE.replace(
+    'function_mir_buffer_type_code()', 'function_mir_vector_type_code(0)',
+).replace(
+    '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);',
+    '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);\n'
+    '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+    '    function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,\n'
+    '    function_mir_i64_type_code(),0,0,0,0,0,0,0\n'
+    '  ));',
+).replace(
+    'canonical_c_finish_scalar_module(prototypes,bodies,features,c_source)',
+    'canonical_c_finish_copy_vector_module(\n'
+    '    prototypes,bodies,features,function_mir_vector_type_code(0),types,c_source\n'
+    '  )',
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -3785,6 +3801,76 @@ def test_merit_owned_vector_source_local_requires_resource_effect_catalog(tmp_pa
     _, _, executable = build(project, root / 'build' / 'vector-source-local-without-effect')
     native = subprocess.run([str(executable)], text=True, capture_output=True)
     assert native.returncode == 110
+    assert native.stdout == ''
+
+
+def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_VECTOR_RETURN_PROBE)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'canonical-vector-return')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType('i64'),))
+    module = MirModule('demo', (MirFunction(
+        'consume', vector_type, (
+            MirLocal(0, 'value', vector_type, ownership='owned'),
+            MirLocal(1, 'result', vector_type, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'move', result=1, operands=(0,), ownership='owned'),
+        ), MirTerminator('return', operands=(1,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'vector_return.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'vector_return_driver.c'
+    driver.write_text(
+        '#include "vector_return.c"\n'
+        'int main(void) { merit_Vec_693634 value = merit_vec_new_693634(merit_system_allocator(), 1); '
+        'merit_vec_push_693634(&value, 42); merit_Vec_693634 result = consume(value); '
+        'int ok = merit_vec_pop_693634(&result) == 42; '
+        'merit_vec_drop_693634(&result); return ok ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'vector-return-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(('probe', 'status'), [
+    (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
+        'function_mir_mode_value(),-1,1,0)',
+        'function_mir_mode_value(),-1,1,1)',
+    ), 3),
+    (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
+        'ownership_record_kind_move(),0,0,1,0,0,',
+        'ownership_record_kind_drop(),0,0,1,0,0,',
+    ), 110),
+    (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
+        'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i64_type_code()',
+        'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_buffer_type_code()',
+    ), 207),
+])
+def test_merit_owned_vector_return_fails_closed_without_supported_move_and_layout(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'canonical-vector-return-rejected')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
     assert native.stdout == ''
 
 
