@@ -588,6 +588,34 @@ requires_caps [allocate]
     drop(expected);return same;
 }
 
+fn canonical_c_source_vector_call_name(
+    borrow source:Buffer,start:i64,length:i64,operation:String
+)->i32
+requires_caps [allocate]
+{
+    if(start<0){return 0;}
+    let prefix_length:i64=string_len(operation);
+    if(length<=checked_add(prefix_length,2)){return 0;}
+    if(checked_add(start,length)>buffer_len(source)){return 0;}
+    var operation_bytes:Buffer=buffer_from_string(system_allocator(),operation);
+    var matches:i32=1;
+    var index:i64=0;
+    while(index<prefix_length){
+        if(buffer_get(source,checked_add(start,index))!=buffer_get(operation_bytes,index)){matches=0;}
+        index=checked_add(index,1);
+    }
+    drop(operation_bytes);
+    if(matches==0){return 0;}
+    let separator:i64=buffer_get(source,checked_add(start,prefix_length));
+    if(separator==95){
+        if(buffer_get(source,checked_add(checked_add(start,prefix_length),1))==95){return 1;}
+    }
+    if(separator==60){
+        if(buffer_get(source,checked_sub(checked_add(start,length),1))==62){return 1;}
+    }
+    return 0;
+}
+
 fn canonical_c_require_feature(feature:i64,borrow_mut features:Vec<i64>)->i32
 requires_caps [allocate]
 {
@@ -986,6 +1014,50 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"\", ");
     canonical_mir_append_i64(output,decoded_length);
     canonical_mir_append_text(output," }");
+    return 0;
+}
+
+fn canonical_c_append_vec_len_call(
+    borrow instruction:MirFunctionRecord,borrow records:Vec<MirFunctionRecord>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_code(instruction)!=function_mir_i64_type_code()){return 66;}
+    if(function_mir_numeric_policy(instruction)!=function_mir_mode_value()){return 66;}
+    let result_local:i64=function_mir_result(instruction);
+    if(result_local<0){return 66;}
+    if(canonical_c_scalar_local_type(records,result_local)!=function_mir_i64_type_code()){return 95;}
+    var argument_count:i64=0;
+    var receiver_local:i64=-1;
+    var index:i64=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+            if(function_mir_id(argument)==function_mir_id(instruction)){
+                if(function_mir_ordinal(argument)!=0){return 68;}
+                if(function_mir_symbol_code(argument)!=function_mir_mode_borrowed()){return 68;}
+                receiver_local=function_mir_left(argument);
+                argument_count=checked_add(argument_count,1);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(argument_count!=1){return 70;}
+    let receiver_type:i32=canonical_c_scalar_local_type(records,receiver_local);
+    if(receiver_type<function_mir_vector_type_code(0)){return 96;}
+    let allocator:Allocator=system_allocator();
+    var vector_name:Buffer=buffer_new(allocator,64);
+    if(canonical_c_append_vector_type_name(receiver_type,descriptors,vector_name)!=0){return 96;}
+    canonical_mir_append_text(output,"    m");
+    canonical_mir_append_i64(output,result_local);
+    canonical_mir_append_text(output," = merit_vec_len_");
+    let prefix_length:i64=string_len("merit_Vec_");
+    bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
+    canonical_mir_append_text(output,"(&m");
+    canonical_mir_append_i64(output,receiver_local);
+    canonical_mir_append_text(output,");\n");
+    drop(vector_name);
     return 0;
 }
 
@@ -1659,6 +1731,15 @@ requires_caps [allocate]
                             candidate_index=checked_add(candidate_index,1);
                         }
                         if(callee_found==0){
+                            if(canonical_c_source_vector_call_name(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_len"
+                            )!=0){
+                                let vector_call_status:i32=canonical_c_append_vec_len_call(
+                                    instruction,records,type_descriptors,bodies
+                                );
+                                if(vector_call_status!=0){return vector_call_status;}
+                                canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                            }else{
                             let system_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"system_allocator");
                             let portable_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"portable_allocator");
                             let compatible_builtin:i32=canonical_c_source_name_equals(source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"allocator_compatible");
@@ -1884,6 +1965,7 @@ requires_caps [allocate]
                                 }
                                 canonical_mir_append_text(bodies,");\n");
                             }else{canonical_mir_append_text(bodies,"();\n");}
+                            }
                         }else{
                         if(function_mir_type_code(callee_header)!=function_mir_type_code(instruction)){return 66;}
                         if(function_mir_type_code(instruction)!=function_mir_unit_type_code()){

@@ -852,6 +852,39 @@ CANONICAL_C_VECTOR_DROP_FUNCTION_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.rep
 ).replace('drop(sources);drop(headers);drop(records);',
           'drop(sources);drop(types);drop(headers);drop(records);')
 
+CANONICAL_C_VECTOR_LEN_FUNCTION_PROBE = CANONICAL_C_VECTOR_DROP_FUNCTION_PROBE.replace(
+    'buffer_from_string(allocator,"consume")', 'buffer_from_string(allocator,"consumevec_len__i64")',
+).replace(
+    'function_mir_callable_header(0,7,0,7,function_mir_unit_type_code(),',
+    'function_mir_callable_header(0,7,0,7,function_mir_i64_type_code(),',
+).replace(
+    '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+    '  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_i64_type_code(),1));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call(7,12,0,1,7,12,function_mir_i64_type_code(),function_mir_mode_value(),0));\n'
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,0,function_mir_mode_borrowed(),0));\n'
+    '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+).replace(
+    'var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,1);',
+    'var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,2);\n'
+    '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{\n'
+    '    global_id:0,source_kind:assembly_source_body_kind(),source_id:0,\n'
+    '    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),\n'
+    '    result:1,left:-1,right:-1\n'
+    '  });',
+).replace(
+    'global_id:0,source_kind:assembly_source_ownership_kind(),source_id:0',
+    'global_id:1,source_kind:assembly_source_ownership_kind(),source_id:0',
+).replace(
+    'ownership_record_kind_drop(),0,0,ownership_record_no_other_binding_id()',
+    'ownership_record_kind_drop(),1,0,ownership_record_no_other_binding_id()',
+).replace('cfg_return(0,-1)', 'cfg_return(0,1)').replace(
+    'var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);\n'
+    '  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));',
+    'var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,2);\n'
+    '  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));\n'
+    '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
+)
+
 
 def _string_const_probe(literal: str) -> str:
     source = "text" + literal
@@ -3442,6 +3475,72 @@ def test_merit_placed_vector_drop_c_backend_matches_python_oracle_bytes(tmp_path
     subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_placed_vector_len_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
+    root = _project(tmp_path, CANONICAL_C_VECTOR_LEN_FUNCTION_PROBE)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'canonical-placed-vector-len')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType('i64'),))
+    module = MirModule('demo', (MirFunction(
+        'consume', MirType('i64'), (
+            MirLocal(0, 'value', vector_type, ownership='owned'),
+            MirLocal(1, '_t1', MirType('i64')),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'call', result=1, operands=(0,), symbol='vec_len__i64'),
+            MirInstruction(1, 'drop', operands=(0,), ownership='owned'),
+        ), MirTerminator('return', operands=(1,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'vector_len.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'vector_len_driver.c'
+    driver.write_text(
+        '#include "vector_len.c"\n'
+        'int main(void) { merit_Vec_693634 values = merit_vec_new_693634(merit_system_allocator(), 1); '
+        'merit_vec_push_693634(&values, 7); return consume(values) == 1 ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'vector-len-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(('probe', 'status'), [
+    (CANONICAL_C_VECTOR_LEN_FUNCTION_PROBE.replace(
+        'consumevec_len__i64', 'consumevec_len',
+    ).replace(
+        'function_mir_call(7,12,0,1,7,12', 'function_mir_call(7,7,0,1,7,7',
+    ), 65),
+    (CANONICAL_C_VECTOR_LEN_FUNCTION_PROBE.replace(
+        'function_mir_call_argument(0,0,function_mir_mode_borrowed(),0)',
+        'function_mir_call_argument(0,0,function_mir_mode_value(),0)',
+    ), 68),
+])
+def test_merit_placed_vector_len_rejects_invalid_call_contract(
+    tmp_path: Path, probe: str, status: int,
+) -> None:
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'invalid-vector-len')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == status
+    assert native.stdout == ''
 
 
 def test_merit_placed_vector_drop_rejects_unimplemented_owned_element_runtime(tmp_path: Path) -> None:
