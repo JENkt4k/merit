@@ -164,16 +164,8 @@ def _multimodule_driver(tmp_path: Path) -> Path:
 def _native_artifact_driver(
     tmp_path: Path, *, c_source: bytes = b"int32_t merit_main(void) { return 0; }\n"
 ) -> Path:
-    source = b"module main\nfn main()->i32 { return 0; }\n"
-    snapshot = (
-        SNAPSHOT_MAGIC,
-        SNAPSHOT_VERSION,
-        *([0] * (SNAPSHOT_SECTION_COUNT - 1)),
-        len(source),
-        *source,
-    )
     values = encode_resolved_source_function_bundle(
-        (snapshot,),
+        (),
         module_name="main",
         canonical_mir=b'{"schema":"bootstrap-mir-v1"}\n',
         c_source=c_source,

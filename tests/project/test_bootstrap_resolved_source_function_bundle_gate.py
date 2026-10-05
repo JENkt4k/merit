@@ -106,6 +106,18 @@ ARTIFACT_PROBE = PROBE.replace(
     "  drop(metadata_capabilities); drop(metadata_source);",
 ).replace("print_resolved_source_function_bundle_header(2)", "print_resolved_source_function_project_artifact_bundle_header(1)")
 
+ARTIFACT_ONLY_PROBE = ARTIFACT_PROBE.replace(
+    "print_resolved_source_function_project_artifact_bundle_header(1)",
+    "print_resolved_source_function_project_artifact_bundle_header(0)",
+).replace(
+    "  let first_status:i32=print_resolved_source_function_bundle_item(\n"
+    "    effective_source,body,contracts,contract_locals,sources,bindings,ownership,cfg,placements,capabilities,type_descriptors,numeric_type_descriptors,\n"
+    "    destructor_descriptors,destructor_body,destructor_cfg,destructor_placements\n"
+    "  );\n"
+    "  if(first_status!=0){ return checked_add(10,first_status); }",
+    "",
+)
+
 CANONICAL_MIR_PROBE = r'''module canonical_mir_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -1573,6 +1585,21 @@ def test_native_v4_bundle_carries_complete_project_artifacts(tmp_path: Path) -> 
     bundle = decode_resolved_source_function_bundle(int(line) for line in native.splitlines())
     assert bundle.module_name == "demo"
     assert len(bundle.functions) == 1
+    assert bundle.canonical_mir_bytes == b"mir\n"
+    assert bundle.c_source_bytes == b"c\n"
+    assert bundle.c_header_bytes == b"h\n"
+
+
+def test_native_v4_bundle_can_publish_only_project_artifacts(tmp_path: Path) -> None:
+    root = _project(tmp_path, ARTIFACT_ONLY_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "native-artifact-only-bundle")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+
+    bundle = decode_resolved_source_function_bundle(int(line) for line in native.splitlines())
+    assert bundle.functions == ()
     assert bundle.canonical_mir_bytes == b"mir\n"
     assert bundle.c_source_bytes == b"c\n"
     assert bundle.c_header_bytes == b"h\n"

@@ -9,7 +9,8 @@ single Merit source unit.  Framing is intentionally simple and deterministic:
 Bundle v2 carries the canonical effective source in the first nested snapshot;
 later snapshots may encode an empty final source section and inherit that byte
 sequence. Each materialized nested snapshot still retains the complete existing
-resolved-source snapshot contract.
+resolved-source snapshot contract. V4 may instead carry only native canonical
+MIR, C source, and header artifacts without any legacy snapshot row.
 """
 
 from __future__ import annotations
@@ -67,13 +68,15 @@ def encode_resolved_source_function_bundle(
     c_source: bytes | None = None,
     c_header: bytes | None = None,
 ) -> tuple[int, ...]:
-    """Frame already-encoded snapshots after validating every nested payload."""
-
-    from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
+    """Frame validated legacy snapshots or a complete native artifact set."""
 
     encoded = tuple(tuple(int(value) for value in snapshot) for snapshot in snapshots)
-    if not encoded:
+    artifact_fields = (canonical_mir, c_source, c_header)
+    carries_artifacts = any(value is not None for value in artifact_fields)
+    if not encoded and not carries_artifacts:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is empty")
+    if encoded:
+        from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
     decoded_snapshots: list[ResolvedSourceFunctionSnapshot] = []
     for index, snapshot in enumerate(encoded):
         if not snapshot:
@@ -85,9 +88,7 @@ def encode_resolved_source_function_bundle(
                 f"bundle snapshot {index} is invalid: {exc}"
             ) from exc
 
-    shared_source = decoded_snapshots[0].effective_source_bytes
-    artifact_fields = (canonical_mir, c_source, c_header)
-    carries_artifacts = any(value is not None for value in artifact_fields)
+    shared_source = decoded_snapshots[0].effective_source_bytes if decoded_snapshots else ()
     if carries_artifacts and any(not value for value in artifact_fields):
         raise ResolvedSourceFunctionBundleError(
             "project artifact bundle requires non-empty canonical MIR, C source, and C header"
@@ -132,7 +133,7 @@ def decode_resolved_source_function_bundle(
             f"unsupported resolved source function bundle version {bundle_version}"
         )
     count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
-    if count <= 0:
+    if count < 0 or (count == 0 and bundle_version != PROJECT_ARTIFACT_BUNDLE_VERSION):
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
 
     position = _BUNDLE_HEADER_WIDTH
@@ -266,8 +267,8 @@ def decode_native_project_artifact_transport(
     if data[_BUNDLE_VERSION_INDEX] != PROJECT_ARTIFACT_BUNDLE_VERSION:
         raise ResolvedSourceFunctionBundleError("native project artifacts require bundle v4")
     count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
-    if count <= 0:
-        raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
+    if count < 0:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid function count")
 
     position = _BUNDLE_HEADER_WIDTH
 

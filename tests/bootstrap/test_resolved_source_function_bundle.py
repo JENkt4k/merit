@@ -84,6 +84,17 @@ def test_bundle_v4_round_trips_native_project_artifacts() -> None:
     assert transport.canonical_mir_bytes == decoded.canonical_mir_bytes
 
 
+def test_bundle_v4_can_carry_artifacts_without_legacy_snapshots() -> None:
+    encoded = encode_resolved_source_function_bundle(
+        (), module_name="demo", canonical_mir=b"mir", c_source=b"c", c_header=b"h"
+    )
+
+    assert encoded[:3] == (BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION, 0)
+    transport = decode_native_project_artifact_transport(encoded)
+    assert transport.canonical_mir_bytes == b"mir"
+    assert decode_resolved_source_function_bundle(encoded).functions == ()
+
+
 def test_v4_transport_treats_nested_snapshot_as_opaque() -> None:
     encoded = encode_resolved_source_function_bundle(
         (_snapshot(),), canonical_mir=b"mir", c_source=b"c", c_header=b"h"

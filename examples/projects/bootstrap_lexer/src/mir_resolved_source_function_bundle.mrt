@@ -79,7 +79,9 @@ pub fn print_resolved_source_function_project_bundle_header(function_count: i64)
 pub fn print_resolved_source_function_project_artifact_bundle_header(
     function_count: i64
 ) -> i32 {
-    if (function_count <= 0) { return 1; }
+    // V4 can carry only canonical MIR/C/header artifacts. Unlike legacy
+    // bundles, no Python-consumed snapshot row is required.
+    if (function_count < 0) { return 1; }
     print(resolved_source_function_bundle_magic());
     print(resolved_source_function_project_artifact_bundle_version());
     print(function_count);
