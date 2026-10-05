@@ -15,12 +15,10 @@ resolved-source snapshot contract.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
-from merit.bootstrap.resolved_source_function_snapshot import (
-    ResolvedSourceFunctionSnapshot,
-    decode_resolved_source_function_snapshot,
-)
+if TYPE_CHECKING:
+    from merit.bootstrap.resolved_source_function_snapshot import ResolvedSourceFunctionSnapshot
 
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
 BUNDLE_VERSION = 3
@@ -49,6 +47,17 @@ class ResolvedSourceFunctionBundle:
     c_header_bytes: bytes = b""
 
 
+@dataclass(frozen=True)
+class NativeProjectArtifactTransport:
+    """Validated v4 framing; nested semantic snapshots remain opaque."""
+
+    module_name: str
+    capability_names: tuple[str, ...]
+    canonical_mir_bytes: bytes
+    c_source_bytes: bytes
+    c_header_bytes: bytes
+
+
 def encode_resolved_source_function_bundle(
     snapshots: Iterable[Iterable[int]],
     *,
@@ -59,6 +68,8 @@ def encode_resolved_source_function_bundle(
     c_header: bytes | None = None,
 ) -> tuple[int, ...]:
     """Frame already-encoded snapshots after validating every nested payload."""
+
+    from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
 
     encoded = tuple(tuple(int(value) for value in snapshot) for snapshot in snapshots)
     if not encoded:
@@ -110,6 +121,8 @@ def encode_resolved_source_function_bundle(
 def decode_resolved_source_function_bundle(
     values: Iterable[int],
 ) -> ResolvedSourceFunctionBundle:
+    from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
+
     data = tuple(int(value) for value in values)
     if len(data) < _BUNDLE_HEADER_WIDTH or data[_BUNDLE_MAGIC_INDEX] != BUNDLE_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
@@ -239,4 +252,77 @@ def decode_resolved_source_function_bundle(
     return ResolvedSourceFunctionBundle(
         tuple(decoded), tuple(encoded), module_name, capability_names,
         canonical_mir_bytes, c_source_bytes, c_header_bytes,
+    )
+
+
+def decode_native_project_artifact_transport(
+    values: Iterable[int],
+) -> NativeProjectArtifactTransport:
+    """Validate v4 framing without importing Python snapshot semantics."""
+
+    data = tuple(int(value) for value in values)
+    if len(data) < _BUNDLE_HEADER_WIDTH or data[_BUNDLE_MAGIC_INDEX] != BUNDLE_MAGIC:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
+    if data[_BUNDLE_VERSION_INDEX] != PROJECT_ARTIFACT_BUNDLE_VERSION:
+        raise ResolvedSourceFunctionBundleError("native project artifacts require bundle v4")
+    count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
+    if count <= 0:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
+
+    position = _BUNDLE_HEADER_WIDTH
+
+    def length_delimited(label: str, *, nonempty: bool = False) -> bytes:
+        nonlocal position
+        if position >= len(data):
+            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has truncated {label}")
+        length = data[position]
+        position += 1
+        if length < 0 or (nonempty and length == 0):
+            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} length")
+        end = position + length
+        if end > len(data):
+            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has truncated {label}")
+        payload = data[position:end]
+        position = end
+        if any(value < 0 or value > 255 for value in payload):
+            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} byte")
+        return bytes(payload)
+
+    for index in range(count):
+        # Snapshot rows are not interpreted by the host in the native artifact
+        # protocol. Their length still has to frame the following metadata.
+        if position >= len(data):
+            raise ResolvedSourceFunctionBundleError(f"bundle is missing function {index} length")
+        length = data[position]
+        position += 1
+        if length <= 0 or position + length > len(data):
+            raise ResolvedSourceFunctionBundleError(f"bundle function {index} is truncated or empty")
+        position += length
+    if position >= len(data) or data[position] != _METADATA_MAGIC:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing metadata")
+    position += 1
+    try:
+        module_name = length_delimited("module name", nonempty=True).decode("utf-8")
+        if position >= len(data):
+            raise ResolvedSourceFunctionBundleError("resolved source function bundle has truncated capabilities")
+        capability_count = data[position]
+        position += 1
+        if capability_count < 0:
+            raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid capability count")
+        capability_names = tuple(
+            length_delimited("capability name").decode("utf-8")
+            for _ in range(capability_count)
+        )
+    except UnicodeDecodeError as exc:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid metadata UTF-8") from exc
+    if position >= len(data) or data[position] != _PROJECT_ARTIFACT_MAGIC:
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing project artifacts")
+    position += 1
+    canonical_mir = length_delimited("canonical MIR", nonempty=True)
+    c_source = length_delimited("C source", nonempty=True)
+    c_header = length_delimited("C header", nonempty=True)
+    if position != len(data):
+        raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
+    return NativeProjectArtifactTransport(
+        module_name, capability_names, canonical_mir, c_source, c_header,
     )

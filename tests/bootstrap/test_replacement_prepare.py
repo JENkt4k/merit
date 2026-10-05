@@ -220,12 +220,51 @@ def test_prepare_replacement_publishes_native_backend_artifacts_with_digests(
         "replacement-project.c",
         "replacement-project.h",
     ]
+    assert prepared.snapshot_paths == ()
+    assert not (root / ".merit" / "replacement-project.source").exists()
     payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
     assert payload["producer_protocol"] == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+    assert payload["functions"] == []
     for label, metadata in payload["native_artifacts"].items():
         content = (root / ".merit" / metadata["path"]).read_bytes()
         assert content
         assert metadata["sha256"] == hashlib.sha256(content).hexdigest(), label
+
+
+def test_v4_preparation_never_imports_python_snapshot_semantics(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    driver = _native_artifact_driver(tmp_path)
+    probe = """
+import importlib.abc
+import sys
+from pathlib import Path
+
+class RejectSemanticImports(importlib.abc.MetaPathFinder):
+    blocked = (
+        'merit.compiler',
+        'merit.project.loader',
+        'merit.bootstrap.resolved_source_function_snapshot',
+        'merit.bootstrap.mir_contract',
+        'merit.bootstrap.mir_to_c',
+        'merit.bootstrap.replacement_project',
+    )
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in self.blocked:
+            raise AssertionError(f'Python semantic import in v4 preparation: {fullname}')
+        return None
+
+sys.meta_path.insert(0, RejectSemanticImports())
+from merit.project.replacement_loader import load_replacement_project
+from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
+project = load_replacement_project(Path(sys.argv[1]) / 'Merit.toml')
+prepared = prepare_replacement_artifacts(project, NativeReplacementDriver(Path(sys.argv[2])))
+assert prepared.snapshot_paths == ()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", probe, str(root), str(driver)],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: Path) -> None:

@@ -138,12 +138,18 @@ def _run_driver(
             f"replacement driver emitted no bundle for project {project_name!r}"
         )
     from merit.bootstrap.resolved_source_function_bundle import (
+        PROJECT_ARTIFACT_BUNDLE_VERSION,
         ResolvedSourceFunctionBundleError,
+        decode_native_project_artifact_transport,
         decode_resolved_source_function_bundle,
     )
 
     try:
-        bundle = decode_resolved_source_function_bundle(values)
+        bundle = (
+            decode_native_project_artifact_transport(values)
+            if len(values) > 1 and values[1] == PROJECT_ARTIFACT_BUNDLE_VERSION
+            else decode_resolved_source_function_bundle(values)
+        )
     except ResolvedSourceFunctionBundleError as exc:
         raise ReplacementProjectError(
             f"replacement driver emitted invalid bundle for project {project_name!r}: {exc}"
@@ -185,7 +191,9 @@ def prepare_replacement_artifacts(
     project: LoadedProject | ReplacementLoadedProject,
     driver: NativeReplacementDriver,
 ) -> PreparedReplacementArtifacts:
-    """Run the native replacement driver and publish all resolved functions atomically."""
+    """Run the native replacement driver and publish its versioned artifacts."""
+
+    from merit.bootstrap.resolved_source_function_bundle import NativeProjectArtifactTransport
 
     artifact_dir = project.manifest.root / ".merit"
     staged: list[tuple[Path, str]] = []
@@ -200,44 +208,45 @@ def prepare_replacement_artifacts(
         project_name=project.manifest.name,
         source_path=project.manifest.entry_path,
     )
-    try:
-        project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
-    except (IndexError, UnicodeDecodeError) as exc:
-        raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
-    digest = _source_digest(project_source)
-    capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}
-    for function_index, values in enumerate(bundle.encoded_snapshots):
-        filename = f"replacement-{bundle.module_name}-{function_index}.snapshot"
-        path = artifact_dir / filename
-        staged.append((path, "\n".join(str(value) for value in values) + "\n"))
-        snapshot_paths.append(path)
-        manifest_functions.append(
-            {
-                "module": bundle.module_name,
-                "function_index": function_index,
-                "snapshot": filename,
-                "source_sha256": digest,
-                "capability_names": capability_names,
-                "project_source": "replacement-project.source",
-                "request_sha256": hashlib.sha256(request).hexdigest(),
-            }
-        )
-
-    staged.append((artifact_dir / "replacement-project.source", project_source))
+    if not isinstance(bundle, NativeProjectArtifactTransport):
+        try:
+            project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+        except (IndexError, UnicodeDecodeError) as exc:
+            raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
+        digest = _source_digest(project_source)
+        capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}
+        for function_index, values in enumerate(bundle.encoded_snapshots):
+            filename = f"replacement-{bundle.module_name}-{function_index}.snapshot"
+            path = artifact_dir / filename
+            staged.append((path, "\n".join(str(value) for value in values) + "\n"))
+            snapshot_paths.append(path)
+            manifest_functions.append(
+                {
+                    "module": bundle.module_name,
+                    "function_index": function_index,
+                    "snapshot": filename,
+                    "source_sha256": digest,
+                    "capability_names": capability_names,
+                    "project_source": "replacement-project.source",
+                    "request_sha256": hashlib.sha256(request).hexdigest(),
+                }
+            )
+        staged.append((artifact_dir / "replacement-project.source", project_source))
 
     producer_protocol = DRIVER_PROTOCOL
     native_artifacts: dict[str, dict[str, str]] | None = None
-    if bundle.canonical_mir_bytes or bundle.c_source_bytes or bundle.c_header_bytes:
+    if isinstance(bundle, NativeProjectArtifactTransport):
         if not (bundle.canonical_mir_bytes and bundle.c_source_bytes and bundle.c_header_bytes):
             raise ReplacementProjectError(
                 "replacement driver response has an incomplete native project artifact set"
             )
         try:
+            bundle.canonical_mir_bytes.decode("utf-8")
             bundle.c_source_bytes.decode("utf-8")
             bundle.c_header_bytes.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ReplacementProjectError(
-                "replacement driver response has non-UTF-8 C or header artifacts"
+                "replacement driver response has non-UTF-8 native project artifacts"
             ) from exc
         artifact_payloads = {
             "canonical_mir": ("replacement-project.mir.json", bundle.canonical_mir_bytes),

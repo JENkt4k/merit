@@ -7,6 +7,7 @@ from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_VERSION,
     PROJECT_ARTIFACT_BUNDLE_VERSION,
     ResolvedSourceFunctionBundleError,
+    decode_native_project_artifact_transport,
     decode_resolved_source_function_bundle,
     encode_resolved_source_function_bundle,
 )
@@ -78,6 +79,41 @@ def test_bundle_v4_round_trips_native_project_artifacts() -> None:
     assert decoded.canonical_mir_bytes == b"mir-v1\n"
     assert decoded.c_source_bytes == b"#include <stdint.h>\n"
     assert decoded.c_header_bytes == b"#pragma once\n"
+    transport = decode_native_project_artifact_transport(encoded)
+    assert transport.module_name == decoded.module_name
+    assert transport.canonical_mir_bytes == decoded.canonical_mir_bytes
+
+
+def test_v4_transport_treats_nested_snapshot_as_opaque() -> None:
+    encoded = encode_resolved_source_function_bundle(
+        (_snapshot(),), canonical_mir=b"mir", c_source=b"c", c_header=b"h"
+    )
+    snapshot_length = encoded[3]
+    opaque = (*encoded[:3], 1, 0, *encoded[4 + snapshot_length:])
+
+    transport = decode_native_project_artifact_transport(opaque)
+
+    assert transport.canonical_mir_bytes == b"mir"
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="invalid"):
+        decode_resolved_source_function_bundle(opaque)
+
+
+@pytest.mark.parametrize("damage", ("truncated", "trailing", "bad-byte", "bad-metadata"))
+def test_v4_transport_rejects_invalid_framing(damage: str) -> None:
+    encoded = encode_resolved_source_function_bundle(
+        (_snapshot(),), canonical_mir=b"mir", c_source=b"c", c_header=b"h"
+    )
+    if damage == "truncated":
+        broken = encoded[:-1]
+    elif damage == "trailing":
+        broken = (*encoded, 0)
+    elif damage == "bad-byte":
+        broken = (*encoded[:-1], 256)
+    else:
+        metadata_index = 4 + encoded[3]
+        broken = (*encoded[:metadata_index], 0, *encoded[metadata_index + 1:])
+    with pytest.raises(ResolvedSourceFunctionBundleError):
+        decode_native_project_artifact_transport(broken)
 
 
 def test_bundle_v4_requires_all_nonempty_native_project_artifacts() -> None:
