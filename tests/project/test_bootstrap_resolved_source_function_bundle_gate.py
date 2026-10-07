@@ -4408,7 +4408,7 @@ CANONICAL_C_BUFFER_LEN_PROBE = CANONICAL_C_BUFFER_FROM_STRING_PROBE.replace(
     'vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));',
     'vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,1,function_mir_mode_value(),1));\n'
     '  vec_push<MirFunctionRecord>(records,function_mir_call(26,10,1,3,26,10,function_mir_i64_type_code(),function_mir_mode_value(),-1));\n'
-    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,2,function_mir_mode_value(),0));',
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,2,function_mir_mode_borrowed(),0));',
 ).replace(
     'vec_new<MirFunctionInstructionSource>(allocator,2)',
     'vec_new<MirFunctionInstructionSource>(allocator,3)',
@@ -4468,8 +4468,8 @@ CANONICAL_C_BUFFER_GET_PROBE = CANONICAL_C_BUFFER_LEN_PROBE.replace(
     'function_mir_call(26,10,1,3,26,10,',
     'function_mir_call(26,10,1,4,26,10,',
 ).replace(
-    'function_mir_call_argument(1,2,function_mir_mode_value(),0));',
-    'function_mir_call_argument(1,3,function_mir_mode_value(),0));\n'
+    'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0));',
+    'function_mir_call_argument(1,3,function_mir_mode_borrowed(),0));\n'
     '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,2,function_mir_mode_value(),1));',
 ).replace(
     'vec_new<MirFunctionRecord>(allocator,9)', 'vec_new<MirFunctionRecord>(allocator,12)',
@@ -4497,13 +4497,13 @@ CANONICAL_C_BUFFER_PUSH_PROBE = CANONICAL_C_BUFFER_GET_PROBE.replace(
     'function_mir_call(26,10,1,4,26,10,function_mir_i64_type_code()',
     'function_mir_call(26,11,1,-1,26,11,function_mir_unit_type_code()',
 ).replace(
-    'function_mir_call_argument(1,3,function_mir_mode_value(),0)',
+    'function_mir_call_argument(1,3,function_mir_mode_borrowed(),0)',
     'function_mir_call_argument(1,3,function_mir_mode_mutable_borrow(),0)',
 ).replace(
     'function_mir_call_argument(1,2,function_mir_mode_value(),1));',
     'function_mir_call_argument(1,2,function_mir_mode_value(),1));\n'
     '  vec_push<MirFunctionRecord>(records,function_mir_call(38,10,2,4,38,10,function_mir_i64_type_code(),function_mir_mode_value(),-1));\n'
-    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,3,function_mir_mode_value(),0));',
+    '  vec_push<MirFunctionRecord>(records,function_mir_call_argument(2,3,function_mir_mode_borrowed(),0));',
 ).replace(
     'vec_new<MirFunctionRecord>(allocator,12)', 'vec_new<MirFunctionRecord>(allocator,14)',
 ).replace(
@@ -5061,36 +5061,49 @@ def test_merit_placed_buffer_read_generated_c_matches_expected(
     ("probe", "status"),
     [
         (CANONICAL_C_BUFFER_LEN_PROBE.replace(
-            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
-            'function_mir_call_argument(1,1,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,1,function_mir_mode_borrowed(),0)',
         ), 96),
+        (CANONICAL_C_BUFFER_LEN_PROBE.replace(
+            'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
+        ), 68),
         (CANONICAL_C_BUFFER_LEN_PROBE.replace(
             'function_mir_call(26,10,1,3,26,10,function_mir_i64_type_code()',
             'function_mir_call(26,10,1,3,26,10,function_mir_buffer_type_code()',
         ), 66),
         (CANONICAL_C_BUFFER_LEN_PROBE.replace(
-            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0)',
             'function_mir_call_argument(1,2,function_mir_mode_value(),1)',
         ), 69),
         (CANONICAL_C_BUFFER_ALLOCATOR_PROBE.replace(
-            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
-            'function_mir_call_argument(1,1,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,1,function_mir_mode_borrowed(),0)',
         ), 96),
+        (CANONICAL_C_BUFFER_ALLOCATOR_PROBE.replace(
+            'function_mir_call_argument(1,2,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,2,function_mir_mode_value(),0)',
+        ), 68),
         (CANONICAL_C_BUFFER_ALLOCATOR_PROBE.replace(
             'function_mir_call(26,16,1,3,26,16,function_mir_allocator_type_code()',
             'function_mir_call(26,16,1,3,26,16,function_mir_i64_type_code()',
         ), 66),
         (CANONICAL_C_BUFFER_GET_PROBE.replace(
-            'function_mir_call_argument(1,3,function_mir_mode_value(),0)',
-            'function_mir_call_argument(1,1,function_mir_mode_value(),0)',
+            'function_mir_call_argument(1,3,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,1,function_mir_mode_borrowed(),0)',
         ), 96),
+        (CANONICAL_C_BUFFER_GET_PROBE.replace(
+            'function_mir_call_argument(1,3,function_mir_mode_borrowed(),0)',
+            'function_mir_call_argument(1,3,function_mir_mode_value(),0)',
+        ), 68),
         (CANONICAL_C_BUFFER_GET_PROBE.replace(
             'function_mir_call_argument(1,2,function_mir_mode_value(),1)',
             'function_mir_call_argument(1,1,function_mir_mode_value(),1)',
         ), 96),
     ],
-    ids=["length-receiver", "length-result", "length-ordinal",
-         "allocator-receiver", "allocator-result", "get-receiver", "get-index"],
+    ids=["length-receiver", "length-mode", "length-result", "length-ordinal",
+         "allocator-receiver", "allocator-mode", "allocator-result",
+         "get-receiver", "get-mode", "get-index"],
 )
 def test_merit_placed_buffer_read_fails_closed(
     tmp_path: Path, probe: str, status: int,

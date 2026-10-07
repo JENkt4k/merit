@@ -2143,6 +2143,11 @@ requires_caps [allocate]
                                                 if(function_mir_ordinal(builtin_argument)==builtin_operand_ordinal){
                                                     if(builtin_operand_found!=0){return 67;}
                                                     var required_mode:i32=function_mir_mode_value();
+                                                    if(builtin_operand_ordinal==0){
+                                                        if(buffer_len_builtin!=0){required_mode=function_mir_mode_borrowed();}
+                                                        if(buffer_get_builtin!=0){required_mode=function_mir_mode_borrowed();}
+                                                        if(buffer_allocator_builtin!=0){required_mode=function_mir_mode_borrowed();}
+                                                    }
                                                     if(buffer_push_builtin!=0){
                                                         if(builtin_operand_ordinal==0){required_mode=function_mir_mode_mutable_borrow();}
                                                     }
