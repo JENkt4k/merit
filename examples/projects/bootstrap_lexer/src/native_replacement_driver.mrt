@@ -48,8 +48,20 @@ pub fn native_driver_canonical_begin_failure_status(status:i32)->i32{return chec
 pub fn native_driver_canonical_function_failure_status(status:i32)->i32{return checked_add(4100,status);}
 pub fn native_driver_canonical_append_failure_status(status:i32)->i32{return checked_add(4200,status);}
 pub fn native_driver_canonical_finish_failure_status(status:i32)->i32{return checked_add(4300,status);}
+pub fn native_driver_backend_function_failure_status(status:i32)->i32{return checked_add(4400,status);}
+pub fn native_driver_backend_module_failure_status(status:i32)->i32{return checked_add(4500,status);}
+pub fn native_driver_backend_header_failure_status(status:i32)->i32{return checked_add(4600,status);}
+pub fn native_driver_backend_catalog_failure_status(status:i32)->i32{return checked_add(4700,status);}
 
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
+    return native_driver_emit(source_text,0);
+}
+
+pub fn emit_native_project_artifacts(source_text: String) -> i32 {
+    return native_driver_emit(source_text,1);
+}
+
+fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
     with capability allocate {
         let allocator: Allocator = system_allocator();
         let request_source: Buffer = buffer_from_string(allocator, source_text);
@@ -125,7 +137,12 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         }
         if (function_count <= 0) { return native_driver_missing_function_status(); }
 
-        let header_status: i32 = print_resolved_source_function_project_bundle_header(function_count);
+        var header_status: i32 = 0;
+        if(artifact_mode==0){
+            header_status=print_resolved_source_function_project_bundle_header(function_count);
+        }else{
+            header_status=print_resolved_source_function_project_artifact_bundle_header(0);
+        }
         if (header_status != 0) {
             return native_driver_bundle_header_failure_status(header_status);
         }
@@ -144,6 +161,12 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         var capabilities: Vec<CapabilityCatalogEntry> = vec_new<CapabilityCatalogEntry>(allocator, 4);
         var callable_signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,8);
         var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
+        var backend_callable_headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,16);
+        var backend_vector_types:Vec<i32>=vec_new<i32>(allocator,4);
+        var backend_features:Vec<i64>=vec_new<i64>(allocator,16);
+        var backend_prototypes:Buffer=buffer_new(allocator,4096);
+        var backend_bodies:Buffer=buffer_new(allocator,8192);
+        var backend_declarations:Buffer=buffer_new(allocator,4096);
         var canonical_project:Buffer=buffer_new(allocator,4096);
         let canonical_begin_status:i32=canonical_mir_begin_project(canonical_project);
         if(canonical_begin_status!=0){
@@ -608,6 +631,37 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                 source,tokens,variants,structs,allocator,callable_signatures,callable_parameters
                             );
                             if(callable_status!=0){return native_driver_callable_catalog_failure_status(callable_status);}
+                            if(artifact_mode!=0){
+                                var signature_index:i64=0;
+                                while(signature_index<vec_len<SourceFunctionSignature>(callable_signatures)){
+                                    let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(callable_signatures,signature_index);
+                                    let signature_start:i64=source_function_signature_name_start(signature);
+                                    let signature_length:i64=source_function_signature_name_length(signature);
+                                    vec_push<MirFunctionRecord>(backend_callable_headers,function_mir_callable_header(
+                                        signature_start,signature_length,signature_start,signature_length,
+                                        source_function_signature_return_type(signature),
+                                        source_function_signature_return_mode(signature),
+                                        source_function_signature_borrowed_origin(signature),
+                                        source_function_signature_parameter_count(signature),0
+                                    ));
+                                    var parameter_ordinal:i64=0;
+                                    while(parameter_ordinal<source_function_signature_parameter_count(signature)){
+                                        let parameter_index:i64=checked_add(
+                                            source_function_signature_parameter_start(signature),parameter_ordinal
+                                        );
+                                        let parameter:SourceFunctionParameter=vec_get<SourceFunctionParameter>(callable_parameters,parameter_index);
+                                        vec_push<MirFunctionRecord>(backend_callable_headers,function_mir_parameter(
+                                            source_function_parameter_name_start(parameter),
+                                            source_function_parameter_name_length(parameter),
+                                            parameter_ordinal,source_function_parameter_type(parameter),
+                                            parameter_ordinal,source_function_parameter_mutable(parameter),
+                                            source_function_parameter_mode(parameter),parameter_ordinal
+                                        ));
+                                        parameter_ordinal=checked_add(parameter_ordinal,1);
+                                    }
+                                    signature_index=checked_add(signature_index,1);
+                                }
+                            }
                             // Destructors are canonical executable programs, not
                             // type-name policies. Lower every top-level destructor
                             // through the same expression/statement/CFG records and
@@ -792,19 +846,36 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
                                     if(append_status!=0){
                                         function_status=native_driver_canonical_append_failure_status(append_status);
                                     }else{
-                                        var include_effective_source: i32 = 0;
-                                        if (emitted_functions == 0) { include_effective_source = 1; }
-                                        let item_status: i32 = print_resolved_source_function_bundle_item_with_source_policy(
-                                            source, include_effective_source, body, contracts, contract_locals, sources, ownership,
-                                            ownership_records, cfg, placements, required, type_descriptors,
-                                            numeric_type_descriptors,
-                                            destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
-                                        );
-                                        if (item_status != 0) {
-                                            function_status = native_driver_bundle_item_failure_status(item_status);
-                                        } else {
-                                            emitted_functions = checked_add(emitted_functions, 1);
+                                        if(artifact_mode==0){
+                                            var include_effective_source: i32 = 0;
+                                            if (emitted_functions == 0) { include_effective_source = 1; }
+                                            let item_status: i32 = print_resolved_source_function_bundle_item_with_source_policy(
+                                                source, include_effective_source, body, contracts, contract_locals, sources, ownership,
+                                                ownership_records, cfg, placements, required, type_descriptors,
+                                                numeric_type_descriptors,
+                                                destructor_descriptors, destructor_body, destructor_cfg, destructor_placements
+                                            );
+                                            if (item_status != 0) {
+                                                function_status = native_driver_bundle_item_failure_status(item_status);
+                                            }
+                                        }else{
+                                            let backend_status:i32=canonical_c_append_function_with_catalog(
+                                                source,body,backend_callable_headers,type_descriptors,sources,
+                                                ownership_records,cfg,placements,backend_prototypes,backend_bodies,
+                                                backend_declarations,backend_features
+                                            );
+                                            if(backend_status!=0){
+                                                function_status=native_driver_backend_function_failure_status(backend_status);
+                                            }else{
+                                                let catalog_status:i32=canonical_c_collect_vector_types_from_records(
+                                                    body,backend_vector_types
+                                                );
+                                                if(catalog_status!=0){
+                                                    function_status=native_driver_backend_catalog_failure_status(catalog_status);
+                                                }
+                                            }
                                         }
+                                        if(function_status==0){emitted_functions=checked_add(emitted_functions,1);}
                                     }
                                 }
                             }
@@ -846,10 +917,35 @@ pub fn emit_replacement_bundle(source_text: String) -> i32 {
         if(canonical_finish_status!=0){
             return native_driver_canonical_finish_failure_status(canonical_finish_status);
         }
-        let metadata_status: i32 = print_resolved_source_function_bundle_metadata(
-            source, token_start(module_token), token_length(module_token), capabilities
-        );
-        if (metadata_status != 0) { return checked_add(6000, metadata_status); }
+        if(artifact_mode==0){
+            let metadata_status:i32=print_resolved_source_function_bundle_metadata(
+                source,token_start(module_token),token_length(module_token),capabilities
+            );
+            if(metadata_status!=0){return checked_add(6000,metadata_status);}
+        }else{
+            var backend_source:Buffer=buffer_new(allocator,16384);
+            var backend_header:Buffer=buffer_new(allocator,4096);
+            let module_status:i32=canonical_c_finish_copy_vector_catalog_module(
+                backend_prototypes,backend_bodies,backend_features,
+                backend_vector_types,type_descriptors,backend_source
+            );
+            if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
+            let public_status:i32=canonical_c_finish_public_header(
+                backend_declarations,backend_features,backend_header
+            );
+            if(public_status!=0){return native_driver_backend_header_failure_status(public_status);}
+            let metadata_status:i32=print_resolved_source_function_bundle_metadata(
+                source,token_start(module_token),token_length(module_token),capabilities
+            );
+            if(metadata_status!=0){return checked_add(6000,metadata_status);}
+            let artifact_status:i32=print_resolved_source_function_project_artifacts(
+                canonical_project,backend_source,backend_header
+            );
+            if(artifact_status!=0){return checked_add(6100,artifact_status);}
+            drop(backend_header);drop(backend_source);
+        }
+        drop(backend_declarations);drop(backend_bodies);drop(backend_prototypes);
+        drop(backend_features);drop(backend_vector_types);drop(backend_callable_headers);
         drop(callable_parameters);drop(callable_signatures);
         drop(canonical_project);
         drop(capabilities);
