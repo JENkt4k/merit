@@ -830,15 +830,24 @@ requires_caps [allocate]
     }
     if(buffer_get(source,digit_start)==48){negative=0;}
     if(type_code!=function_mir_i32_type_code()){
-        if(type_code!=function_mir_i64_type_code()){return 1;}
+        if(type_code!=function_mir_i64_type_code()){
+            if(type_code!=function_mir_u8_type_code()){return 1;}
+        }
+    }
+    if(type_code==function_mir_u8_type_code()){
+        if(negative!=0){return 1;}
     }
     var limit:Buffer=buffer_new(system_allocator(),20);
     if(type_code==function_mir_i32_type_code()){
         if(negative!=0){canonical_mir_append_text(limit,"2147483648");}
         else{canonical_mir_append_text(limit,"2147483647");}
     }else{
-        if(negative!=0){canonical_mir_append_text(limit,"9223372036854775808");}
-        else{canonical_mir_append_text(limit,"9223372036854775807");}
+        if(type_code==function_mir_u8_type_code()){
+            canonical_mir_append_text(limit,"255");
+        }else{
+            if(negative!=0){canonical_mir_append_text(limit,"9223372036854775808");}
+            else{canonical_mir_append_text(limit,"9223372036854775807");}
+        }
     }
     let digits:i64=checked_sub(end,digit_start);
     var valid:i32=1;
@@ -870,7 +879,11 @@ requires_caps [allocate]
     }
     if(type_code==function_mir_i32_type_code()){
         canonical_mir_append_text(output,"INT32_C(");
-    }else{canonical_mir_append_text(output,"INT64_C(");}
+    }else{
+        if(type_code==function_mir_u8_type_code()){
+            canonical_mir_append_text(output,"UINT8_C(");
+        }else{canonical_mir_append_text(output,"INT64_C(");}
+    }
     if(negative!=0){buffer_push(output,45);}
     bootstrap_buffer_append(output,source,digit_start,digits);
     buffer_push(output,41);

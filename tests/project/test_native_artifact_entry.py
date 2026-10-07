@@ -9,7 +9,12 @@ import subprocess
 
 import pytest
 
+from merit.bootstrap.mir_contract import (
+    MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirTerminator, MirType,
+)
+from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 from merit.bootstrap.resolved_source_function_bundle import (
+    BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION,
     decode_resolved_source_function_bundle,
     decode_native_project_artifact_transport,
 )
@@ -113,6 +118,68 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
                    check=True, capture_output=True)
     text_stdout = subprocess.run([str(text_program)], check=True, capture_output=True).stdout
     assert text_stdout.replace(b"\r\n", b"\n") == b"hi\n"
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\npub fn main()->i32 { let byte:u8=33; print(byte); return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    byte_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    byte_result = subprocess.run([str(executable)], input=byte_request, capture_output=True)
+    assert byte_result.returncode == 0, byte_result.stderr.decode("utf-8", errors="replace")
+    byte_transport = decode_native_project_artifact_transport(
+        int(line) for line in byte_result.stdout.splitlines()
+    )
+    assert b"UINT8_C(33)" in byte_transport.c_source_bytes
+    byte_module = MirModule("probe", (MirFunction(
+        "main", MirType("i32"), (
+            MirLocal(0, "byte", MirType("u8"), source_binding_id=0),
+            MirLocal(1, "_t0", MirType("u8")),
+            MirLocal(2, "_t4", MirType("i32")),
+        ), (MirBlock(0, (
+            MirInstruction(0, "const", result=1, value=33, ownership="value"),
+            MirInstruction(1, "copy", result=0, operands=(1,)),
+            MirInstruction(2, "print", operands=(0,)),
+            MirInstruction(3, "const", result=2, value=0, ownership="value"),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
+    ),))
+    assert byte_transport.c_source_bytes.decode("utf-8") == emit_c_module(byte_module)
+    assert byte_transport.c_header_bytes.decode("utf-8") == emit_c_header(byte_module)
+    byte_c = tmp_path / "native-byte.c"
+    byte_c.write_bytes(byte_transport.c_source_bytes)
+    byte_driver = tmp_path / "native-byte-driver.c"
+    byte_driver.write_text(
+        '#include "native-byte.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    byte_program = tmp_path / "native-byte-program"
+    subprocess.run([cc, "-std=c11", str(byte_driver), "-o", str(byte_program)],
+                   check=True, capture_output=True)
+    byte_stdout = subprocess.run([str(byte_program)], check=True, capture_output=True).stdout
+    assert byte_stdout.replace(b"\r\n", b"\n") == b"33\n"
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\npub fn main()->i32 { let byte:u8=255; print(byte); return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    boundary_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    boundary_result = subprocess.run([str(executable)], input=boundary_request, capture_output=True)
+    assert boundary_result.returncode == 0
+    boundary = decode_native_project_artifact_transport(
+        int(line) for line in boundary_result.stdout.splitlines()
+    )
+    assert b"UINT8_C(255)" in boundary.c_source_bytes
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\npub fn main()->i32 { let byte:u8=256; print(byte); return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    invalid_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    invalid_result = subprocess.run([str(executable)], input=invalid_request, capture_output=True)
+    assert invalid_result.returncode != 0
+    assert [int(line) for line in invalid_result.stdout.splitlines()[:3]] == [
+        BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION, 0,
+    ]
 
     compiler_manifest.write_text(
         compiler_manifest.read_text(encoding="utf-8").replace(
