@@ -89,6 +89,31 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
                    check=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
 
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\npub fn main()->i32 { print("hi"); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    text_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    text_result = subprocess.run([str(executable)], input=text_request, capture_output=True)
+    assert text_result.returncode == 0, text_result.stderr.decode("utf-8", errors="replace")
+    text_transport = decode_native_project_artifact_transport(
+        int(line) for line in text_result.stdout.splitlines()
+    )
+    assert b"merit_String" in text_transport.c_source_bytes
+    text_c = tmp_path / "native-text.c"
+    text_c.write_bytes(text_transport.c_source_bytes)
+    text_driver = tmp_path / "native-text-driver.c"
+    text_driver.write_text(
+        '#include "native-text.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    text_program = tmp_path / "native-text-program"
+    subprocess.run([cc, "-std=c11", str(text_driver), "-o", str(text_program)],
+                   check=True, capture_output=True)
+    text_stdout = subprocess.run([str(text_program)], check=True, capture_output=True).stdout
+    assert text_stdout.replace(b"\r\n", b"\n") == b"hi\n"
+
     compiler_manifest.write_text(
         compiler_manifest.read_text(encoding="utf-8").replace(
             'entry = "emit_native_project_artifacts"',
