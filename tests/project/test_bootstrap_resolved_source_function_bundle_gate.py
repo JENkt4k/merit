@@ -3293,8 +3293,40 @@ def test_merit_scalar_copy_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     assert c_header == emit_c_header(module)
 
 
-def test_merit_unit_call_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_UNIT_CALL_PROBE)
+@pytest.mark.parametrize('general_entry', [False, True])
+def test_merit_unit_call_c_backend_matches_python_oracle_bytes(
+    tmp_path: Path, general_entry: bool,
+) -> None:
+    probe = CANONICAL_C_UNIT_CALL_PROBE
+    if general_entry:
+        probe = probe.replace(
+            'import bootstrap_mir_functions;',
+            'import bootstrap_mir_functions;\n'
+            'import bootstrap_mir_function_instruction_source;\n'
+            'import bootstrap_mir_ownership_flow;',
+        )
+        probe = probe.replace(
+            '  let first_status:i32=canonical_c_append_scalar_function_with_catalog',
+            '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);\n'
+            '  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);\n'
+            '  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);\n'
+            '  let first_status:i32=canonical_c_append_function_with_catalog',
+        )
+        probe = probe.replace(
+            'canonical_c_append_scalar_function_with_catalog(source,second,headers,cfg,',
+            'canonical_c_append_function_with_catalog(source,second,headers,types,sources,effects,cfg,',
+        )
+        probe = probe.replace(
+            'canonical_c_append_function_with_catalog(source,first,headers,cfg,',
+            'canonical_c_append_function_with_catalog(source,first,headers,types,sources,effects,cfg,',
+        )
+        probe = probe.replace(
+            '  drop(features);drop(second_placements);',
+            '  drop(effects);drop(sources);drop(types);\n'
+            '  drop(features);drop(second_placements);',
+        )
+        assert probe != CANONICAL_C_UNIT_CALL_PROBE
+    root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-unit-call")
@@ -3860,10 +3892,17 @@ def test_merit_placed_vector_len_c_backend_matches_python_oracle_bytes(tmp_path:
 
 
 @pytest.mark.parametrize('element_type', ['i64', 'i32'])
+@pytest.mark.parametrize('general_entry', [False, True])
 def test_merit_vector_new_push_len_and_drop_match_python_oracle_bytes(
-    tmp_path: Path, element_type: str,
+    tmp_path: Path, element_type: str, general_entry: bool,
 ) -> None:
     probe = CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE
+    if general_entry:
+        probe = probe.replace(
+            'canonical_c_append_resource_function_with_type_catalog(',
+            'canonical_c_append_function_with_catalog(',
+        )
+        assert probe != CANONICAL_C_VECTOR_BUILD_FUNCTION_PROBE
     if element_type == 'i32':
         probe = probe.replace('vec_new__i64vec_push__i64vec_len__i64',
                               'vec_new__i32vec_push__i32vec_len__i32')
@@ -3966,7 +4005,10 @@ def test_merit_owned_vector_source_local_matches_python_oracle_bytes(tmp_path: P
     subprocess.run([str(program)], check=True, capture_output=True)
 
 
-def test_merit_owned_vector_source_local_requires_resource_effect_catalog(tmp_path: Path) -> None:
+@pytest.mark.parametrize('general_entry', [False, True])
+def test_merit_owned_vector_source_local_requires_resource_effect_catalog(
+    tmp_path: Path, general_entry: bool,
+) -> None:
     probe = CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE.replace(
         '  vec_push<MirOwnershipRecord>(effects,ownership_record(\n'
         '    ownership_record_kind_drop(),6,2,ownership_record_no_other_binding_id(),2,0,\n'
@@ -3975,6 +4017,11 @@ def test_merit_owned_vector_source_local_requires_resource_effect_catalog(tmp_pa
         '',
     )
     assert probe != CANONICAL_C_VECTOR_SOURCE_LOCAL_PROBE
+    if general_entry:
+        probe = probe.replace(
+            'canonical_c_append_resource_function_with_type_catalog(',
+            'canonical_c_append_function_with_catalog(',
+        )
     root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
     assert interpret(project) == ''

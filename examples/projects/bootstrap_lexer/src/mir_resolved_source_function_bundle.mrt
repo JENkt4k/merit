@@ -2435,6 +2435,37 @@ requires_caps [allocate]
     );
 }
 
+// Production assembly passes the complete canonical catalogs for every
+// function. The core decides which effects are required and fails closed when
+// an owned resource lacks its represented lifecycle.
+pub fn canonical_c_append_function_with_catalog(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<MirOwnershipRecord>(ownership_records)==0){
+        var source_index:i64=0;
+        while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
+            let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,source_index);
+            if(assembly_source_kind(source_record)==assembly_source_ownership_kind()){
+                return canonical_c_resource_missing_effect_status();
+            }
+            source_index=checked_add(source_index,1);
+        }
+    }
+    return canonical_c_append_function_core(
+        source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
+        prototypes,bodies,public_header,features
+    );
+}
+
 pub fn canonical_c_append_resource_function_with_catalog(
     borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
     borrow callable_headers:Vec<MirFunctionRecord>,
