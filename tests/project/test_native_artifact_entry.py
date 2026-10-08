@@ -10,7 +10,7 @@ import subprocess
 import pytest
 
 from merit.bootstrap.mir_contract import (
-    MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirTerminator, MirType,
+    MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirTerminator, MirType, parse_mir,
 )
 from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 from merit.bootstrap.resolved_source_function_bundle import (
@@ -118,6 +118,131 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
                    check=True, capture_output=True)
     text_stdout = subprocess.run([str(text_program)], check=True, capture_output=True).stdout
     assert text_stdout.replace(b"\r\n", b"\n") == b"hi\n"
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nfn helper(borrow value:String)->i32 { return 1; }\n'
+        'pub fn main()->i32 { let value:String="x"; return helper(value); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    borrowed_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    borrowed_result = subprocess.run([str(executable)], input=borrowed_request, capture_output=True)
+    assert borrowed_result.returncode == 0, borrowed_result.stderr.decode("utf-8", errors="replace")
+    borrowed = decode_native_project_artifact_transport(
+        int(line) for line in borrowed_result.stdout.splitlines()
+    )
+    borrowed_c = tmp_path / "native-borrowed.c"
+    borrowed_c.write_bytes(borrowed.c_source_bytes)
+    borrowed_driver = tmp_path / "native-borrowed-driver.c"
+    borrowed_driver.write_text(
+        '#include "native-borrowed.c"\n'
+        'int main(void) { return merit_main() == 1 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    borrowed_program = tmp_path / "native-borrowed-program"
+    subprocess.run([cc, "-std=c11", str(borrowed_driver), "-o", str(borrowed_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(borrowed_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nfn helper(borrow value:String)->i32 { return 1; }\n'
+        'pub fn main()->i32 { return helper("x"); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    temporary_borrow_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    temporary_borrow = subprocess.run([str(executable)], input=temporary_borrow_request,
+                                      capture_output=True)
+    assert temporary_borrow.returncode != 0
+    assert [int(line) for line in temporary_borrow.stdout.splitlines()[:3]] == [
+        BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION, 0,
+    ]
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nfn helper(borrow value:String)->i64 { return string_len(value); }\n'
+        'pub fn main(borrow value:String)->i64 { return helper(value); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    forwarded_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    forwarded_result = subprocess.run([str(executable)], input=forwarded_request, capture_output=True)
+    assert forwarded_result.returncode == 0, forwarded_result.stderr.decode("utf-8", errors="replace")
+    forwarded = decode_native_project_artifact_transport(
+        int(line) for line in forwarded_result.stdout.splitlines()
+    )
+    forwarded_mir = parse_mir(json.loads(forwarded.canonical_mir_bytes))
+    assert forwarded.c_source_bytes.decode("utf-8") == emit_c_module(forwarded_mir)
+    assert forwarded.c_header_bytes.decode("utf-8") == emit_c_header(forwarded_mir)
+    forwarded_c = tmp_path / "native-forwarded.c"
+    forwarded_c.write_bytes(forwarded.c_source_bytes)
+    forwarded_driver = tmp_path / "native-forwarded-driver.c"
+    forwarded_driver.write_text(
+        '#include "native-forwarded.c"\n'
+        'int main(void) { merit_String value = {(const uint8_t *)"xy", 2}; '
+        'return merit_main(&value) == 2 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    forwarded_program = tmp_path / "native-forwarded-program"
+    subprocess.run([cc, "-std=c11", str(forwarded_driver), "-o", str(forwarded_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(forwarded_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nfn helper(borrow value:String,index:i64)->u8 {'
+        ' return string_byte(value,index); }\n'
+        'pub fn main(borrow value:String,index:i64)->u8 {'
+        ' return helper(value,index); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    byte_borrow_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    byte_borrow_result = subprocess.run([str(executable)], input=byte_borrow_request, capture_output=True)
+    assert byte_borrow_result.returncode == 0, byte_borrow_result.stderr.decode("utf-8", errors="replace")
+    byte_borrow = decode_native_project_artifact_transport(
+        int(line) for line in byte_borrow_result.stdout.splitlines()
+    )
+    byte_borrow_mir = parse_mir(json.loads(byte_borrow.canonical_mir_bytes))
+    assert byte_borrow.c_source_bytes.decode("utf-8") == emit_c_module(byte_borrow_mir)
+    assert byte_borrow.c_header_bytes.decode("utf-8") == emit_c_header(byte_borrow_mir)
+    byte_borrow_c = tmp_path / "native-borrowed-byte.c"
+    byte_borrow_c.write_bytes(byte_borrow.c_source_bytes)
+    byte_borrow_driver = tmp_path / "native-borrowed-byte-driver.c"
+    byte_borrow_driver.write_text(
+        '#include "native-borrowed-byte.c"\n'
+        'int main(void) { merit_String value = {(const uint8_t *)"xy", 2}; '
+        'return merit_main(&value, 1) == 121 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    byte_borrow_program = tmp_path / "native-borrowed-byte-program"
+    subprocess.run([cc, "-std=c11", str(byte_borrow_driver), "-o", str(byte_borrow_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(byte_borrow_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nfn helper(borrow value:Buffer)->i64 { return buffer_len(value); }\n'
+        'fn entry(borrow value:Buffer)->i64 { return helper(value); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    buffer_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    buffer_result = subprocess.run([str(executable)], input=buffer_request, capture_output=True)
+    assert buffer_result.returncode == 0, buffer_result.stderr.decode("utf-8", errors="replace")
+    buffer_transport = decode_native_project_artifact_transport(
+        int(line) for line in buffer_result.stdout.splitlines()
+    )
+    buffer_mir = parse_mir(json.loads(buffer_transport.canonical_mir_bytes))
+    assert all(function.locals[0].ownership == "borrowed" for function in buffer_mir.functions)
+    assert all(instruction.kind != "drop" for function in buffer_mir.functions
+               for block in function.blocks for instruction in block.instructions)
+    assert buffer_transport.c_source_bytes.decode("utf-8") == emit_c_module(buffer_mir)
+    assert buffer_transport.c_header_bytes.decode("utf-8") == emit_c_header(buffer_mir)
+    buffer_c = tmp_path / "native-borrowed-buffer.c"
+    buffer_c.write_bytes(buffer_transport.c_source_bytes)
+    buffer_driver = tmp_path / "native-borrowed-buffer-driver.c"
+    buffer_driver.write_text(
+        '#include "native-borrowed-buffer.c"\n'
+        'int main(void) { merit_Buffer value = {0}; return entry(&value) == 0 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    buffer_program = tmp_path / "native-borrowed-buffer-program"
+    subprocess.run([cc, "-std=c11", str(buffer_driver), "-o", str(buffer_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(buffer_program)], check=True, capture_output=True)
 
     (source_root / "src" / "main.mrt").write_text(
         "module probe\npub fn main()->i32 { let byte:u8=33; print(byte); return 0; }\n",

@@ -798,11 +798,15 @@ def _instruction(
         if instruction.symbol == "string_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("string_len requires one String argument and one result")
-            return [f"{result} = merit_string_len({operands[0]});"]
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = f"*{operands[0]}" if ownership in {"borrowed", "mutable_borrow"} else operands[0]
+            return [f"{result} = merit_string_len({argument});"]
         if instruction.symbol == "string_byte":
             if len(operands) != 2 or result is None:
                 raise MirToCError("string_byte requires String, index, and one result")
-            return [f"{result} = merit_string_byte({operands[0]}, {operands[1]});"]
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = f"*{operands[0]}" if ownership in {"borrowed", "mutable_borrow"} else operands[0]
+            return [f"{result} = merit_string_byte({argument}, {operands[1]});"]
         if instruction.symbol == "slice_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("slice_len requires one ByteSlice and one result")
