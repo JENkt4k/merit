@@ -245,6 +245,67 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     subprocess.run([str(buffer_program)], check=True, capture_output=True)
 
     (source_root / "src" / "main.mrt").write_text(
+        'module probe\ncapability allocate;\n'
+        'pub fn main()->i32 { with capability allocate {'
+        ' let allocator:Allocator=system_allocator();'
+        ' var data:Buffer=buffer_from_string(allocator,"x");'
+        ' drop(data); } return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    drop_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    drop_result = subprocess.run([str(executable)], input=drop_request, capture_output=True)
+    assert drop_result.returncode == 0, drop_result.stderr.decode("utf-8", errors="replace")
+    drop_transport = decode_native_project_artifact_transport(
+        int(line) for line in drop_result.stdout.splitlines()
+    )
+    drop_mir = json.loads(drop_transport.canonical_mir_bytes)
+    drop_kinds = [instruction["kind"] for function in drop_mir["functions"]
+                  for block in function["blocks"] for instruction in block["instructions"]]
+    assert "drop" in drop_kinds
+    assert drop_kinds[-1] == "const"
+    drop_c = tmp_path / "native-drop-before-const.c"
+    drop_c.write_bytes(drop_transport.c_source_bytes)
+    drop_driver = tmp_path / "native-drop-before-const-driver.c"
+    drop_driver.write_text(
+        '#include "native-drop-before-const.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    drop_program = tmp_path / "native-drop-before-const-program"
+    subprocess.run([cc, "-std=c11", str(drop_driver), "-o", str(drop_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(drop_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\npub fn main(start:i64,limit:i64,step:i64)->i64 {'
+        ' var count:i64=start; while (count<limit) {'
+        ' count=checked_add(count,step); } return count; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    loop_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    loop_result = subprocess.run([str(executable)], input=loop_request, capture_output=True)
+    assert loop_result.returncode == 0, loop_result.stderr.decode("utf-8", errors="replace")
+    loop_transport = decode_native_project_artifact_transport(
+        int(line) for line in loop_result.stdout.splitlines()
+    )
+    loop_mir = json.loads(loop_transport.canonical_mir_bytes)
+    assert len(loop_mir["functions"][0]["blocks"]) > 1
+    assert loop_transport.c_source_bytes.decode("utf-8") == emit_c_module(parse_mir(loop_mir))
+    assert loop_transport.c_header_bytes.decode("utf-8") == emit_c_header(parse_mir(loop_mir))
+    loop_c = tmp_path / "native-loop.c"
+    loop_c.write_bytes(loop_transport.c_source_bytes)
+    loop_driver = tmp_path / "native-loop-driver.c"
+    loop_driver.write_text(
+        '#include "native-loop.c"\n'
+        'int main(void) { return merit_main(0, 3, 1) == 3 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    loop_program = tmp_path / "native-loop-program"
+    subprocess.run([cc, "-std=c11", str(loop_driver), "-o", str(loop_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(loop_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
         "module probe\npub fn main()->i32 { let byte:u8=33; print(byte); return 0; }\n",
         encoding="utf-8", newline="\n",
     )
