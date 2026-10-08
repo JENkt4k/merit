@@ -68,6 +68,7 @@ pub fn function_mir_numeric_descriptor_upper_low(borrow value: MirNumericTypeDes
 pub fn function_mir_numeric_descriptor_policy(borrow value: MirNumericTypeDescriptor) -> i32 { return value.policy; }
 pub fn function_mir_numeric_descriptor_decimal_kind() -> i32 { return 1; }
 pub fn function_mir_numeric_descriptor_bounded_kind() -> i32 { return 2; }
+pub fn function_mir_numeric_descriptor_limb_base() -> i64 { return 1000000000; }
 pub fn function_mir_decimal_type_code(identity: i32) -> i32 { return checked_add(1300000, identity); }
 pub fn function_mir_bounded_type_code(identity: i32) -> i32 { return checked_add(1400000, identity); }
 pub fn function_mir_type_is_declared_numeric(type_code:i32)->i32{

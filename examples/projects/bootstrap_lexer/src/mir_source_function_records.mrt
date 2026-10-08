@@ -502,7 +502,7 @@ pub fn sfr_vector_requires_allocate(borrow source:Buffer,start:i64,length:i64)->
 }
 
 pub struct SfrNumericMagnitude { high: i64; low: i64; }
-fn sfr_numeric_limb_base() -> i64 { return 1000000000; }
+fn sfr_numeric_limb_base() -> i64 { return function_mir_numeric_descriptor_limb_base(); }
 fn sfr_invalid_numeric_magnitude() -> SfrNumericMagnitude { return SfrNumericMagnitude { high:-1, low:-1 }; }
 fn sfr_parse_numeric_magnitude(borrow source: Buffer, borrow token: Token) -> SfrNumericMagnitude {
     if (token_kind(token) != token_number_kind()) { return sfr_invalid_numeric_magnitude(); }

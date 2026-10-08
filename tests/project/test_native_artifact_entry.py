@@ -10,7 +10,8 @@ import subprocess
 import pytest
 
 from merit.bootstrap.mir_contract import (
-    MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirTerminator, MirType, parse_mir,
+    MirBlock, MirFunction, MirInstruction, MirLocal, MirModule, MirTerminator, MirType,
+    canonical_mir_json, parse_mir,
 )
 from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 from merit.bootstrap.resolved_source_function_bundle import (
@@ -61,6 +62,9 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     assert canonical["schema"] == "bootstrap-mir-v1"
     assert canonical["name"] == "probe"
     assert [function["name"] for function in canonical["functions"]] == ["main"]
+    canonical_mir = parse_mir(canonical)
+    assert transport.c_source_bytes.decode("utf-8") == emit_c_module(canonical_mir)
+    assert transport.c_header_bytes.decode("utf-8") == emit_c_header(canonical_mir)
     assert b"merit_main" in transport.c_source_bytes
     assert b"merit_main" in transport.c_header_bytes
 
@@ -104,6 +108,9 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     text_transport = decode_native_project_artifact_transport(
         int(line) for line in text_result.stdout.splitlines()
     )
+    text_mir = parse_mir(json.loads(text_transport.canonical_mir_bytes))
+    assert text_transport.c_source_bytes.decode("utf-8") == emit_c_module(text_mir)
+    assert text_transport.c_header_bytes.decode("utf-8") == emit_c_header(text_mir)
     assert b"merit_String" in text_transport.c_source_bytes
     text_c = tmp_path / "native-text.c"
     text_c.write_bytes(text_transport.c_source_bytes)
@@ -118,6 +125,41 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
                    check=True, capture_output=True)
     text_stdout = subprocess.run([str(text_program)], check=True, capture_output=True).stdout
     assert text_stdout.replace(b"\r\n", b"\n") == b"hi\n"
+
+    for index, (value, ensure_ascii) in enumerate((
+        ("line\nnext", True), ('quote " and slash \\', True),
+        ("é", True), ("😀", True), ("\u0001", True),
+        ("é", False), ("😀", False),
+    )):
+        literal = json.dumps(value, ensure_ascii=ensure_ascii)
+        (source_root / "src" / "main.mrt").write_text(
+            f"module probe\npub fn main()->i32 {{ print({literal}); return 0; }}\n",
+            encoding="utf-8", newline="\n",
+        )
+        escaped_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+        escaped_result = subprocess.run([str(executable)], input=escaped_request, capture_output=True)
+        assert escaped_result.returncode == 0, escaped_result.stderr.decode("utf-8", errors="replace")
+        escaped = decode_native_project_artifact_transport(
+            int(line) for line in escaped_result.stdout.splitlines()
+        )
+        escaped_mir = parse_mir(json.loads(escaped.canonical_mir_bytes))
+        assert escaped.canonical_mir_bytes.decode("utf-8") == canonical_mir_json(escaped_mir)
+        assert escaped.c_source_bytes.decode("utf-8") == emit_c_module(escaped_mir)
+        assert escaped.c_header_bytes.decode("utf-8") == emit_c_header(escaped_mir)
+        escaped_c = tmp_path / f"native-escaped-{index}.c"
+        escaped_c.write_bytes(escaped.c_source_bytes)
+        escaped_driver = tmp_path / f"native-escaped-{index}-driver.c"
+        escaped_driver.write_text(
+            f'#include "native-escaped-{index}.c"\n'
+            'int main(void) { return merit_main(); }\n',
+            encoding="utf-8", newline="\n",
+        )
+        escaped_program = tmp_path / f"native-escaped-{index}-program"
+        subprocess.run([cc, "-std=c11", str(escaped_driver), "-o", str(escaped_program)],
+                       check=True, capture_output=True)
+        escaped_stdout = subprocess.run([str(escaped_program)], check=True,
+                                        capture_output=True).stdout
+        assert escaped_stdout.replace(b"\r\n", b"\n") == value.encode("utf-8") + b"\n"
 
     (source_root / "src" / "main.mrt").write_text(
         'module probe\nfn helper(borrow value:String)->i32 { return 1; }\n'
@@ -183,6 +225,35 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     subprocess.run([cc, "-std=c11", str(forwarded_driver), "-o", str(forwarded_program)],
                    check=True, capture_output=True)
     subprocess.run([str(forwarded_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\n'
+        'fn helper(view:ByteSlice)->i64 { return slice_len(view); }\n'
+        'fn caller(view:ByteSlice)->i64 { return helper(view); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    slice_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    slice_result = subprocess.run([str(executable)], input=slice_request, capture_output=True)
+    assert slice_result.returncode == 0, slice_result.stderr.decode("utf-8", errors="replace")
+    slice_transport = decode_native_project_artifact_transport(
+        int(line) for line in slice_result.stdout.splitlines()
+    )
+    slice_mir = parse_mir(json.loads(slice_transport.canonical_mir_bytes))
+    assert slice_transport.c_source_bytes.decode("utf-8") == emit_c_module(slice_mir)
+    assert slice_transport.c_header_bytes.decode("utf-8") == emit_c_header(slice_mir)
+    slice_c = tmp_path / "native-slice-call.c"
+    slice_c.write_bytes(slice_transport.c_source_bytes)
+    slice_driver = tmp_path / "native-slice-call-driver.c"
+    slice_driver.write_text(
+        '#include "native-slice-call.c"\n'
+        'int main(void) { const uint8_t data[] = {10, 20}; '
+        'merit_ByteSlice view = {data, 2}; return caller(view) == 2 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    slice_program = tmp_path / "native-slice-call-program"
+    subprocess.run([cc, "-std=c11", str(slice_driver), "-o", str(slice_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(slice_program)], check=True, capture_output=True)
 
     (source_root / "src" / "main.mrt").write_text(
         'module probe\nfn helper(borrow value:String,index:i64)->u8 {'

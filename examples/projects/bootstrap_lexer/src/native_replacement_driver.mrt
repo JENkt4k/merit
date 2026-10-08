@@ -835,7 +835,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                 let canonical_status:i32=materialize_sourced_cfg_canonical_mir(
                                     source,"_",body,contracts,contract_locals,ownership,
                                     ownership_records,sources,cfg,placements,required,
-                                    capabilities,canonical_function
+                                    capabilities,type_descriptors,numeric_type_descriptors,canonical_function
                                 );
                                 if(canonical_status!=0){
                                     function_status=native_driver_canonical_function_failure_status(canonical_status);

@@ -8,7 +8,12 @@ import json
 import pytest
 
 from merit.bootstrap.resolved_source_function_bundle import decode_resolved_source_function_bundle
-from merit.bootstrap.resolved_source_function_snapshot import SNAPSHOT_SECTION_COUNT
+from merit.bootstrap.resolved_source_function_snapshot import (
+    SNAPSHOT_SECTION_COUNT,
+    ResolvedSourceFunctionSnapshotError,
+    _descriptor_type_names,
+    _numeric_descriptor_type_names,
+)
 from merit.bootstrap.mir_contract import (
     MirBlock,
     MirFunction,
@@ -20,6 +25,10 @@ from merit.bootstrap.mir_contract import (
     MirType,
     SourceSpan,
     canonical_mir_json,
+)
+from merit.bootstrap.mir_to_c import _type as oracle_c_type
+from merit.bootstrap.mir_function_assembly_parity import (
+    NativeWholeFunctionMirError, _materialize_literal,
 )
 from merit.project.build import build, interpret
 from merit.project.loader import load_project
@@ -1490,14 +1499,16 @@ fn main()->i32 {
   vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));
   var required:Vec<i64>=vec_new<i64>(allocator,0);
   var capability_catalog:Vec<CapabilityCatalogEntry>=vec_new<CapabilityCatalogEntry>(allocator,0);
+  var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var numeric_type_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
   var output:Buffer=buffer_new(allocator,512);
   let status:i32=materialize_sourced_cfg_canonical_mir(
-   source,"demo",records,contracts,contract_locals,bindings,ownership,sources,cfg,placements,required,capability_catalog,output
+   source,"demo",records,contracts,contract_locals,bindings,ownership,sources,cfg,placements,required,capability_catalog,type_descriptors,numeric_type_descriptors,output
   );
   print(status);print(buffer_len(output));
   var index:i64=0;
   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
-  drop(output);drop(capability_catalog);drop(required);drop(placements);drop(cfg);
+  drop(output);drop(numeric_type_descriptors);drop(type_descriptors);drop(capability_catalog);drop(required);drop(placements);drop(cfg);
   drop(sources);drop(ownership);drop(bindings);drop(contract_locals);drop(contracts);drop(records);drop(source);
   return status;
  }
@@ -1707,6 +1718,116 @@ fn main()->i32 {
 }
 '''
 
+SCALAR_C_TYPE_PROBE = r'''module scalar_c_type_probe
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var code:i32=1;
+  while(code<=14){
+   var output:Buffer=buffer_new(allocator,32);
+   print(canonical_c_append_scalar_type(output,code));print(buffer_len(output));
+   var index:i64=0;
+   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+   drop(output);code=code+1;
+  }
+  return 0;
+ }
+}
+'''
+
+BUILTIN_LOCAL_TYPE_PROBE = r'''module builtin_local_type_probe
+import bootstrap_mir_resolved_source_function_bundle;
+fn main()->i32 {
+ var code:i32=0;
+ while(code<=15){
+  print(canonical_c_supported_builtin_local_type(code));
+  code=code+1;
+ }
+ return 0;
+}
+'''
+
+CATALOG_TYPE_PROBE = r'''module catalog_type_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn emit_type(borrow source:Buffer,borrow descriptors:Vec<MirTypeDescriptor>,
+ borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,code:i32)->i32
+requires_caps [allocate]
+{
+ let allocator:Allocator=system_allocator();
+ var output:Buffer=buffer_new(allocator,128);
+ let status:i32=canonical_mir_append_type_with_catalog(source,descriptors,numeric_descriptors,code,0,output);
+ print(status);print(buffer_len(output));
+ var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"Pointxy");
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,8);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+   function_mir_i32_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(1),function_mir_type_descriptor_vector_kind(),1,
+   function_mir_vector_type_code(0),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_copy_payload_enum_type_code(0),function_mir_type_descriptor_copy_payload_enum_kind(),0,
+   function_mir_i64_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_copy_payload_enum_type_code(0),function_mir_type_descriptor_copy_payload_enum_kind(),0,
+   function_mir_bool_type_code(),0,1,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_aggregate_struct_type_code(0),function_mir_type_descriptor_aggregate_struct_kind(),0,
+   function_mir_i32_type_code(),0,0,0,5,5,1,1));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_aggregate_struct_type_code(0),function_mir_type_descriptor_aggregate_struct_kind(),0,
+   function_mir_i64_type_code(),1,1,0,5,6,1,1));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(0),function_mir_type_descriptor_owned_payload_enum_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,
+   function_mir_recursive_owned_payload_enum_type_code(0),0,0,0,0,0,0,0));
+  var numeric_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(numeric_descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,
+   0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(numeric_descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_i64_type_code(),-1,9223372036,854775808,1,9223372036,854775807,0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_i64_type_code());
+  emit_type(source,descriptors,numeric_descriptors,function_mir_vector_type_code(1));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_copy_payload_enum_type_code(0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_aggregate_struct_type_code(0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_decimal_type_code(0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_bounded_type_code(0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_owned_field_struct_type_code(0));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_copy_payload_enum_type_code(1));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_i64_struct_type_code(1));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_destructor_i64_struct_type_code(1));
+  emit_type(source,descriptors,numeric_descriptors,function_mir_owned_payload_enum_type_code(2,3));
+  var cyclic:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(cyclic,function_mir_type_descriptor(
+   function_mir_vector_type_code(2),function_mir_type_descriptor_vector_kind(),2,
+   function_mir_vector_type_code(2),0,0,0,0,0,0,0));
+  emit_type(source,cyclic,numeric_descriptors,function_mir_vector_type_code(2));
+  var bad_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(bad_numeric,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(1),function_mir_numeric_descriptor_decimal_kind(),1,0,
+   0,4,5,0,0,0,0));
+  emit_type(source,descriptors,bad_numeric,function_mir_decimal_type_code(1));
+  drop(bad_numeric);drop(cyclic);
+  drop(numeric_descriptors);drop(descriptors);drop(source);return 0;
+ }
+}
+'''
+
 NUMERIC_JSON_PROBE = r'''module numeric_json_probe
 import bootstrap_mir_resolved_source_function_bundle;
 
@@ -1729,6 +1850,61 @@ STRING_JSON_PROBE = NUMERIC_JSON_PROBE.replace(
     'buffer_from_string(allocator,"-12.5e+2")',
     'buffer_from_string(allocator,"\\\"hello, world!\\\"")',
 ).replace("output,source,0,8", "output,source,0,15")
+
+
+def _bounded_literal_probe(literal: str, base_symbol: str, upper_high: int,
+                           upper_low: int, enforce_domain: int) -> str:
+    return f'''module bounded_literal_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {{
+ with capability allocate {{
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"{literal}");
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   {base_symbol},0,0,0,1,{upper_high},{upper_low},0));
+  var output:Buffer=buffer_new(allocator,64);
+  print(canonical_mir_append_typed_const_source_with_catalog(
+   output,source,0,{len(literal)},function_mir_bounded_type_code(0),descriptors,{enforce_domain}));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){{print(buffer_get(output,index));index=checked_add(index,1);}}
+  drop(output);drop(descriptors);drop(source);return 0;
+ }}
+}}
+'''
+
+
+def _decimal_literal_probe(literal: str, precision: int, scale: int) -> str:
+    return f'''module decimal_literal_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+
+capability allocate;
+
+fn main()->i32 {{
+ with capability allocate {{
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"{literal}");
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,
+   0,{precision},{scale},0,0,0,3));
+  var output:Buffer=buffer_new(allocator,64);
+  print(canonical_mir_append_typed_const_source_with_catalog(
+   output,source,0,{len(literal)},function_mir_decimal_type_code(0),descriptors,1));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){{print(buffer_get(output,index));index=checked_add(index,1);}}
+  drop(output);drop(descriptors);drop(source);return 0;
+ }}
+}}
+'''
 
 CAPABILITY_JSON_PROBE = r'''module capability_json_probe
 import bootstrap_statement_semantics;
@@ -2291,11 +2467,101 @@ def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) ->
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),),
         (MirBlock(0, (
-            MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+            MirInstruction(0, "const", result=0, value=1, span=SourceSpan(39, 1), ownership="value"),
             MirInstruction(1, "print", operands=(0,), span=SourceSpan(39, 1)),
         ), MirTerminator("return", operands=(0,), span=SourceSpan(32, 9))),), 0,
     ),)))
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("type_name", "type_symbol"),
+    [
+        ("i8", "function_mir_i8_type_code()"),
+        ("i16", "function_mir_i16_type_code()"),
+        ("i32", "function_mir_i32_type_code()"),
+        ("i64", "function_mir_i64_type_code()"),
+        ("u8", "function_mir_u8_type_code()"),
+        ("u16", "function_mir_u16_type_code()"),
+        ("u32", "function_mir_u32_type_code()"),
+        ("u64", "function_mir_u64_type_code()"),
+    ],
+)
+def test_merit_materializes_typed_integer_constant_bytes(
+    tmp_path: Path, type_name: str, type_symbol: str,
+) -> None:
+    probe = CANONICAL_MIR_PROBE
+    offset = len(type_name) - len("i64")
+    probe = probe.replace("fn compute()->i64", f"fn compute()->{type_name}")
+    for old in (
+        "function_mir_header(12,31,15,7,1)",
+        "function_mir_temporary(0,1,0)",
+        "function_mir_const(39,1,0,0,1,0)",
+    ):
+        assert old in probe
+    probe = probe.replace("function_mir_header(12,31,15,7,1)",
+                          f"function_mir_header(12,{31 + offset},15,7,{type_symbol})")
+    probe = probe.replace("function_mir_temporary(0,1,0)",
+                          f"function_mir_temporary(0,{type_symbol},0)")
+    probe = probe.replace("function_mir_const(39,1,0,0,1,0)",
+                          f"function_mir_const({39 + offset},1,0,0,{type_symbol},0)")
+    probe = probe.replace("function_mir_print(39,1,1,0,1)",
+                          f"function_mir_print({39 + offset},1,1,0,1)")
+    probe = probe.replace("function_mir_return(32,9,0,1)",
+                          f"function_mir_return({32 + offset},9,0,1)")
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "typed-integer-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType(type_name), (MirLocal(0, "_t0", MirType(type_name)),),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=1, span=SourceSpan(39 + offset, 1), ownership="value"),
+            MirInstruction(1, "print", operands=(0,), span=SourceSpan(39 + offset, 1)),
+        ), MirTerminator("return", operands=(0,), span=SourceSpan(32 + offset, 9))),), 0,
+    ),)))
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("type_name", "type_symbol", "literal"),
+    [
+        ("i8", "function_mir_i8_type_code()", "128"),
+        ("i16", "function_mir_i16_type_code()", "32768"),
+        ("u32", "function_mir_u32_type_code()", "4294967296"),
+        ("u64", "function_mir_u64_type_code()", "18446744073709551616"),
+        ("u64", "function_mir_u64_type_code()", "-1"),
+    ],
+)
+def test_merit_rejects_out_of_range_typed_integer_constant(
+    tmp_path: Path, type_name: str, type_symbol: str, literal: str,
+) -> None:
+    probe = CANONICAL_MIR_PROBE
+    type_offset = len(type_name) - len("i64")
+    literal_offset = len(literal) - 1
+    probe = probe.replace("fn compute()->i64 { return 1; }",
+                          f"fn compute()->{type_name} {{ return {literal}; }}")
+    probe = probe.replace("function_mir_header(12,31,15,7,1)",
+                          f"function_mir_header(12,{31 + type_offset + literal_offset},15,7,{type_symbol})")
+    probe = probe.replace("function_mir_temporary(0,1,0)",
+                          f"function_mir_temporary(0,{type_symbol},0)")
+    probe = probe.replace("function_mir_const(39,1,0,0,1,0)",
+                          f"function_mir_const({39 + type_offset},{len(literal)},0,0,{type_symbol},0)")
+    probe = probe.replace("function_mir_print(39,1,1,0,1)",
+                          f"function_mir_print({39 + type_offset},{len(literal)},1,0,1)")
+    probe = probe.replace("function_mir_return(32,9,0,1)",
+                          f"function_mir_return({32 + type_offset},{9 + literal_offset},0,1)")
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "out-of-range-integer-mir")
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 23
+    assert native.stdout.splitlines()[0] == "23"
 
 
 def test_merit_assembles_multiple_canonical_functions_without_python(tmp_path: Path) -> None:
@@ -2336,6 +2602,178 @@ def test_merit_canonical_integer_format_handles_signed_boundaries(tmp_path: Path
     ).encode("utf-8")
     assert values[0] == len(expected)
     assert bytes(values[1:]) == expected
+
+
+def test_merit_catalog_types_match_python_mir_json(tmp_path: Path) -> None:
+    root = _project(tmp_path, CATALOG_TYPE_PROBE)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_mir_append_type_with_catalog("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "catalog-type-json")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    actual: list[str] = []
+    for _ in range(11):
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        actual.append(bytes(values[:length]).decode("utf-8"))
+        del values[:length]
+    for _ in range(2):
+        assert values.pop(0) != 0
+        length = values.pop(0)
+        del values[:length]
+    assert not values
+    descriptor_types = _descriptor_type_names((
+        (1500000, 4, 0, 7, 0, 0, 0, 0, 0, 0, 0),
+        (1500001, 4, 1, 1500000, 0, 0, 0, 0, 0, 0, 0),
+        (1000, 5, 0, 1, 0, 0, 0, 0, 0, 0, 0),
+        (1000, 5, 0, 2, 0, 1, 0, 0, 0, 0, 0),
+        (1200000, 3, 0, 7, 0, 0, 0, 5, 5, 1, 1),
+        (1200000, 3, 0, 1, 1, 1, 0, 5, 6, 1, 1),
+        (1100000, 2, 0, 4, 0, 0, 0, 0, 0, 0, 0),
+        (1000000, 1, 0, 1100000, 0, 0, 0, 0, 0, 0, 0),
+    ), version=9, source="Pointxy")
+    numeric_types = _numeric_descriptor_type_names((
+        (1300000, 1, 0, 0, 0, 18, 2, 0, 0, 0, 3),
+        (1400000, 2, 0, 1, -1, 9223372036, 854775808, 1, 9223372036, 854775807, 0),
+    ))
+    expected = [
+        MirType("i64"),
+        descriptor_types[1500001], descriptor_types[1000], descriptor_types[1200000],
+        numeric_types[1300000], numeric_types[1400000], descriptor_types[1000000],
+        MirType("enum_copy_payload_1"), MirType("struct_i64_1"),
+        MirType("struct_i64_destructor_1"),
+        MirType("enum_owned_payload_2_3"),
+    ]
+    assert actual == [json.dumps(item.to_data(), sort_keys=True, separators=(",", ":")) for item in expected]
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match="cyclic"):
+        _descriptor_type_names(((1500002, 4, 2, 1500002, 0, 0, 0, 0, 0, 0, 0),), version=9)
+    with pytest.raises(ResolvedSourceFunctionSnapshotError, match="invalid policy"):
+        _numeric_descriptor_type_names(((1300001, 1, 1, 0, 0, 4, 5, 0, 0, 0, 0),))
+
+
+@pytest.mark.parametrize(
+    ("literal", "base_symbol", "upper_high", "upper_low", "enforce_domain", "status", "value"),
+    [
+        ("7", "function_mir_i64_type_code()", 0, 9, 1, 0, 7),
+        ("10", "function_mir_i64_type_code()", 0, 9, 1, 7, None),
+        ("10", "function_mir_i64_type_code()", 0, 9, 0, 0, 10),
+        ("9999999999999999999", "function_mir_u64_type_code()", 9999999999, 999999999, 1, 0,
+         9999999999999999999),
+    ],
+)
+def test_merit_bounded_literal_uses_numeric_catalog_and_contract_domain_rule(
+    tmp_path: Path, literal: str, base_symbol: str, upper_high: int, upper_low: int,
+    enforce_domain: int, status: int, value: int | None,
+) -> None:
+    root = _project(tmp_path, _bounded_literal_probe(
+        literal, base_symbol, upper_high, upper_low, enforce_domain,
+    ))
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_mir_append_typed_const_source_with_catalog("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1),
+                           encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "bounded-literal")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values[0] == status
+    data = bytes(values[2:])
+    assert values[1] == len(data)
+    if value is None:
+        assert data == b""
+    else:
+        assert data == str(value).encode("ascii")
+
+
+@pytest.mark.parametrize(
+    ("literal", "precision", "scale", "expected_status"),
+    [
+        ("1.25", 18, 2, 0),
+        ("-2.7500", 18, 2, 0),
+        ("1e2", 18, 2, 0),
+        ("0e9999", 18, 2, 0),
+        ("1.234", 18, 2, 4),
+        ("9999999999999999.99", 18, 2, 0),
+        ("99999999999999999.99", 18, 2, 5),
+    ],
+)
+def test_merit_decimal_literal_matches_python_materialization(
+    tmp_path: Path, literal: str, precision: int, scale: int, expected_status: int,
+) -> None:
+    root = _project(tmp_path, _decimal_literal_probe(literal, precision, scale))
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_mir_append_typed_const_source_with_catalog("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1),
+                           encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "decimal-literal")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values[0] == expected_status
+    data = bytes(values[2:])
+    assert values[1] == len(data)
+    decimal_type = MirType(f"decimal_0_{precision}_{scale}_3")
+    if expected_status:
+        with pytest.raises(NativeWholeFunctionMirError):
+            _materialize_literal(literal, decimal_type)
+        assert data == b""
+    else:
+        assert data == str(_materialize_literal(literal, decimal_type)).encode("ascii")
+
+
+def test_merit_scalar_c_types_match_python_oracle(tmp_path: Path) -> None:
+    root = _project(tmp_path, SCALAR_C_TYPE_PROBE)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_c_append_scalar_type("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "scalar-c-type-oracle")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    names = ("i64", "bool", "Allocator", "Buffer", "i8", "i16", "i32",
+             "u8", "u16", "u32", "u64", "String", "ByteSlice", "unit")
+    for name in names:
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        assert bytes(values[:length]).decode("ascii") == oracle_c_type(MirType(name))
+        del values[:length]
+    assert not values
+
+
+def test_merit_builtin_local_admission_covers_fixed_integers_without_unit_or_unknown(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path, BUILTIN_LOCAL_TYPE_PROBE)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_c_supported_builtin_local_type("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "builtin-local-admission")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    expected = [0] + [1] * 13 + [0, 0]
+    assert [int(value) for value in native.splitlines()] == expected
 
 
 def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -3202,6 +3640,8 @@ def test_merit_scalar_switch_c_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+
+
     generated_c = tmp_path / "switch.c"
     generated_h = tmp_path / "switch.h"
     driver_c = tmp_path / "switch_driver.c"
@@ -3221,6 +3661,28 @@ def test_merit_scalar_switch_c_backend_matches_python_oracle_bytes(
     )
     result = subprocess.run([str(program)], check=True, text=True, capture_output=True)
     assert result.stdout == "0\n"
+
+
+def test_merit_switch_c_backend_groups_interleaved_cfg_rows(tmp_path: Path) -> None:
+    base = CANONICAL_C_SWITCH_PROBE
+    interleaved = base.replace(
+        "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));", "",
+    ).replace(
+        "vec_push<MirCfgRecord>(cfg,cfg_return(2,1));",
+        "vec_push<MirCfgRecord>(cfg,cfg_return(2,1));"
+        "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,1));",
+    )
+    assert interleaved != base
+    outputs: list[str] = []
+    for label, probe in (("base", base), ("interleaved", interleaved)):
+        root = _project(tmp_path / label, probe)
+        project = load_project(root / "Merit.toml")
+        interpreted = interpret(project)
+        _, _, executable = build(project, root / "build" / "switch-cfg-emitter")
+        native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+        assert native == interpreted
+        outputs.append(native)
+    assert outputs[0] == outputs[1]
 
 
 @pytest.mark.parametrize(
@@ -5822,7 +6284,7 @@ def test_merit_materializes_explicit_instruction_placement(tmp_path: Path) -> No
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),), (
             MirBlock(0, (
-                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+                MirInstruction(0, "const", result=0, value=1, span=SourceSpan(39, 1), ownership="value"),
             ), MirTerminator("jump", targets=(1,))),
             MirBlock(1, (), MirTerminator("return", operands=(0,))),
         ), 0,
@@ -5843,7 +6305,7 @@ def test_cfg_materializer_includes_required_capabilities(tmp_path: Path) -> None
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("i64")),), (
             MirBlock(0, (
-                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+                MirInstruction(0, "const", result=0, value=1, span=SourceSpan(39, 1), ownership="value"),
             ), MirTerminator("jump", targets=(1,))),
             MirBlock(1, (), MirTerminator("return", operands=(0,))),
         ), 0, ("demo",),
@@ -5874,7 +6336,7 @@ def test_merit_materializes_explicit_branch_topology(tmp_path: Path) -> None:
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("bool")),), (
             MirBlock(0, (
-                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+                MirInstruction(0, "const", result=0, value=True, span=SourceSpan(39, 1), ownership="value"),
             ), MirTerminator("branch", operands=(0,), targets=(1, 2))),
             MirBlock(1, (), MirTerminator("return")),
             MirBlock(2, (), MirTerminator("return")),
@@ -5896,7 +6358,7 @@ def test_merit_materializes_explicit_switch_topology(tmp_path: Path) -> None:
     expected = canonical_mir_json(MirModule("demo", (MirFunction(
         "compute", MirType("i64"), (MirLocal(0, "_t0", MirType("bool")),), (
             MirBlock(0, (
-                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(39, 1), ownership="value"),
+                MirInstruction(0, "const", result=0, value=True, span=SourceSpan(39, 1), ownership="value"),
             ), MirTerminator("switch", operands=(0,), targets=(1, 2), cases=(7,))),
             MirBlock(1, (), MirTerminator("return")),
             MirBlock(2, (), MirTerminator("return")),
@@ -5974,6 +6436,131 @@ def test_merit_materializes_owned_local_and_drop_in_complete_cfg(tmp_path: Path)
     ),)))
     assert values[1] == len(actual.encode("utf-8"))
     assert actual == expected
+
+
+def test_merit_materializes_catalog_owned_local_in_complete_cfg(tmp_path: Path) -> None:
+    probe = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+        "function_mir_buffer_type_code()", "function_mir_vector_type_code(0)"
+    ).replace(
+        "var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);",
+        """var type_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(type_descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));""",
+    )
+    assert probe != SOURCED_OWNERSHIP_CFG_MIR_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "catalog-owned-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Vec", (MirType("Buffer"),)), mutable=True,
+                     ownership="owned", source_binding_id=7),
+        ), (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1),
+                           ownership="value", contract_kind="precondition"),
+            MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1),
+                           ownership="value"),
+            MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+        ), MirTerminator("return")),), 0,
+    ),)))
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == expected
+
+
+def test_merit_cfg_materializer_sorts_and_prunes_reserved_blocks(tmp_path: Path) -> None:
+    probe = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+        "vec_push<MirCfgRecord>(cfg,cfg_block(0,0));\n  vec_push<MirCfgRecord>(cfg,cfg_return_unit(0));",
+        """vec_push<MirCfgRecord>(cfg,cfg_block(2,2));
+  vec_push<MirCfgRecord>(cfg,cfg_return_unit(2));
+  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));
+  vec_push<MirCfgRecord>(cfg,cfg_return_unit(1));
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));
+  vec_push<MirCfgRecord>(cfg,cfg_jump(0,2));""",
+    )
+    assert probe != SOURCED_OWNERSHIP_CFG_MIR_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "ordered-reachable-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned",
+                     source_binding_id=7),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1),
+                               ownership="value", contract_kind="precondition"),
+                MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1),
+                               ownership="value"),
+                MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+            ), MirTerminator("jump", targets=(2,))),
+            MirBlock(2, (), MirTerminator("return")),
+        ), 0,
+    ),)))
+    assert values[1] == len(actual.encode("utf-8"))
+    assert actual == expected
+
+
+def test_merit_cfg_materializer_sorts_block_local_placements(tmp_path: Path) -> None:
+    probe = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+        "vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));\n"
+        "  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));",
+        "vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));\n"
+        "  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));",
+    )
+    assert probe != SOURCED_OWNERSHIP_CFG_MIR_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "ordered-placement-cfg-mir")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    actual = bytes(values[2:]).decode("utf-8")
+    expected = canonical_mir_json(MirModule("demo", (MirFunction(
+        "compute", MirType("unit"), (
+            MirLocal(0, "item", MirType("Buffer"), mutable=True, ownership="owned",
+                     source_binding_id=7),
+        ), (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value="1", span=SourceSpan(57, 1),
+                           ownership="value", contract_kind="precondition"),
+            MirInstruction(1, "const", result=0, value="1", span=SourceSpan(57, 1),
+                           ownership="value"),
+            MirInstruction(2, "drop", operands=(0,), ownership="owned"),
+        ), MirTerminator("return")),), 0,
+    ),)))
+    assert actual == expected
+
+
+def test_merit_cfg_materializer_rejects_bad_unreachable_terminator(tmp_path: Path) -> None:
+    probe = SOURCED_OWNERSHIP_CFG_MIR_PROBE.replace(
+        "vec_push<MirCfgRecord>(cfg,cfg_block(0,0));\n  vec_push<MirCfgRecord>(cfg,cfg_return_unit(0));",
+        """vec_push<MirCfgRecord>(cfg,cfg_block(0,0));
+  vec_push<MirCfgRecord>(cfg,cfg_return_unit(0));
+  vec_push<MirCfgRecord>(cfg,cfg_block(1,1));
+  vec_push<MirCfgRecord>(cfg,cfg_jump(1,9));""",
+    ).replace("return status;\n }\n}\n", "return 0;\n }\n}\n")
+    assert probe != SOURCED_OWNERSHIP_CFG_MIR_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "unreachable-target-rejected")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    assert interpreted.splitlines()[0] == "12"
 
 
 def test_merit_materializes_sourced_binary_in_complete_cfg(tmp_path: Path) -> None:
@@ -6245,7 +6832,7 @@ def test_merit_materializes_complete_contract_instruction_catalog(tmp_path: Path
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     expected = (
-        MirInstruction(0, "const", result=0, value="1", span=SourceSpan(0, 1), ownership="value", contract_kind="precondition"),
+        MirInstruction(0, "const", result=0, value=1, span=SourceSpan(0, 1), ownership="value", contract_kind="precondition"),
         MirInstruction(1, "binary", result=0, operands=(0, 0), symbol="+", span=SourceSpan(0, 1), numeric_policy="exact"),
         MirInstruction(2, "contract_check", operands=(0,), span=SourceSpan(0, 1), contract_kind="postcondition"),
         MirInstruction(3, "call", result=0, operands=(0,), symbol="slice_len", span=SourceSpan(0, 1)),
