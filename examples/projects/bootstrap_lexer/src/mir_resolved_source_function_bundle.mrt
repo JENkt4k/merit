@@ -1338,7 +1338,8 @@ fn canonical_c_append_function_core_ordered(
     borrow_mut prototypes:Buffer,
     borrow_mut bodies:Buffer,
     borrow_mut public_header:Buffer,
-    borrow_mut features:Vec<i64>
+    borrow_mut features:Vec<i64>,
+    emit_public_header:i32
 )->i32
 requires_caps [allocate]
 {
@@ -1346,7 +1347,8 @@ requires_caps [allocate]
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
     let unit_return:i32=function_mir_type_code(header)==function_mir_unit_type_code();
-    let exported:i32=function_mir_mutable(header);
+    var exported:i32=function_mir_mutable(header);
+    if(emit_public_header==0){exported=0;}
     if(function_mir_type_code(header)==function_mir_string_type_code()){
         canonical_c_require_feature(canonical_c_text_feature(),features);
         if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
@@ -1753,7 +1755,7 @@ requires_caps [allocate]
     let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
     buffer_push(prototypes,10);
-    if(function_mir_mutable(header)!=0){
+    if(exported!=0){
         let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,public_header);
         if(header_status!=0){return checked_add(40,header_status);}
         buffer_push(public_header,10);
@@ -2507,21 +2509,22 @@ fn canonical_c_append_function_core(
     borrow_mut prototypes:Buffer,
     borrow_mut bodies:Buffer,
     borrow_mut public_header:Buffer,
-    borrow_mut features:Vec<i64>
+    borrow_mut features:Vec<i64>,
+    emit_public_header:i32
 )->i32
 requires_caps [allocate]
 {
     if(vec_len<MirCfgRecord>(cfg)<3){
         return canonical_c_append_function_core_ordered(
             source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
-            prototypes,bodies,public_header,features
+            prototypes,bodies,public_header,features,emit_public_header
         );
     }
     let second:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
     if(cfg_kind(second)==cfg_block_kind()){
         return canonical_c_append_function_core_ordered(
             source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
-            prototypes,bodies,public_header,features
+            prototypes,bodies,public_header,features,emit_public_header
         );
     }
     let allocator:Allocator=system_allocator();
@@ -2540,7 +2543,7 @@ requires_caps [allocate]
     }
     let status:i32=canonical_c_append_function_core_ordered(
         source,records,callable_headers,type_descriptors,sources,ownership_records,ordered,placements,
-        prototypes,bodies,public_header,features
+        prototypes,bodies,public_header,features,emit_public_header
     );
     drop(ordered);
     return status;
@@ -2560,7 +2563,7 @@ requires_caps [allocate]
     let empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
     let status:i32=canonical_c_append_function_core(
         source,records,callable_headers,empty_types,empty_sources,empty_effects,cfg,placements,
-        prototypes,bodies,public_header,features
+        prototypes,bodies,public_header,features,1
     );
     drop(empty_types);drop(empty_effects);drop(empty_sources);return status;
 }
@@ -2581,7 +2584,7 @@ requires_caps [allocate]
     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return canonical_c_resource_missing_effect_status();}
     return canonical_c_append_function_core(
         source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
-        prototypes,bodies,public_header,features
+        prototypes,bodies,public_header,features,1
     );
 }
 
@@ -2600,6 +2603,28 @@ pub fn canonical_c_append_function_with_catalog(
 )->i32
 requires_caps [allocate]
 {
+    return canonical_c_append_function_with_catalog_header_selection(
+        source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
+        prototypes,bodies,public_header,features,1
+    );
+}
+
+// Public source visibility remains encoded in the function record. The header
+// selection is a separate build-artifact decision and does not change MIR or C
+// symbol identity.
+pub fn canonical_c_append_function_with_catalog_header_selection(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>,
+    emit_public_header:i32
+)->i32
+requires_caps [allocate]
+{
     if(vec_len<MirOwnershipRecord>(ownership_records)==0){
         var source_index:i64=0;
         while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
@@ -2612,7 +2637,7 @@ requires_caps [allocate]
     }
     return canonical_c_append_function_core(
         source,records,callable_headers,type_descriptors,sources,ownership_records,cfg,placements,
-        prototypes,bodies,public_header,features
+        prototypes,bodies,public_header,features,emit_public_header
     );
 }
 

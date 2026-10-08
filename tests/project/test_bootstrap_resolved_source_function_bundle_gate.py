@@ -2366,6 +2366,136 @@ def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> N
     assert c_header == emit_c_header(module)
 
 
+def test_merit_public_function_can_be_omitted_from_selected_c_header(tmp_path: Path) -> None:
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+
+    probe = CANONICAL_C_BACKEND_PROBE.replace(
+        "import bootstrap_mir_cfg_placement;",
+        "import bootstrap_mir_cfg_placement;\n"
+        "import bootstrap_mir_function_instruction_source;\n"
+        "import bootstrap_mir_ownership_flow;",
+    ).replace(
+        "  let function_status:i32=canonical_c_append_scalar_function(source,records,cfg,placements,prototypes,bodies,declarations,features);",
+        "  let empty_headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);\n"
+        "  let empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);\n"
+        "  let empty_sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);\n"
+        "  let empty_effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);\n"
+        "  let function_status:i32=canonical_c_append_function_with_catalog_header_selection(\n"
+        "    source,records,empty_headers,empty_types,empty_sources,empty_effects,cfg,placements,\n"
+        "    prototypes,bodies,declarations,features,0\n"
+        "  );\n"
+        "  drop(empty_effects);drop(empty_sources);drop(empty_types);drop(empty_headers);",
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "selected-c-header")
+    values = [int(value) for value in subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), tuple(MirLocal(i, f"_t{i}", MirType("i64")) for i in range(3)),
+        (MirBlock(0, (
+            MirInstruction(0, "const", result=0, value=2, ownership="value"),
+            MirInstruction(1, "const", result=1, value=3, ownership="value"),
+            MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="+", numeric_policy="checked"),
+            MirInstruction(3, "print", operands=(2,)),
+        ), MirTerminator("return", operands=(2,))),), 0, exported=True,
+    ),))
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module, exported_names=frozenset())
+
+
+PUBLIC_BORROWED_BUFFER_HEADER_PROBE = r'''module public_borrowed_buffer_header_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"checksum");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,3);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,8,0,8,function_mir_i64_type_code(),function_mir_mode_value(),-1,2,1));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,8,0,function_mir_buffer_type_code(),0,0,function_mir_mode_borrowed(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,8,1,function_mir_i64_type_code(),1,0,function_mir_mode_value(),1));
+  var empty_headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var empty_sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+  var empty_effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,1));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,128);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,2048);
+  var c_header:Buffer=buffer_new(allocator,128);
+  let function_status:i32=canonical_c_append_function_with_catalog_header_selection(
+    source,records,empty_headers,empty_types,empty_sources,empty_effects,cfg,placements,
+    prototypes,bodies,declarations,features,0
+  );
+  if(function_status!=0){return function_status;}
+  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);
+  if(source_status!=0){return checked_add(100,source_status);}
+  let header_status:i32=canonical_c_finish_public_header(declarations,features,c_header);
+  if(header_status!=0){return checked_add(200,header_status);}
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  print(buffer_len(c_header));index=0;
+  while(index<buffer_len(c_header)){print(buffer_get(c_header,index));index=checked_add(index,1);}
+  drop(c_header);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(empty_effects);drop(empty_sources);
+  drop(empty_types);drop(empty_headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+
+
+def test_merit_public_borrowed_buffer_helper_is_not_implicitly_a_c_export(tmp_path: Path) -> None:
+    from merit.bootstrap.mir_to_c import MirToCError, emit_c_header, emit_c_module
+
+    module = MirModule("demo", (MirFunction(
+        "checksum", MirType("i64"), (
+            MirLocal(0, "data", MirType("Buffer"), ownership="borrowed"),
+            MirLocal(1, "value", MirType("i64")),
+        ), (MirBlock(0, (), MirTerminator("return", operands=(1,))),), 0,
+        parameters=(MirParameter(0, "borrowed"), MirParameter(1)), exported=True,
+    ),))
+    with pytest.raises(MirToCError, match="requires native layout metadata"):
+        emit_c_header(module)
+
+    root = _project(tmp_path, PUBLIC_BORROWED_BUFFER_HEADER_PROBE)
+    project = load_project(root / "Merit.toml")
+    _, _, executable = build(project, root / "build" / "borrowed-buffer-header")
+    values = [int(value) for value in subprocess.run(
+        [str(executable)], check=True, text=True, capture_output=True,
+    ).stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module, exported_names=frozenset())
+
+    selected = PUBLIC_BORROWED_BUFFER_HEADER_PROBE.replace(
+        "prototypes,bodies,declarations,features,0",
+        "prototypes,bodies,declarations,features,1",
+    )
+    selected_root = _project(tmp_path / "selected", selected)
+    selected_project = load_project(selected_root / "Merit.toml")
+    _, _, selected_executable = build(
+        selected_project, selected_root / "build" / "borrowed-buffer-selected",
+    )
+    rejected = subprocess.run([str(selected_executable)], text=True, capture_output=True)
+    assert rejected.returncode == 9
+    assert rejected.stdout == ""
+
+
 @pytest.mark.parametrize(
     ("probe", "type_name"),
     [
