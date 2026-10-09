@@ -355,6 +355,21 @@ passes and the generic stdin adapter executes the resulting binary
 tested integer/nested aggregate subset, explicit shared-library selection
 through the normal CLI, and full project/ABI evidence remain open.
 
+The first two acceptance requests made the remaining F6/F5 coupling visible:
+v2 empty-header requests still stopped at `4409` because per-function C
+lowering applied public-header type restrictions to every Merit `pub`
+function. The driver now passes the explicit selection to that existing C
+header flag without changing `pub` in MIR or C symbol identity. The focused
+native-entry regression passed (`1 passed in 55.03s`); `text_pipeline` then
+advanced to a complete v4 artifact, while `binary_packet` advanced to F5
+backend status `4416`. A durable `text_pipeline` oracle/runtime test exposed
+and repaired Buffer print lowering. It now passes exact Python C/header
+comparison, independent legacy-snapshot canonical MIR bytes, UCRT64 GCC, and
+output `Merit Epoch II`, `abc!`, `4`, `327` (`1 passed in 41.52s` on the final
+focused tree). This is one project, not full acceptance evidence. The
+remaining `binary_packet` `4416` is the shared F5 placement-count boundary,
+not another F6 header failure.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

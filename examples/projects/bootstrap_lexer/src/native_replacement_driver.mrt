@@ -869,10 +869,17 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                 function_status = native_driver_bundle_item_failure_status(item_status);
                                             }
                                         }else{
-                                            let backend_status:i32=canonical_c_append_function_with_catalog(
+                                            var emit_public_header:i32=1;
+                                            if(header_selection_mode!=0){
+                                                let backend_header:MirFunctionRecord=vec_get<MirFunctionRecord>(body,0);
+                                                emit_public_header=canonical_c_header_name_selected(
+                                                    source,backend_header,header_selections
+                                                );
+                                            }
+                                            let backend_status:i32=canonical_c_append_function_with_catalog_header_selection(
                                                 source,body,backend_callable_headers,type_descriptors,sources,
                                                 ownership_records,cfg,placements,backend_prototypes,backend_bodies,
-                                                backend_declarations,backend_features
+                                                backend_declarations,backend_features,emit_public_header
                                             );
                                             if(backend_status!=0){
                                                 function_status=native_driver_backend_function_failure_status(backend_status);

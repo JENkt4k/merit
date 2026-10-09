@@ -2476,10 +2476,22 @@ requires_caps [allocate]
                             canonical_mir_append_text(bodies,".data, 1, m");
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));
                             canonical_mir_append_text(bodies,".len, stdout);\n    putchar('\\n');\n");
+                        }else{if(printed_type==function_mir_buffer_type_code()){
+                            let access_mode:i32=canonical_c_local_access_mode(records,function_mir_left(instruction));
+                            canonical_mir_append_text(bodies,"    fwrite(m");
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                            if(access_mode==function_mir_mode_value()){canonical_mir_append_text(bodies,".data, 1, m");}
+                            else{canonical_mir_append_text(bodies,"->data, 1, m");}
+                            canonical_mir_append_i64(bodies,function_mir_left(instruction));
+                            if(access_mode==function_mir_mode_value()){
+                                canonical_mir_append_text(bodies,".len, stdout);\n    putchar('\\n');\n");
+                            }else{
+                                canonical_mir_append_text(bodies,"->len, stdout);\n    putchar('\\n');\n");
+                            }
                         }else{
                             canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
-                        }
+                        }}
                     }
                     if(instruction_kind==function_mir_kind_call()){
                         var callee_found:i32=0;var callee_header:MirFunctionRecord=header;var callee_index:i64=0;
@@ -4131,7 +4143,7 @@ fn canonical_c_header_selections_valid(borrow selections:Buffer)->i32 {
     return 1;
 }
 
-fn canonical_c_header_name_selected(
+pub fn canonical_c_header_name_selected(
     borrow source:Buffer,borrow header:MirFunctionRecord,borrow selections:Buffer
 )->i32 {
     var cursor:i64=0;

@@ -206,6 +206,30 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     )
     assert selected_run.returncode == 0, selected_run.stderr
 
+    text_project = load_project(repository / "examples" / "projects" / "text_pipeline" / "Merit.toml")
+    text_completed = subprocess.run(
+        [str(executable)],
+        input=encode_loaded_project_request(text_project, header_exports=frozenset()),
+        capture_output=True,
+    )
+    assert text_completed.returncode == 0, text_completed.stderr
+    acceptance_text_transport = decode_native_project_artifact_transport(
+        int(line) for line in text_completed.stdout.splitlines()
+    )
+    text_mir = parse_mir(json.loads(acceptance_text_transport.canonical_mir_bytes))
+    assert acceptance_text_transport.c_source_bytes.decode("utf-8") == emit_c_module(text_mir)
+    assert acceptance_text_transport.c_header_bytes.decode("utf-8") == emit_c_header(
+        text_mir, exported_names=frozenset()
+    )
+    text_c = tmp_path / "native-text-pipeline.c"
+    text_c.write_bytes(acceptance_text_transport.c_source_bytes)
+    text_program = tmp_path / "native-text-pipeline-program"
+    subprocess.run([cc, "-std=c11", str(text_c), "-o", str(text_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(text_program)], check=True, capture_output=True).stdout.splitlines() == [
+        b"Merit Epoch II", b"abc!", b"4", b"327"
+    ]
+
     generic_request = encode_loaded_project_request(load_project(
         repository / "examples" / "projects" / "generic_result" / "Merit.toml"
     ))
@@ -896,3 +920,25 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
         module_name=views_snapshots.module_name,
     )
     assert views_transport.canonical_mir_bytes == canonical_mir_json(views_oracle.module).encode("utf-8")
+
+    legacy_text = subprocess.run(
+        [str(legacy_executable)], input=encode_loaded_project_request(text_project), capture_output=True
+    )
+    assert legacy_text.returncode == 0, legacy_text.stderr.decode("utf-8", errors="replace")
+    text_snapshots = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_text.stdout.splitlines()
+    )
+    text_source = bytes(text_snapshots.functions[0].effective_source_bytes).decode("utf-8")
+    text_oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=text_source,
+                module_name=text_snapshots.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(text_snapshots.capability_names)},
+            )
+            for values in text_snapshots.encoded_snapshots
+        ),
+        module_name=text_snapshots.module_name,
+    )
+    assert acceptance_text_transport.canonical_mir_bytes == canonical_mir_json(text_oracle.module).encode("utf-8")
