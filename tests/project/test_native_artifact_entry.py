@@ -14,6 +14,7 @@ from merit.bootstrap.mir_contract import (
     canonical_mir_json, parse_mir,
 )
 from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
 from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION,
     decode_resolved_source_function_bundle,
@@ -97,6 +98,89 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     subprocess.run([cc, "-std=c11", str(driver_c), "-o", str(program)],
                    check=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\n"
+        "fn identity(value:i64)->i64 { return value; }\n"
+        "pub fn main()->i32 { print(identity(9)); return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    identity_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    identity_completed = subprocess.run([str(executable)], input=identity_request, capture_output=True)
+    assert identity_completed.returncode == 0, identity_completed.stderr.decode("utf-8", errors="replace")
+    identity_transport = decode_native_project_artifact_transport(
+        int(line) for line in identity_completed.stdout.splitlines()
+    )
+    identity_mir = parse_mir(json.loads(identity_transport.canonical_mir_bytes))
+    assert identity_transport.c_source_bytes.decode("utf-8") == emit_c_module(identity_mir)
+    assert identity_transport.c_header_bytes.decode("utf-8") == emit_c_header(identity_mir)
+
+    generic_request = encode_loaded_project_request(load_project(
+        repository / "examples" / "projects" / "generic_result" / "Merit.toml"
+    ))
+    generic_completed = subprocess.run([str(executable)], input=generic_request, capture_output=True)
+    assert generic_completed.returncode == 0, generic_completed.stderr.decode("utf-8", errors="replace")
+    generic_transport = decode_native_project_artifact_transport(
+        int(line) for line in generic_completed.stdout.splitlines()
+    )
+    generic_mir = parse_mir(json.loads(generic_transport.canonical_mir_bytes))
+    assert generic_transport.c_source_bytes.decode("utf-8") == emit_c_module(generic_mir)
+    assert generic_transport.c_header_bytes.decode("utf-8") == emit_c_header(generic_mir)
+    generic_c = tmp_path / "native-generic-result.c"
+    generic_c.write_bytes(generic_transport.c_source_bytes)
+    generic_program = tmp_path / "native-generic-result-program"
+    subprocess.run([cc, "-std=c11", str(generic_c), "-o", str(generic_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(generic_program)], check=True, capture_output=True).stdout.splitlines() == [
+        b"42", b"42"
+    ]
+
+    trait_request = encode_loaded_project_request(load_project(
+        repository / "examples" / "projects" / "trait_bounds" / "Merit.toml"
+    ))
+    trait_completed = subprocess.run([str(executable)], input=trait_request, capture_output=True)
+    assert trait_completed.returncode == 0, trait_completed.stderr.decode("utf-8", errors="replace")
+    trait_transport = decode_native_project_artifact_transport(
+        int(line) for line in trait_completed.stdout.splitlines()
+    )
+    trait_mir = parse_mir(json.loads(trait_transport.canonical_mir_bytes))
+    assert trait_transport.c_source_bytes.decode("utf-8") == emit_c_module(trait_mir)
+    assert trait_transport.c_header_bytes.decode("utf-8") == emit_c_header(trait_mir)
+    trait_c = tmp_path / "native-trait-bounds.c"
+    trait_c.write_bytes(trait_transport.c_source_bytes)
+    trait_program = tmp_path / "native-trait-bounds-program"
+    subprocess.run([cc, "-std=c11", str(trait_c), "-o", str(trait_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(trait_program)], check=True, capture_output=True).stdout.splitlines() == [b"17"]
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\n"
+        "fn choose(left:i64,right:i64)->i64 { "
+        "if (left >= right) { return left; } else { return right; } }\n"
+        "pub fn main()->i32 { print(choose(7,3)); return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    branch_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    branch_completed = subprocess.run([str(executable)], input=branch_request, capture_output=True)
+    assert branch_completed.returncode == 0, branch_completed.stderr.decode("utf-8", errors="replace")
+    branch_transport = decode_native_project_artifact_transport(
+        int(line) for line in branch_completed.stdout.splitlines()
+    )
+    branch_mir = parse_mir(json.loads(branch_transport.canonical_mir_bytes))
+    assert branch_transport.c_source_bytes.decode("utf-8") == emit_c_module(branch_mir)
+    assert branch_transport.c_header_bytes.decode("utf-8") == emit_c_header(branch_mir)
+    branch_c = tmp_path / "native-branch.c"
+    branch_c.write_bytes(branch_transport.c_source_bytes)
+    branch_driver = tmp_path / "native-branch-driver.c"
+    branch_driver.write_text(
+        '#include "native-branch.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    branch_program = tmp_path / "native-branch-program"
+    subprocess.run([cc, "-std=c11", str(branch_driver), "-o", str(branch_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(branch_program)], check=True, capture_output=True).stdout.splitlines() == [b"7"]
 
     (source_root / "src" / "main.mrt").write_text(
         'module probe\npub fn main()->i32 { print("hi"); return 0; }\n',
@@ -416,6 +500,158 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     assert byte_stdout.replace(b"\r\n", b"\n") == b"33\n"
 
     (source_root / "src" / "main.mrt").write_text(
+        'module probe\nstable("v1") struct Point { x:i32; }\n'
+        'pub fn main()->i32 { let p:Point=Point { x:17 }; return p.x; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    aggregate_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    aggregate_result = subprocess.run([str(executable)], input=aggregate_request,
+                                      capture_output=True)
+    assert aggregate_result.returncode == 0, aggregate_result.stderr.decode("utf-8", errors="replace")
+    aggregate_transport = decode_native_project_artifact_transport(
+        int(line) for line in aggregate_result.stdout.splitlines()
+    )
+    aggregate_mir = parse_mir(json.loads(aggregate_transport.canonical_mir_bytes))
+    assert aggregate_transport.c_source_bytes.decode("utf-8") == emit_c_module(aggregate_mir)
+    assert aggregate_transport.c_header_bytes.decode("utf-8") == emit_c_header(aggregate_mir)
+    aggregate_c = tmp_path / "native-aggregate.c"
+    aggregate_c.write_bytes(aggregate_transport.c_source_bytes)
+    aggregate_driver = tmp_path / "native-aggregate-driver.c"
+    aggregate_driver.write_text(
+        '#include "native-aggregate.c"\n'
+        'int main(void) { return merit_main() == 17 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    aggregate_program = tmp_path / "native-aggregate-program"
+    subprocess.run([cc, "-std=c11", str(aggregate_driver), "-o", str(aggregate_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(aggregate_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nstruct Inner { x:i32; y:i32; }\nstruct Outer { inner:Inner; }\n'
+        'pub fn main()->i32 { let inner:Inner=Inner { x:23, y:0 }; '
+        'let outer:Outer=Outer { inner:inner }; return outer.inner.x; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    nested_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    nested_result = subprocess.run([str(executable)], input=nested_request, capture_output=True)
+    assert nested_result.returncode == 0, nested_result.stderr.decode("utf-8", errors="replace")
+    nested_transport = decode_native_project_artifact_transport(
+        int(line) for line in nested_result.stdout.splitlines()
+    )
+    nested_mir = parse_mir(json.loads(nested_transport.canonical_mir_bytes))
+    assert nested_transport.c_source_bytes.decode("utf-8") == emit_c_module(nested_mir)
+    assert nested_transport.c_header_bytes.decode("utf-8") == emit_c_header(nested_mir)
+    nested_c = tmp_path / "native-nested-aggregate.c"
+    nested_c.write_bytes(nested_transport.c_source_bytes)
+    nested_driver = tmp_path / "native-nested-aggregate-driver.c"
+    nested_driver.write_text(
+        '#include "native-nested-aggregate.c"\n'
+        'int main(void) { return merit_main() == 23 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    nested_program = tmp_path / "native-nested-aggregate-program"
+    subprocess.run([cc, "-std=c11", str(nested_driver), "-o", str(nested_program)],
+                   check=True, capture_output=True)
+    subprocess.run([str(nested_program)], check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\ncapability allocate;\n'
+        'fn take_allocator(allocator:Allocator)->i32 { return 11; }\n'
+        'pub fn main()->i32 { with capability allocate { '
+        'let allocator:Allocator=system_allocator(); '
+        'let value:i32=take_allocator(allocator); print(value); } return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    allocator_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    allocator_result = subprocess.run([str(executable)], input=allocator_request,
+                                      capture_output=True)
+    assert allocator_result.returncode == 0, allocator_result.stderr.decode("utf-8", errors="replace")
+    allocator_transport = decode_native_project_artifact_transport(
+        int(line) for line in allocator_result.stdout.splitlines()
+    )
+    allocator_mir = parse_mir(json.loads(allocator_transport.canonical_mir_bytes))
+    assert allocator_transport.c_source_bytes.decode("utf-8") == emit_c_module(allocator_mir)
+    assert allocator_transport.c_header_bytes.decode("utf-8") == emit_c_header(allocator_mir)
+    allocator_c = tmp_path / "native-allocator-call.c"
+    allocator_c.write_bytes(allocator_transport.c_source_bytes)
+    allocator_driver = tmp_path / "native-allocator-call-driver.c"
+    allocator_driver.write_text(
+        '#include "native-allocator-call.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    allocator_program = tmp_path / "native-allocator-call-program"
+    subprocess.run([cc, "-std=c11", str(allocator_driver), "-o", str(allocator_program)],
+                   check=True, capture_output=True)
+    allocator_output = subprocess.run([str(allocator_program)], check=True,
+                                      capture_output=True).stdout
+    assert allocator_output.replace(b"\r\n", b"\n") == b"11\n"
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\ncapability allocate;\n'
+        'pub fn main()->i32 { with capability allocate { '
+        'let allocator:Allocator=system_allocator(); '
+        'var values:Vec<i64>=vec_new<i64>(allocator,1); '
+        'vec_push<i64>(values,7); print(vec_len<i64>(values)); '
+        'drop(values); } return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    vector_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    vector_result = subprocess.run([str(executable)], input=vector_request, capture_output=True)
+    assert vector_result.returncode == 0, vector_result.stderr.decode("utf-8", errors="replace")
+    vector_transport = decode_native_project_artifact_transport(
+        int(line) for line in vector_result.stdout.splitlines()
+    )
+    vector_mir = parse_mir(json.loads(vector_transport.canonical_mir_bytes))
+    assert vector_transport.c_source_bytes.decode("utf-8") == emit_c_module(vector_mir)
+    assert vector_transport.c_header_bytes.decode("utf-8") == emit_c_header(vector_mir)
+    vector_c = tmp_path / "native-vector-drop-call.c"
+    vector_c.write_bytes(vector_transport.c_source_bytes)
+    vector_driver = tmp_path / "native-vector-drop-call-driver.c"
+    vector_driver.write_text(
+        '#include "native-vector-drop-call.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    vector_program = tmp_path / "native-vector-drop-call-program"
+    subprocess.run([cc, "-std=c11", str(vector_driver), "-o", str(vector_program)],
+                   check=True, capture_output=True)
+    vector_output = subprocess.run([str(vector_program)], check=True,
+                                   capture_output=True).stdout
+    assert vector_output.replace(b"\r\n", b"\n") == b"1\n"
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\nenum Choice { Some(i64), None }\n'
+        'pub fn main()->i32 { let choice:Choice=Some(7); '
+        'match(choice) { Some(value) => { print(value); } '
+        'None => { print(0); } } return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    enum_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    enum_result = subprocess.run([str(executable)], input=enum_request, capture_output=True)
+    assert enum_result.returncode == 0, enum_result.stderr.decode("utf-8", errors="replace")
+    enum_transport = decode_native_project_artifact_transport(
+        int(line) for line in enum_result.stdout.splitlines()
+    )
+    enum_mir = parse_mir(json.loads(enum_transport.canonical_mir_bytes))
+    assert enum_transport.c_source_bytes.decode("utf-8") == emit_c_module(enum_mir)
+    assert enum_transport.c_header_bytes.decode("utf-8") == emit_c_header(enum_mir)
+    enum_c = tmp_path / "native-copy-enum.c"
+    enum_c.write_bytes(enum_transport.c_source_bytes)
+    enum_driver = tmp_path / "native-copy-enum-driver.c"
+    enum_driver.write_text(
+        '#include "native-copy-enum.c"\n'
+        'int main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    enum_program = tmp_path / "native-copy-enum-program"
+    subprocess.run([cc, "-std=c11", str(enum_driver), "-o", str(enum_program)],
+                   check=True, capture_output=True)
+    enum_output = subprocess.run([str(enum_program)], check=True, capture_output=True).stdout
+    assert enum_output.replace(b"\r\n", b"\n") == b"7\n"
+
+    (source_root / "src" / "main.mrt").write_text(
         "module probe\npub fn main()->i32 { let byte:u8=255; print(byte); return 0; }\n",
         encoding="utf-8", newline="\n",
     )
@@ -456,3 +692,44 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     )
     assert bundle.module_name == "probe"
     assert len(bundle.functions) == 2
+
+    legacy_generic = subprocess.run([str(legacy_executable)], input=generic_request, capture_output=True)
+    assert legacy_generic.returncode == 0, legacy_generic.stderr.decode("utf-8", errors="replace")
+    generic_snapshots = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_generic.stdout.splitlines()
+    )
+    assert len(generic_snapshots.functions) == 3
+    generic_source = bytes(generic_snapshots.functions[0].effective_source_bytes).decode("utf-8")
+    generic_oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=generic_source,
+                module_name=generic_snapshots.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(generic_snapshots.capability_names)},
+            )
+            for values in generic_snapshots.encoded_snapshots
+        ),
+        module_name=generic_snapshots.module_name,
+    )
+    assert generic_transport.canonical_mir_bytes == canonical_mir_json(generic_oracle.module).encode("utf-8")
+
+    legacy_trait = subprocess.run([str(legacy_executable)], input=trait_request, capture_output=True)
+    assert legacy_trait.returncode == 0, legacy_trait.stderr.decode("utf-8", errors="replace")
+    trait_snapshots = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_trait.stdout.splitlines()
+    )
+    trait_source = bytes(trait_snapshots.functions[0].effective_source_bytes).decode("utf-8")
+    trait_oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=trait_source,
+                module_name=trait_snapshots.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(trait_snapshots.capability_names)},
+            )
+            for values in trait_snapshots.encoded_snapshots
+        ),
+        module_name=trait_snapshots.module_name,
+    )
+    assert trait_transport.canonical_mir_bytes == canonical_mir_json(trait_oracle.module).encode("utf-8")

@@ -163,6 +163,8 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         var callable_parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,16);
         var backend_callable_headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,16);
         var backend_vector_types:Vec<i32>=vec_new<i32>(allocator,4);
+        var backend_aggregate_types:Vec<i32>=vec_new<i32>(allocator,4);
+        var backend_copy_enum_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_features:Vec<i64>=vec_new<i64>(allocator,16);
         var backend_prototypes:Buffer=buffer_new(allocator,4096);
         var backend_bodies:Buffer=buffer_new(allocator,8192);
@@ -872,6 +874,20 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                 );
                                                 if(catalog_status!=0){
                                                     function_status=native_driver_backend_catalog_failure_status(catalog_status);
+                                                }else{
+                                                    let aggregate_status:i32=canonical_c_collect_aggregate_types_from_records(
+                                                        body,type_descriptors,backend_aggregate_types
+                                                    );
+                                                    if(aggregate_status!=0){
+                                                        function_status=native_driver_backend_catalog_failure_status(aggregate_status);
+                                                    }else{
+                                                        let enum_status:i32=canonical_c_collect_copy_enum_types_from_records(
+                                                            body,backend_copy_enum_types
+                                                        );
+                                                        if(enum_status!=0){
+                                                            function_status=native_driver_backend_catalog_failure_status(enum_status);
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -925,9 +941,9 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         }else{
             var backend_source:Buffer=buffer_new(allocator,16384);
             var backend_header:Buffer=buffer_new(allocator,4096);
-            let module_status:i32=canonical_c_finish_copy_vector_catalog_module(
+            let module_status:i32=canonical_c_finish_aggregate_vector_catalog_module(
                 backend_prototypes,backend_bodies,backend_features,
-                backend_vector_types,type_descriptors,backend_source
+                backend_vector_types,backend_aggregate_types,backend_copy_enum_types,type_descriptors,backend_source
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
             let public_status:i32=canonical_c_finish_public_header(
@@ -945,7 +961,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             drop(backend_header);drop(backend_source);
         }
         drop(backend_declarations);drop(backend_bodies);drop(backend_prototypes);
-        drop(backend_features);drop(backend_vector_types);drop(backend_callable_headers);
+        drop(backend_features);drop(backend_copy_enum_types);drop(backend_aggregate_types);drop(backend_vector_types);drop(backend_callable_headers);
         drop(callable_parameters);drop(callable_signatures);
         drop(canonical_project);
         drop(capabilities);

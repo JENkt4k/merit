@@ -1749,6 +1749,69 @@ fn main()->i32 {
 }
 '''
 
+AGGREGATE_C_TYPE_PROBE = r'''module aggregate_c_type_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  var output:Buffer=buffer_new(allocator,48);
+  let code:i32=function_mir_aggregate_struct_type_code(0);
+  print(canonical_c_append_type_with_catalog(output,code,descriptors));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   code,function_mir_type_descriptor_aggregate_struct_kind(),0,
+   function_mir_i32_type_code(),0,0,0,5,0,1,3
+  ));
+  print(canonical_c_append_type_with_catalog(output,code,descriptors));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(descriptors);return 0;
+ }
+}
+'''
+
+AGGREGATE_C_TYPEDEFS_PROBE = r'''module aggregate_c_typedefs_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let outer:i32=function_mir_aggregate_struct_type_code(0);
+  let inner:i32=function_mir_aggregate_struct_type_code(1);
+  var codes:Vec<i32>=vec_new<i32>(allocator,2);
+  vec_push<i32>(codes,outer);vec_push<i32>(codes,inner);
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   outer,function_mir_type_descriptor_aggregate_struct_kind(),0,inner,0,0,0,5,0,1,3
+  ));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   inner,function_mir_type_descriptor_aggregate_struct_kind(),1,
+   function_mir_i32_type_code(),0,0,0,5,0,1,3
+  ));
+  var output:Buffer=buffer_new(allocator,128);
+  print(canonical_c_append_integer_aggregate_typedefs(codes,descriptors,output));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  var cyclic:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(cyclic,function_mir_type_descriptor(
+   outer,function_mir_type_descriptor_aggregate_struct_kind(),0,inner,0,0,0,5,0,1,3
+  ));
+  vec_push<MirTypeDescriptor>(cyclic,function_mir_type_descriptor(
+   inner,function_mir_type_descriptor_aggregate_struct_kind(),1,outer,0,0,0,5,0,1,3
+  ));
+  var rejected:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_integer_aggregate_typedefs(codes,cyclic,rejected));
+  drop(rejected);drop(cyclic);
+  drop(output);drop(descriptors);drop(codes);return 0;
+ }
+}
+'''
+
 CATALOG_TYPE_PROBE = r'''module catalog_type_probe
 import bootstrap_mir_functions;
 import bootstrap_mir_resolved_source_function_bundle;
@@ -2774,6 +2837,48 @@ def test_merit_builtin_local_admission_covers_fixed_integers_without_unit_or_unk
     assert native == interpreted
     expected = [0] + [1] * 13 + [0, 0]
     assert [int(value) for value in native.splitlines()] == expected
+
+
+def test_merit_aggregate_c_spelling_requires_a_catalog_and_matches_oracle(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path, AGGREGATE_C_TYPE_PROBE)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_c_append_type_with_catalog("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "aggregate-c-spelling")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values.pop(0) != 0
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert bytes(values).decode("ascii") == oracle_c_type(
+        MirType("struct_aggregate_0_destructor_-1__abi_3_506f696e74_78", (MirType("i32"),))
+    )
+    assert length == len(values)
+
+
+def test_merit_aggregate_typedefs_are_dependency_ordered_like_oracle(tmp_path: Path) -> None:
+    root = _project(tmp_path, AGGREGATE_C_TYPEDEFS_PROBE)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "aggregate-c-typedefs")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    definitions = bytes(values[:length]).decode("ascii")
+    assert values[length:] == [2]
+    assert definitions == (
+        "typedef struct { int32_t field_0; } merit_struct_aggregate_1;\n"
+        "typedef struct { merit_struct_aggregate_1 field_0; } merit_struct_aggregate_0;\n\n"
+    )
 
 
 def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -5206,7 +5311,7 @@ fn main()->i32 {
   vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,2,function_mir_mode_value(),2));
   vec_push<MirFunctionRecord>(records,function_mir_call_argument(0,3,function_mir_mode_value(),3));
   vec_push<MirFunctionRecord>(records,function_mir_call(31,10,1,4,31,10,function_mir_i64_type_code(),function_mir_mode_value(),-1));
-  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(1,0,function_mir_mode_borrowed(),0));
   var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
   var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,4);
   vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{global_id:0,source_kind:assembly_source_body_kind(),source_id:0,contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),result:-1,left:-1,right:-1});
