@@ -370,6 +370,50 @@ focused tree). This is one project, not full acceptance evidence. The
 remaining `binary_packet` `4416` is the shared F5 placement-count boundary,
 not another F6 header failure.
 
+The binary-packet legacy snapshots isolate that F5 count: its contract-bearing
+function has nine body instructions, four contract instructions, and thirteen
+placements. Counting the explicit contract source rows advances its v2 request
+to a complete artifact. Independent legacy-snapshot MIR bytes match. Native C
+now consumes the existing contract record and local catalogs in placement
+order; it emits the source-backed `slice_len` precondition, check, and failure
+helper. The focused v4 artifact test passes byte-for-byte C/header comparison
+with the Python oracle, GCC compilation, valid runtime output, and rejection
+of a short slice. A separate source-backed `requires`/`ensures`/`old()` i64
+case includes checked arithmetic and passes C-byte parity and native runtime
+output (`1 passed in 59.84s` for the combined focused test). The adjacent v4
+framing and contract-catalog regressions pass (`2 passed in 69.39s`). This
+closes the represented primitive contract C shapes, not the exact-decimal
+arithmetic contracts in the finance projects.
+
+The contract C path is one mechanism, not four independent test failures.
+`MirFunctionContractRecord` carries const, binary, check, call, result-capture,
+field-load, and old-snapshot instructions; `MirFunctionContractLocal` carries
+their declarations. The production driver already had both catalogs for
+canonical MIR, but had passed only body, ownership, CFG, and placement catalogs
+to the C backend. That mismatch caused it to count contract placements without
+emitting their instruction or local rows.
+The production C-backend entry now receives those catalogs; its older direct
+entry points pass explicit empty catalogs and fail closed if used with placed
+contract sources. It does not infer contracts from source text or MIR JSON.
+The remaining F5 contract C surface includes declared exact-decimal and
+bounded numeric representation, complex field/catalog combinations, and
+broader accepted/rejected corpus coverage; unsupported shapes fail closed.
+
+Post-`825a101` read-only MPRQ v2 sweep (empty header selection, saved focused
+compiler): `text_pipeline`, `binary_packet`, `generic_result`, `trait_bounds`,
+and `borrowed_views` return v4 artifacts (status `0`).
+`generic_collections`, `filesystem_capabilities`, and `ledger_app` stop at
+C local-type admission (`4410`); `cobol_finance_modernization` stops earlier
+at C return/type admission (`4403`). These are first-failure statuses, not
+full acceptance passes. Independent legacy snapshots group the unresolved
+types rather than the status code: generic collections has nested vectors,
+an owned-field struct, and owned-payload enums; filesystem has an owned-payload
+file-read result and a Copy-payload file-write result; the two finance
+applications have declared decimal/bounded values inside stable aggregates,
+with finance modernization also carrying an owned-payload result. Treat
+owned-container/layout and declared-numeric/layout as separate F4 families;
+do not add a generic `4410` bypass that admits unrepresented C storage.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

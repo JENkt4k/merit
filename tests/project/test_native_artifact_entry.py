@@ -230,6 +230,97 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
         b"Merit Epoch II", b"abc!", b"4", b"327"
     ]
 
+    binary_project = load_project(repository / "examples" / "projects" / "binary_packet" / "Merit.toml")
+    binary_completed = subprocess.run(
+        [str(executable)],
+        input=encode_loaded_project_request(binary_project, header_exports=frozenset()),
+        capture_output=True,
+    )
+    assert binary_completed.returncode == 0, binary_completed.stderr
+    binary_transport = decode_native_project_artifact_transport(
+        int(line) for line in binary_completed.stdout.splitlines()
+    )
+    binary_mir = parse_mir(json.loads(binary_transport.canonical_mir_bytes))
+    assert binary_transport.c_source_bytes.decode("utf-8") == emit_c_module(binary_mir)
+    assert binary_transport.c_header_bytes.decode("utf-8") == emit_c_header(
+        binary_mir, exported_names=frozenset()
+    )
+    binary_c = tmp_path / "native-binary-packet.c"
+    binary_c.write_bytes(binary_transport.c_source_bytes)
+    binary_program = tmp_path / "native-binary-packet-program"
+    subprocess.run([cc, "-std=c11", str(binary_c), "-o", str(binary_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(binary_program)], check=True, capture_output=True).stdout.splitlines() == [
+        b"258", b"60", b"2", b"258", b"60"
+    ]
+    short_binary_root = tmp_path / "short-binary-packet"
+    shutil.copytree(repository / "examples" / "projects" / "binary_packet", short_binary_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    short_main = short_binary_root / "src" / "main.mrt"
+    short_source = short_main.read_text(encoding="utf-8")
+    assert "buffer_slice(packet, 0, 2)" in short_source
+    short_main.write_text(short_source.replace("buffer_slice(packet, 0, 2)",
+                                              "buffer_slice(packet, 0, 1)"),
+                          encoding="utf-8", newline="\n")
+    short_project = load_project(short_binary_root / "Merit.toml")
+    short_completed = subprocess.run(
+        [str(executable)],
+        input=encode_loaded_project_request(short_project, header_exports=frozenset()),
+        capture_output=True,
+    )
+    assert short_completed.returncode == 0, short_completed.stderr
+    short_transport = decode_native_project_artifact_transport(
+        int(line) for line in short_completed.stdout.splitlines()
+    )
+    short_mir = parse_mir(json.loads(short_transport.canonical_mir_bytes))
+    assert short_transport.c_source_bytes.decode("utf-8") == emit_c_module(short_mir)
+    short_c = tmp_path / "native-short-binary-packet.c"
+    short_c.write_bytes(short_transport.c_source_bytes)
+    short_program = tmp_path / "native-short-binary-packet-program"
+    subprocess.run([cc, "-std=c11", str(short_c), "-o", str(short_program)],
+                   check=True, capture_output=True)
+    short_run = subprocess.run([str(short_program)], capture_output=True)
+    assert short_run.returncode != 0
+    assert short_run.stdout == b""
+
+    snapshot_root = tmp_path / "old-snapshot-binary-packet"
+    shutil.copytree(repository / "examples" / "projects" / "binary_packet", snapshot_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    snapshot_packet = snapshot_root / "src" / "packet.mrt"
+    snapshot_packet.write_text(
+        snapshot_packet.read_text(encoding="utf-8")
+        + "\npub fn bump_checked(value: i64) -> i64\n"
+          "requires value >= 0;\n"
+          "ensures result == old(value) + 1;\n"
+          "{ return checked_add(value, 1); }\n",
+        encoding="utf-8", newline="\n",
+    )
+    snapshot_main = snapshot_root / "src" / "main.mrt"
+    snapshot_main.write_text(
+        snapshot_main.read_text(encoding="utf-8").replace("    return 0;", "    print(bump_checked(3));\n    return 0;"),
+        encoding="utf-8", newline="\n",
+    )
+    snapshot_project = load_project(snapshot_root / "Merit.toml")
+    snapshot_completed = subprocess.run(
+        [str(executable)],
+        input=encode_loaded_project_request(snapshot_project, header_exports=frozenset()),
+        capture_output=True,
+    )
+    assert snapshot_completed.returncode == 0, snapshot_completed.stderr
+    snapshot_transport = decode_native_project_artifact_transport(
+        int(line) for line in snapshot_completed.stdout.splitlines()
+    )
+    snapshot_mir = parse_mir(json.loads(snapshot_transport.canonical_mir_bytes))
+    assert snapshot_transport.c_source_bytes.decode("utf-8") == emit_c_module(snapshot_mir)
+    snapshot_c = tmp_path / "native-old-snapshot-binary-packet.c"
+    snapshot_c.write_bytes(snapshot_transport.c_source_bytes)
+    snapshot_program = tmp_path / "native-old-snapshot-binary-packet-program"
+    subprocess.run([cc, "-std=c11", str(snapshot_c), "-o", str(snapshot_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(snapshot_program)], check=True, capture_output=True).stdout.splitlines() == [
+        b"258", b"60", b"2", b"258", b"60", b"4"
+    ]
+
     generic_request = encode_loaded_project_request(load_project(
         repository / "examples" / "projects" / "generic_result" / "Merit.toml"
     ))
@@ -942,3 +1033,25 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
         module_name=text_snapshots.module_name,
     )
     assert acceptance_text_transport.canonical_mir_bytes == canonical_mir_json(text_oracle.module).encode("utf-8")
+
+    legacy_binary = subprocess.run(
+        [str(legacy_executable)], input=encode_loaded_project_request(binary_project), capture_output=True
+    )
+    assert legacy_binary.returncode == 0, legacy_binary.stderr.decode("utf-8", errors="replace")
+    binary_snapshots = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_binary.stdout.splitlines()
+    )
+    binary_source = bytes(binary_snapshots.functions[0].effective_source_bytes).decode("utf-8")
+    binary_oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=binary_source,
+                module_name=binary_snapshots.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(binary_snapshots.capability_names)},
+            )
+            for values in binary_snapshots.encoded_snapshots
+        ),
+        module_name=binary_snapshots.module_name,
+    )
+    assert binary_transport.canonical_mir_bytes == canonical_mir_json(binary_oracle.module).encode("utf-8")
