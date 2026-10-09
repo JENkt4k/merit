@@ -390,11 +390,56 @@ requires_caps [allocate]
     return 6;
 }
 
+fn canonical_c_invalid_owned_field_type_status()->i32{return 9;}
+fn canonical_c_invalid_recursive_owned_enum_type_status()->i32{return 10;}
+
 fn canonical_c_append_type_with_catalog(
     borrow_mut output:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>
 )->i32
 requires_caps [allocate]
 {
+    if(type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(type_code<function_mir_recursive_owned_payload_enum_type_code(0)){
+            let identity:i32=checked_sub(type_code,function_mir_owned_field_struct_type_code(0));
+            var count:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_field_struct_kind()){return canonical_c_invalid_owned_field_type_status();}
+                    if(function_mir_type_descriptor_identity(item)!=identity){return canonical_c_invalid_owned_field_type_status();}
+                    if(function_mir_type_descriptor_ordinal(item)!=0){return canonical_c_invalid_owned_field_type_status();}
+                    if(function_mir_type_descriptor_child(item)<=0){return canonical_c_invalid_owned_field_type_status();}
+                    count=checked_add(count,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(count!=1){return canonical_c_invalid_owned_field_type_status();}
+            canonical_mir_append_text(output,"merit_struct_owned_field_");
+            canonical_mir_append_i32(output,identity);
+            return 0;
+        }
+    }
+    if(type_code>=function_mir_recursive_owned_payload_enum_type_code(0)){
+        if(type_code<function_mir_aggregate_struct_type_code(0)){
+            let identity:i32=checked_sub(type_code,function_mir_recursive_owned_payload_enum_type_code(0));
+            var ordinal:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_payload_enum_kind()){return canonical_c_invalid_recursive_owned_enum_type_status();}
+                    if(function_mir_type_descriptor_identity(item)!=identity){return canonical_c_invalid_recursive_owned_enum_type_status();}
+                    if(function_mir_type_descriptor_ordinal(item)!=ordinal){return canonical_c_invalid_recursive_owned_enum_type_status();}
+                    if(function_mir_type_descriptor_child(item)<=0){return canonical_c_invalid_recursive_owned_enum_type_status();}
+                    ordinal=checked_add(ordinal,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(ordinal==0){return canonical_c_invalid_recursive_owned_enum_type_status();}
+            canonical_mir_append_text(output,"merit_enum_owned_payload_");
+            canonical_mir_append_i32(output,identity);
+            return 0;
+        }
+    }
     if(type_code>=function_mir_copy_payload_enum_type_code(0)){
         if(type_code<function_mir_i64_struct_type_code(0)){
             let identity:i32=checked_sub(type_code,function_mir_copy_payload_enum_type_code(0));
@@ -3623,6 +3668,167 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_owned_typedef_invalid_catalog_status()->i32{return 1;}
+fn canonical_c_owned_typedef_cycle_status()->i32{return 2;}
+fn canonical_c_owned_typedef_unsupported_child_status()->i32{return 3;}
+
+// Owned-field definitions precede general aggregates in the frozen oracle.
+// Only children already declared at this point may be named. A nested owned
+// field is emitted after its child, with stable lowest-identity selection.
+pub fn canonical_c_append_owned_field_typedefs(
+    borrow owned_field_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var emitted:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(owned_field_codes));
+    while(vec_len<i32>(emitted)<vec_len<i32>(owned_field_codes)){
+        var best:i32=function_mir_unresolved_type_code();
+        var best_child:i32=function_mir_unresolved_type_code();
+        var index:i64=0;
+        while(index<vec_len<i32>(owned_field_codes)){
+            let candidate:i32=vec_get<i32>(owned_field_codes,index);
+            if(candidate<function_mir_owned_field_struct_type_code(0)){
+                return canonical_c_owned_typedef_invalid_catalog_status();
+            }
+            if(candidate>=function_mir_recursive_owned_payload_enum_type_code(0)){
+                return canonical_c_owned_typedef_invalid_catalog_status();
+            }
+            if(canonical_c_vector_code_selected(candidate,emitted)==0){
+                var field_count:i32=0;var child:i32=function_mir_unresolved_type_code();
+                var field_index:i64=0;
+                while(field_index<vec_len<MirTypeDescriptor>(descriptors)){
+                    let field:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,field_index);
+                    if(function_mir_type_descriptor_code(field)==candidate){
+                        if(function_mir_type_descriptor_kind(field)!=function_mir_type_descriptor_owned_field_struct_kind()){
+                            return canonical_c_owned_typedef_invalid_catalog_status();
+                        }
+                        if(function_mir_type_descriptor_identity(field)!=checked_sub(candidate,function_mir_owned_field_struct_type_code(0))){
+                            return canonical_c_owned_typedef_invalid_catalog_status();
+                        }
+                        if(function_mir_type_descriptor_ordinal(field)!=0){return canonical_c_owned_typedef_invalid_catalog_status();}
+                        child=function_mir_type_descriptor_child(field);
+                        field_count=checked_add(field_count,1);
+                    }
+                    field_index=checked_add(field_index,1);
+                }
+                if(field_count!=1){return canonical_c_owned_typedef_invalid_catalog_status();}
+                if(child<=0){return canonical_c_owned_typedef_invalid_catalog_status();}
+                if(child==function_mir_unit_type_code()){
+                    return canonical_c_owned_typedef_unsupported_child_status();
+                }
+                if(child>=function_mir_copy_payload_enum_type_code(0)){
+                    if(child<function_mir_owned_field_struct_type_code(0)){
+                        return canonical_c_owned_typedef_unsupported_child_status();
+                    }
+                }
+                if(child>=function_mir_recursive_owned_payload_enum_type_code(0)){
+                    if(child<function_mir_vector_type_code(0)){
+                        return canonical_c_owned_typedef_unsupported_child_status();
+                    }
+                }
+                var ready:i32=1;
+                if(child>=function_mir_owned_field_struct_type_code(0)){
+                    if(child<function_mir_recursive_owned_payload_enum_type_code(0)){
+                        if(canonical_c_vector_code_selected(child,emitted)==0){ready=0;}
+                    }
+                }
+                if(ready!=0){
+                    if(best==function_mir_unresolved_type_code()){best=candidate;best_child=child;}
+                    else{if(candidate<best){best=candidate;best_child=child;}}
+                }
+            }
+            index=checked_add(index,1);
+        }
+        if(best==function_mir_unresolved_type_code()){return canonical_c_owned_typedef_cycle_status();}
+        canonical_mir_append_text(output,"typedef struct { ");
+        if(canonical_c_append_type_with_catalog(output,best_child,descriptors)!=0){
+            return canonical_c_owned_typedef_unsupported_child_status();
+        }
+        canonical_mir_append_text(output," field_0; } merit_struct_owned_field_");
+        canonical_mir_append_i32(output,checked_sub(best,function_mir_owned_field_struct_type_code(0)));
+        canonical_mir_append_text(output,";\n");
+        vec_push<i32>(emitted,best);
+    }
+    if(vec_len<i32>(emitted)>0){buffer_push(output,10);}
+    drop(emitted);return 0;
+}
+
+// Recursive payload enums appear after Copy-payload enums in the oracle.
+// Their ordered descriptor rows become one tagged union declaration.
+pub fn canonical_c_append_recursive_owned_enum_typedefs(
+    borrow owned_enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var emitted:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(owned_enum_codes));
+    while(vec_len<i32>(emitted)<vec_len<i32>(owned_enum_codes)){
+        var best:i32=function_mir_unresolved_type_code();var index:i64=0;
+        while(index<vec_len<i32>(owned_enum_codes)){
+            let candidate:i32=vec_get<i32>(owned_enum_codes,index);
+            if(candidate<function_mir_recursive_owned_payload_enum_type_code(0)){
+                return canonical_c_owned_typedef_invalid_catalog_status();
+            }
+            if(candidate>=function_mir_aggregate_struct_type_code(0)){
+                return canonical_c_owned_typedef_invalid_catalog_status();
+            }
+            if(canonical_c_vector_code_selected(candidate,emitted)==0){
+                if(best==function_mir_unresolved_type_code()){best=candidate;}
+                else{if(candidate<best){best=candidate;}}
+            }
+            index=checked_add(index,1);
+        }
+        if(best==function_mir_unresolved_type_code()){return canonical_c_owned_typedef_invalid_catalog_status();}
+        var ordinal:i32=0;index=0;
+        canonical_mir_append_text(output,"typedef struct { int64_t tag; union { ");
+        while(index<vec_len<MirTypeDescriptor>(descriptors)){
+            let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+            if(function_mir_type_descriptor_code(item)==best){
+                if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_payload_enum_kind()){
+                    return canonical_c_owned_typedef_invalid_catalog_status();
+                }
+                if(function_mir_type_descriptor_identity(item)!=checked_sub(best,function_mir_recursive_owned_payload_enum_type_code(0))){
+                    return canonical_c_owned_typedef_invalid_catalog_status();
+                }
+                if(function_mir_type_descriptor_ordinal(item)!=ordinal){return canonical_c_owned_typedef_invalid_catalog_status();}
+                let child:i32=function_mir_type_descriptor_child(item);
+                if(child<=0){return canonical_c_owned_typedef_invalid_catalog_status();}
+                if(child==function_mir_unit_type_code()){
+                    return canonical_c_owned_typedef_unsupported_child_status();
+                }
+                if(child>=function_mir_i64_struct_type_code(0)){
+                    if(child<function_mir_owned_field_struct_type_code(0)){
+                        return canonical_c_owned_typedef_unsupported_child_status();
+                    }
+                }
+                if(child>=function_mir_recursive_owned_payload_enum_type_code(0)){
+                    if(child<function_mir_vector_type_code(0)){
+                        if(canonical_c_vector_code_selected(child,emitted)==0){
+                            return canonical_c_owned_typedef_unsupported_child_status();
+                        }
+                    }
+                }
+                if(canonical_c_append_type_with_catalog(output,child,descriptors)!=0){
+                    return canonical_c_owned_typedef_unsupported_child_status();
+                }
+                canonical_mir_append_text(output," variant_");canonical_mir_append_i32(output,ordinal);
+                canonical_mir_append_text(output,"; ");ordinal=checked_add(ordinal,1);
+            }
+            index=checked_add(index,1);
+        }
+        if(ordinal==0){return canonical_c_owned_typedef_invalid_catalog_status();}
+        canonical_mir_append_text(output,"} payload; } merit_enum_owned_payload_");
+        canonical_mir_append_i32(output,checked_sub(best,function_mir_recursive_owned_payload_enum_type_code(0)));
+        canonical_mir_append_text(output,";\n");
+        vec_push<i32>(emitted,best);
+    }
+    if(vec_len<i32>(emitted)>0){buffer_push(output,10);}
+    drop(emitted);return 0;
+}
+
 // Emit only aggregate types reached from function signatures and locals.
 // A field may depend on another aggregate; select the lowest ready identity
 // so declaration order is deterministic and cycles fail closed.
@@ -3767,6 +3973,7 @@ requires_caps [allocate]
 fn canonical_c_finish_module_with_copy_vectors(
     borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
     borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
+    borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
     borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -3859,12 +4066,20 @@ requires_caps [allocate]
     if(needs_vector!=0){
         bootstrap_buffer_append(output,vector_typedefs,0,buffer_len(vector_typedefs));
     }
+    let owned_field_status:i32=canonical_c_append_owned_field_typedefs(
+        owned_field_codes,descriptors,output
+    );
+    if(owned_field_status!=0){return checked_add(40,owned_field_status);}
     let aggregate_status:i32=canonical_c_append_integer_aggregate_typedefs(
         aggregate_type_codes,descriptors,output
     );
     if(aggregate_status!=0){return checked_add(20,aggregate_status);}
     let enum_status:i32=canonical_c_append_copy_enum_typedefs(enum_type_codes,descriptors,output);
     if(enum_status!=0){return checked_add(30,enum_status);}
+    let owned_enum_status:i32=canonical_c_append_recursive_owned_enum_typedefs(
+        owned_enum_codes,descriptors,output
+    );
+    if(owned_enum_status!=0){return checked_add(50,owned_enum_status);}
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
     let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
@@ -3922,9 +4137,13 @@ requires_caps [allocate]
     var vector_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var aggregate_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var enum_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
-        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,descriptors,output
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,descriptors,output
     );
+    drop(owned_enum_codes);drop(owned_field_codes);
     drop(enum_type_codes);drop(aggregate_type_codes);drop(vector_type_codes);drop(descriptors);
     return status;
 }
@@ -3940,10 +4159,14 @@ requires_caps [allocate]
     var vector_type_codes:Vec<i32>=vec_new<i32>(allocator,1);
     var aggregate_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var enum_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
     vec_push<i32>(vector_type_codes,vector_type_code);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
-        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,descriptors,output
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,descriptors,output
     );
+    drop(owned_enum_codes);drop(owned_field_codes);
     drop(enum_type_codes);drop(aggregate_type_codes);drop(vector_type_codes);
     return status;
 }
@@ -3959,9 +4182,13 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     var aggregate_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var enum_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
-        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,descriptors,output
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,descriptors,output
     );
+    drop(owned_enum_codes);drop(owned_field_codes);
     drop(enum_type_codes);drop(aggregate_type_codes);
     return status;
 }
@@ -3973,8 +4200,27 @@ pub fn canonical_c_finish_aggregate_vector_catalog_module(
 )->i32
 requires_caps [allocate]
 {
+    let allocator:Allocator=system_allocator();
+    var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    let status:i32=canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,descriptors,output
+    );
+    drop(owned_enum_codes);drop(owned_field_codes);return status;
+}
+
+pub fn canonical_c_finish_owned_aggregate_vector_catalog_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
+    borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
     return canonical_c_finish_module_with_copy_vectors(
-        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,descriptors,output
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,descriptors,output
     );
 }
 
@@ -4094,6 +4340,96 @@ requires_caps [allocate]
         index=checked_add(index,1);
     }
     return 0;
+}
+
+// Walk reachable catalog types, not every source declaration. This is kept
+// separate from local admission so a missing or cyclic resource layout cannot
+// become an accepted production artifact merely by naming its C type.
+fn canonical_c_collect_catalog_reachable_code(
+    code:i32,borrow_mut pending:Vec<i32>,borrow_mut copy_enum_codes:Vec<i32>
+)->i32
+requires_caps [allocate]
+{
+    if(code>=function_mir_copy_payload_enum_type_code(0)){
+        if(code<function_mir_i64_struct_type_code(0)){
+            if(canonical_c_vector_code_selected(code,copy_enum_codes)==0){vec_push<i32>(copy_enum_codes,code);}
+        }
+    }
+    var has_descriptor:i32=0;
+    if(code>=function_mir_owned_field_struct_type_code(0)){
+        if(code<function_mir_decimal_type_code(0)){has_descriptor=1;}
+    }
+    if(code>=function_mir_vector_type_code(0)){has_descriptor=1;}
+    if(has_descriptor!=0){
+        if(canonical_c_vector_code_selected(code,pending)==0){vec_push<i32>(pending,code);}
+    }
+    return 0;
+}
+
+pub fn canonical_c_collect_owned_types_from_records(
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut vector_codes:Vec<i32>,borrow_mut aggregate_codes:Vec<i32>,
+    borrow_mut copy_enum_codes:Vec<i32>,borrow_mut owned_field_codes:Vec<i32>,
+    borrow_mut owned_enum_codes:Vec<i32>
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<MirFunctionRecord>(records)<2){return 1;}
+    let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
+    if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
+    let allocator:Allocator=system_allocator();
+    var pending:Vec<i32>=vec_new<i32>(allocator,8);
+    var index:i64=0;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        let kind:i32=function_mir_kind(record);
+        var has_type:i32=0;
+        if(kind==function_mir_kind_function()){has_type=1;}
+        if(kind==function_mir_kind_parameter()){has_type=1;}
+        if(kind==function_mir_kind_source_local()){has_type=1;}
+        if(kind==function_mir_kind_temporary_local()){has_type=1;}
+        if(has_type!=0){
+            let code:i32=function_mir_type_code(record);
+            canonical_c_collect_catalog_reachable_code(code,pending,copy_enum_codes);
+        }
+        index=checked_add(index,1);
+    }
+    index=0;
+    while(index<vec_len<i32>(pending)){
+        let parent:i32=vec_get<i32>(pending,index);
+        var found:i32=0;var descriptor_index:i64=0;
+        while(descriptor_index<vec_len<MirTypeDescriptor>(descriptors)){
+            let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,descriptor_index);
+            if(function_mir_type_descriptor_code(descriptor)==parent){
+                let child:i32=function_mir_type_descriptor_child(descriptor);
+                if(child<=0){return 3;}
+                canonical_c_collect_catalog_reachable_code(child,pending,copy_enum_codes);
+                found=1;
+            }
+            descriptor_index=checked_add(descriptor_index,1);
+        }
+        if(found==0){return 4;}
+        if(parent>=function_mir_owned_field_struct_type_code(0)){
+            if(parent<function_mir_recursive_owned_payload_enum_type_code(0)){
+                if(canonical_c_vector_code_selected(parent,owned_field_codes)==0){vec_push<i32>(owned_field_codes,parent);}
+            }
+        }
+        if(parent>=function_mir_recursive_owned_payload_enum_type_code(0)){
+            if(parent<function_mir_aggregate_struct_type_code(0)){
+                if(canonical_c_vector_code_selected(parent,owned_enum_codes)==0){vec_push<i32>(owned_enum_codes,parent);}
+            }
+        }
+        if(parent>=function_mir_aggregate_struct_type_code(0)){
+            if(parent<function_mir_decimal_type_code(0)){
+                if(canonical_c_vector_code_selected(parent,aggregate_codes)==0){vec_push<i32>(aggregate_codes,parent);}
+            }
+        }
+        if(parent>=function_mir_vector_type_code(0)){
+            if(canonical_c_vector_code_selected(parent,vector_codes)==0){vec_push<i32>(vector_codes,parent);}
+        }
+        index=checked_add(index,1);
+    }
+    drop(pending);return 0;
 }
 
 pub fn canonical_c_finish_public_header(

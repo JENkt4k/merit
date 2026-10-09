@@ -2720,6 +2720,205 @@ def test_merit_catalog_types_match_python_mir_json(tmp_path: Path) -> None:
         _numeric_descriptor_type_names(((1300001, 1, 1, 0, 0, 4, 5, 0, 0, 0, 0),))
 
 
+def test_merit_owned_catalog_c_spelling_is_descriptor_validated(tmp_path: Path) -> None:
+    probe = r'''module owned_catalog_c_spelling_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn emit(code:i32,borrow descriptors:Vec<MirTypeDescriptor>)->i32
+requires_caps [allocate]
+{
+ let allocator:Allocator=system_allocator();
+ var output:Buffer=buffer_new(allocator,64);
+ let status:i32=canonical_c_append_type_with_catalog(output,code,descriptors);
+ print(status);print(buffer_len(output));
+ var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,
+   function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));
+  emit(function_mir_owned_field_struct_type_code(0),descriptors);
+  emit(function_mir_recursive_owned_payload_enum_type_code(1),descriptors);
+  emit(function_mir_owned_field_struct_type_code(2),descriptors);
+  var fields:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(fields,function_mir_owned_field_struct_type_code(0));
+  var enums:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(enums,function_mir_recursive_owned_payload_enum_type_code(1));
+  var definitions:Buffer=buffer_new(allocator,128);
+  let field_status:i32=canonical_c_append_owned_field_typedefs(fields,descriptors,definitions);
+  print(field_status);print(buffer_len(definitions));
+  var offset:i64=0;
+  while(offset<buffer_len(definitions)){print(buffer_get(definitions,offset));offset=checked_add(offset,1);}
+  drop(definitions);
+  var enum_definitions:Buffer=buffer_new(allocator,128);
+  let enum_status:i32=canonical_c_append_recursive_owned_enum_typedefs(enums,descriptors,enum_definitions);
+  print(enum_status);print(buffer_len(enum_definitions));
+  offset=0;
+  while(offset<buffer_len(enum_definitions)){print(buffer_get(enum_definitions,offset));offset=checked_add(offset,1);}
+  drop(enum_definitions);drop(enums);drop(fields);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(2),function_mir_type_descriptor_vector_kind(),2,
+   function_mir_recursive_owned_payload_enum_type_code(1),0,0,0,0,0,0,0));
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_header(0,1,0,1,function_mir_unit_type_code()));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_vector_type_code(2),0));
+  var reached_vectors:Vec<i32>=vec_new<i32>(allocator,1);
+  var reached_aggregates:Vec<i32>=vec_new<i32>(allocator,1);
+  var reached_copy_enums:Vec<i32>=vec_new<i32>(allocator,1);
+  var reached_fields:Vec<i32>=vec_new<i32>(allocator,1);
+  var reached_enums:Vec<i32>=vec_new<i32>(allocator,1);
+  print(canonical_c_collect_owned_types_from_records(
+   records,descriptors,reached_vectors,reached_aggregates,reached_copy_enums,reached_fields,reached_enums));
+  print(vec_len<i32>(reached_vectors));print(vec_len<i32>(reached_aggregates));
+  print(vec_len<i32>(reached_copy_enums));print(vec_len<i32>(reached_fields));print(vec_len<i32>(reached_enums));
+  print(vec_get<i32>(reached_vectors,0));print(vec_get<i32>(reached_fields,0));print(vec_get<i32>(reached_enums,0));
+  var missing_catalog:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  print(canonical_c_collect_owned_types_from_records(
+   records,missing_catalog,reached_vectors,reached_aggregates,reached_copy_enums,reached_fields,reached_enums));
+  drop(missing_catalog);
+  drop(reached_enums);drop(reached_fields);drop(reached_copy_enums);
+  drop(reached_aggregates);drop(reached_vectors);drop(records);
+  var module_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(module_descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(5),function_mir_type_descriptor_owned_field_struct_kind(),5,
+   function_mir_i64_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(module_descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(6),function_mir_type_descriptor_owned_payload_enum_kind(),6,
+   function_mir_owned_field_struct_type_code(5),0,0,0,0,0,0,0));
+  var module_fields:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(module_fields,function_mir_owned_field_struct_type_code(5));
+  var module_enums:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(module_enums,function_mir_recursive_owned_payload_enum_type_code(6));
+  var no_types:Vec<i32>=vec_new<i32>(allocator,0);
+  var no_features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_from_string(allocator,"int64_t merit_owned_probe(void);\n");
+  var bodies:Buffer=buffer_from_string(allocator,"int64_t merit_owned_probe(void) { return 0; }\n");
+  var module_output:Buffer=buffer_new(allocator,1024);
+  print(canonical_c_finish_owned_aggregate_vector_catalog_module(
+   prototypes,bodies,no_features,no_types,no_types,no_types,module_fields,module_enums,module_descriptors,module_output));
+  print(buffer_len(module_output));
+  offset=0;
+  while(offset<buffer_len(module_output)){print(buffer_get(module_output,offset));offset=checked_add(offset,1);}
+  drop(module_output);drop(bodies);drop(prototypes);drop(no_features);drop(no_types);
+  drop(module_enums);drop(module_fields);drop(module_descriptors);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));
+  emit(function_mir_owned_field_struct_type_code(0),descriptors);
+  var duplicate_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(duplicate_codes,function_mir_owned_field_struct_type_code(0));
+  var duplicate_output:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_owned_field_typedefs(duplicate_codes,descriptors,duplicate_output));
+  drop(duplicate_output);drop(duplicate_codes);
+  var cycle_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(cycle_descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(2),function_mir_type_descriptor_owned_field_struct_kind(),2,
+   function_mir_owned_field_struct_type_code(2),0,0,0,0,0,0,0));
+  var cycle_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(cycle_codes,function_mir_owned_field_struct_type_code(2));
+  var cycle_output:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_owned_field_typedefs(cycle_codes,cycle_descriptors,cycle_output));
+  drop(cycle_output);drop(cycle_codes);drop(cycle_descriptors);
+  var enum_cycle_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(enum_cycle_descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(2),function_mir_type_descriptor_owned_payload_enum_kind(),2,
+   function_mir_recursive_owned_payload_enum_type_code(2),0,0,0,0,0,0,0));
+  var enum_cycle_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(enum_cycle_codes,function_mir_recursive_owned_payload_enum_type_code(2));
+  var enum_cycle_output:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_recursive_owned_enum_typedefs(enum_cycle_codes,enum_cycle_descriptors,enum_cycle_output));
+  drop(enum_cycle_output);drop(enum_cycle_codes);drop(enum_cycle_descriptors);
+  var unit_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(unit_descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(3),function_mir_type_descriptor_owned_field_struct_kind(),3,
+   function_mir_unit_type_code(),0,0,0,0,0,0,0));
+  var unit_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(unit_codes,function_mir_owned_field_struct_type_code(3));
+  var unit_output:Buffer=buffer_new(allocator,64);
+  print(canonical_c_append_owned_field_typedefs(unit_codes,unit_descriptors,unit_output));
+  drop(unit_output);drop(unit_codes);drop(unit_descriptors);
+  drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / "src" / "mir_resolved_source_function_bundle.mrt"
+    source = module_path.read_text(encoding="utf-8")
+    marker = "fn canonical_c_append_type_with_catalog("
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "owned-c-spelling")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    expected = ("merit_struct_owned_field_0", "merit_enum_owned_payload_1")
+    for spelling in expected:
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        assert bytes(values[:length]).decode("utf-8") == spelling
+        del values[:length]
+    assert values.pop(0) != 0
+    length = values.pop(0)
+    del values[:length]
+    expected_definitions = (
+        "typedef struct { merit_Buffer field_0; } merit_struct_owned_field_0;\n\n",
+        "typedef struct { int64_t tag; union { merit_struct_owned_field_0 variant_0; } "
+        "payload; } merit_enum_owned_payload_1;\n\n",
+    )
+    from merit.bootstrap.mir_to_c import emit_c_module
+    owned_field = MirType("struct_owned_field_0", (MirType("Buffer"),))
+    owned_enum = MirType("enum_owned_payload_1", (owned_field,))
+    oracle_module = MirModule("owned", (MirFunction(
+        "sample", MirType("unit"), (MirLocal(0, "value", owned_enum, ownership="owned"),),
+        (MirBlock(0, (), MirTerminator("return")),), 0,
+    ),))
+    oracle_c = emit_c_module(oracle_module)
+    for definition in expected_definitions:
+        assert definition in oracle_c
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        assert bytes(values[:length]).decode("utf-8") == definition
+        del values[:length]
+    assert [values.pop(0) for _ in range(9)] == [0, 1, 0, 0, 1, 1, 1500002, 1000000, 1100001]
+    assert values.pop(0) != 0
+    assert values.pop(0) == 0
+    module_length = values.pop(0)
+    module_c = bytes(values[:module_length]).decode("utf-8")
+    del values[:module_length]
+    field_declaration = "typedef struct { int64_t field_0; } merit_struct_owned_field_5;\n"
+    enum_declaration = (
+        "typedef struct { int64_t tag; union { merit_struct_owned_field_5 variant_0; } "
+        "payload; } merit_enum_owned_payload_6;\n"
+    )
+    assert module_c.index(field_declaration) < module_c.index(enum_declaration)
+    assert module_c.count(field_declaration) == module_c.count(enum_declaration) == 1
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    module_path = tmp_path / "owned-catalog-module.c"
+    module_path.write_text(module_c, encoding="utf-8", newline="\n")
+    subprocess.run([cc, "-std=c11", "-Werror", "-fsyntax-only", str(module_path)],
+                   check=True, capture_output=True, text=True)
+    for _ in range(1):
+        assert values.pop(0) != 0
+        length = values.pop(0)
+        del values[:length]
+    for _ in range(4):
+        assert values.pop(0) != 0
+    assert not values
+
+
 @pytest.mark.parametrize(
     ("literal", "base_symbol", "upper_high", "upper_low", "enforce_domain", "status", "value"),
     [

@@ -414,6 +414,58 @@ with finance modernization also carrying an owned-payload result. Treat
 owned-container/layout and declared-numeric/layout as separate F4 families;
 do not add a generic `4410` bypass that admits unrepresented C storage.
 
+The owned-container F4 boundary is wider than local admission. Its one
+vertical implementation must cover: descriptor-validated owned-field and
+owned-payload C type spelling; dependency-ordered typedef collection from
+signatures, locals, and nested vector elements; exact Python-oracle typedef
+order; value/borrow parameter and local declarations; construction, field/tag
+and payload access; explicit move/drop and recursive cleanup of owned fields,
+payload variants, and vector elements; and the runtime helpers used by those
+operations. `canonical_c_supported_catalog_local_type` currently rejects
+the owned-field (`1000000+`) and recursive-owned-payload (`1100000+`) codes,
+but admitting the names alone would produce undeclared C types. The current
+module finalizer collects only vector, aggregate, and Copy-payload enum codes,
+and its vector helper is explicitly limited to Copy elements. The Python
+oracle emits owned-field typedefs before aggregate typedefs and recursive
+owned-payload typedefs after Copy-payload enums. Keep those ordering and
+lifecycle dependencies together; do not let a later `4410` become a false
+artifact success. The focused catalog-type oracle baseline is green on the
+current committed tree (`1 passed in 34.22s`).
+Descriptor-validated owned-field and recursive-owned-enum C type spelling is
+now implemented as a private backend helper, with native/interpreter parity
+for valid names and missing/duplicate descriptor rejection (`1 passed in
+35.73s`). Production local admission remains fail-closed at `4410` until the
+corresponding typedef and recursive lifecycle emitters are present; this
+intermediate helper does not claim owned-container artifact support.
+Private owned-field and recursive-owned-payload typedef emitters now sort
+selected descriptor identities, keep owned-field dependencies in declaration
+order, and reject missing, duplicate, cyclic, or not-yet-declared children.
+Their focused native probe matches the independent Python C emitter's exact
+owned-field and tagged-union declaration fragments, and rejects duplicate
+descriptors, self-dependent declarations, and `unit`/`void` C fields
+(`1 passed in 35.50s`).
+At that point, production catalog collection and module integration were
+absent, so no acceptance status was promoted.
+The existing driver collects vector, aggregate, and Copy-enum roots separately
+from function records. Its aggregate collector follows only aggregate children.
+A private owned-type collector now walks reachable descriptor children from
+return/parameter/local roots, deduplicates nested owned-field and owned-enum
+identities, and rejects missing catalog rows; a direct native/interpreter probe
+for an owned-enum-to-owned-field path passed (`1 passed in 34.11s`). The
+production driver now accumulates the owned roots, and the finalizer has an
+owned-aware path that inserts field typedefs before general aggregates and recursive-enum
+typedefs after Copy enums. A focused native/interpreter probe extracted its
+generated C and GCC accepted the declaration order (`1 passed in 37.24s`).
+Owned local admission and recursive cleanup remain closed; this is declaration
+integration evidence, not an accepted-project result. The existing Copy-vector
+finalizer regression also remains green after the owned-aware signature change
+(`1 passed in 34.04s`).
+The graph collector also adds nested vector/aggregate/Copy-enum identities to
+their existing production catalogs. The focused `Vec` → owned enum → owned
+field path, including missing-descriptor rejection, passed interpreter/native
+parity (`1 passed in 34.87s`). Owned-element vector runtime and recursive
+cleanup remain necessary before broad local admission.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
