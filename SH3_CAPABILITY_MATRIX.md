@@ -314,6 +314,33 @@ binding rows to parameter locals, as the Python oracle does, so an owned
 distinct pointer-ABI family requiring end-to-end evidence. Value-mode
 aggregate calls are proved only for this subset, not all F5 calls.
 
+The borrowed/mutable-borrow aggregate result path is now represented in
+canonical MIR and C: pointer-typed locals, prototypes, relay returns, call
+forwarding, and field access use the existing Alpha.2 modes. A shared
+source-token visibility check also makes callable catalog names agree with
+exported function definitions across modules. `borrowed_views` native MIR is
+byte-identical to independent legacy-snapshot/Python materialization (6,770
+bytes), and generated C matches the Python emitter. The saved native C
+artifact compiles under UCRT64 GCC and prints `5` then `8`. The focused end-to-end
+test initially exposed F6 public-header parity: the native header used
+internal `merit_struct_aggregate_0`, while the oracle required stable public
+`merit_Record` and size/offset assertions. That failure was repaired below.
+
+The native public-header finalizer now derives exported signatures from the
+same source-backed callable catalog, uses descriptor-validated public/stable
+aggregate names, orders nested layout dependencies, and emits exact size and
+field-offset assertions. `borrowed_views` now passes the complete focused
+v4 MIR/C/header and GCC output test (`1 passed in 54.19s`), including its
+independent Python MIR comparison. A nested `Inner`/`Outer` public-stable
+fixture also matches the Python header and confirms padding/offsets
+(`1 passed in 41.02s`). The final focused rerun (`1 passed in 54.34s`)
+also compiled a separate C translation unit that includes the generated
+`borrowed_views` header and calls a mutable-borrow exported function. F6
+remains open for explicit manifest header intent,
+unknown/private selection rejection, wider public type/layout combinations,
+and cross-module ABI probes; this does not authorize inferring exports from
+`pub` as the final normal-project interface.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

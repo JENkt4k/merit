@@ -639,12 +639,15 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                     let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(callable_signatures,signature_index);
                                     let signature_start:i64=source_function_signature_name_start(signature);
                                     let signature_length:i64=source_function_signature_name_length(signature);
+                                    let signature_exported:i32=source_function_signature_is_exported(
+                                        source,tokens,signature_start,signature_length
+                                    );
                                     vec_push<MirFunctionRecord>(backend_callable_headers,function_mir_callable_header(
                                         signature_start,signature_length,signature_start,signature_length,
                                         source_function_signature_return_type(signature),
                                         source_function_signature_return_mode(signature),
                                         source_function_signature_borrowed_origin(signature),
-                                        source_function_signature_parameter_count(signature),0
+                                        source_function_signature_parameter_count(signature),signature_exported
                                     ));
                                     var parameter_ordinal:i64=0;
                                     while(parameter_ordinal<source_function_signature_parameter_count(signature)){
@@ -946,8 +949,8 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 backend_vector_types,backend_aggregate_types,backend_copy_enum_types,type_descriptors,backend_source
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
-            let public_status:i32=canonical_c_finish_public_header(
-                backend_declarations,backend_features,backend_header
+            let public_status:i32=canonical_c_finish_public_header_from_catalog(
+                source,backend_callable_headers,type_descriptors,backend_features,backend_header
             );
             if(public_status!=0){return native_driver_backend_header_failure_status(public_status);}
             let metadata_status:i32=print_resolved_source_function_bundle_metadata(

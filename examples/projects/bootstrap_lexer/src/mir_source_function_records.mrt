@@ -433,6 +433,30 @@ fn sfr_token_is_pub(borrow source: Buffer, borrow token: Token) -> i32 {
     if (buffer_get(source, checked_add(start, 2)) != sfr_ascii_b()) { return 0; }
     return 1;
 }
+pub fn source_function_signature_is_exported(
+    borrow source:Buffer,borrow source_tokens:Vec<Token>,name_start:i64,name_length:i64
+)->i32
+{
+    var declaration_index:i64=2;
+    while(declaration_index<vec_len<Token>(source_tokens)){
+        let declaration_name:Token=vec_get<Token>(source_tokens,declaration_index);
+        if(sfr_span_equal(source,name_start,name_length,token_start(declaration_name),token_length(declaration_name))!=0){
+            let declaration_fn:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,1));
+            if(token_kind(declaration_fn)==token_identifier_kind()){
+                if(token_length(declaration_fn)==2){
+                    if(buffer_get(source,token_start(declaration_fn))==sfr_ascii_f()){
+                        if(buffer_get(source,checked_add(token_start(declaration_fn),1))==sfr_ascii_n()){
+                            let declaration_prefix:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,2));
+                            return sfr_token_is_pub(source,declaration_prefix);
+                        }
+                    }
+                }
+            }
+        }
+        declaration_index=checked_add(declaration_index,1);
+    }
+    return 0;
+}
 fn sfr_ascii_greater() -> i64 { return 62; }
 fn sfr_ascii_left_paren() -> i64 { return 40; }
 fn sfr_ascii_right_paren() -> i64 { return 41; }
@@ -3755,25 +3779,9 @@ pub fn lower_source_function_body_records_from_catalog(
         ));
     } else {
         let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(function_signatures,current_signature);
-        var function_exported:i32=0;
-        var declaration_index:i64=2;
-        while(declaration_index<vec_len<Token>(source_tokens)){
-            let declaration_name:Token=vec_get<Token>(source_tokens,declaration_index);
-            if(sfr_span_equal(source,token_start(name_token),token_length(name_token),token_start(declaration_name),token_length(declaration_name))!=0){
-                let declaration_fn:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,1));
-                if(token_kind(declaration_fn)==token_identifier_kind()){
-                    if(token_length(declaration_fn)==2){
-                        if(buffer_get(source,token_start(declaration_fn))==sfr_ascii_f()){
-                            if(buffer_get(source,checked_add(token_start(declaration_fn),1))==sfr_ascii_n()){
-                                let declaration_prefix:Token=vec_get<Token>(source_tokens,checked_sub(declaration_index,2));
-                                function_exported=sfr_token_is_pub(source,declaration_prefix);
-                            }
-                        }
-                    }
-                }
-            }
-            declaration_index=checked_add(declaration_index,1);
-        }
+        let function_exported:i32=source_function_signature_is_exported(
+            source,source_tokens,token_start(name_token),token_length(name_token)
+        );
         vec_push<MirFunctionRecord>(records,function_mir_callable_header(
             token_start(name_token),token_length(name_token),token_start(name_token),token_length(name_token),result_type_code,
             source_function_signature_return_mode(signature),source_function_signature_borrowed_origin(signature),

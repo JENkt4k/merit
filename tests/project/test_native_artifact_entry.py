@@ -153,6 +153,58 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
                    check=True, capture_output=True)
     assert subprocess.run([str(trait_program)], check=True, capture_output=True).stdout.splitlines() == [b"17"]
 
+    views_request = encode_loaded_project_request(load_project(
+        repository / "examples" / "projects" / "borrowed_views" / "Merit.toml"
+    ))
+    views_completed = subprocess.run([str(executable)], input=views_request, capture_output=True)
+    assert views_completed.returncode == 0, views_completed.stderr.decode("utf-8", errors="replace")
+    views_transport = decode_native_project_artifact_transport(
+        int(line) for line in views_completed.stdout.splitlines()
+    )
+    views_mir = parse_mir(json.loads(views_transport.canonical_mir_bytes))
+    assert views_transport.c_source_bytes.decode("utf-8") == emit_c_module(views_mir)
+    assert views_transport.c_header_bytes.decode("utf-8") == emit_c_header(views_mir)
+    views_c = tmp_path / "native-borrowed-views.c"
+    views_c.write_bytes(views_transport.c_source_bytes)
+    views_program = tmp_path / "native-borrowed-views-program"
+    subprocess.run([cc, "-std=c11", str(views_c), "-o", str(views_program)],
+                   check=True, capture_output=True)
+    assert subprocess.run([str(views_program)], check=True, capture_output=True).stdout.splitlines() == [
+        b"5", b"8"
+    ]
+    views_h = tmp_path / "native-borrowed-views.h"
+    views_h.write_bytes(views_transport.c_header_bytes)
+    views_abi_probe = tmp_path / "native-borrowed-views-abi.c"
+    views_abi_probe.write_text(
+        '#include "native-borrowed-views.h"\n'
+        'int merit_abi_probe(merit_Record *value) {\n'
+        '    return merit_edit_record(value)->number;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    subprocess.run([cc, "-std=c11", "-c", str(views_abi_probe),
+                    "-o", str(tmp_path / "native-borrowed-views-abi.o")],
+                   check=True, capture_output=True)
+
+    (source_root / "src" / "main.mrt").write_text(
+        'module probe\n'
+        'pub stable("v1") struct Inner { x:i8; y:i32; }\n'
+        'pub stable("v1") struct Outer { inner:Inner; z:i16; }\n'
+        'pub fn view(borrow value:Outer)->borrow Outer { return value; }\n'
+        'pub fn main()->i32 { return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    stable_request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    stable_completed = subprocess.run([str(executable)], input=stable_request, capture_output=True)
+    assert stable_completed.returncode == 0, stable_completed.stderr.decode("utf-8", errors="replace")
+    stable_transport = decode_native_project_artifact_transport(
+        int(line) for line in stable_completed.stdout.splitlines()
+    )
+    stable_mir = parse_mir(json.loads(stable_transport.canonical_mir_bytes))
+    assert stable_transport.c_header_bytes.decode("utf-8") == emit_c_header(stable_mir)
+    assert b"offsetof(merit_Inner, y) == 4" in stable_transport.c_header_bytes
+    assert b"sizeof(merit_Outer) == 12" in stable_transport.c_header_bytes
+
     (source_root / "src" / "main.mrt").write_text(
         "module probe\n"
         "fn choose(left:i64,right:i64)->i64 { "
@@ -733,3 +785,23 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
         module_name=trait_snapshots.module_name,
     )
     assert trait_transport.canonical_mir_bytes == canonical_mir_json(trait_oracle.module).encode("utf-8")
+
+    legacy_views = subprocess.run([str(legacy_executable)], input=views_request, capture_output=True)
+    assert legacy_views.returncode == 0, legacy_views.stderr.decode("utf-8", errors="replace")
+    views_snapshots = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_views.stdout.splitlines()
+    )
+    views_source = bytes(views_snapshots.functions[0].effective_source_bytes).decode("utf-8")
+    views_oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=views_source,
+                module_name=views_snapshots.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(views_snapshots.capability_names)},
+            )
+            for values in views_snapshots.encoded_snapshots
+        ),
+        module_name=views_snapshots.module_name,
+    )
+    assert views_transport.canonical_mir_bytes == canonical_mir_json(views_oracle.module).encode("utf-8")
