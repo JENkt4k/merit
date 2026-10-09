@@ -6,6 +6,7 @@ import pytest
 
 from merit.project.project_request import (
     PROJECT_REQUEST_MAGIC,
+    PROJECT_REQUEST_EXPORT_VERSION,
     ProjectRequest,
     ProjectRequestError,
     ProjectRequestUnit,
@@ -43,6 +44,30 @@ def test_project_request_round_trips_ordered_utf8_metadata_and_arbitrary_source(
     encoded = encode_project_request(request)
     assert encoded.startswith(PROJECT_REQUEST_MAGIC)
     assert decode_project_request(encoded) == request
+
+
+def test_explicit_header_exports_use_additive_v2_framing() -> None:
+    base = ProjectRequest(
+        "demo", "src/main.mrt", (ProjectRequestUnit("src/main.mrt", b"module main\n"),)
+    )
+    legacy = encode_project_request(base)
+    assert int.from_bytes(legacy[4:8], "big") == 1
+    selected = ProjectRequest(base.package, base.entry, base.units, ("edit", "view"))
+    encoded = encode_project_request(selected)
+    assert int.from_bytes(encoded[4:8], "big") == PROJECT_REQUEST_EXPORT_VERSION
+    assert decode_project_request(encoded) == selected
+    empty = ProjectRequest(base.package, base.entry, base.units, ())
+    assert decode_project_request(encode_project_request(empty)) == empty
+    assert encode_project_request(base) == legacy
+
+
+@pytest.mark.parametrize("names", [("view", "edit"), ("view", "view"), ("not-valid",)])
+def test_explicit_header_exports_reject_noncanonical_names(names: tuple[str, ...]) -> None:
+    request = ProjectRequest(
+        "demo", "src/main.mrt", (ProjectRequestUnit("src/main.mrt", b"module main\n"),), names
+    )
+    with pytest.raises(ProjectRequestError, match="header exports"):
+        encode_project_request(request)
 
 
 @pytest.mark.parametrize(

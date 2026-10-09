@@ -6,6 +6,7 @@ capability allocate;
 
 // merit-project-request-v1: MPRQ, u32 version, length-prefixed package,
 // length-prefixed entry path, u32 unit count, then path/source byte fields.
+// v2 adds a sorted, explicit header-export name list before the unit count.
 pub struct ProjectRequestUnitSpan {
     source_start: i64;
     source_length: i64;
@@ -35,6 +36,44 @@ fn project_request_read_u32(borrow input: Buffer, offset: i64) -> i64 {
     value = checked_add(checked_mul(value, 256), buffer_get(input, checked_add(offset, 2)));
     value = checked_add(checked_mul(value, 256), buffer_get(input, checked_add(offset, 3)));
     return value;
+}
+
+fn project_request_v1_version()->i64{return 1;}
+fn project_request_v2_version()->i64{return 2;}
+
+pub fn project_request_collect_header_exports(
+    borrow input:Buffer,borrow_mut names:Buffer
+)->i32 requires_caps [allocate]
+{
+    if(project_request_magic_matches(input)==0){return 0;}
+    let version:i64=project_request_read_u32(input,4);
+    if(version==project_request_v1_version()){return 0;}
+    if(version!=project_request_v2_version()){return 2;}
+    var cursor:i64=8;
+    var field_ordinal:i64=0;
+    while(field_ordinal<2){
+        let length:i64=project_request_read_u32(input,cursor);
+        if(length<=0){return 2;}
+        cursor=checked_add(cursor,4);
+        if(checked_add(cursor,length)>buffer_len(input)){return 2;}
+        cursor=checked_add(cursor,length);
+        field_ordinal=checked_add(field_ordinal,1);
+    }
+    let count:i64=project_request_read_u32(input,cursor);
+    if(count<0){return 2;}
+    cursor=checked_add(cursor,4);
+    var ordinal:i64=0;
+    while(ordinal<count){
+        let length:i64=project_request_read_u32(input,cursor);
+        if(length<=0){return 2;}
+        cursor=checked_add(cursor,4);
+        if(checked_add(cursor,length)>buffer_len(input)){return 2;}
+        bootstrap_buffer_append(names,input,cursor,length);
+        buffer_push(names,0);
+        cursor=checked_add(cursor,length);
+        ordinal=checked_add(ordinal,1);
+    }
+    return 1;
 }
 
 fn project_request_magic_matches(borrow input: Buffer) -> i32 {
@@ -211,7 +250,10 @@ pub fn prepare_native_project_source(
         bootstrap_buffer_append(output, input, 0, buffer_len(input));
         return 0;
     }
-    if (project_request_read_u32(input, 4) != 1) { return 7101; }
+    let request_version:i64=project_request_read_u32(input,4);
+    if(request_version!=project_request_v1_version()){
+        if(request_version!=project_request_v2_version()){return 7101;}
+    }
     var cursor: i64 = 8;
     let package_length: i64 = project_request_read_u32(input, cursor);
     cursor = checked_add(cursor, 4);
@@ -224,6 +266,20 @@ pub fn prepare_native_project_source(
     if (entry_length <= 0) { return 7104; }
     if (checked_add(cursor, entry_length) > buffer_len(input)) { return 7105; }
     cursor = checked_add(cursor, entry_length);
+    if(request_version==project_request_v2_version()){
+        let export_count:i64=project_request_read_u32(input,cursor);
+        if(export_count<0){return 7115;}
+        cursor=checked_add(cursor,4);
+        var export_ordinal:i64=0;
+        while(export_ordinal<export_count){
+            let export_length:i64=project_request_read_u32(input,cursor);
+            if(export_length<=0){return 7115;}
+            cursor=checked_add(cursor,4);
+            if(checked_add(cursor,export_length)>buffer_len(input)){return 7115;}
+            cursor=checked_add(cursor,export_length);
+            export_ordinal=checked_add(export_ordinal,1);
+        }
+    }
     let unit_count: i64 = project_request_read_u32(input, cursor);
     cursor = checked_add(cursor, 4);
     if (unit_count <= 0) { return 7106; }

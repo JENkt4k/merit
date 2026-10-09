@@ -22,6 +22,7 @@ from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST,
     REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2,
     REPLACEMENT_SCHEMA,
     ReplacementProjectError,
 )
@@ -190,6 +191,8 @@ def _atomic_write_bytes(path: Path, content: bytes) -> None:
 def prepare_replacement_artifacts(
     project: LoadedProject | ReplacementLoadedProject,
     driver: NativeReplacementDriver,
+    *,
+    header_exports: frozenset[str] | None = None,
 ) -> PreparedReplacementArtifacts:
     """Run the native replacement driver and publish its versioned artifacts."""
 
@@ -201,7 +204,9 @@ def prepare_replacement_artifacts(
     snapshot_paths: list[Path] = []
     project_artifact_paths: list[Path] = []
 
-    request = encode_loaded_project_request(project)
+    if header_exports is None and project.manifest.executable_adapter is not None:
+        header_exports = frozenset({project.manifest.executable_entry or ""})
+    request = encode_loaded_project_request(project, header_exports=header_exports)
     bundle = _run_driver(
         driver,
         request,
@@ -264,7 +269,10 @@ def prepare_replacement_artifacts(
                 "path": filename,
                 "sha256": digest,
             }
-        producer_protocol = REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+        producer_protocol = (
+            REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+            if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+        )
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,

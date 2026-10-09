@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,6 +23,9 @@ from merit.bootstrap.resolved_source_function_bundle import (
 )
 from merit.project.build import build
 from merit.project.loader import load_project
+from merit.project.replacement import _load_native_project_artifact, build_replacement_project
+from merit.project.replacement_loader import load_replacement_project
+from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 from merit.project.project_request import encode_loaded_project_request
 
 
@@ -114,6 +118,93 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
     identity_mir = parse_mir(json.loads(identity_transport.canonical_mir_bytes))
     assert identity_transport.c_source_bytes.decode("utf-8") == emit_c_module(identity_mir)
     assert identity_transport.c_header_bytes.decode("utf-8") == emit_c_header(identity_mir)
+
+    (source_root / "src" / "main.mrt").write_text(
+        "module probe\n"
+        "fn hidden()->i32 { return 1; }\n"
+        "pub fn selected()->i32 { return 2; }\n"
+        "pub fn omitted()->i32 { return 3; }\n"
+        "pub fn alpha()->i32 { return 4; }\n"
+        "pub fn bravo()->i32 { return 5; }\n"
+        "pub fn main()->i32 { return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    selected_project = load_project(source_root / "Merit.toml")
+    selected_request = encode_loaded_project_request(
+        selected_project, header_exports=frozenset({"selected"})
+    )
+    selected_completed = subprocess.run([str(executable)], input=selected_request, capture_output=True)
+    assert selected_completed.returncode == 0, selected_completed.stderr.decode("utf-8", errors="replace")
+    selected_transport = decode_native_project_artifact_transport(
+        int(line) for line in selected_completed.stdout.splitlines()
+    )
+    selected_mir = parse_mir(json.loads(selected_transport.canonical_mir_bytes))
+    assert selected_transport.c_header_bytes.decode("utf-8") == emit_c_header(
+        selected_mir, exported_names=frozenset({"selected"})
+    )
+    for invalid_export in ("hidden", "absent"):
+        rejected = subprocess.run(
+            [str(executable)],
+            input=encode_loaded_project_request(
+                selected_project, header_exports=frozenset({invalid_export})
+            ),
+            capture_output=True,
+        )
+        assert rejected.returncode == 4606, (rejected.returncode, rejected.stderr)
+    empty_completed = subprocess.run(
+        [str(executable)],
+        input=encode_loaded_project_request(selected_project, header_exports=frozenset()),
+        capture_output=True,
+    )
+    assert empty_completed.returncode == 0
+    empty_transport = decode_native_project_artifact_transport(
+        int(line) for line in empty_completed.stdout.splitlines()
+    )
+    assert empty_transport.c_header_bytes.decode("utf-8") == emit_c_header(
+        selected_mir, exported_names=frozenset()
+    )
+    ordered_request = encode_loaded_project_request(
+        selected_project, header_exports=frozenset({"alpha", "bravo"})
+    )
+    for malformed_name in (b"br-vo", b"alpha"):
+        malformed_request = ordered_request.replace(b"bravo", malformed_name, 1)
+        assert malformed_request != ordered_request
+        malformed = subprocess.run([str(executable)], input=malformed_request, capture_output=True)
+        assert malformed.returncode == 4606, (malformed.stdout, malformed.stderr)
+
+    selected_root = tmp_path / "selected-project"
+    (selected_root / "src").mkdir(parents=True)
+    (selected_root / "Merit.toml").write_text(
+        '[package]\nname="selected_project"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n'
+        '[executable]\nadapter="stdin-string-i32"\nentry="selected"\n',
+        encoding="utf-8", newline="\n",
+    )
+    (selected_root / "src" / "main.mrt").write_text(
+        'module selected_project\n'
+        'pub fn selected(source:String)->i32 { return 0; }\n'
+        'pub fn omitted()->i32 { return 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    selected_loaded = load_replacement_project(selected_root / "Merit.toml")
+    prepared = prepare_replacement_artifacts(selected_loaded, NativeReplacementDriver(executable))
+    prepared_payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
+    assert prepared_payload["producer_protocol"] == (
+        "merit-project-request-v2/resolved-source-function-bundle-v4"
+    )
+    expected_request = encode_loaded_project_request(
+        selected_loaded, header_exports=frozenset({"selected"})
+    )
+    assert prepared_payload["request_sha256"] == hashlib.sha256(expected_request).hexdigest()
+    selected_artifact = _load_native_project_artifact(selected_loaded)
+    assert selected_artifact is not None
+    assert "merit_selected" in selected_artifact.c_header
+    assert "merit_omitted" not in selected_artifact.c_header
+    selected_binary = build_replacement_project(selected_loaded, tmp_path / "selected-output" / "compiler")
+    selected_run = subprocess.run(
+        [str(selected_binary.executable)], input=b"header intent remains transport", capture_output=True
+    )
+    assert selected_run.returncode == 0, selected_run.stderr
 
     generic_request = encode_loaded_project_request(load_project(
         repository / "examples" / "projects" / "generic_result" / "Merit.toml"

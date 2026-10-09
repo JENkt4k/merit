@@ -14,6 +14,7 @@ from typing import Iterable
 
 PROJECT_REQUEST_MAGIC = b"MPRQ"
 PROJECT_REQUEST_VERSION = 1
+PROJECT_REQUEST_EXPORT_VERSION = 2
 
 
 class ProjectRequestError(ValueError):
@@ -31,6 +32,7 @@ class ProjectRequest:
     package: str
     entry: str
     units: tuple[ProjectRequestUnit, ...]
+    header_exports: tuple[str, ...] | None = None
 
 
 def _u32(value: int) -> bytes:
@@ -62,9 +64,19 @@ def encode_project_request(request: ProjectRequest) -> bytes:
         raise ProjectRequestError("project request has no source units")
 
     encoded = bytearray(PROJECT_REQUEST_MAGIC)
-    encoded.extend(_u32(PROJECT_REQUEST_VERSION))
+    explicit_exports = request.header_exports is not None
+    encoded.extend(_u32(PROJECT_REQUEST_EXPORT_VERSION if explicit_exports else PROJECT_REQUEST_VERSION))
     encoded.extend(_field(package))
     encoded.extend(_field(entry))
+    if explicit_exports:
+        assert request.header_exports is not None
+        encoded.extend(_u32(len(request.header_exports)))
+        previous_export = ""
+        for name in request.header_exports:
+            if not name.isascii() or not name.isidentifier() or (previous_export and name <= previous_export):
+                raise ProjectRequestError("project request header exports must be unique sorted ASCII identifiers")
+            previous_export = name
+            encoded.extend(_field(name.encode("utf-8")))
     encoded.extend(_u32(len(request.units)))
     previous = ""
     entry_found = False
@@ -108,11 +120,15 @@ def decode_project_request(data: bytes) -> ProjectRequest:
     if take(4) != PROJECT_REQUEST_MAGIC:
         raise ProjectRequestError("project request has invalid magic")
     version = integer()
-    if version != PROJECT_REQUEST_VERSION:
+    if version not in (PROJECT_REQUEST_VERSION, PROJECT_REQUEST_EXPORT_VERSION):
         raise ProjectRequestError(f"unsupported project request version {version}")
     try:
         package = field().decode("utf-8")
         entry = field().decode("utf-8")
+        header_exports = (
+            tuple(field().decode("utf-8") for _ in range(integer()))
+            if version == PROJECT_REQUEST_EXPORT_VERSION else None
+        )
         count = integer()
         units = tuple(
             ProjectRequestUnit(field().decode("utf-8"), field()) for _ in range(count)
@@ -121,7 +137,7 @@ def decode_project_request(data: bytes) -> ProjectRequest:
         raise ProjectRequestError("project request metadata is not UTF-8") from exc
     if position != len(data):
         raise ProjectRequestError("project request has trailing data")
-    request = ProjectRequest(package, entry, units)
+    request = ProjectRequest(package, entry, units, header_exports)
     # Re-encoding validates canonical paths, ordering, entry membership, and
     # non-empty fields without maintaining a second validation definition.
     if encode_project_request(request) != data:
@@ -137,7 +153,9 @@ def request_from_sources(
     return ProjectRequest(package, entry, tuple(units))
 
 
-def encode_loaded_project_request(project: object) -> bytes:
+def encode_loaded_project_request(
+    project: object, *, header_exports: frozenset[str] | None = None,
+) -> bytes:
     """Encode a loaded project's paths and bytes without inspecting source text."""
 
     manifest = project.manifest
@@ -150,4 +168,7 @@ def encode_loaded_project_request(project: object) -> bytes:
         for unit in sorted(project.units, key=lambda candidate: candidate.path.resolve())
     )
     entry = manifest.entry_path.resolve().relative_to(root).as_posix()
-    return encode_project_request(ProjectRequest(manifest.name, entry, units))
+    return encode_project_request(ProjectRequest(
+        manifest.name, entry, units,
+        tuple(sorted(header_exports)) if header_exports is not None else None,
+    ))

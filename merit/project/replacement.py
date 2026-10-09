@@ -34,10 +34,21 @@ REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v2"
 REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL = (
     "merit-project-request-v1/resolved-source-function-bundle-v4"
 )
+REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2 = (
+    "merit-project-request-v2/resolved-source-function-bundle-v4"
+)
 
 
 class ReplacementProjectError(ReplacementBuildError):
     """Raised when a project cannot be built through the replacement path."""
+
+
+def _manifest_header_exports(
+    project: LoadedProject | ReplacementLoadedProject,
+) -> frozenset[str] | None:
+    if project.manifest.executable_adapter is None:
+        return None
+    return frozenset({project.manifest.executable_entry or ""})
 
 
 @dataclass(frozen=True)
@@ -55,6 +66,8 @@ class ReplacementSharedProjectArtifact:
 
 def _load_native_project_artifact(
     project: LoadedProject | ReplacementLoadedProject,
+    *,
+    header_exports: frozenset[str] | None = None,
 ) -> ReplacementBuildArtifact | None:
     """Load a complete native backend artifact without interpreting its MIR."""
 
@@ -67,10 +80,18 @@ def _load_native_project_artifact(
         raise ReplacementProjectError(f"invalid replacement build manifest: {manifest_path}") from exc
     if not isinstance(payload, dict) or payload.get("schema") != REPLACEMENT_SCHEMA:
         raise ReplacementProjectError(f"unsupported replacement build manifest schema: {manifest_path}")
-    if payload.get("producer_protocol") != REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL:
+    if header_exports is None:
+        header_exports = _manifest_header_exports(project)
+    expected_protocol = (
+        REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+        if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+    )
+    if payload.get("producer_protocol") != expected_protocol:
         return None
     expected_request_digest = payload.get("request_sha256")
-    actual_request_digest = hashlib.sha256(encode_loaded_project_request(project)).hexdigest()
+    actual_request_digest = hashlib.sha256(encode_loaded_project_request(
+        project, header_exports=header_exports,
+    )).hexdigest()
     if expected_request_digest != actual_request_digest:
         raise ReplacementProjectError(
             "native replacement project artifacts are stale after source changes; "
@@ -241,7 +262,9 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
                     ) from exc
             source = canonical_project_source
             expected_request_digest = item.get("request_sha256")
-            actual_request_digest = hashlib.sha256(encode_loaded_project_request(project)).hexdigest()
+            actual_request_digest = hashlib.sha256(encode_loaded_project_request(
+                project, header_exports=_manifest_header_exports(project),
+            )).hexdigest()
             if expected_request_digest != actual_request_digest:
                 raise ReplacementProjectError(
                     "replacement project request is stale after source changes; "
@@ -332,7 +355,7 @@ def build_replacement_shared(
 ) -> ReplacementSharedProjectArtifact:
     """Build a shared library solely from native-resolved replacement artifacts."""
 
-    artifact = _load_native_project_artifact(project)
+    artifact = _load_native_project_artifact(project, header_exports=header_exports)
     if artifact is None:
         from merit.bootstrap.replacement_project import build_replacement_project_artifact
 
