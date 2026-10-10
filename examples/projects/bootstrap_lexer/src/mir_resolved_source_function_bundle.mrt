@@ -2241,7 +2241,11 @@ requires_caps [allocate]
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
     if(function_mir_type_code(header)>=function_mir_owned_field_struct_type_code(0)){
-        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){return 3;}
+        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){
+            if(exported!=0){return 3;}
+            if(function_mir_symbol_code(header)!=function_mir_mode_value()){return 3;}
+            if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
+        }
     }
     if(function_mir_type_code(header)!=function_mir_unit_type_code()){
         if(canonical_c_supported_catalog_local_type(function_mir_type_code(header),type_descriptors)==0){return 3;}
@@ -2349,7 +2353,11 @@ requires_caps [allocate]
                 canonical_c_require_feature(canonical_c_slice_feature(),features);
             }
             if(function_mir_type_code(record)>=function_mir_owned_field_struct_type_code(0)){
-                if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){return 9;}
+                if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){
+                    if(exported!=0){return 9;}
+                    if(function_mir_symbol_code(record)!=function_mir_mode_value()){return 9;}
+                    if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 9;}
+                }
             }
             if(canonical_c_supported_catalog_local_type(function_mir_type_code(record),type_descriptors)==0){return 9;}
             if(function_mir_symbol_code(record)!=function_mir_mode_value()){
@@ -2520,6 +2528,9 @@ requires_caps [allocate]
     var owned_return:i32=0;
     if(function_mir_type_code(header)==function_mir_buffer_type_code()){owned_return=1;}
     if(function_mir_type_code(header)>=function_mir_vector_type_code(0)){owned_return=1;}
+    if(function_mir_type_code(header)>=function_mir_owned_field_struct_type_code(0)){
+        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){owned_return=1;}
+    }
     if(owned_return!=0){
         // This bounded owned-return form is proven by the placed move that
         // produces the return local. Multi-block resource dataflow remains
@@ -4461,8 +4472,23 @@ requires_caps [allocate]
     if(needs_vector!=0){buffer_push(vector_typedefs,10);}
     var needs_buffer:i32=canonical_c_has_feature(canonical_c_buffer_runtime_feature(),features);
     if(needs_vector!=0){needs_buffer=1;}
-    let needs_slice:i32=canonical_c_has_feature(canonical_c_slice_feature(),features);
+    var needs_slice:i32=canonical_c_has_feature(canonical_c_slice_feature(),features);
     var needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
+    var owned_descriptor_index:i64=0;
+    while(owned_descriptor_index<vec_len<MirTypeDescriptor>(descriptors)){
+        let owned_descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,owned_descriptor_index);
+        let owned_code:i32=function_mir_type_descriptor_code(owned_descriptor);
+        var reached_owned:i32=canonical_c_vector_code_selected(owned_code,owned_field_codes);
+        if(canonical_c_vector_code_selected(owned_code,owned_enum_codes)!=0){reached_owned=1;}
+        if(reached_owned!=0){
+            let child_code:i32=function_mir_type_descriptor_child(owned_descriptor);
+            if(child_code==function_mir_buffer_type_code()){needs_buffer=1;}
+            if(child_code==function_mir_allocator_type_code()){needs_buffer=1;}
+            if(child_code==function_mir_string_type_code()){needs_text=1;}
+            if(child_code==function_mir_byte_slice_type_code()){needs_slice=1;}
+        }
+        owned_descriptor_index=checked_add(owned_descriptor_index,1);
+    }
     if(needs_buffer!=0){needs_text=1;}
     if(needs_slice!=0){needs_text=1;}
     canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n");

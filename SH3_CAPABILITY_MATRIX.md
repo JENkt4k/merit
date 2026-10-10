@@ -518,10 +518,18 @@ out-of-range variant rejection (`1 passed in 36.90s`). An owned-field
 constructor/drop and a nested recursive-enum constructor/drop each emitted a
 complete C module byte-identical to the Python oracle and compiled with GCC
 (`1 passed in 20.95s`, `1 passed in 34.80s`). Missing descriptor/effect
-catalogs reject before C emission (`2 passed in 68.17s`). Owned aggregate
-parameters/returns and field/payload load/store remain fail-closed; their
-borrow ABI, move/cleanup placement, and transfer semantics need separate
-coherent evidence. This is not project-level F5 closure.
+catalogs reject before C emission (`2 passed in 68.17s`).
+Value-mode owned-field and recursive-owned-enum parameters/returns now use the
+existing one-block placed-move proof and the descriptor-validated C type
+catalog. A field value ABI probe exposed missing transitive Buffer runtime
+selection when Buffer was present only inside an owned type; the module
+finalizer now derives Buffer/text/slice needs from reached owned descriptors.
+The field and enum return modules match Python-oracle C bytes and execute
+through separate GCC callers (`1 passed in 35.37s`, `1 passed in 34.55s`).
+Missing move, public owned return, borrowed owned parameter, and borrowed
+owned return reject with their bounded statuses (`4 passed in 135.69s`).
+Borrowed owned-aggregate ABI, multi-block transfer, field/payload extraction,
+and whole-project acceptance remain open. This is not project-level F5 closure.
 
 ## Finite capability families
 

@@ -5825,6 +5825,177 @@ def test_merit_owned_buffer_return_fails_closed_without_private_explicit_move(
     assert native.stdout == ""
 
 
+def _owned_field_return_probe() -> str:
+    return CANONICAL_C_TYPED_BUFFER_RETURN_PROBE.replace(
+        'function_mir_buffer_type_code()', 'function_mir_owned_field_struct_type_code(0)',
+    ).replace(
+        '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);',
+        '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);\n'
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+        '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));',
+    ).replace(
+        '  let source_status:i32=canonical_c_finish_scalar_module(prototypes,bodies,features,c_source);',
+        '  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);\n'
+        '  var field_codes:Vec<i32>=vec_new<i32>(allocator,1);\n'
+        '  vec_push<i32>(field_codes,function_mir_owned_field_struct_type_code(0));\n'
+        '  let source_status:i32=canonical_c_finish_owned_aggregate_vector_catalog_module(\n'
+        '    prototypes,bodies,features,no_codes,no_codes,no_codes,field_codes,no_codes,types,c_source);',
+    ).replace(
+        'drop(sources);drop(types);drop(headers);drop(records);',
+        'drop(sources);drop(field_codes);drop(no_codes);drop(types);drop(headers);drop(records);',
+    )
+
+
+def test_merit_owned_field_value_parameter_and_return_match_oracle(tmp_path: Path) -> None:
+    root = _project(tmp_path, _owned_field_return_probe())
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'owned-field-return')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    module = MirModule('demo', (MirFunction(
+        'consume', owned_field, (
+            MirLocal(0, 'value', owned_field, ownership='owned'),
+            MirLocal(1, 'result', owned_field, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'move', result=1, operands=(0,), ownership='owned'),
+        ), MirTerminator('return', operands=(1,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    generated = tmp_path / 'owned_field_return.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'owned_field_return_driver.c'
+    driver.write_text(
+        '#include "owned_field_return.c"\n'
+        'int main(void) { merit_struct_owned_field_0 value = { merit_buffer_new(merit_system_allocator(), 4) }; '
+        'merit_struct_owned_field_0 result = consume(value); merit_buffer_push(&result.field_0, 42); '
+        'int ok = result.field_0.len == 1 && result.field_0.data[0] == 42; '
+        'merit_buffer_drop(&result.field_0); return ok ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'owned-field-return-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def _owned_enum_return_probe() -> str:
+    return _owned_field_return_probe().replace(
+        'function_mir_owned_field_struct_type_code(0)',
+        'function_mir_recursive_owned_payload_enum_type_code(1)',
+    ).replace(
+        'vec_new<MirTypeDescriptor>(allocator,1)', 'vec_new<MirTypeDescriptor>(allocator,2)',
+    ).replace(
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+        '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));',
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+        '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));\n'
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,\n'
+        '    function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));',
+    ).replace(
+        '  vec_push<i32>(field_codes,function_mir_recursive_owned_payload_enum_type_code(1));',
+        '  vec_push<i32>(field_codes,function_mir_owned_field_struct_type_code(0));\n'
+        '  var enum_codes:Vec<i32>=vec_new<i32>(allocator,1);\n'
+        '  vec_push<i32>(enum_codes,function_mir_recursive_owned_payload_enum_type_code(1));',
+    ).replace(
+        'field_codes,no_codes,types,c_source)', 'field_codes,enum_codes,types,c_source)',
+    ).replace(
+        'drop(field_codes);drop(no_codes);', 'drop(enum_codes);drop(field_codes);drop(no_codes);',
+    )
+
+
+def test_merit_recursive_owned_enum_value_parameter_and_return_match_oracle(tmp_path: Path) -> None:
+    root = _project(tmp_path, _owned_enum_return_probe())
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'owned-enum-return')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    owned_enum = MirType('enum_owned_payload_1', (owned_field,))
+    module = MirModule('demo', (MirFunction(
+        'consume', owned_enum, (
+            MirLocal(0, 'value', owned_enum, ownership='owned'),
+            MirLocal(1, 'result', owned_enum, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'move', result=1, operands=(0,), ownership='owned'),
+        ), MirTerminator('return', operands=(1,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    generated = tmp_path / 'owned_enum_return.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'owned_enum_return_driver.c'
+    driver.write_text(
+        '#include "owned_enum_return.c"\n'
+        'int main(void) { merit_struct_owned_field_0 field = { merit_buffer_new(merit_system_allocator(), 4) }; '
+        'merit_enum_owned_payload_1 value = { .tag = INT64_C(0), .payload.variant_0 = field }; '
+        'merit_enum_owned_payload_1 result = consume(value); '
+        'merit_buffer_push(&result.payload.variant_0.field_0, 42); '
+        'int ok = result.tag == 0 && result.payload.variant_0.field_0.len == 1 '
+        '&& result.payload.variant_0.field_0.data[0] == 42; '
+        'merit_buffer_drop(&result.payload.variant_0.field_0); return ok ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'owned-enum-return-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ('change', 'expected_status'),
+    [
+        ('missing_move', 110),
+        ('public_return', 3),
+        ('borrowed_parameter', 9),
+        ('borrowed_return', 3),
+    ],
+)
+def test_merit_owned_field_value_abi_rejects_unproved_transfer(
+    tmp_path: Path, change: str, expected_status: int,
+) -> None:
+    probe = _owned_field_return_probe()
+    if change == 'missing_move':
+        old = 'ownership_record_kind_move(),0,0,1,0,0,'
+        new = 'ownership_record_kind_drop(),0,0,1,0,0,'
+    elif change == 'public_return':
+        old = 'function_mir_mode_value(),-1,1,0)'
+        new = 'function_mir_mode_value(),-1,1,1)'
+    elif change == 'borrowed_parameter':
+        old = 'function_mir_parameter(0,7,0,function_mir_owned_field_struct_type_code(0),0,0,function_mir_mode_value(),0)'
+        new = old.replace('function_mir_mode_value()', 'function_mir_mode_borrowed()')
+    else:
+        old = 'function_mir_callable_header(0,7,0,7,function_mir_owned_field_struct_type_code(0),function_mir_mode_value(),-1,1,0)'
+        new = old.replace('function_mir_mode_value()', 'function_mir_mode_borrowed()')
+    assert old in probe
+    root = _project(tmp_path, probe.replace(old, new))
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, emitter = build(project, root / 'build' / f'owned-field-reject-{change}')
+    native = subprocess.run([str(emitter)], text=True, capture_output=True)
+    assert native.returncode == expected_status
+    assert native.stdout == ''
+
+
 CANONICAL_C_BUFFER_CONSTRUCTION_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
     'buffer_from_string(allocator,"consume")',
     'buffer_from_string(allocator,"create buffer_new")',
