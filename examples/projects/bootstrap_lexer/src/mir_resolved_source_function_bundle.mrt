@@ -337,6 +337,110 @@ requires_caps [allocate]
 // Resolve vector identity from the native type catalog. The C spelling is the
 // existing oracle's UTF-8 type-name mangle; no host-side type reconstruction
 // or positional inference is allowed at this boundary.
+fn canonical_c_append_mangle_name(borrow name:Buffer,borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    let digits:String="0123456789abcdef";
+    var index:i64=0;
+    while(index<buffer_len(name)){
+        let value:i64=buffer_get(name,index);
+        buffer_push(output,string_byte(digits,value/16));
+        buffer_push(output,string_byte(digits,checked_sub(value,checked_mul(value/16,16))));
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
+fn canonical_c_append_catalog_type_mangle(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,depth:i64,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(type_code==function_mir_i64_type_code()){canonical_mir_append_text(output,"693634");return 0;}
+    if(type_code==function_mir_bool_type_code()){canonical_mir_append_text(output,"626f6f6c");return 0;}
+    if(type_code==function_mir_allocator_type_code()){canonical_mir_append_text(output,"416c6c6f6361746f72");return 0;}
+    if(type_code==function_mir_buffer_type_code()){canonical_mir_append_text(output,"427566666572");return 0;}
+    if(type_code==function_mir_i8_type_code()){canonical_mir_append_text(output,"6938");return 0;}
+    if(type_code==function_mir_i16_type_code()){canonical_mir_append_text(output,"693136");return 0;}
+    if(type_code==function_mir_i32_type_code()){canonical_mir_append_text(output,"693332");return 0;}
+    if(type_code==function_mir_u8_type_code()){canonical_mir_append_text(output,"7538");return 0;}
+    if(type_code==function_mir_u16_type_code()){canonical_mir_append_text(output,"753136");return 0;}
+    if(type_code==function_mir_u32_type_code()){canonical_mir_append_text(output,"753332");return 0;}
+    if(type_code==function_mir_u64_type_code()){canonical_mir_append_text(output,"753634");return 0;}
+    if(type_code==function_mir_string_type_code()){canonical_mir_append_text(output,"537472696e67");return 0;}
+    if(type_code==function_mir_byte_slice_type_code()){canonical_mir_append_text(output,"42797465536c696365");return 0;}
+    if(type_code==function_mir_unit_type_code()){canonical_mir_append_text(output,"756e6974");return 0;}
+    if(depth>=vec_len<MirTypeDescriptor>(descriptors)){return 6;}
+    if(type_code>=function_mir_vector_type_code(0)){
+        var found:i32=0;var child:i32=0;var index:i64=0;
+        while(index<vec_len<MirTypeDescriptor>(descriptors)){
+            let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+            if(function_mir_type_descriptor_code(item)==type_code){
+                if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_vector_kind()){return 6;}
+                if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_vector_type_code(0))){return 6;}
+                if(function_mir_type_descriptor_ordinal(item)!=0){return 6;}
+                if(function_mir_type_descriptor_destructor_policy(item)!=0){return 6;}
+                child=function_mir_type_descriptor_child(item);found=checked_add(found,1);
+            }
+            index=checked_add(index,1);
+        }
+        if(found!=1){return 6;}
+        canonical_mir_append_text(output,"566563_a_");
+        return canonical_c_append_catalog_type_mangle(child,descriptors,checked_add(depth,1),output);
+    }
+    if(type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(type_code<function_mir_recursive_owned_payload_enum_type_code(0)){
+            var found:i32=0;var child:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_field_struct_kind()){return 6;}
+                    if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_owned_field_struct_type_code(0))){return 6;}
+                    if(function_mir_type_descriptor_ordinal(item)!=0){return 6;}
+                    child=function_mir_type_descriptor_child(item);found=checked_add(found,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(found!=1){return 6;}
+            let allocator:Allocator=system_allocator();
+            var name:Buffer=buffer_new(allocator,48);
+            canonical_mir_append_text(name,"struct_owned_field_");
+            canonical_mir_append_i32(name,checked_sub(type_code,function_mir_owned_field_struct_type_code(0)));
+            canonical_c_append_mangle_name(name,output);drop(name);
+            canonical_mir_append_text(output,"_a_");
+            return canonical_c_append_catalog_type_mangle(child,descriptors,checked_add(depth,1),output);
+        }
+    }
+    if(type_code>=function_mir_recursive_owned_payload_enum_type_code(0)){
+        if(type_code<function_mir_aggregate_struct_type_code(0)){
+            let allocator:Allocator=system_allocator();
+            var name:Buffer=buffer_new(allocator,48);
+            canonical_mir_append_text(name,"enum_owned_payload_");
+            canonical_mir_append_i32(name,checked_sub(type_code,function_mir_recursive_owned_payload_enum_type_code(0)));
+            canonical_c_append_mangle_name(name,output);drop(name);
+            var ordinal:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_payload_enum_kind()){return 6;}
+                    if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_recursive_owned_payload_enum_type_code(0))){return 6;}
+                    if(function_mir_type_descriptor_ordinal(item)!=ordinal){return 6;}
+                    if(ordinal==0){canonical_mir_append_text(output,"_a_");}
+                    else{canonical_mir_append_text(output,"_z_");}
+                    if(canonical_c_append_catalog_type_mangle(
+                        function_mir_type_descriptor_child(item),descriptors,checked_add(depth,1),output
+                    )!=0){return 6;}
+                    ordinal=checked_add(ordinal,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(ordinal==0){return 6;}
+            return 0;
+        }
+    }
+    return 6;
+}
+
 pub fn canonical_c_append_vector_type_name(
     type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
@@ -373,21 +477,7 @@ requires_caps [allocate]
         current=child;
         depth=checked_add(depth,1);
     }
-    if(current==function_mir_i64_type_code()){canonical_mir_append_text(output,"693634");return 0;}
-    if(current==function_mir_bool_type_code()){canonical_mir_append_text(output,"626f6f6c");return 0;}
-    if(current==function_mir_allocator_type_code()){canonical_mir_append_text(output,"416c6c6f6361746f72");return 0;}
-    if(current==function_mir_buffer_type_code()){canonical_mir_append_text(output,"427566666572");return 0;}
-    if(current==function_mir_i8_type_code()){canonical_mir_append_text(output,"6938");return 0;}
-    if(current==function_mir_i16_type_code()){canonical_mir_append_text(output,"693136");return 0;}
-    if(current==function_mir_i32_type_code()){canonical_mir_append_text(output,"693332");return 0;}
-    if(current==function_mir_u8_type_code()){canonical_mir_append_text(output,"7538");return 0;}
-    if(current==function_mir_u16_type_code()){canonical_mir_append_text(output,"753136");return 0;}
-    if(current==function_mir_u32_type_code()){canonical_mir_append_text(output,"753332");return 0;}
-    if(current==function_mir_u64_type_code()){canonical_mir_append_text(output,"753634");return 0;}
-    if(current==function_mir_string_type_code()){canonical_mir_append_text(output,"537472696e67");return 0;}
-    if(current==function_mir_byte_slice_type_code()){canonical_mir_append_text(output,"42797465536c696365");return 0;}
-    if(current==function_mir_unit_type_code()){canonical_mir_append_text(output,"756e6974");return 0;}
-    return 6;
+    return canonical_c_append_catalog_type_mangle(current,descriptors,depth,output);
 }
 
 fn canonical_c_invalid_owned_field_type_status()->i32{return 9;}
@@ -677,10 +767,10 @@ requires_caps [allocate]
     return 0;
 }
 
-// Complete oracle-shaped runtime for vectors of Copy scalar elements. Owned
-// element cleanup must use the separately proven recursive lifecycle path.
-pub fn canonical_c_append_copy_vector_runtime(
-    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+// Share the oracle-shaped helper family, but keep the already-proven Copy
+// entrypoint fail-closed for owned elements until the owned path is selected.
+fn canonical_c_append_vector_runtime(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,allow_owned:i32,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -697,10 +787,11 @@ requires_caps [allocate]
         }
         index=checked_add(index,1);
     }
-    if(function_mir_type_uses_ownership_transfer(child)!=0){return 7;}
+    let owned:i32=function_mir_type_uses_ownership_transfer(child);
+    if(owned!=allow_owned){return 7;}
     if(child==function_mir_unit_type_code()){return 7;}
     var element_type:Buffer=buffer_new(allocator,32);
-    if(canonical_c_append_scalar_type(element_type,child)!=0){
+    if(canonical_c_append_type_with_catalog(element_type,child,descriptors)!=0){
         return 7;
     }
     var suffix:Buffer=buffer_new(allocator,64);
@@ -748,7 +839,18 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"replace",suffix);
     buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *value, int64_t index, ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
-    canonical_mir_append_text(output," element) {\n    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit vector index out of bounds\\n\"); exit(86); }\n    /* explicit no-op in scalar bootstrap C subset */\n    ((");
+    canonical_mir_append_text(output," element) {\n    if (index < 0 || (size_t)index >= value->len) { fprintf(stderr, \"Merit vector index out of bounds\\n\"); exit(86); }\n");
+    if(owned!=0){
+        var element_at:Buffer=buffer_new(allocator,96);
+        canonical_mir_append_text(element_at,"((");
+        bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
+        canonical_mir_append_text(element_at," *)value->data)[index]");
+        if(canonical_c_append_recursive_resource_drop(element_at,child,descriptors,4,0,output)!=0){return 7;}
+        drop(element_at);
+    }else{
+        canonical_mir_append_text(output,"    /* explicit no-op in scalar bootstrap C subset */\n");
+    }
+    canonical_mir_append_text(output,"    ((");
     bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
     canonical_mir_append_text(output," *)value->data)[index] = element;\n}\n");
     canonical_mir_append_text(output,"static ");bootstrap_buffer_append(output,element_type,0,buffer_len(element_type));
@@ -759,13 +861,40 @@ requires_caps [allocate]
     canonical_mir_append_text(output," *)value->data)[--value->len];\n}\n");
     canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"drop",suffix);
     buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
-    canonical_mir_append_text(output," *value) {\n    for (size_t index = 0; index < value->len; ++index) {\n        /* explicit no-op in scalar bootstrap C subset */\n    }\n    free(value->data); value->data = NULL; value->len = 0; value->capacity = 0;\n}\n");
+    canonical_mir_append_text(output," *value) {\n    for (size_t index = 0; index < value->len; ++index) {\n");
+    if(owned!=0){
+        var element_at:Buffer=buffer_new(allocator,96);
+        canonical_mir_append_text(element_at,"((");
+        bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
+        canonical_mir_append_text(element_at," *)value->data)[index]");
+        if(canonical_c_append_recursive_resource_drop(element_at,child,descriptors,8,0,output)!=0){return 7;}
+        drop(element_at);
+    }else{
+        canonical_mir_append_text(output,"        /* explicit no-op in scalar bootstrap C subset */\n");
+    }
+    canonical_mir_append_text(output,"    }\n    free(value->data); value->data = NULL; value->len = 0; value->capacity = 0;\n}\n");
     canonical_mir_append_text(output,"static void ");canonical_c_append_vector_symbol(output,"transfer",suffix);
     buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *destination, ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *source) {\n    if (destination == source) { fprintf(stderr, \"Merit vector transfer aliases itself\\n\"); exit(90); }\n    if (!merit_allocator_compatible(destination->allocator, source->allocator)) { fprintf(stderr, \"Merit incompatible vector allocators\\n\"); exit(90); }\n    if (destination->len) { fprintf(stderr, \"Merit vector transfer destination is not empty\\n\"); exit(90); }\n    free(destination->data); destination->data = source->data; destination->len = source->len; destination->capacity = source->capacity;\n    source->data = NULL; source->len = 0; source->capacity = 0;\n}\n");
     drop(suffix);drop(element_type);drop(vector_type);
     return 0;
+}
+
+pub fn canonical_c_append_copy_vector_runtime(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_append_vector_runtime(type_code,descriptors,0,output);
+}
+
+pub fn canonical_c_append_owned_vector_runtime(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_append_vector_runtime(type_code,descriptors,1,output);
 }
 
 fn canonical_c_append_scalar_prototype(
@@ -1036,6 +1165,124 @@ fn canonical_c_resource_effect_failure_status(status:i32)->i32{return checked_ad
 fn canonical_c_aggregate_invalid_record_status()->i32{return 120;}
 fn canonical_c_aggregate_unsupported_field_status()->i32{return 121;}
 fn canonical_c_aggregate_replace_requires_cleanup_status()->i32{return 122;}
+fn canonical_c_recursive_drop_unsupported_type_status()->i32{return 1;}
+fn canonical_c_recursive_drop_invalid_catalog_status()->i32{return 2;}
+fn canonical_c_recursive_drop_depth_status()->i32{return 3;}
+
+fn canonical_c_append_drop_indent(borrow_mut output:Buffer,indent:i32)->i32
+requires_caps [allocate]
+{
+    var index:i32=0;
+    while(index<indent){buffer_push(output,32);index=checked_add(index,1);}
+    return 0;
+}
+
+// Emit the oracle's resource cleanup from the semantic MIR type graph. This
+// helper does not admit an owned local: callers must still validate effects,
+// placements, descriptors, and the availability of vector runtime helpers.
+pub fn canonical_c_append_recursive_resource_drop(
+    borrow expression:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    indent:i32,depth:i64,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(depth>vec_len<MirTypeDescriptor>(descriptors)){
+        return canonical_c_recursive_drop_depth_status();
+    }
+    if(indent<0){return canonical_c_recursive_drop_invalid_catalog_status();}
+    if(type_code==function_mir_buffer_type_code()){
+        canonical_c_append_drop_indent(output,indent);
+        canonical_mir_append_text(output,"merit_buffer_drop(&(");
+        bootstrap_buffer_append(output,expression,0,buffer_len(expression));
+        canonical_mir_append_text(output,"));\n");return 0;
+    }
+    if(type_code>=function_mir_vector_type_code(0)){
+        let allocator:Allocator=system_allocator();
+        var name:Buffer=buffer_new(allocator,64);
+        if(canonical_c_append_vector_type_name(type_code,descriptors,name)!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
+        canonical_c_append_drop_indent(output,indent);
+        canonical_mir_append_text(output,"merit_vec_drop_");
+        let prefix_length:i64=string_len("merit_Vec_");
+        bootstrap_buffer_append(output,name,prefix_length,checked_sub(buffer_len(name),prefix_length));
+        canonical_mir_append_text(output,"(&(");
+        bootstrap_buffer_append(output,expression,0,buffer_len(expression));
+        canonical_mir_append_text(output,"));\n");drop(name);return 0;
+    }
+    if(type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(type_code<function_mir_recursive_owned_payload_enum_type_code(0)){
+            var count:i32=0;var child:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_field_struct_kind()){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_owned_field_struct_type_code(0))){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_ordinal(item)!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
+                    child=function_mir_type_descriptor_child(item);count=checked_add(count,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(count!=1){return canonical_c_recursive_drop_invalid_catalog_status();}
+            let allocator:Allocator=system_allocator();
+            var field:Buffer=buffer_new(allocator,64);
+            bootstrap_buffer_append(field,expression,0,buffer_len(expression));
+            canonical_mir_append_text(field,".field_0");
+            let status:i32=canonical_c_append_recursive_resource_drop(
+                field,child,descriptors,indent,checked_add(depth,1),output
+            );
+            drop(field);return status;
+        }
+    }
+    if(type_code>=function_mir_recursive_owned_payload_enum_type_code(0)){
+        if(type_code<function_mir_aggregate_struct_type_code(0)){
+            canonical_c_append_drop_indent(output,indent);
+            canonical_mir_append_text(output,"switch (");
+            bootstrap_buffer_append(output,expression,0,buffer_len(expression));
+            canonical_mir_append_text(output,".tag) {\n");
+            var ordinal:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(item)==type_code){
+                    if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_payload_enum_kind()){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_recursive_owned_payload_enum_type_code(0))){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_ordinal(item)!=ordinal){return canonical_c_recursive_drop_invalid_catalog_status();}
+                    canonical_c_append_drop_indent(output,indent);
+                    canonical_mir_append_text(output,"case INT64_C(");canonical_mir_append_i32(output,ordinal);
+                    canonical_mir_append_text(output,"):\n");
+                    let allocator:Allocator=system_allocator();
+                    var payload:Buffer=buffer_new(allocator,64);
+                    bootstrap_buffer_append(payload,expression,0,buffer_len(expression));
+                    canonical_mir_append_text(payload,".payload.variant_");canonical_mir_append_i32(payload,ordinal);
+                    let status:i32=canonical_c_append_recursive_resource_drop(
+                        payload,function_mir_type_descriptor_child(item),descriptors,
+                        checked_add(indent,4),checked_add(depth,1),output
+                    );
+                    drop(payload);if(status!=0){return status;}
+                    canonical_c_append_drop_indent(output,checked_add(indent,4));
+                    canonical_mir_append_text(output,"break;\n");ordinal=checked_add(ordinal,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(ordinal==0){return canonical_c_recursive_drop_invalid_catalog_status();}
+            canonical_c_append_drop_indent(output,indent);
+            canonical_mir_append_text(output,"default: abort();\n");
+            canonical_c_append_drop_indent(output,indent);
+            canonical_mir_append_text(output,"}\n");return 0;
+        }
+    }
+    if(canonical_c_supported_builtin_local_type(type_code)!=0){
+        canonical_c_append_drop_indent(output,indent);
+        canonical_mir_append_text(output,"/* explicit no-op in scalar bootstrap C subset */\n");return 0;
+    }
+    return canonical_c_recursive_drop_unsupported_type_status();
+}
 
 // Lower only explicit, already-validated Alpha.2 resource effects. The MIR
 // effect remains independent of Buffer's physical allocation representation.
@@ -1059,12 +1306,24 @@ requires_caps [allocate]
     if(operand_local<0){return canonical_c_resource_invalid_operand_status();}
     let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
     let trivial_aggregate_fields:i32=canonical_c_trivial_integer_aggregate_field_count(resource_type,descriptors);
+    var recursive_owned:i32=0;
+    if(resource_type>=function_mir_owned_field_struct_type_code(0)){
+        if(resource_type<function_mir_aggregate_struct_type_code(0)){recursive_owned=1;}
+    }
     if(resource_type!=function_mir_buffer_type_code()){
         if(resource_type<function_mir_vector_type_code(0)){
-            if(trivial_aggregate_fields==0){return canonical_c_resource_invalid_operand_status();}
+            if(trivial_aggregate_fields==0){
+                if(recursive_owned==0){return canonical_c_resource_invalid_operand_status();}
+            }
         }
     }
     let allocator:Allocator=system_allocator();
+    if(recursive_owned!=0){
+        var spelling:Buffer=buffer_new(allocator,64);
+        let spelling_status:i32=canonical_c_append_type_with_catalog(spelling,resource_type,descriptors);
+        drop(spelling);
+        if(spelling_status!=0){return canonical_c_resource_invalid_operand_status();}
+    }
     var vector_name:Buffer=buffer_new(allocator,64);
     if(resource_type>=function_mir_vector_type_code(0)){
         if(canonical_c_append_vector_type_name(resource_type,descriptors,vector_name)!=0){
@@ -1090,16 +1349,27 @@ requires_caps [allocate]
                 canonical_mir_append_text(output,"    /* explicit no-op in scalar bootstrap C subset */\n");
                 field_index=checked_add(field_index,1);
             }
-        }else{if(resource_type==function_mir_buffer_type_code()){
-            canonical_mir_append_text(output,"    merit_buffer_drop(&(m");
         }else{
-            canonical_mir_append_text(output,"    merit_vec_drop_");
-            let prefix_length:i64=string_len("merit_Vec_");
-            bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
-            canonical_mir_append_text(output,"(&(m");
-        }
-        canonical_mir_append_i64(output,operand_local);
-        canonical_mir_append_text(output,"));\n");
+            if(recursive_owned!=0){
+                var expression:Buffer=buffer_new(allocator,32);
+                canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
+                let drop_status:i32=canonical_c_append_recursive_resource_drop(
+                    expression,resource_type,descriptors,4,0,output
+                );
+                drop(expression);
+                if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
+            }else{
+                if(resource_type==function_mir_buffer_type_code()){
+                    canonical_mir_append_text(output,"    merit_buffer_drop(&(m");
+                }else{
+                    canonical_mir_append_text(output,"    merit_vec_drop_");
+                    let prefix_length:i64=string_len("merit_Vec_");
+                    bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
+                    canonical_mir_append_text(output,"(&(m");
+                }
+                canonical_mir_append_i64(output,operand_local);
+                canonical_mir_append_text(output,"));\n");
+            }
         }
     }
     drop(vector_name);
@@ -1535,7 +1805,6 @@ requires_caps [allocate]
         }
         index=checked_add(index,1);
     }
-    if(function_mir_type_uses_ownership_transfer(element_type)!=0){return 96;}
     if(canonical_c_scalar_local_type(records,element_local)!=element_type){return 96;}
     canonical_mir_append_text(output,"    merit_vec_push_");
     let prefix_length:i64=string_len("merit_Vec_");
@@ -1547,7 +1816,7 @@ requires_caps [allocate]
     return 0;
 }
 
-fn canonical_c_append_copy_vector_operation_call(
+fn canonical_c_append_vector_operation_call(
     operation:i32,borrow instruction:MirFunctionRecord,borrow records:Vec<MirFunctionRecord>,
     borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
 )->i32
@@ -1603,7 +1872,12 @@ requires_caps [allocate]
         }
         index=checked_add(index,1);
     }
-    if(function_mir_type_uses_ownership_transfer(element_type)!=0){return 96;}
+    if(function_mir_type_uses_ownership_transfer(element_type)!=0){
+        // `get` and `set` would copy or discard an owned element. The
+        // Alpha.2 surface uses `pop` and `replace` for ownership transfer.
+        if(operation==canonical_c_vector_get_operation()){return 96;}
+        if(operation==canonical_c_vector_set_operation()){return 96;}
+    }
     if(operation==canonical_c_vector_get_operation()){
         if(canonical_c_scalar_local_type(records,index_local)!=function_mir_i64_type_code()){return 96;}
     }
@@ -2834,7 +3108,7 @@ requires_caps [allocate]
                                 if(copy_vector_operation==canonical_c_vector_drop_operation()){
                                     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 66;}
                                 }
-                                let vector_call_status:i32=canonical_c_append_copy_vector_operation_call(
+                                let vector_call_status:i32=canonical_c_append_vector_operation_call(
                                     copy_vector_operation,instruction,records,type_descriptors,bodies
                                 );
                                 if(vector_call_status!=0){return vector_call_status;}
@@ -3668,6 +3942,29 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_vector_catalog_depth(type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>)->i64 {
+    if(type_code<function_mir_vector_type_code(0)){return -1;}
+    var current:i32=type_code;var depth:i64=0;
+    while(current>=function_mir_vector_type_code(0)){
+        if(depth>=vec_len<MirTypeDescriptor>(descriptors)){return -1;}
+        var found:i32=0;var child:i32=0;var index:i64=0;
+        while(index<vec_len<MirTypeDescriptor>(descriptors)){
+            let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+            if(function_mir_type_descriptor_code(item)==current){
+                if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_vector_kind()){return -1;}
+                if(function_mir_type_descriptor_identity(item)!=checked_sub(current,function_mir_vector_type_code(0))){return -1;}
+                if(function_mir_type_descriptor_ordinal(item)!=0){return -1;}
+                if(function_mir_type_descriptor_destructor_policy(item)!=0){return -1;}
+                child=function_mir_type_descriptor_child(item);found=checked_add(found,1);
+            }
+            index=checked_add(index,1);
+        }
+        if(found!=1){return -1;}
+        current=child;depth=checked_add(depth,1);
+    }
+    return depth;
+}
+
 fn canonical_c_owned_typedef_invalid_catalog_status()->i32{return 1;}
 fn canonical_c_owned_typedef_cycle_status()->i32{return 2;}
 fn canonical_c_owned_typedef_unsupported_child_status()->i32{return 3;}
@@ -3994,16 +4291,23 @@ requires_caps [allocate]
             let candidate_code:i32=vec_get<i32>(vector_type_codes,candidate_index);
             if(candidate_code<function_mir_vector_type_code(0)){return 3;}
             if(canonical_c_vector_code_selected(candidate_code,sorted_codes)==0){
+                let candidate_depth:i64=canonical_c_vector_catalog_depth(candidate_code,descriptors);
+                if(candidate_depth<0){return 3;}
                 var candidate_name:Buffer=buffer_new(allocator,64);
                 let candidate_status:i32=canonical_c_append_vector_type_name(candidate_code,descriptors,candidate_name);
                 if(candidate_status!=0){return candidate_status;}
                 if(best_code==function_mir_unresolved_type_code()){
                     best_code=candidate_code;
                 }else{
+                    let best_depth:i64=canonical_c_vector_catalog_depth(best_code,descriptors);
+                    if(best_depth<0){return 3;}
                     var best_name:Buffer=buffer_new(allocator,64);
                     let best_status:i32=canonical_c_append_vector_type_name(best_code,descriptors,best_name);
                     if(best_status!=0){return best_status;}
-                    if(canonical_c_buffer_compare(candidate_name,best_name)<0){best_code=candidate_code;}
+                    if(candidate_depth<best_depth){best_code=candidate_code;}
+                    else{if(candidate_depth==best_depth){
+                        if(canonical_c_buffer_compare(candidate_name,best_name)<0){best_code=candidate_code;}
+                    }}
                     drop(best_name);
                 }
                 drop(candidate_name);
@@ -4030,7 +4334,21 @@ requires_caps [allocate]
         canonical_mir_append_text(vector_typedefs,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
         bootstrap_buffer_append(vector_typedefs,vector_name,0,buffer_len(vector_name));
         canonical_mir_append_text(vector_typedefs,";\n");
-        let runtime_status:i32=canonical_c_append_copy_vector_runtime(vector_type_code,descriptors,vector_runtime);
+        var element_code:i32=function_mir_unresolved_type_code();
+        var descriptor_index:i64=0;
+        while(descriptor_index<vec_len<MirTypeDescriptor>(descriptors)){
+            let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,descriptor_index);
+            if(function_mir_type_descriptor_code(item)==vector_type_code){
+                element_code=function_mir_type_descriptor_child(item);
+            }
+            descriptor_index=checked_add(descriptor_index,1);
+        }
+        var runtime_status:i32=0;
+        if(function_mir_type_uses_ownership_transfer(element_code)!=0){
+            runtime_status=canonical_c_append_owned_vector_runtime(vector_type_code,descriptors,vector_runtime);
+        }else{
+            runtime_status=canonical_c_append_copy_vector_runtime(vector_type_code,descriptors,vector_runtime);
+        }
         if(runtime_status!=0){return runtime_status;}
         drop(vector_name);
         sorted_index=checked_add(sorted_index,1);

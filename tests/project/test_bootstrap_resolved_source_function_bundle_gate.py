@@ -2265,6 +2265,84 @@ def test_merit_vector_type_names_use_native_catalog_and_oracle_mangle(tmp_path: 
     assert values == [5, 3]  # Missing and duplicate native catalog rows reject.
 
 
+def test_merit_owned_vector_type_names_match_recursive_oracle_mangle(tmp_path: Path) -> None:
+    probe = r'''module owned_vector_name_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,5);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,
+   function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,
+   function_mir_i64_type_code(),0,1,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(2),function_mir_type_descriptor_vector_kind(),2,
+   function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(3),function_mir_type_descriptor_vector_kind(),3,
+   function_mir_recursive_owned_payload_enum_type_code(1),0,0,0,0,0,0,0));
+  var index:i32=2;
+  while(index<4){
+   var name:Buffer=buffer_new(allocator,128);
+   print(canonical_c_append_vector_type_name(function_mir_vector_type_code(index),descriptors,name));
+   print(buffer_len(name));
+   var offset:i64=0;
+   while(offset<buffer_len(name)){print(buffer_get(name,offset));offset=checked_add(offset,1);}
+   drop(name);index=checked_add(index,1);
+   var runtime:Buffer=buffer_new(allocator,2048);
+   print(canonical_c_append_owned_vector_runtime(function_mir_vector_type_code(checked_sub(index,1)),descriptors,runtime));
+   print(buffer_len(runtime));
+   offset=0;
+   while(offset<buffer_len(runtime)){print(buffer_get(runtime,offset));offset=checked_add(offset,1);}
+   drop(runtime);
+  }
+  var invalid:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(invalid,function_mir_type_descriptor(
+   function_mir_owned_field_struct_type_code(4),function_mir_type_descriptor_owned_field_struct_kind(),4,
+   function_mir_owned_field_struct_type_code(4),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(invalid,function_mir_type_descriptor(
+   function_mir_vector_type_code(5),function_mir_type_descriptor_vector_kind(),5,
+   function_mir_owned_field_struct_type_code(4),0,0,0,0,0,0,0));
+  var rejected:Buffer=buffer_new(allocator,128);
+  print(canonical_c_append_vector_type_name(function_mir_vector_type_code(5),invalid,rejected));
+  drop(rejected);drop(invalid);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'owned-vector-names')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    from merit.bootstrap.mir_to_c import _vector_c_name
+    from merit.bootstrap.mir_to_c import _vector_runtime
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    owned_enum = MirType('enum_owned_payload_1', (owned_field, MirType('i64')))
+    for element in (owned_field, owned_enum):
+        assert values.pop(0) == 0
+        length = values.pop(0)
+        actual = bytes(values[:length]).decode('utf-8')
+        del values[:length]
+        assert actual == _vector_c_name(MirType('Vec', (element,)))
+        assert values.pop(0) == 0
+        runtime_length = values.pop(0)
+        runtime = bytes(values[:runtime_length]).decode('utf-8')
+        del values[:runtime_length]
+        assert runtime == '\n'.join(_vector_runtime((MirType('Vec', (element,)),), {})) + '\n'
+    assert len(values) == 1 and values[0] != 0
+
+
 def test_merit_copy_vector_runtime_matches_python_oracle_bytes(tmp_path: Path) -> None:
     root = _project(tmp_path, CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE)
     project = load_project(root / "Merit.toml")
@@ -2335,6 +2413,61 @@ def test_merit_copy_vector_runtime_rejects_owned_elements(tmp_path: Path) -> Non
     assert values == [7, 0]
 
 
+def test_merit_owned_buffer_vector_runtime_matches_oracle_and_executes(tmp_path: Path) -> None:
+    probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
+        'function_mir_i64_type_code(),0,0,0,0,0,0,0',
+        'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
+    ).replace('canonical_c_append_copy_vector_runtime(', 'canonical_c_append_owned_vector_runtime(')
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'owned-buffer-vector-runtime')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    actual = bytes(values).decode('utf-8')
+    from merit.bootstrap.mir_to_c import _vector_runtime
+    expected = '\n'.join(_vector_runtime((MirType('Vec', (MirType('Buffer'),)),), {})) + '\n'
+    assert actual == expected
+    generated = tmp_path / 'owned-buffer-vector-runtime.c'
+    generated.write_text(
+        '#include <stdint.h>\n#include <stddef.h>\n#include <stdio.h>\n#include <stdlib.h>\n'
+        'typedef struct { int32_t identity; } merit_Allocator;\n'
+        'typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;\n'
+        'typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Vec_427566666572;\n'
+        'static int drops = 0;\n'
+        'static inline void merit_buffer_drop(merit_Buffer *value) { ++drops; free(value->data); value->data = NULL; }\n'
+        'static inline int32_t merit_allocator_compatible(merit_Allocator a, merit_Allocator b) { return a.identity == b.identity; }\n'
+        + actual,
+        encoding='utf-8', newline='\n',
+    )
+    driver = tmp_path / 'owned-buffer-vector-driver.c'
+    driver.write_text(
+        '#include "owned-buffer-vector-runtime.c"\n'
+        'int main(void) { merit_Allocator allocator = {0}; '
+        'merit_Vec_427566666572 values = merit_vec_new_427566666572(allocator, 1); '
+        'merit_Buffer first = {0}; first.data = malloc(1); '
+        'merit_Buffer second = {0}; second.data = malloc(1); '
+        'merit_Buffer third = {0}; third.data = malloc(1); '
+        'merit_vec_push_427566666572(&values, first); '
+        'merit_vec_replace_427566666572(&values, 0, second); '
+        'merit_vec_push_427566666572(&values, third); '
+        'merit_Buffer popped = merit_vec_pop_427566666572(&values); '
+        'merit_buffer_drop(&popped); merit_vec_drop_427566666572(&values); '
+        'return drops == 3 ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'owned-buffer-vector-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
 def test_merit_copy_vector_runtime_uses_descriptor_element_type(tmp_path: Path) -> None:
     probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
         'function_mir_i64_type_code(),0,0,0,0,0,0,0',
@@ -2383,6 +2516,68 @@ def test_merit_copy_vector_module_compiles_and_executes(tmp_path: Path) -> None:
     assert cc is not None
     program = tmp_path / "copy-vector-module-program"
     subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_nested_vector_module_orders_runtime_by_depth(tmp_path: Path) -> None:
+    probe = r'''module nested_vector_order_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+   function_mir_i64_type_code(),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(1),function_mir_type_descriptor_vector_kind(),1,
+   function_mir_vector_type_code(0),0,0,0,0,0,0,0));
+  var vectors:Vec<i32>=vec_new<i32>(allocator,2);
+  vec_push<i32>(vectors,function_mir_vector_type_code(1));
+  vec_push<i32>(vectors,function_mir_vector_type_code(0));
+  var no_types:Vec<i32>=vec_new<i32>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  let prototypes:Buffer=buffer_from_string(allocator,"int64_t sample(void);\n");
+  let bodies:Buffer=buffer_from_string(allocator,"int64_t sample(void) { return 7; }\n");
+  var output:Buffer=buffer_new(allocator,16384);
+  print(canonical_c_finish_aggregate_vector_catalog_module(
+   prototypes,bodies,features,vectors,no_types,no_types,descriptors,output));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(bodies);drop(prototypes);drop(features);drop(no_types);drop(vectors);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'nested-vector-order')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    actual = bytes(values).decode('utf-8')
+    assert length == len(actual.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _vector_runtime
+    inner = MirType('Vec', (MirType('i64'),))
+    outer = MirType('Vec', (inner,))
+    expected_runtime = '\n'.join(_vector_runtime((outer, inner), {})) + '\n'
+    assert expected_runtime in actual
+    generated = tmp_path / 'nested-vector-module.c'
+    generated.write_text(actual, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'nested-vector-driver.c'
+    driver.write_text('#include "nested-vector-module.c"\nint main(void) { return sample() == 7 ? 0 : 1; }\n',
+                      encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'nested-vector-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
 
@@ -2499,19 +2694,44 @@ def test_merit_two_copy_vector_module_rejects_duplicate_or_owned_catalog(
     assert [int(line) for line in native.splitlines()] == [status, 0]
 
 
-def test_merit_copy_vector_module_rejects_owned_element_without_output(tmp_path: Path) -> None:
-    probe = CANONICAL_C_COPY_VECTOR_MODULE_PROBE.replace(
+def test_merit_owned_buffer_vector_module_compiles_and_executes(tmp_path: Path) -> None:
+    probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
         'function_mir_i64_type_code(),0,0,0,0,0,0,0',
         'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
+    ).replace(
+        'let status:i32=canonical_c_append_copy_vector_runtime(function_mir_vector_type_code(0),descriptors,output);',
+        'var features:Vec<i64>=vec_new<i64>(allocator,0);\n'
+        '  let prototypes:Buffer=buffer_from_string(allocator,"int64_t sample(void);\\n");\n'
+        '  let bodies:Buffer=buffer_from_string(allocator,"int64_t sample(void) { return 7; }\\n");\n'
+        '  let status:i32=canonical_c_finish_copy_vector_module(\n'
+        '    prototypes,bodies,features,function_mir_vector_type_code(0),descriptors,output);\n'
+        '  drop(bodies);drop(prototypes);drop(features);',
     )
-    assert probe != CANONICAL_C_COPY_VECTOR_MODULE_PROBE
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
-    _, _, executable = build(project, root / "build" / "owned-vector-module-rejected")
+    _, _, executable = build(project, root / "build" / "owned-vector-module")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
-    assert [int(line) for line in native.splitlines()] == [7, 0]
+    values = [int(line) for line in native.splitlines()]
+    assert values.pop(0) == 0
+    length = values.pop(0)
+    assert len(values) == length
+    actual = bytes(values).decode("utf-8")
+    assert "merit_Vec_427566666572;\n" in actual
+    assert "static void merit_vec_reserve_427566666572" in actual
+    assert "merit_buffer_drop(&(((merit_Buffer *)value->data)[index]));" in actual
+    generated = tmp_path / "owned-vector-module.c"
+    generated.write_text(actual, encoding="utf-8", newline="\n")
+    driver = tmp_path / "owned-vector-module-driver.c"
+    driver.write_text('#include "owned-vector-module.c"\nint main(void) { return sample() == 7 ? 0 : 1; }\n',
+                      encoding="utf-8", newline="\n")
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "owned-vector-module-program"
+    subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
 
 
 def test_merit_materializes_straight_line_canonical_mir_bytes(tmp_path: Path) -> None:
@@ -2787,13 +3007,18 @@ fn main()->i32 {
   drop(missing_catalog);
   drop(reached_enums);drop(reached_fields);drop(reached_copy_enums);
   drop(reached_aggregates);drop(reached_vectors);drop(records);
-  var module_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  var module_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,3);
   vec_push<MirTypeDescriptor>(module_descriptors,function_mir_type_descriptor(
    function_mir_owned_field_struct_type_code(5),function_mir_type_descriptor_owned_field_struct_kind(),5,
    function_mir_i64_type_code(),0,0,0,0,0,0,0));
   vec_push<MirTypeDescriptor>(module_descriptors,function_mir_type_descriptor(
    function_mir_recursive_owned_payload_enum_type_code(6),function_mir_type_descriptor_owned_payload_enum_kind(),6,
    function_mir_owned_field_struct_type_code(5),0,0,0,0,0,0,0));
+  vec_push<MirTypeDescriptor>(module_descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(7),function_mir_type_descriptor_vector_kind(),7,
+   function_mir_owned_field_struct_type_code(5),0,0,0,0,0,0,0));
+  var module_vectors:Vec<i32>=vec_new<i32>(allocator,1);
+  vec_push<i32>(module_vectors,function_mir_vector_type_code(7));
   var module_fields:Vec<i32>=vec_new<i32>(allocator,1);
   vec_push<i32>(module_fields,function_mir_owned_field_struct_type_code(5));
   var module_enums:Vec<i32>=vec_new<i32>(allocator,1);
@@ -2804,12 +3029,20 @@ fn main()->i32 {
   var bodies:Buffer=buffer_from_string(allocator,"int64_t merit_owned_probe(void) { return 0; }\n");
   var module_output:Buffer=buffer_new(allocator,1024);
   print(canonical_c_finish_owned_aggregate_vector_catalog_module(
-   prototypes,bodies,no_features,no_types,no_types,no_types,module_fields,module_enums,module_descriptors,module_output));
+   prototypes,bodies,no_features,module_vectors,no_types,no_types,module_fields,module_enums,module_descriptors,module_output));
   print(buffer_len(module_output));
   offset=0;
   while(offset<buffer_len(module_output)){print(buffer_get(module_output,offset));offset=checked_add(offset,1);}
   drop(module_output);drop(bodies);drop(prototypes);drop(no_features);drop(no_types);
-  drop(module_enums);drop(module_fields);drop(module_descriptors);
+  drop(module_enums);drop(module_fields);drop(module_vectors);drop(module_descriptors);
+  var drop_expression:Buffer=buffer_from_string(allocator,"m0");
+  var drop_output:Buffer=buffer_new(allocator,256);
+  print(canonical_c_append_recursive_resource_drop(
+   drop_expression,function_mir_recursive_owned_payload_enum_type_code(1),descriptors,4,0,drop_output));
+  print(buffer_len(drop_output));
+  offset=0;
+  while(offset<buffer_len(drop_output)){print(buffer_get(drop_output,offset));offset=checked_add(offset,1);}
+  drop(drop_output);drop(drop_expression);
   vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,
    function_mir_buffer_type_code(),0,0,0,0,0,0,0));
@@ -2827,6 +3060,10 @@ fn main()->i32 {
   vec_push<i32>(cycle_codes,function_mir_owned_field_struct_type_code(2));
   var cycle_output:Buffer=buffer_new(allocator,64);
   print(canonical_c_append_owned_field_typedefs(cycle_codes,cycle_descriptors,cycle_output));
+  var cycle_expression:Buffer=buffer_from_string(allocator,"m0");
+  print(canonical_c_append_recursive_resource_drop(
+   cycle_expression,function_mir_owned_field_struct_type_code(2),cycle_descriptors,4,0,cycle_output));
+  drop(cycle_expression);
   drop(cycle_output);drop(cycle_codes);drop(cycle_descriptors);
   var enum_cycle_descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
   vec_push<MirTypeDescriptor>(enum_cycle_descriptors,function_mir_type_descriptor(
@@ -2904,17 +3141,27 @@ fn main()->i32 {
     )
     assert module_c.index(field_declaration) < module_c.index(enum_declaration)
     assert module_c.count(field_declaration) == module_c.count(enum_declaration) == 1
+    from merit.bootstrap.mir_to_c import _vector_runtime
+    module_owned_field = MirType('struct_owned_field_5', (MirType('i64'),))
+    vector_runtime = '\n'.join(_vector_runtime((MirType('Vec', (module_owned_field,)),), {})) + '\n'
+    assert vector_runtime in module_c
     cc = shutil.which("cc") or shutil.which("gcc")
     assert cc is not None
     module_path = tmp_path / "owned-catalog-module.c"
     module_path.write_text(module_c, encoding="utf-8", newline="\n")
     subprocess.run([cc, "-std=c11", "-Werror", "-fsyntax-only", str(module_path)],
                    check=True, capture_output=True, text=True)
+    assert values.pop(0) == 0
+    drop_length = values.pop(0)
+    drop_c = bytes(values[:drop_length]).decode("utf-8")
+    del values[:drop_length]
+    from merit.bootstrap.mir_to_c import _drop_statements
+    assert drop_c == "".join(f"    {line}\n" for line in _drop_statements("m0", owned_enum, {}))
     for _ in range(1):
         assert values.pop(0) != 0
         length = values.pop(0)
         del values[:length]
-    for _ in range(4):
+    for _ in range(5):
         assert values.pop(0) != 0
     assert not values
 
@@ -4635,6 +4882,48 @@ def test_merit_buffer_resource_effect_c_lines_match_python_oracle(
     assert emitted in emit_c_module(module)
 
 
+def test_merit_owned_resource_effect_c_lines_match_python_oracle(tmp_path: Path) -> None:
+    probe = CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
+        'let allocator:Allocator=system_allocator();',
+        'let allocator:Allocator=system_allocator();\n'
+        '  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);\n'
+        '  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(\n'
+        '    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+        '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));\n'
+        '  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(\n'
+        '    function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,\n'
+        '    function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));',
+    ).replace(
+        'function_mir_temporary(0,function_mir_buffer_type_code(),0)',
+        'function_mir_temporary(0,function_mir_recursive_owned_payload_enum_type_code(1),0)',
+    ).replace(
+        'function_mir_temporary(1,function_mir_buffer_type_code(),1)',
+        'function_mir_temporary(1,function_mir_recursive_owned_payload_enum_type_code(1),1)',
+    ).replace(
+        'canonical_c_append_buffer_resource_effect(move_effect,1,records,output)',
+        'canonical_c_append_resource_effect(move_effect,1,records,descriptors,output)',
+    ).replace(
+        'canonical_c_append_buffer_resource_effect(drop_effect,-1,records,output)',
+        'canonical_c_append_resource_effect(drop_effect,-1,records,descriptors,output)',
+    ).replace('drop(output);drop(records);', 'drop(output);drop(records);drop(descriptors);')
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'canonical-owned-effects')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:2] == [0, 0]
+    emitted = bytes(values[3:]).decode('utf-8')
+    assert values[2] == len(emitted.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _drop_statements
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    owned_enum = MirType('enum_owned_payload_1', (owned_field,))
+    assert emitted == '    m1 = m0;\n' + ''.join(
+        f'    {line}\n' for line in _drop_statements('m1', owned_enum, {})
+    )
+
+
 def test_merit_vector_resource_effect_c_lines_match_python_oracle(tmp_path: Path) -> None:
     probe = CANONICAL_C_BUFFER_RESOURCE_EFFECT_PROBE.replace(
         'let allocator:Allocator=system_allocator();',
@@ -5072,6 +5361,86 @@ def test_merit_copy_vector_operations_match_python_oracle_bytes(
     subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_owned_vector_calls_emit_transfer_operations_and_reject_copying(tmp_path: Path) -> None:
+    probe = r'''module owned_vector_call_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   function_mir_vector_type_code(0),function_mir_type_descriptor_vector_kind(),0,
+   function_mir_buffer_type_code(),0,0,0,0,0,0,0));
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,18);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,1,0,1,function_mir_unit_type_code(),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_vector_type_code(0),0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_buffer_type_code(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_i64_type_code(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(3,function_mir_buffer_type_code(),3));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(4,function_mir_buffer_type_code(),4));
+  let push_call:MirFunctionRecord=function_mir_call(0,1,11,-1,0,1,function_mir_unit_type_code(),function_mir_mode_value(),11);
+  let pop_call:MirFunctionRecord=function_mir_call(0,1,12,3,0,1,function_mir_buffer_type_code(),function_mir_mode_value(),12);
+  let replace_call:MirFunctionRecord=function_mir_call(0,1,13,-1,0,1,function_mir_unit_type_code(),function_mir_mode_value(),13);
+  let get_call:MirFunctionRecord=function_mir_call(0,1,14,3,0,1,function_mir_buffer_type_code(),function_mir_mode_value(),14);
+  let set_call:MirFunctionRecord=function_mir_call(0,1,15,-1,0,1,function_mir_unit_type_code(),function_mir_mode_value(),15);
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(11,0,function_mir_mode_mutable_borrow(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(11,1,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(12,0,function_mir_mode_mutable_borrow(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(13,0,function_mir_mode_mutable_borrow(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(13,2,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(13,4,function_mir_mode_value(),2));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(14,0,function_mir_mode_borrowed(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(14,2,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,0,function_mir_mode_mutable_borrow(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,2,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,4,function_mir_mode_value(),2));
+  var output:Buffer=buffer_new(allocator,256);
+  print(canonical_c_append_vec_push_call(push_call,records,descriptors,output));
+  print(canonical_c_append_vector_operation_call(canonical_c_vector_pop_operation(),pop_call,records,descriptors,output));
+  print(canonical_c_append_vector_operation_call(canonical_c_vector_replace_operation(),replace_call,records,descriptors,output));
+  print(canonical_c_append_vector_operation_call(canonical_c_vector_get_operation(),get_call,records,descriptors,output));
+  print(canonical_c_append_vector_operation_call(canonical_c_vector_set_operation(),set_call,records,descriptors,output));
+  print(buffer_len(output));
+  var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(records);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    for name in (
+        'canonical_c_append_vec_push_call', 'canonical_c_append_vector_operation_call',
+        'canonical_c_vector_pop_operation', 'canonical_c_vector_replace_operation',
+        'canonical_c_vector_get_operation',
+        'canonical_c_vector_set_operation',
+    ):
+        marker = f'fn {name}('
+        assert source.count(marker) == 1
+        source = source.replace(marker, f'pub {marker}', 1)
+    module_path.write_text(source, encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'owned-vector-calls')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:3] == [0, 0, 0]
+    assert values[3] != 0
+    assert values[4] != 0
+    emitted = bytes(values[6:]).decode('utf-8')
+    assert values[5] == len(emitted.encode('utf-8'))
+    assert emitted == (
+        '    merit_vec_push_427566666572(&m0, m1);\n'
+        '    m3 = merit_vec_pop_427566666572(&m0);\n'
+        '    merit_vec_replace_427566666572(&m0, m2, m4);\n'
+    )
 
 
 @pytest.mark.parametrize(('probe', 'status'), [

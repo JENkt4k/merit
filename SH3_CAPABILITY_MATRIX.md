@@ -465,6 +465,51 @@ their existing production catalogs. The focused `Vec` → owned enum → owned
 field path, including missing-descriptor rejection, passed interpreter/native
 parity (`1 passed in 34.87s`). Owned-element vector runtime and recursive
 cleanup remain necessary before broad local admission.
+The first private recursive cleanup emitter now follows owned-field children
+and payload-enum tags without changing MIR ownership effects. Its emitted
+statements match the independent Python oracle exactly for an enum → owned
+field → Buffer graph, with interpreter/native parity and self-cycle rejection
+(`1 passed in 35.02s`). At that point it was not yet connected to resource-
+effect lowering; owned-element vector runtime remains unavailable.
+The explicit MIR resource-effect emitter now delegates owned-field and
+recursive-enum drops to that helper while retaining move assignment and the
+existing effect/operand checks. An owned move/drop probe matches Python-oracle
+C lines with interpreter/native parity (`1 passed in 36.34s`); one existing
+Buffer move/drop regression remains green (`1 passed in 33.60s`). This does
+not open owned local admission or cover replacement cleanup placements yet.
+The vector runtime emitter now has a separately selected owned-element path:
+`Vec<Buffer>` runtime bytes match the Python oracle and a GCC lifecycle driver
+observes replace/pop/drop cleanup exactly once (`1 passed in 34.89s`). The
+module finalizer selects this path and its generated C compiles/executes
+(`1 passed in 35.18s`). The Copy-only helper still matches oracle bytes and
+still rejects owned elements (`2 passed in 67.48s`). Nested owned vector type
+mangling, local admission, and production placement cleanup remain open.
+The call lowerer now emits typed owned-element `push`, `pop`, and `replace`
+calls and rejects owned `get`/`set` instead of copying or discarding resources.
+A direct MIR-record probe matched the expected C call lines with
+interpreter/native parity and rejected owned `get` and `set`
+(`1 passed in 34.36s`);
+the pre-existing Copy-vector operation oracle remained byte-identical
+(`1 passed in 36.40s`). This is not yet an end-to-end owned vector project
+build: effect-catalog association, `vec_transfer`, nested owned vector names,
+and owned local/placement closure still need evidence.
+The catalog-backed vector name now recursively mangles owned-field and
+recursive-owned-enum element graphs, including ordered payload variants; a
+focused native/interpreter probe matched the Python oracle's vector names and
+complete runtime-helper bytes and rejected a cyclic descriptor
+(`1 passed in 34.54s`). The earlier primitive/nested-Vec name regression stayed
+green (`1 passed in 33.59s`). The module finalizer now orders vector runtimes by
+depth, then mangle, as the oracle does; a reverse-catalog `Vec<Vec<i64>>` probe
+matched the full runtime-helper block and produced GCC-executable C
+(`1 passed in 36.02s`). General aggregate/Copy-enum element mangles and owned
+project admission remain open.
+The owned-aware module probe now includes a vector of owned-field structs in
+addition to its tagged enum. Its vector helper block matches the Python
+oracle, the declaration order is stable, and GCC accepts the assembled C
+(`1 passed in 35.23s`). This validates the private F4 runtime/layout path but
+does not open F5 project-level ownership-call or cleanup placement coverage.
+The final-tree focused owned-call and Copy-call regressions passed together
+(`2 passed in 69.86s`) before the F4 runtime/layout checkpoint.
 
 ## Finite capability families
 
