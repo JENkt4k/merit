@@ -608,6 +608,16 @@ requires_caps [allocate]
             return 1;
         }
     }
+    if(type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(type_code<function_mir_aggregate_struct_type_code(0)){
+            let allocator:Allocator=system_allocator();
+            var owned_spelling:Buffer=buffer_new(allocator,48);
+            let owned_status:i32=canonical_c_append_type_with_catalog(owned_spelling,type_code,descriptors);
+            drop(owned_spelling);
+            if(owned_status!=0){return 0;}
+            return 1;
+        }
+    }
     if(type_code<function_mir_aggregate_struct_type_code(0)){return 0;}
     if(type_code>=function_mir_decimal_type_code(0)){return 0;}
     let allocator:Allocator=system_allocator();
@@ -643,6 +653,67 @@ fn canonical_c_aggregate_field_type(
     }
     if(found==0){return 0;}
     return child;
+}
+
+fn canonical_c_owned_field_type(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>
+)->i32
+{
+    if(type_code<function_mir_owned_field_struct_type_code(0)){return 0;}
+    if(type_code>=function_mir_recursive_owned_payload_enum_type_code(0)){return 0;}
+    var found:i32=0;var child:i32=0;var index:i64=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        if(function_mir_type_descriptor_code(item)==type_code){
+            if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_field_struct_kind()){return 0;}
+            if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_owned_field_struct_type_code(0))){return 0;}
+            if(function_mir_type_descriptor_ordinal(item)!=0){return 0;}
+            child=function_mir_type_descriptor_child(item);found=checked_add(found,1);
+        }
+        index=checked_add(index,1);
+    }
+    if(found!=1){return 0;}
+    return child;
+}
+
+fn canonical_c_recursive_enum_payload_count(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>
+)->i32
+{
+    if(type_code<function_mir_recursive_owned_payload_enum_type_code(0)){return -1;}
+    if(type_code>=function_mir_aggregate_struct_type_code(0)){return -1;}
+    var ordinal:i32=0;var index:i64=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        if(function_mir_type_descriptor_code(item)==type_code){
+            if(function_mir_type_descriptor_kind(item)!=function_mir_type_descriptor_owned_payload_enum_kind()){return -1;}
+            if(function_mir_type_descriptor_identity(item)!=checked_sub(type_code,function_mir_recursive_owned_payload_enum_type_code(0))){return -1;}
+            if(function_mir_type_descriptor_ordinal(item)!=ordinal){return -1;}
+            if(function_mir_type_descriptor_child(item)<=0){return -1;}
+            ordinal=checked_add(ordinal,1);
+        }
+        index=checked_add(index,1);
+    }
+    if(ordinal==0){return -1;}
+    return ordinal;
+}
+
+fn canonical_c_recursive_enum_payload_type_i32(
+    type_code:i32,ordinal:i32,borrow descriptors:Vec<MirTypeDescriptor>
+)->i32
+{
+    let count:i32=canonical_c_recursive_enum_payload_count(type_code,descriptors);
+    if(ordinal<0){return 0;}
+    if(ordinal>=count){return 0;}
+    var index:i64=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        if(function_mir_type_descriptor_code(item)==type_code){
+            if(function_mir_type_descriptor_ordinal(item)==ordinal){return function_mir_type_descriptor_child(item);}
+        }
+        index=checked_add(index,1);
+    }
+    return 0;
 }
 
 fn canonical_c_invalid_payload_count()->i32{return -1;}
@@ -2169,6 +2240,9 @@ requires_caps [allocate]
         if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
+    if(function_mir_type_code(header)>=function_mir_owned_field_struct_type_code(0)){
+        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){return 3;}
+    }
     if(function_mir_type_code(header)!=function_mir_unit_type_code()){
         if(canonical_c_supported_catalog_local_type(function_mir_type_code(header),type_descriptors)==0){return 3;}
     }
@@ -2274,6 +2348,9 @@ requires_caps [allocate]
                 if(exported!=0){return 9;}
                 canonical_c_require_feature(canonical_c_slice_feature(),features);
             }
+            if(function_mir_type_code(record)>=function_mir_owned_field_struct_type_code(0)){
+                if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){return 9;}
+            }
             if(canonical_c_supported_catalog_local_type(function_mir_type_code(record),type_descriptors)==0){return 9;}
             if(function_mir_symbol_code(record)!=function_mir_mode_value()){
                 let aggregate_borrow:i32=canonical_c_trivial_integer_aggregate_field_count(
@@ -2306,6 +2383,11 @@ requires_caps [allocate]
                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 10;}
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
             }
+            if(function_mir_type_code(record)>=function_mir_owned_field_struct_type_code(0)){
+                if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){
+                    if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 10;}
+                }
+            }
             if(function_mir_type_code(record)>=function_mir_vector_type_code(0)){
                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 10;}
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
@@ -2327,6 +2409,11 @@ requires_caps [allocate]
                 if(function_mir_type_code(record)==function_mir_buffer_type_code()){
                     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 12;}
                     canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+                }
+                if(function_mir_type_code(record)>=function_mir_owned_field_struct_type_code(0)){
+                    if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){
+                        if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 12;}
+                    }
                 }
                 if(function_mir_type_code(record)>=function_mir_vector_type_code(0)){
                     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 12;}
@@ -2596,7 +2683,7 @@ requires_caps [allocate]
         }else{if(initialized_type>=function_mir_copy_payload_enum_type_code(0)){
             if(initialized_type<function_mir_i64_struct_type_code(0)){
                 canonical_mir_append_text(bodies," = {0};\n");
-            }else{if(initialized_type>=function_mir_aggregate_struct_type_code(0)){
+            }else{if(initialized_type>=function_mir_owned_field_struct_type_code(0)){
                 canonical_mir_append_text(bodies," = {0};\n");
             }else{canonical_mir_append_text(bodies," = 0;\n");}}
         }else{canonical_mir_append_text(bodies," = 0;\n");}}}}}}
@@ -2765,24 +2852,35 @@ requires_caps [allocate]
                         let result_local:i64=function_mir_result(instruction);
                         let field_local:i64=function_mir_left(instruction);
                         let field_ordinal:i32=function_mir_symbol_code(instruction);
-                        let field_type:i32=canonical_c_aggregate_field_type(
+                        var field_type:i32=canonical_c_aggregate_field_type(
                             aggregate_type,field_ordinal,type_descriptors
                         );
+                        var owned_field:i32=0;
+                        if(field_type==0){
+                            if(field_ordinal==0){
+                                field_type=canonical_c_owned_field_type(aggregate_type,type_descriptors);
+                                if(field_type!=0){owned_field=1;}
+                            }
+                        }
                         if(field_type==0){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,result_local)!=aggregate_type){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,field_local)!=field_type){return canonical_c_aggregate_invalid_record_status();}
-                        if(function_mir_type_is_integer(field_type)==0){
+                        if(owned_field==0){if(function_mir_type_is_integer(field_type)==0){
                             if(field_type!=function_mir_bool_type_code()){
                                 if(canonical_c_trivial_integer_aggregate_field_count(field_type,type_descriptors)==0){
                                     return canonical_c_aggregate_unsupported_field_status();
                                 }
                             }
-                        }
+                        }}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
                         if(canonical_c_append_type_with_catalog(bodies,aggregate_type,type_descriptors)!=0){return canonical_c_aggregate_invalid_record_status();}
-                        canonical_mir_append_text(bodies,") { .field_");canonical_mir_append_i32(bodies,field_ordinal);
-                        canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,field_local);
+                        if(owned_field!=0){canonical_mir_append_text(bodies,") { ");}
+                        else{
+                            canonical_mir_append_text(bodies,") { .field_");canonical_mir_append_i32(bodies,field_ordinal);
+                            canonical_mir_append_text(bodies," = ");
+                        }
+                        canonical_mir_append_text(bodies,"m");canonical_mir_append_i64(bodies,field_local);
                         canonical_mir_append_text(bodies," };\n");
                     }
                     if(instruction_kind==function_mir_kind_struct_field_load()){
@@ -2843,16 +2941,23 @@ requires_caps [allocate]
                         let result_local:i64=function_mir_result(instruction);
                         let payload_local:i64=function_mir_left(instruction);
                         let variant:i32=function_mir_symbol_code(instruction);
-                        let payload_count:i32=canonical_c_copy_enum_payload_count(enum_type,type_descriptors);
+                        var payload_count:i32=canonical_c_copy_enum_payload_count(enum_type,type_descriptors);
+                        var owned_enum:i32=0;
+                        if(payload_count<0){
+                            payload_count=canonical_c_recursive_enum_payload_count(enum_type,type_descriptors);
+                            if(payload_count>0){owned_enum=1;}
+                        }
                         if(payload_count<0){return canonical_c_aggregate_invalid_record_status();}
                         if(variant<0){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,result_local)!=enum_type){return canonical_c_aggregate_invalid_record_status();}
                         if(payload_count>0){if(variant>=payload_count){return canonical_c_aggregate_invalid_record_status();}}
                         if(payload_local>=0){
                             var payload_type:i32=canonical_c_copy_enum_payload_type_i32(enum_type,variant,type_descriptors);
+                            if(owned_enum!=0){payload_type=canonical_c_recursive_enum_payload_type_i32(enum_type,variant,type_descriptors);}
                             if(payload_count==0){payload_type=function_mir_i64_type_code();}
                             if(canonical_c_scalar_local_type(records,payload_local)!=payload_type){return canonical_c_aggregate_invalid_record_status();}
                         }
+                        if(owned_enum!=0){if(payload_local<0){return canonical_c_aggregate_invalid_record_status();}}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
                         if(canonical_c_append_type_with_catalog(bodies,enum_type,type_descriptors)!=0){return canonical_c_aggregate_invalid_record_status();}

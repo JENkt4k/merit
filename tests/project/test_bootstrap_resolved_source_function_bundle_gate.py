@@ -2966,6 +2966,11 @@ fn main()->i32 {
   vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
    function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,
    function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));
+  print(canonical_c_owned_field_type(function_mir_owned_field_struct_type_code(0),descriptors));
+  print(canonical_c_owned_field_type(function_mir_owned_field_struct_type_code(2),descriptors));
+  print(canonical_c_recursive_enum_payload_count(function_mir_recursive_owned_payload_enum_type_code(1),descriptors));
+  print(canonical_c_recursive_enum_payload_type_i32(function_mir_recursive_owned_payload_enum_type_code(1),0,descriptors));
+  print(canonical_c_recursive_enum_payload_type_i32(function_mir_recursive_owned_payload_enum_type_code(1),1,descriptors));
   emit(function_mir_owned_field_struct_type_code(0),descriptors);
   emit(function_mir_recursive_owned_payload_enum_type_code(1),descriptors);
   emit(function_mir_owned_field_struct_type_code(2),descriptors);
@@ -3093,13 +3098,26 @@ fn main()->i32 {
     source = module_path.read_text(encoding="utf-8")
     marker = "fn canonical_c_append_type_with_catalog("
     assert source.count(marker) == 1
-    module_path.write_text(source.replace(marker, f"pub {marker}", 1), encoding="utf-8", newline="\n")
+    source = source.replace(marker, f"pub {marker}", 1)
+    for name in (
+        "canonical_c_owned_field_type",
+        "canonical_c_recursive_enum_payload_count",
+        "canonical_c_recursive_enum_payload_type_i32",
+    ):
+        marker = f"fn {name}("
+        assert source.count(marker) == 1
+        source = source.replace(marker, f"pub {marker}", 1)
+    module_path.write_text(source, encoding="utf-8", newline="\n")
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "owned-c-spelling")
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     values = [int(line) for line in native.splitlines()]
+    from merit.bootstrap.resolved_source_function_snapshot import _OWNED_FIELD_STRUCT_TYPE_BASE
+    assert [values.pop(0) for _ in range(5)] == [
+        4, 0, 1, _OWNED_FIELD_STRUCT_TYPE_BASE, 0,
+    ]
     expected = ("merit_struct_owned_field_0", "merit_enum_owned_payload_1")
     for spelling in expected:
         assert values.pop(0) == 0
@@ -4922,6 +4940,209 @@ def test_merit_owned_resource_effect_c_lines_match_python_oracle(tmp_path: Path)
     assert emitted == '    m1 = m0;\n' + ''.join(
         f'    {line}\n' for line in _drop_statements('m1', owned_enum, {})
     )
+
+
+def _owned_field_constructor_probe() -> str:
+    probe = CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
+        'vec_new<MirFunctionRecord>(allocator,2)', 'vec_new<MirFunctionRecord>(allocator,4)',
+    ).replace(
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+        '  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,function_mir_owned_field_struct_type_code(0),1));\n'
+        '  vec_push<MirFunctionRecord>(records,function_mir_struct_construct(0,7,0,1,0,0,function_mir_owned_field_struct_type_code(0),0));\n'
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);\n'
+        '  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);\n'
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+        '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));',
+    ).replace(
+        'vec_new<MirFunctionInstructionSource>(allocator,1)',
+        'vec_new<MirFunctionInstructionSource>(allocator,2)',
+    ).replace(
+        '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{',
+        '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{\n'
+        '    global_id:0,source_kind:assembly_source_body_kind(),source_id:0,\n'
+        '    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),\n'
+        '    result:-1,left:-1,right:-1\n'
+        '  });\n'
+        '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{',
+        1,
+    ).replace(
+        'global_id:0,source_kind:assembly_source_ownership_kind()',
+        'global_id:1,source_kind:assembly_source_ownership_kind()',
+    ).replace(
+        'ownership_record_kind_drop(),0,0,ownership_record_no_other_binding_id(),0,0,',
+        'ownership_record_kind_drop(),1,1,ownership_record_no_other_binding_id(),1,0,',
+    ).replace(
+        '    result:-1,left:0,right:-1', '    result:-1,left:1,right:-1',
+    ).replace(
+        'vec_new<MirPlacementRecord>(allocator,1)', 'vec_new<MirPlacementRecord>(allocator,2)',
+    ).replace(
+        'vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));',
+        'vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));\n'
+        '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
+    ).replace(
+        'canonical_c_append_resource_function_with_catalog(\n'
+        '    source,records,headers,sources,effects,cfg,placements,prototypes,bodies,declarations,features',
+        'canonical_c_append_resource_function_with_type_catalog(\n'
+        '    source,records,headers,types,sources,effects,cfg,placements,prototypes,bodies,declarations,features',
+    ).replace(
+        'canonical_c_finish_scalar_module(prototypes,bodies,features,c_source)',
+        'canonical_c_finish_owned_aggregate_vector_catalog_module(\n'
+        '    prototypes,bodies,features,no_codes,no_codes,no_codes,field_codes,no_codes,types,c_source)',
+    ).replace(
+        '  let source_status:i32=',
+        '  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);\n'
+        '  var field_codes:Vec<i32>=vec_new<i32>(allocator,1);\n'
+        '  vec_push<i32>(field_codes,function_mir_owned_field_struct_type_code(0));\n'
+        '  let source_status:i32=',
+    ).replace(
+        'drop(sources);drop(headers);drop(records);',
+        'drop(sources);drop(types);drop(field_codes);drop(no_codes);drop(headers);drop(records);',
+    )
+    return probe
+
+
+def test_merit_owned_field_constructor_emits_oracle_c_and_executes(tmp_path: Path) -> None:
+    probe = _owned_field_constructor_probe()
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'owned-field-construct')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    assert '    m1 = (merit_struct_owned_field_0) { m0 };\n' in c_source
+    assert '    merit_buffer_drop(&(m1.field_0));\n' in c_source
+    from merit.bootstrap.mir_to_c import emit_c_module
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    oracle_module = MirModule('demo', (MirFunction(
+        'consume', MirType('unit'), (
+            MirLocal(0, 'value', MirType('Buffer'), ownership='owned'),
+            MirLocal(1, 'wrapped', owned_field, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'construct', result=1, operands=(0,), symbol='field_0'),
+            MirInstruction(1, 'drop', operands=(1,), ownership='owned'),
+        ), MirTerminator('return')),), 0, parameters=(MirParameter(0),),
+    ),))
+    assert c_source == emit_c_module(oracle_module)
+    generated = tmp_path / 'owned_field_construct.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    subprocess.run([cc, '-std=c11', '-c', str(generated), '-o', str(tmp_path / 'owned_field_construct.o')],
+                   check=True, text=True, capture_output=True)
+
+
+@pytest.mark.parametrize('missing', ('descriptor', 'effect'))
+def test_merit_owned_field_constructor_fails_closed_without_catalog(
+    tmp_path: Path, missing: str,
+) -> None:
+    probe = _owned_field_constructor_probe()
+    if missing == 'descriptor':
+        probe = probe.replace(
+            '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+            '    function_mir_owned_field_struct_type_code(0),function_mir_type_descriptor_owned_field_struct_kind(),0,\n'
+            '    function_mir_buffer_type_code(),0,0,0,0,0,0,0));',
+            '',
+        )
+    else:
+        probe = probe.replace(
+            '  vec_push<MirOwnershipRecord>(effects,ownership_record(\n'
+            '    ownership_record_kind_drop(),1,1,ownership_record_no_other_binding_id(),1,0,\n'
+            '    ownership_state_live(),ownership_state_dropped()\n'
+            '  ));',
+            '',
+        )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, emitter = build(project, root / 'build' / f'owned-field-missing-{missing}')
+    native = subprocess.run([str(emitter)], text=True, capture_output=True)
+    assert native.returncode != 0
+    assert native.stdout == ''
+
+
+def test_merit_recursive_owned_enum_constructor_emits_oracle_c_and_executes(tmp_path: Path) -> None:
+    probe = _owned_field_constructor_probe().replace(
+        'vec_new<MirFunctionRecord>(allocator,4)', 'vec_new<MirFunctionRecord>(allocator,6)',
+    ).replace(
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+        '  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,function_mir_recursive_owned_payload_enum_type_code(1),2));\n'
+        '  vec_push<MirFunctionRecord>(records,function_mir_construct(0,7,1,2,1,0,function_mir_recursive_owned_payload_enum_type_code(1),1));\n'
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+    ).replace(
+        'vec_new<MirTypeDescriptor>(allocator,1)', 'vec_new<MirTypeDescriptor>(allocator,2)',
+    ).replace(
+        '  var sources:Vec<MirFunctionInstructionSource>=',
+        '  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(\n'
+        '    function_mir_recursive_owned_payload_enum_type_code(1),function_mir_type_descriptor_owned_payload_enum_kind(),1,\n'
+        '    function_mir_owned_field_struct_type_code(0),0,0,0,0,0,0,0));\n'
+        '  var sources:Vec<MirFunctionInstructionSource>=',
+    ).replace(
+        'vec_new<MirFunctionInstructionSource>(allocator,2)',
+        'vec_new<MirFunctionInstructionSource>(allocator,3)',
+    ).replace(
+        '    global_id:1,source_kind:assembly_source_ownership_kind()',
+        '    global_id:1,source_kind:assembly_source_body_kind(),source_id:1,\n'
+        '    contract_kind:assembly_source_no_contract_phase(),clause_ordinal:assembly_source_absent_record_value(),\n'
+        '    result:-1,left:-1,right:-1\n'
+        '  });\n'
+        '  vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{\n'
+        '    global_id:2,source_kind:assembly_source_ownership_kind()',
+    ).replace(
+        'ownership_record_kind_drop(),1,1,ownership_record_no_other_binding_id(),1,0,',
+        'ownership_record_kind_drop(),2,2,ownership_record_no_other_binding_id(),2,0,',
+    ).replace(
+        '    result:-1,left:1,right:-1', '    result:-1,left:2,right:-1',
+    ).replace(
+        'vec_new<MirPlacementRecord>(allocator,2)', 'vec_new<MirPlacementRecord>(allocator,3)',
+    ).replace(
+        '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
+        '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));\n'
+        '  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));',
+    ).replace(
+        '  let source_status:i32=',
+        '  var enum_codes:Vec<i32>=vec_new<i32>(allocator,1);\n'
+        '  vec_push<i32>(enum_codes,function_mir_recursive_owned_payload_enum_type_code(1));\n'
+        '  let source_status:i32=',
+    ).replace(
+        'features,no_codes,no_codes,no_codes,field_codes,no_codes,types,c_source)',
+        'features,no_codes,no_codes,no_codes,field_codes,enum_codes,types,c_source)',
+    ).replace(
+        'drop(field_codes);drop(no_codes);', 'drop(enum_codes);drop(field_codes);drop(no_codes);',
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'recursive-owned-enum-construct')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    from merit.bootstrap.mir_to_c import emit_c_module
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    owned_enum = MirType('enum_owned_payload_1', (owned_field,))
+    oracle_module = MirModule('demo', (MirFunction(
+        'consume', MirType('unit'), (
+            MirLocal(0, 'value', MirType('Buffer'), ownership='owned'),
+            MirLocal(1, 'wrapped', owned_field, ownership='owned'),
+            MirLocal(2, 'variant', owned_enum, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'construct', result=1, operands=(0,), symbol='field_0'),
+            MirInstruction(1, 'construct', result=2, operands=(1,), symbol='variant_0'),
+            MirInstruction(2, 'drop', operands=(2,), ownership='owned'),
+        ), MirTerminator('return')),), 0, parameters=(MirParameter(0),),
+    ),))
+    assert c_source == emit_c_module(oracle_module)
+    generated = tmp_path / 'recursive_owned_enum_construct.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    subprocess.run([cc, '-std=c11', '-c', str(generated), '-o', str(tmp_path / 'recursive_owned_enum_construct.o')],
+                   check=True, text=True, capture_output=True)
 
 
 def test_merit_vector_resource_effect_c_lines_match_python_oracle(tmp_path: Path) -> None:

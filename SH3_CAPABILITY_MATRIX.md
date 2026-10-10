@@ -510,6 +510,18 @@ oracle, the declaration order is stable, and GCC accepts the assembled C
 does not open F5 project-level ownership-call or cleanup placement coverage.
 The final-tree focused owned-call and Copy-call regressions passed together
 (`2 passed in 69.86s`) before the F4 runtime/layout checkpoint.
+An F5 owned-constructor extension validates owned-field and recursive-payload
+enum descriptors, admits their catalog-backed local types only with resource
+effects, and zero-initializes those C locals as aggregates. The descriptor
+probe passes interpreter/native parity, including missing-field and
+out-of-range variant rejection (`1 passed in 36.90s`). An owned-field
+constructor/drop and a nested recursive-enum constructor/drop each emitted a
+complete C module byte-identical to the Python oracle and compiled with GCC
+(`1 passed in 20.95s`, `1 passed in 34.80s`). Missing descriptor/effect
+catalogs reject before C emission (`2 passed in 68.17s`). Owned aggregate
+parameters/returns and field/payload load/store remain fail-closed; their
+borrow ABI, move/cleanup placement, and transfer semantics need separate
+coherent evidence. This is not project-level F5 closure.
 
 ## Finite capability families
 
