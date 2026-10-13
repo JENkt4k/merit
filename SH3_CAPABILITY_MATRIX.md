@@ -530,6 +530,14 @@ Missing move, public owned return, borrowed owned parameter, and borrowed
 owned return reject with their bounded statuses (`4 passed in 135.69s`).
 Borrowed owned-aggregate ABI, multi-block transfer, field/payload extraction,
 and whole-project acceptance remain open. This is not project-level F5 closure.
+The next bounded read-only borrowed path admits private shared/mutable borrowed
+owned-aggregate parameters and validates recursive owned-enum tag loads against
+the descriptor catalog. Both parameter modes emit complete C byte-identical
+to the Python oracle and run through a GCC caller that retains and drops the
+original owned payload (`2 passed in 55.50s`). A borrowed payload-copy record
+still rejects before C emission (`1 passed in 39.55s`). Owned payload/field
+extraction and borrowed return/call forwarding remain unproved; this read-only
+tag path is not a blanket authorization to copy owned resources.
 
 ## Finite capability families
 

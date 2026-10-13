@@ -5996,6 +5996,106 @@ def test_merit_owned_field_value_abi_rejects_unproved_transfer(
     assert native.stdout == ''
 
 
+def _borrowed_owned_enum_tag_probe() -> str:
+    probe = _owned_enum_return_probe()
+    old_header = (
+        'function_mir_callable_header(0,7,0,7,function_mir_recursive_owned_payload_enum_type_code(1),'
+        'function_mir_mode_value(),-1,1,0)'
+    )
+    assert old_header in probe
+    probe = probe.replace(old_header, old_header.replace(
+        'function_mir_recursive_owned_payload_enum_type_code(1)', 'function_mir_i64_type_code()',
+    ))
+    old_parameter = (
+        'function_mir_parameter(0,7,0,function_mir_recursive_owned_payload_enum_type_code(1),'
+        '0,0,function_mir_mode_value(),0)'
+    )
+    assert old_parameter in probe
+    probe = probe.replace(old_parameter, old_parameter.replace(
+        'function_mir_mode_value()', 'function_mir_mode_borrowed()',
+    ))
+    probe = probe.replace(
+        'canonical_c_append_resource_function_with_type_catalog(',
+        'canonical_c_append_function_with_catalog(',
+    ).replace(
+        'function_mir_temporary(1,function_mir_recursive_owned_payload_enum_type_code(1),1)',
+        'function_mir_temporary(1,function_mir_i64_type_code(),1)',
+    ).replace(
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+        '  vec_push<MirFunctionRecord>(records,function_mir_enum_tag_load(0,7,0,1,0,0));\n'
+        '  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);',
+    ).replace(
+        'source_kind:assembly_source_ownership_kind()', 'source_kind:assembly_source_body_kind()',
+    ).replace(
+        '  vec_push<MirOwnershipRecord>(effects,ownership_record(\n'
+        '    ownership_record_kind_move(),0,0,1,0,0,\n'
+        '    ownership_state_live(),ownership_state_moved()\n'
+        '  ));',
+        '',
+    )
+    return probe
+
+
+@pytest.mark.parametrize('mode', ('borrowed', 'mutable_borrow'))
+def test_merit_borrowed_recursive_enum_tag_matches_oracle(tmp_path: Path, mode: str) -> None:
+    probe = _borrowed_owned_enum_tag_probe()
+    if mode == 'mutable_borrow':
+        probe = probe.replace('function_mir_mode_borrowed()', 'function_mir_mode_mutable_borrow()')
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'borrowed-owned-enum-tag')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    owned_field = MirType('struct_owned_field_0', (MirType('Buffer'),))
+    owned_enum = MirType('enum_owned_payload_1', (owned_field,))
+    module = MirModule('demo', (MirFunction(
+        'consume', MirType('i64'), (
+            MirLocal(0, 'value', owned_enum, ownership=mode),
+            MirLocal(1, 'tag', MirType('i64')),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'load_field', result=1, operands=(0,), symbol='tag'),
+        ), MirTerminator('return', operands=(1,))),), 0,
+        parameters=(MirParameter(0, mode),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    generated = tmp_path / 'borrowed_owned_enum_tag.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'borrowed_owned_enum_tag_driver.c'
+    driver.write_text(
+        '#include "borrowed_owned_enum_tag.c"\n'
+        'int main(void) { merit_struct_owned_field_0 field = { merit_buffer_new(merit_system_allocator(), 4) }; '
+        'merit_enum_owned_payload_1 value = { .tag = INT64_C(0), .payload.variant_0 = field }; '
+        'int ok = consume(&value) == 0; merit_buffer_drop(&value.payload.variant_0.field_0); '
+        'return ok ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'borrowed-owned-enum-tag-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
+
+
+def test_merit_borrowed_recursive_enum_payload_copy_remains_rejected(tmp_path: Path) -> None:
+    probe = _borrowed_owned_enum_tag_probe().replace(
+        'function_mir_enum_tag_load(0,7,0,1,0,0)',
+        'function_mir_enum_payload_load(0,7,0,1,0,0,0)',
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, emitter = build(project, root / 'build' / 'borrowed-owned-enum-payload-rejected')
+    native = subprocess.run([str(emitter)], text=True, capture_output=True)
+    assert native.returncode == 120
+    assert native.stdout == ''
+
+
 CANONICAL_C_BUFFER_CONSTRUCTION_PROBE = CANONICAL_C_RESOURCE_FUNCTION_PROBE.replace(
     'buffer_from_string(allocator,"consume")',
     'buffer_from_string(allocator,"create buffer_new")',
