@@ -3972,7 +3972,7 @@ def test_merit_scalar_comparison_c_backend_rejects_invalid_shape(
 
 
 @pytest.mark.parametrize('type_name', ('i8', 'u8'))
-def test_merit_checked_narrow_integer_c_backend_rejects_mismatched_i64_helper(
+def test_merit_checked_narrow_integer_c_backend_executes_and_traps_overflow(
     tmp_path: Path, type_name: str,
 ) -> None:
     probe = CANONICAL_C_BACKEND_PROBE.replace(
@@ -3980,11 +3980,40 @@ def test_merit_checked_narrow_integer_c_backend_rejects_mismatched_i64_helper(
     )
     root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
-    assert interpret(project) == ''
-    _, _, executable = build(project, root / 'build' / 'checked-narrow-rejected')
-    native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 98
-    assert native.stdout == ''
+    interpreted = interpret(project)
+    _, _, emitter = build(project, root / 'build' / 'checked-narrow-executable')
+    native = subprocess.run([str(emitter)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values.pop(0)
+    c_source = bytes(values[:c_length]).decode('utf-8')
+    assert f'merit_checked_add_{type_name}' in c_source
+    generated = tmp_path / 'checked_narrow.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    normal_driver = tmp_path / 'checked_narrow_normal.c'
+    normal_driver.write_text(
+        '#include "checked_narrow.c"\nint main(void) { return merit_compute() == 5 ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    normal_program = tmp_path / 'checked-narrow-normal'
+    subprocess.run([cc, '-std=c11', str(normal_driver), '-o', str(normal_program)],
+                   check=True, text=True, capture_output=True)
+    normal = subprocess.run([str(normal_program)], check=True, text=True, capture_output=True)
+    assert normal.stdout == '5\n'
+    maximum = 'INT8_MAX' if type_name == 'i8' else 'UINT8_MAX'
+    trap_driver = tmp_path / 'checked_narrow_trap.c'
+    trap_driver.write_text(
+        f'#include "checked_narrow.c"\nint main(void) {{ return merit_checked_add_{type_name}({maximum}, 1); }}\n',
+        encoding='utf-8', newline='\n',
+    )
+    trap_program = tmp_path / 'checked-narrow-trap'
+    subprocess.run([cc, '-std=c11', str(trap_driver), '-o', str(trap_program)],
+                   check=True, text=True, capture_output=True)
+    trapped = subprocess.run([str(trap_program)], text=True, capture_output=True)
+    assert trapped.returncode == 70
+    assert trapped.stderr == f'Merit {type_name} addition overflow\n'
 
 
 def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -4354,15 +4383,15 @@ def test_merit_scalar_switch_c_backend_rejects_invalid_rows(
         ("function_mir_binary_divide_symbol()", "/"),
     ],
 )
-@pytest.mark.parametrize("type_name", ("i32", "i64"))
+@pytest.mark.parametrize("type_name", ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"))
 def test_merit_checked_scalar_c_backend_matches_python_oracle_bytes(
     tmp_path: Path, record_symbol: str, mir_symbol: str, type_name: str,
 ) -> None:
     probe = CANONICAL_C_BACKEND_PROBE.replace(
         "function_mir_binary_add_symbol()", record_symbol,
     )
-    if type_name == "i32":
-        probe = probe.replace("function_mir_i64_type_code()", "function_mir_i32_type_code()")
+    if type_name != "i64":
+        probe = probe.replace("function_mir_i64_type_code()", f"function_mir_{type_name}_type_code()")
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
@@ -4388,6 +4417,125 @@ def test_merit_checked_scalar_c_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+    generated = tmp_path / "checked_integer.c"
+    generated.write_text(c_source, encoding="utf-8", newline="\n")
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    subprocess.run([cc, "-std=c11", "-c", str(generated), "-o", str(tmp_path / "checked_integer.o")],
+                   check=True, text=True, capture_output=True)
+
+
+def test_merit_checked_fixed_width_helper_family_matches_oracle_bytes(tmp_path: Path) -> None:
+    probe = r'''module checked_fixed_width_helper_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var output:Buffer=buffer_new(allocator,16384);
+  var type_rank:i64=0;
+  while(type_rank<8){
+   let type_code:i32=canonical_c_checked_type_at(type_rank);
+   var symbol_rank:i64=0;
+   while(symbol_rank<4){
+    let symbol:i32=canonical_c_checked_symbol_at(symbol_rank);
+    print(canonical_c_append_checked_integer_helper(type_code,symbol,output));
+    symbol_rank=checked_add(symbol_rank,1);
+   }
+   type_rank=checked_add(type_rank,1);
+  }
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    for name in (
+        'canonical_c_checked_type_at', 'canonical_c_checked_symbol_at',
+        'canonical_c_append_checked_integer_helper',
+    ):
+        marker = f'fn {name}('
+        assert source.count(marker) == 1
+        source = source.replace(marker, f'pub {marker}', 1)
+    module_path.write_text(source, encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'checked-fixed-width-helpers')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:32] == [0] * 32
+    length = values[32]
+    emitted = bytes(values[33:]).decode('utf-8')
+    assert length == len(emitted.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _checked_helpers
+    requests = {(name, symbol) for name in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64')
+                for symbol in ('+', '-', '*', '/')}
+    expected = '\n'.join(_checked_helpers(requests)[2:]) + '\n'
+    assert emitted == expected
+    generated = tmp_path / 'checked_helpers.c'
+    generated.write_text(
+        '#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n'
+        'static void merit_numeric_failure(const char *operation) { fprintf(stderr, "Merit %s\\n", operation); exit(70); }\n'
+        'static void merit_division_by_zero(void) { fprintf(stderr, "Merit division by zero\\n"); exit(72); }\n'
+        + emitted,
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    subprocess.run([cc, '-std=c11', '-c', str(generated), '-o', str(tmp_path / 'checked_helpers.o')],
+                   check=True, text=True, capture_output=True)
+
+
+def test_merit_checked_mixed_width_helpers_emit_in_oracle_order(tmp_path: Path) -> None:
+    probe = r'''module checked_mixed_width_helper_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var features:Vec<i64>=vec_new<i64>(allocator,4);
+  vec_push<i64>(features,canonical_c_checked_request_feature(function_mir_u8_type_code(),function_mir_binary_add_symbol()));
+  vec_push<i64>(features,canonical_c_checked_request_feature(function_mir_i64_type_code(),function_mir_binary_divide_symbol()));
+  vec_push<i64>(features,canonical_c_checked_request_feature(function_mir_i16_type_code(),function_mir_binary_multiply_symbol()));
+  vec_push<i64>(features,canonical_c_checked_request_feature(function_mir_i32_type_code(),function_mir_binary_subtract_symbol()));
+  var prototypes:Buffer=buffer_from_string(allocator,"int64_t merit_compute(void);\n");
+  var bodies:Buffer=buffer_from_string(allocator,"int64_t merit_compute(void) { return 0; }\n");
+  var output:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_finish_scalar_module(prototypes,bodies,features,output));
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(bodies);drop(prototypes);drop(features);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    marker = 'fn canonical_c_checked_request_feature('
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f'pub {marker}', 1), encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'checked-mixed-width-helpers')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[0] == 0
+    c_source = bytes(values[2:]).decode('utf-8')
+    assert values[1] == len(c_source.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _checked_helpers
+    requests = {('u8', '+'), ('i64', '/'), ('i16', '*'), ('i32', '-')}
+    expected = '\n'.join(_checked_helpers(requests)) + '\n'
+    assert expected in c_source
+    assert c_source.count('static void merit_numeric_failure(') == 1
 
 
 def test_merit_checked_i32_generated_c_executes(tmp_path: Path) -> None:
