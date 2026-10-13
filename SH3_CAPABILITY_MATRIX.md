@@ -538,6 +538,16 @@ original owned payload (`2 passed in 55.50s`). A borrowed payload-copy record
 still rejects before C emission (`1 passed in 39.55s`). Owned payload/field
 extraction and borrowed return/call forwarding remain unproved; this read-only
 tag path is not a blanket authorization to copy owned resources.
+The native C comparison validator now accepts the complete eight-type
+fixed-width integer family already present in canonical MIR and the Python
+oracle. Six newly admitted i8/i16/u8/u16/u32/u64 equality fixtures matched
+complete oracle C/header bytes and compiled/executed with GCC
+(`6 passed in 212.16s`); the existing i32/i64 comparison fixtures cover the
+other relational symbols and reran on this candidate with GCC execution
+(`7 passed in 241.92s`). Checked i8/u8 arithmetic, which previously risked
+emitting an i64 helper into a narrow result, now rejects before C emission
+(`2 passed in 68.13s`) until the shared checked-helper family is ported.
+Full checked fixed-width arithmetic remains an explicit F5 dependency.
 
 ## Finite capability families
 

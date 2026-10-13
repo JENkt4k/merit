@@ -3884,14 +3884,20 @@ def test_merit_textual_bool_constant_c_backend_matches_oracle(
         ("function_mir_binary_greater_symbol()", ">", "i64"),
         ("function_mir_binary_less_symbol()", "<", "i64"),
         ("function_mir_binary_equal_symbol()", "==", "i32"),
+        ("function_mir_binary_equal_symbol()", "==", "i8"),
+        ("function_mir_binary_equal_symbol()", "==", "i16"),
+        ("function_mir_binary_equal_symbol()", "==", "u8"),
+        ("function_mir_binary_equal_symbol()", "==", "u16"),
+        ("function_mir_binary_equal_symbol()", "==", "u32"),
+        ("function_mir_binary_equal_symbol()", "==", "u64"),
     ],
 )
 def test_merit_scalar_comparison_c_backend_matches_python_oracle_bytes(
     tmp_path: Path, record_symbol: str, mir_symbol: str, type_name: str,
 ) -> None:
     probe = CANONICAL_C_EQUAL_PROBE.replace("function_mir_binary_equal_symbol()", record_symbol)
-    if type_name == "i32":
-        probe = probe.replace("function_mir_i64_type_code()", "function_mir_i32_type_code()")
+    if type_name != "i64":
+        probe = probe.replace("function_mir_i64_type_code()", f"function_mir_{type_name}_type_code()")
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
@@ -3919,6 +3925,19 @@ def test_merit_scalar_comparison_c_backend_matches_python_oracle_bytes(
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
     assert c_header == emit_c_header(module)
+    generated = tmp_path / "integer_comparison.c"
+    generated.write_text(c_source, encoding="utf-8", newline="\n")
+    driver = tmp_path / "integer_comparison_driver.c"
+    driver.write_text(
+        '#include "integer_comparison.c"\nint main(void) { return merit_compute() == 2 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "integer-comparison-program"
+    subprocess.run([cc, "-std=c11", str(driver), "-o", str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
 
 
 @pytest.mark.parametrize(
@@ -3950,6 +3969,22 @@ def test_merit_scalar_comparison_c_backend_rejects_invalid_shape(
     native = subprocess.run([str(executable)], text=True, capture_output=True)
     assert native.returncode == status
     assert native.stdout == ""
+
+
+@pytest.mark.parametrize('type_name', ('i8', 'u8'))
+def test_merit_checked_narrow_integer_c_backend_rejects_mismatched_i64_helper(
+    tmp_path: Path, type_name: str,
+) -> None:
+    probe = CANONICAL_C_BACKEND_PROBE.replace(
+        'function_mir_i64_type_code()', f'function_mir_{type_name}_type_code()',
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    assert interpret(project) == ''
+    _, _, executable = build(project, root / 'build' / 'checked-narrow-rejected')
+    native = subprocess.run([str(executable)], text=True, capture_output=True)
+    assert native.returncode == 98
+    assert native.stdout == ''
 
 
 def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
