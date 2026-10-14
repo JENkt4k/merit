@@ -562,6 +562,50 @@ This closes the checked fixed-width helper mechanism, not F5's other numeric,
 instruction, control, or cleanup dependencies. The complete 32-case
 full-module cross-product and subsystem/full gates remain deferred to the
 appropriate larger validation boundary.
+The next F4 declared-numeric candidate is deliberately private: after the
+canonical MIR descriptor validator accepts a decimal or bounded descriptor,
+it selects oracle-compatible C storage (`int64_t` through precision 18,
+`__int128` above it, or the bounded base integer type). A focused probe passes
+interpreter/native parity for decimal precisions 18/19 and bounded `u64`, and
+rejects absent/duplicate descriptors without writing C (`1 passed in
+34.28s`). This is **not** production numeric admission: exact range/rounding
+helpers, arithmetic, print, aggregate layout, and project artifact parity
+remain grouped F4/F5 dependencies before those types may reach emitted C.
+The same private candidate now emits oracle-byte-identical bounded `u64`/`i64`
+range checkers from validated two-limb bounds, compiles and executes their
+boundary cases, and traps an out-of-range `u64` value (`1 passed in 34.21s`).
+Its decimal checkers plus shared rounding helper match oracle bytes for
+18/19-digit descriptors, compile and execute boundary values, and trap decimal
+overflow (`1 passed in 34.35s`). Production numeric type admission,
+instruction lowering, exact print, aggregate layout, and complete acceptance
+parity remain open; the checker probes alone do not close that family.
+The numeric catalog now reaches the same native module finalizer used by the
+v4 project driver. That finisher validates and deduplicates numeric roots,
+sorts decimal helpers before bounded helpers as the oracle does, includes the
+required C prelude, and rejects duplicate requested codes; the collector-to-
+finalizer probe matches oracle helper bytes and GCC-compiles (`1 passed in
+35.21s`). The existing nonnumeric v4 artifact baseline still passes on this
+tree (`1 passed in 33.70s`). At that checkpoint, numeric return/local/parameter admission and
+instruction lowering remained fail-closed, so no finance acceptance or SH3
+production numeric closure is claimed yet.
+
+The next F4/F5 scalar-numeric boundary threads the validated numeric catalog
+through the common function backend. Decimal and bounded parameters, returns,
+locals, constants, arithmetic, comparisons, and printing now use the same
+descriptor-backed C type and helper path as the module finalizer. Focused
+native/Python C-byte parity and GCC execution passed for decimal and bounded
+parameter/return functions (`2 passed in 69.74s`), direct typed literal and
+range rejection (`1 passed in 34.53s`), all four arithmetic operations and
+printing as oracle fragments (`1 passed in 36.53s`), and complete emitted-C
+decimal/bounded addition functions (`2 passed in 71.25s`). The nonnumeric v4
+artifact baseline remained byte-identical (`1 passed in 34.46s`). The
+bounded-only emitted-C test also exposed a Python-oracle prelude defect:
+`merit_exact_numeric_failure` uses `fprintf`, but `<stdio.h>` was absent when
+no decimal or other stdio feature was present. The oracle prelude now includes
+it for either declared-numeric family, and the bounded-only C compiles. This
+does **not** close F4/F5: aggregate numeric fields/layout, public headers,
+whole-project acceptance, and broader numeric instruction combinations remain
+open.
 
 ## Finite capability families
 

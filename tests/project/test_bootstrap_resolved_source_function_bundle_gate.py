@@ -4538,6 +4538,633 @@ fn main()->i32 {
     assert c_source.count('static void merit_numeric_failure(') == 1
 
 
+def test_merit_declared_numeric_c_storage_matches_validated_oracle(tmp_path: Path) -> None:
+    probe = r'''module declared_numeric_c_storage_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn emit(code:i32,borrow descriptors:Vec<MirNumericTypeDescriptor>)->i32 requires_caps [allocate] {
+ let allocator:Allocator=system_allocator();var output:Buffer=buffer_new(allocator,64);
+ print(canonical_c_append_numeric_type_with_catalog(output,code,descriptors));
+ print(buffer_len(output));var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,4);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(1),function_mir_numeric_descriptor_decimal_kind(),1,0,0,19,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0));
+  emit(function_mir_decimal_type_code(0),descriptors);
+  emit(function_mir_decimal_type_code(1),descriptors);
+  emit(function_mir_bounded_type_code(0),descriptors);
+  emit(function_mir_decimal_type_code(2),descriptors);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  emit(function_mir_decimal_type_code(0),descriptors);
+  drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    marker = 'fn canonical_c_append_numeric_type_with_catalog('
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f'pub {marker}', 1), encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'declared-numeric-c-storage')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    outputs = []
+    while values:
+        status, length = values[:2]
+        outputs.append((status, bytes(values[2:2 + length]).decode('utf-8')))
+        values = values[2 + length:]
+    assert outputs == [
+        (0, 'int64_t'), (0, '__int128'), (0, 'uint64_t'), (2, ''), (2, ''),
+    ]
+
+
+def test_merit_bounded_checker_matches_oracle_and_gcc_range_trap(tmp_path: Path) -> None:
+    probe = r'''module bounded_c_checker_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(1),function_mir_numeric_descriptor_bounded_kind(),1,
+   function_mir_i64_type_code(),-1,9223372036,854775808,1,9223372036,854775807,0));
+  var output:Buffer=buffer_new(allocator,1024);
+  print(canonical_c_append_bounded_checker(function_mir_bounded_type_code(0),descriptors,output));
+  print(canonical_c_append_bounded_checker(function_mir_bounded_type_code(1),descriptors,output));
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    marker = 'fn canonical_c_append_bounded_checker('
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f'pub {marker}', 1), encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'bounded-c-checker')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:2] == [0, 0]
+    emitted = bytes(values[3:]).decode('utf-8')
+    assert values[2] == len(emitted.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _exact_numeric_helpers
+    types = {
+        MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)),
+        MirType('bounded_1_1_-9223372036854775808_9223372036854775807', (MirType('i64'),)),
+    }
+    assert emitted == '\n'.join(_exact_numeric_helpers(types)[1:]) + '\n'
+    generated = tmp_path / 'bounded_checkers.c'
+    generated.write_text(
+        '#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n'
+        'static void merit_exact_numeric_failure(const char *message) { fprintf(stderr, "Merit %s\\n", message); exit(70); }\n'
+        + emitted,
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    driver = tmp_path / 'bounded_driver.c'
+    driver.write_text(
+        '#include "bounded_checkers.c"\n'
+        'int main(void) { return merit_check_bounded_0((__int128)UINT64_MAX) == UINT64_MAX '
+        '&& merit_check_bounded_1((__int128)INT64_MIN) == INT64_MIN ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    program = tmp_path / 'bounded-driver'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+    trap_driver = tmp_path / 'bounded_trap_driver.c'
+    trap_driver.write_text(
+        '#include "bounded_checkers.c"\n'
+        'int main(void) { merit_check_bounded_0((__int128)UINT64_MAX + 1); return 0; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    trap_program = tmp_path / 'bounded-trap-driver'
+    subprocess.run([cc, '-std=c11', str(trap_driver), '-o', str(trap_program)],
+                   check=True, text=True, capture_output=True)
+    trapped = subprocess.run([str(trap_program)], text=True, capture_output=True)
+    assert trapped.returncode == 70
+    assert trapped.stderr == 'Merit bounded range violation\n'
+
+
+def test_merit_decimal_checker_matches_oracle_and_gcc_range_trap(tmp_path: Path) -> None:
+    probe = r'''module decimal_c_checker_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(1),function_mir_numeric_descriptor_decimal_kind(),1,0,0,19,2,0,0,0,3));
+  var output:Buffer=buffer_new(allocator,1024);
+  print(canonical_c_append_decimal_round_helper(output));
+  print(canonical_c_append_decimal_checker(function_mir_decimal_type_code(0),descriptors,output));
+  print(canonical_c_append_decimal_checker(function_mir_decimal_type_code(1),descriptors,output));
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  drop(output);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    for name in ('canonical_c_append_decimal_round_helper', 'canonical_c_append_decimal_checker'):
+        marker = f'fn {name}('
+        assert source.count(marker) == 1
+        source = source.replace(marker, f'pub {marker}', 1)
+    module_path.write_text(source, encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'decimal-c-checker')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:3] == [0, 0, 0]
+    emitted = bytes(values[4:]).decode('utf-8')
+    assert values[3] == len(emitted.encode('utf-8'))
+    from merit.bootstrap.mir_to_c import _exact_numeric_helpers
+    types = {MirType('decimal_0_18_2_3'), MirType('decimal_1_19_2_3')}
+    assert emitted == '\n'.join(_exact_numeric_helpers(types)[1:]) + '\n'
+    generated = tmp_path / 'decimal_checkers.c'
+    generated.write_text(
+        '#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n'
+        'static void merit_exact_numeric_failure(const char *message) { fprintf(stderr, "Merit %s\\n", message); exit(70); }\n'
+        + emitted,
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    driver = tmp_path / 'decimal_driver.c'
+    driver.write_text(
+        '#include "decimal_checkers.c"\n'
+        'int main(void) { return merit_check_decimal_0((__int128)INT64_C(999999999999999999)) '
+        '== INT64_C(999999999999999999) && merit_check_decimal_1((__int128)INT64_C(999999999999999999)) '
+        '== INT64_C(999999999999999999) ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    program = tmp_path / 'decimal-driver'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+    trap_driver = tmp_path / 'decimal_trap_driver.c'
+    trap_driver.write_text(
+        '#include "decimal_checkers.c"\n'
+        'int main(void) { merit_check_decimal_0((__int128)INT64_C(1000000000000000000)); return 0; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    trap_program = tmp_path / 'decimal-trap-driver'
+    subprocess.run([cc, '-std=c11', str(trap_driver), '-o', str(trap_program)],
+                   check=True, text=True, capture_output=True)
+    trapped = subprocess.run([str(trap_program)], text=True, capture_output=True)
+    assert trapped.returncode == 70
+    assert trapped.stderr == 'Merit decimal range violation\n'
+
+
+def test_merit_numeric_module_finalizer_orders_helpers_and_rejects_duplicates(tmp_path: Path) -> None:
+    probe = r'''module numeric_module_finalizer_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var none:Vec<i32>=vec_new<i32>(allocator,0);
+  var numeric_codes:Vec<i32>=vec_new<i32>(allocator,2);
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(
+   0,9,0,7,function_mir_bounded_type_code(0),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,function_mir_decimal_type_code(0),0));
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0));
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  print(canonical_c_collect_numeric_types_from_records(records,numeric,numeric_codes));
+  var prototypes:Buffer=buffer_from_string(allocator,"int64_t merit_compute(void);\n");
+  var bodies:Buffer=buffer_from_string(allocator,"int64_t merit_compute(void) { return 0; }\n");
+  var output:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,none,none,none,none,none,numeric_codes,types,numeric,output));
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  vec_push<i32>(numeric_codes,function_mir_decimal_type_code(0));
+  var rejected:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,none,none,none,none,none,numeric_codes,types,numeric,rejected));
+  drop(rejected);drop(output);drop(bodies);drop(prototypes);drop(numeric);drop(types);drop(records);drop(numeric_codes);drop(none);drop(features);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'numeric-module-finalizer')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:2] == [0, 0]
+    c_source = bytes(values[3:3 + values[2]]).decode('utf-8')
+    assert values[3 + values[2]] == 4
+    from merit.bootstrap.mir_to_c import _exact_numeric_helpers
+    types = {
+        MirType('decimal_0_18_2_3'),
+        MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)),
+    }
+    helpers = '\n'.join(_exact_numeric_helpers(types)) + '\n'
+    assert helpers in c_source
+    assert c_source.index('merit_check_decimal_0') < c_source.index('merit_check_bounded_0')
+    generated = tmp_path / 'numeric_finalizer.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    subprocess.run([cc, '-std=c11', '-c', str(generated), '-o', str(tmp_path / 'numeric_finalizer.o')],
+                   check=True, text=True, capture_output=True)
+
+
+@pytest.mark.parametrize(
+    ('type_code', 'descriptor', 'mir_type', 'argument'),
+    [
+        ('function_mir_decimal_type_code(0)',
+         'function_mir_numeric_descriptor(function_mir_decimal_type_code(0),'
+         'function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3)',
+         MirType('decimal_0_18_2_3'), 'INT64_C(123)'),
+        ('function_mir_bounded_type_code(0)',
+         'function_mir_numeric_descriptor(function_mir_bounded_type_code(0),'
+         'function_mir_numeric_descriptor_bounded_kind(),0,'
+         'function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0)',
+         MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)), 'UINT64_MAX'),
+    ],
+)
+def test_merit_numeric_parameter_return_emits_oracle_c_and_executes(
+    tmp_path: Path, type_code: str, descriptor: str, mir_type: MirType, argument: str,
+) -> None:
+    probe = r'''module numeric_parameter_return_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"compute");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,7,0,7,TYPE_CODE,function_mir_mode_value(),-1,1,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,0,TYPE_CODE,0,0,function_mir_mode_value(),0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(numeric,NUMERIC_DESCRIPTOR);
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+  var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+  var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,0));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,0);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_append_function_with_numeric_contracts_header_selection(
+   source,records,headers,types,numeric,sources,effects,contracts,contract_locals,cfg,placements,
+   prototypes,bodies,declarations,features,0));
+  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  var numeric_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  print(canonical_c_collect_numeric_types_from_records(records,numeric,numeric_codes));
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,no_codes,no_codes,no_codes,no_codes,no_codes,numeric_codes,types,numeric,c_source));
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  drop(numeric_codes);drop(no_codes);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(contract_locals);drop(contracts);drop(effects);drop(sources);
+  drop(numeric);drop(types);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''.replace('TYPE_CODE', type_code).replace('NUMERIC_DESCRIPTOR', descriptor)
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'numeric-parameter-return')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:3] == [0, 0, 0]
+    c_source = bytes(values[4:]).decode('utf-8')
+    assert values[3] == len(c_source.encode('utf-8'))
+    module = MirModule('demo', (MirFunction(
+        'compute', mir_type, (MirLocal(0, 'value', mir_type),),
+        (MirBlock(0, (), MirTerminator('return', operands=(0,))),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    generated = tmp_path / 'numeric_parameter_return.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'numeric_parameter_driver.c'
+    driver.write_text(
+        '#include "numeric_parameter_return.c"\n'
+        f'int main(void) {{ return compute({argument}) == {argument} ? 0 : 1; }}\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'numeric-parameter-driver'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
+def test_merit_declared_numeric_literals_match_oracle_and_reject_range(tmp_path: Path) -> None:
+    probe = r'''module declared_numeric_literal_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn emit(code:i32,borrow source:Buffer,borrow descriptors:Vec<MirNumericTypeDescriptor>)->i32
+requires_caps [allocate] {
+ let allocator:Allocator=system_allocator();var output:Buffer=buffer_new(allocator,128);
+ print(canonical_c_append_declared_numeric_literal(source,0,buffer_len(source),code,descriptors,output));
+ print(buffer_len(output));var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,3);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(1),function_mir_numeric_descriptor_bounded_kind(),1,
+   function_mir_i32_type_code(),0,0,0,1,0,9,0));
+  let decimal_source:Buffer=buffer_from_string(allocator,"1.23");
+  let bounded_source:Buffer=buffer_from_string(allocator,"18446744073709551615");
+  let rejected_source:Buffer=buffer_from_string(allocator,"10");
+  emit(function_mir_decimal_type_code(0),decimal_source,descriptors);
+  emit(function_mir_bounded_type_code(0),bounded_source,descriptors);
+  emit(function_mir_bounded_type_code(1),rejected_source,descriptors);
+  drop(rejected_source);drop(bounded_source);drop(decimal_source);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    marker = 'fn canonical_c_append_declared_numeric_literal('
+    assert source.count(marker) == 1
+    module_path.write_text(source.replace(marker, f'pub {marker}', 1), encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'declared-numeric-literals')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    outputs = []
+    while values:
+        status, length = values[:2]
+        outputs.append((status, bytes(values[2:2 + length]).decode('utf-8')))
+        values = values[2 + length:]
+    from merit.bootstrap.mir_to_c import _literal
+    assert outputs == [
+        (0, _literal(123, MirType('decimal_0_18_2_3'))),
+        (0, _literal(18446744073709551615,
+                     MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)))),
+        (2, ''),
+    ]
+
+
+def test_merit_declared_numeric_operation_fragments_match_oracle(tmp_path: Path) -> None:
+    probe = r'''module declared_numeric_operation_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn emit_binary(code:i32,symbol:i32,borrow descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut features:Vec<i64>)->i32
+requires_caps [allocate] {
+ let allocator:Allocator=system_allocator();var output:Buffer=buffer_new(allocator,256);
+ let instruction:MirFunctionRecord=function_mir_binary(0,0,0,2,0,1,symbol,code,function_mir_exact_numeric_policy(),0);
+ print(canonical_c_append_declared_numeric_binary(instruction,code,descriptors,features,output));
+ print(buffer_len(output));var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn emit_print(code:i32,borrow descriptors:Vec<MirNumericTypeDescriptor>)->i32 requires_caps [allocate] {
+ let allocator:Allocator=system_allocator();var output:Buffer=buffer_new(allocator,128);
+ print(canonical_c_append_declared_numeric_print(code,2,descriptors,output));
+ print(buffer_len(output));var index:i64=0;
+ while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+ drop(output);return 0;
+}
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_decimal_type_code(0),function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(descriptors,function_mir_numeric_descriptor(
+   function_mir_bounded_type_code(0),function_mir_numeric_descriptor_bounded_kind(),0,
+   function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,8);
+  var type_rank:i64=0;
+  while(type_rank<2){
+   var code:i32=function_mir_decimal_type_code(0);
+   if(type_rank==1){code=function_mir_bounded_type_code(0);}
+   emit_binary(code,function_mir_binary_add_symbol(),descriptors,features);
+   emit_binary(code,function_mir_binary_subtract_symbol(),descriptors,features);
+   emit_binary(code,function_mir_binary_multiply_symbol(),descriptors,features);
+   emit_binary(code,function_mir_binary_divide_symbol(),descriptors,features);
+   emit_print(code,descriptors);
+   type_rank=checked_add(type_rank,1);
+  }
+  drop(features);drop(descriptors);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    module_path = root / 'src' / 'mir_resolved_source_function_bundle.mrt'
+    source = module_path.read_text(encoding='utf-8')
+    for name in ('canonical_c_append_declared_numeric_binary', 'canonical_c_append_declared_numeric_print'):
+        marker = f'fn {name}('
+        assert source.count(marker) == 1
+        source = source.replace(marker, f'pub {marker}', 1)
+    module_path.write_text(source, encoding='utf-8', newline='\n')
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'declared-numeric-operations')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    fragments = []
+    while values:
+        status, length = values[:2]
+        assert status == 0
+        fragments.append(bytes(values[2:2 + length]).decode('utf-8'))
+        values = values[2 + length:]
+    from merit.bootstrap.mir_to_c import _instruction
+    for type_rank, numeric_type in enumerate((
+        MirType('decimal_0_18_2_3'),
+        MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)),
+    )):
+        local_types = {0: numeric_type, 1: numeric_type, 2: numeric_type}
+        for symbol_rank, symbol in enumerate(('+', '-', '*', '/')):
+            instruction = MirInstruction(0, 'binary', result=2, operands=(0, 1),
+                                         symbol=symbol, numeric_policy='exact')
+            expected = _instruction(instruction, {}, local_types)[0]
+            assert f'm2{fragments[type_rank * 5 + symbol_rank]}'.strip() == expected
+        print_instruction = MirInstruction(0, 'print', operands=(2,))
+        assert fragments[type_rank * 5 + 4].strip() == _instruction(print_instruction, {}, local_types)[0]
+
+
+@pytest.mark.parametrize(
+    ('type_code', 'descriptor', 'mir_type', 'left', 'right', 'expected'),
+    [
+        ('function_mir_decimal_type_code(0)',
+         'function_mir_numeric_descriptor(function_mir_decimal_type_code(0),'
+         'function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3)',
+         MirType('decimal_0_18_2_3'), 200, 300, 500),
+        ('function_mir_bounded_type_code(0)',
+         'function_mir_numeric_descriptor(function_mir_bounded_type_code(0),'
+         'function_mir_numeric_descriptor_bounded_kind(),0,'
+         'function_mir_u64_type_code(),0,0,0,1,18446744073,709551615,0)',
+         MirType('bounded_0_11_0_18446744073709551615', (MirType('u64'),)), 2, 3, 5),
+    ],
+)
+def test_merit_declared_numeric_addition_emits_oracle_c_and_executes(
+    tmp_path: Path, type_code: str, descriptor: str, mir_type: MirType,
+    left: int, right: int, expected: int,
+) -> None:
+    probe = r'''module numeric_addition_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"compute");
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,5);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,7,0,7,TYPE_CODE,function_mir_mode_value(),-1,2,0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,0,TYPE_CODE,0,0,function_mir_mode_value(),0));
+  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,1,TYPE_CODE,1,0,function_mir_mode_value(),1));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,TYPE_CODE,2));
+  vec_push<MirFunctionRecord>(records,function_mir_binary(0,7,0,2,0,1,function_mir_binary_add_symbol(),TYPE_CODE,function_mir_exact_numeric_policy(),0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(numeric,NUMERIC_DESCRIPTOR);
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+  var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+  var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,2));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));
+  var features:Vec<i64>=vec_new<i64>(allocator,4);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_append_function_with_numeric_contracts_header_selection(
+   source,records,headers,types,numeric,sources,effects,contracts,contract_locals,cfg,placements,
+   prototypes,bodies,declarations,features,0));
+  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  var numeric_codes:Vec<i32>=vec_new<i32>(allocator,1);
+  print(canonical_c_collect_numeric_types_from_records(records,numeric,numeric_codes));
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,no_codes,no_codes,no_codes,no_codes,no_codes,numeric_codes,types,numeric,c_source));
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  drop(numeric_codes);drop(no_codes);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(contract_locals);drop(contracts);drop(effects);drop(sources);
+  drop(numeric);drop(types);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''.replace('TYPE_CODE', type_code).replace('NUMERIC_DESCRIPTOR', descriptor)
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'numeric-addition')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:3] == [0, 0, 0]
+    c_source = bytes(values[4:]).decode('utf-8')
+    assert values[3] == len(c_source.encode('utf-8'))
+    module = MirModule('demo', (MirFunction(
+        'compute', mir_type,
+        (MirLocal(0, 'left', mir_type), MirLocal(1, 'right', mir_type), MirLocal(2, 'result', mir_type)),
+        (MirBlock(0, (MirInstruction(0, 'binary', result=2, operands=(0, 1),
+                                     symbol='+', numeric_policy='exact'),),
+                  MirTerminator('return', operands=(2,))),), 0,
+        parameters=(MirParameter(0), MirParameter(1)),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    generated = tmp_path / 'numeric_addition.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'numeric_addition_driver.c'
+    driver.write_text(
+        '#include "numeric_addition.c"\n'
+        f'int main(void) {{ return compute({left}, {right}) == {expected} ? 0 : 1; }}\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'numeric-addition-driver'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
 def test_merit_checked_i32_generated_c_executes(tmp_path: Path) -> None:
     probe = CANONICAL_C_BACKEND_PROBE.replace(
         "function_mir_i64_type_code()", "function_mir_i32_type_code()",

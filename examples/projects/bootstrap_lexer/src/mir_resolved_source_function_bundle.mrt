@@ -483,6 +483,219 @@ requires_caps [allocate]
 fn canonical_c_invalid_owned_field_type_status()->i32{return 9;}
 fn canonical_c_invalid_recursive_owned_enum_type_status()->i32{return 10;}
 
+// Share the canonical MIR descriptor validator before selecting physical C
+// storage. This does not admit declared numerics to production C yet: their
+// range/rounding helpers and operation lowering must travel with that change.
+fn canonical_c_append_numeric_type_with_catalog(
+    borrow_mut output:Buffer,type_code:i32,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_declared_numeric(type_code)==0){return 1;}
+    let allocator:Allocator=system_allocator();
+    var validated_type:Buffer=buffer_new(allocator,128);
+    let validation:i32=canonical_mir_append_numeric_type(numeric_descriptors,type_code,validated_type);
+    drop(validated_type);
+    if(validation!=0){return 2;}
+    var index:i64=0;
+    while(index<vec_len<MirNumericTypeDescriptor>(numeric_descriptors)){
+        let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,index);
+        if(function_mir_numeric_descriptor_code(descriptor)==type_code){
+            if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_decimal_kind()){
+                if(function_mir_numeric_descriptor_lower_high_or_precision(descriptor)<=18){
+                    canonical_mir_append_text(output,"int64_t");
+                }else{canonical_mir_append_text(output,"__int128");}
+                return 0;
+            }
+            if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_bounded_kind()){
+                return canonical_c_append_scalar_type(output,function_mir_numeric_descriptor_base(descriptor));
+            }
+            return 2;
+        }
+        index=checked_add(index,1);
+    }
+    return 2;
+}
+
+fn canonical_c_append_int128_numeric_bound(
+    borrow_mut output:Buffer,sign:i32,high:i64,low:i64
+)->i32
+requires_caps [allocate]
+{
+    if(high<0){return 1;}
+    if(low<0){return 1;}
+    let limb_base:i64=function_mir_numeric_descriptor_limb_base();
+    if(low>=limb_base){return 1;}
+    if(sign<0){canonical_mir_append_text(output,"-");}
+    let high_18:i64=high/limb_base;
+    let low_18:i64=checked_add(checked_mul(checked_sub(high,checked_mul(high_18,limb_base)),limb_base),low);
+    canonical_mir_append_text(output,"((__int128)");
+    canonical_mir_append_i64(output,high_18);
+    canonical_mir_append_text(output," * INT64_C(1000000000000000000) + INT64_C(");
+    canonical_mir_append_i64(output,low_18);
+    canonical_mir_append_text(output,"))");
+    return 0;
+}
+
+fn canonical_c_append_bounded_checker(
+    type_code:i32,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(type_code<function_mir_bounded_type_code(0)){return 1;}
+    let allocator:Allocator=system_allocator();
+    var validated_type:Buffer=buffer_new(allocator,128);
+    let valid:i32=canonical_mir_append_numeric_type(numeric_descriptors,type_code,validated_type);
+    drop(validated_type);
+    if(valid!=0){return 2;}
+    var index:i64=0;
+    while(index<vec_len<MirNumericTypeDescriptor>(numeric_descriptors)){
+        let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,index);
+        if(function_mir_numeric_descriptor_code(descriptor)==type_code){
+            if(function_mir_numeric_descriptor_kind(descriptor)!=function_mir_numeric_descriptor_bounded_kind()){return 2;}
+            var spelling:Buffer=buffer_new(allocator,32);
+            canonical_c_append_scalar_type(spelling,function_mir_numeric_descriptor_base(descriptor));
+            canonical_mir_append_text(output,"static ");
+            bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+            canonical_mir_append_text(output," merit_check_bounded_");
+            canonical_mir_append_i32(output,function_mir_numeric_descriptor_identity(descriptor));
+            canonical_mir_append_text(output,"(__int128 value) {\n    if (value < ");
+            canonical_c_append_int128_numeric_bound(output,
+                function_mir_numeric_descriptor_lower_sign(descriptor),
+                function_mir_numeric_descriptor_lower_high_or_precision(descriptor),
+                function_mir_numeric_descriptor_lower_low_or_scale(descriptor));
+            canonical_mir_append_text(output," || value > ");
+            canonical_c_append_int128_numeric_bound(output,
+                function_mir_numeric_descriptor_upper_sign(descriptor),
+                function_mir_numeric_descriptor_upper_high(descriptor),
+                function_mir_numeric_descriptor_upper_low(descriptor));
+            canonical_mir_append_text(output,") merit_exact_numeric_failure(\"bounded range violation\");\n    return (");
+            bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+            canonical_mir_append_text(output,")value;\n}\n");
+            drop(spelling);
+            return 0;
+        }
+        index=checked_add(index,1);
+    }
+    return 2;
+}
+
+fn canonical_c_append_decimal_limit(precision:i64,borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    if(precision<1){return 1;}
+    if(precision>38){return 1;}
+    if(precision<=18){
+        var power:i64=1;var digit:i64=0;
+        while(digit<precision){power=checked_mul(power,10);digit=checked_add(digit,1);}
+        canonical_mir_append_text(output,"(__int128)INT64_C(");
+        canonical_mir_append_i64(output,checked_sub(power,1));
+        canonical_mir_append_text(output,")");
+        return 0;
+    }
+    canonical_mir_append_text(output,"((__int128)");
+    var high_digit:i64=18;
+    while(high_digit<precision){canonical_mir_append_text(output,"9");high_digit=checked_add(high_digit,1);}
+    canonical_mir_append_text(output," * INT64_C(1000000000000000000) + INT64_C(999999999999999999))");
+    return 0;
+}
+
+fn canonical_c_append_decimal_round_helper(borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,
+        "static __int128 merit_round_decimal(__int128 numerator, __int128 denominator, int mode) {\n");
+    canonical_mir_append_text(output,
+        "    if (denominator == 0) { fprintf(stderr, \"Merit division by zero\\n\"); exit(72); }\n");
+    canonical_mir_append_text(output,
+        "    int negative = (numerator < 0) ^ (denominator < 0);\n");
+    canonical_mir_append_text(output,
+        "    if (numerator < 0) numerator = -numerator; if (denominator < 0) denominator = -denominator;\n");
+    canonical_mir_append_text(output,
+        "    __int128 quotient = numerator / denominator; __int128 remainder = numerator % denominator; int round_up = 0;\n");
+    canonical_mir_append_text(output,
+        "    if (mode == 0) { __int128 twice = remainder * 2; round_up = twice > denominator || (twice == denominator && (quotient & 1)); }\n");
+    canonical_mir_append_text(output,
+        "    else if (mode == 1) round_up = remainder * 2 >= denominator;\n");
+    canonical_mir_append_text(output,
+        "    else if (mode == 3) round_up = !negative && remainder != 0;\n");
+    canonical_mir_append_text(output,
+        "    else if (mode == 4) round_up = negative && remainder != 0;\n");
+    canonical_mir_append_text(output,
+        "    quotient += round_up; return negative ? -quotient : quotient;\n}\n");
+    return 0;
+}
+
+fn canonical_c_append_decimal_print_runtime(borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,
+        "static void merit_print_u128(unsigned __int128 value) {\n");
+    canonical_mir_append_text(output,"    char digits[40]; int count = 0;\n");
+    canonical_mir_append_text(output,
+        "    do { digits[count++] = (char)('0' + value % 10); value /= 10; } while (value != 0);\n");
+    canonical_mir_append_text(output,"    while (count > 0) putchar(digits[--count]);\n}\n");
+    canonical_mir_append_text(output,"static void merit_print_decimal(__int128 value, int scale) {\n");
+    canonical_mir_append_text(output,"    unsigned __int128 magnitude;\n");
+    canonical_mir_append_text(output,
+        "    if (value < 0) { putchar('-'); magnitude = (unsigned __int128)(-(value + 1)) + 1; }\n");
+    canonical_mir_append_text(output,"    else { magnitude = (unsigned __int128)value; }\n");
+    canonical_mir_append_text(output,
+        "    unsigned __int128 factor = 1; for (int i = 0; i < scale; ++i) factor *= 10;\n");
+    canonical_mir_append_text(output,"    merit_print_u128(magnitude / factor);\n");
+    canonical_mir_append_text(output,"    if (scale > 0) {\n");
+    canonical_mir_append_text(output,
+        "        putchar('.'); unsigned __int128 fraction = magnitude % factor;\n");
+    canonical_mir_append_text(output,"        unsigned __int128 place = factor / 10;\n");
+    canonical_mir_append_text(output,
+        "        while (place > 0) { putchar((int)('0' + (fraction / place) % 10)); place /= 10; }\n");
+    canonical_mir_append_text(output,"    }\n    putchar('\\n');\n}\n\n");
+    return 0;
+}
+
+fn canonical_c_append_decimal_checker(
+    type_code:i32,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(type_code<function_mir_decimal_type_code(0)){return 1;}
+    if(type_code>=function_mir_bounded_type_code(0)){return 1;}
+    let allocator:Allocator=system_allocator();
+    var validated_type:Buffer=buffer_new(allocator,128);
+    let valid:i32=canonical_mir_append_numeric_type(numeric_descriptors,type_code,validated_type);
+    drop(validated_type);
+    if(valid!=0){return 2;}
+    var index:i64=0;
+    while(index<vec_len<MirNumericTypeDescriptor>(numeric_descriptors)){
+        let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,index);
+        if(function_mir_numeric_descriptor_code(descriptor)==type_code){
+            if(function_mir_numeric_descriptor_kind(descriptor)!=function_mir_numeric_descriptor_decimal_kind()){return 2;}
+            let precision:i64=function_mir_numeric_descriptor_lower_high_or_precision(descriptor);
+            if(precision>38){return 2;}
+            var spelling:Buffer=buffer_new(allocator,32);
+            canonical_c_append_numeric_type_with_catalog(spelling,type_code,numeric_descriptors);
+            canonical_mir_append_text(output,"static ");
+            bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+            canonical_mir_append_text(output," merit_check_decimal_");
+            canonical_mir_append_i32(output,function_mir_numeric_descriptor_identity(descriptor));
+            canonical_mir_append_text(output,"(__int128 value) {\n    if (value < -(");
+            canonical_c_append_decimal_limit(precision,output);
+            canonical_mir_append_text(output,") || value > (");
+            canonical_c_append_decimal_limit(precision,output);
+            canonical_mir_append_text(output,")) merit_exact_numeric_failure(\"decimal range violation\");\n    return (");
+            bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+            canonical_mir_append_text(output,")value;\n}\n");
+            drop(spelling);
+            return 0;
+        }
+        index=checked_add(index,1);
+    }
+    return 2;
+}
+
 fn canonical_c_append_type_with_catalog(
     borrow_mut output:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>
 )->i32
@@ -579,6 +792,18 @@ requires_caps [allocate]
     return canonical_c_append_scalar_type(output,type_code);
 }
 
+fn canonical_c_append_type_with_complete_catalog(
+    borrow_mut output:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_declared_numeric(type_code)!=0){
+        return canonical_c_append_numeric_type_with_catalog(output,type_code,numeric_descriptors);
+    }
+    return canonical_c_append_type_with_catalog(output,type_code,descriptors);
+}
+
 // All fixed-width integer locals use the same scalar C declaration path.
 // Keep resource and aggregate admission separate from this storage check.
 fn canonical_c_supported_builtin_local_type(type_code:i32)->i32 {
@@ -626,6 +851,23 @@ requires_caps [allocate]
     drop(spelling);
     if(status!=0){return 0;}
     return 1;
+}
+
+fn canonical_c_supported_complete_local_type(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_declared_numeric(type_code)!=0){
+        let allocator:Allocator=system_allocator();
+        var spelling:Buffer=buffer_new(allocator,32);
+        let status:i32=canonical_c_append_numeric_type_with_catalog(spelling,type_code,numeric_descriptors);
+        drop(spelling);
+        if(status==0){return 1;}
+        return 0;
+    }
+    return canonical_c_supported_catalog_local_type(type_code,descriptors);
 }
 
 fn canonical_c_aggregate_field_type(
@@ -970,7 +1212,8 @@ requires_caps [allocate]
 
 fn canonical_c_append_scalar_prototype(
     borrow source:Buffer,borrow header:MirFunctionRecord,
-    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -983,19 +1226,20 @@ requires_caps [allocate]
             if(return_mode!=function_mir_mode_mutable_borrow()){return 5;}
         }}
     }
-    if(canonical_c_append_type_with_catalog(output,function_mir_type_code(header),descriptors)!=0){return 3;}
+    if(canonical_c_append_type_with_complete_catalog(output,function_mir_type_code(header),descriptors,numeric_descriptors)!=0){return 3;}
     if(borrowed_aggregate!=0){
         if(return_mode!=function_mir_mode_value()){canonical_mir_append_text(output," *");}
     }
     buffer_push(output,32);
     canonical_c_append_function_name(source,header,output);
-    if(canonical_c_append_scalar_parameters(records,descriptors,output)!=0){return 4;}
+    if(canonical_c_append_scalar_parameters(records,descriptors,numeric_descriptors,output)!=0){return 4;}
     buffer_push(output,59);
     return 0;
 }
 
 fn canonical_c_append_scalar_parameters(
-    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -1013,7 +1257,7 @@ requires_caps [allocate]
                     if(found!=0){return 1;}
                     if(function_mir_id(parameter)!=ordinal){return 2;}
                     let parameter_type:i32=function_mir_type_code(parameter);
-                    if(canonical_c_supported_catalog_local_type(parameter_type,descriptors)==0){return 3;}
+                    if(canonical_c_supported_complete_local_type(parameter_type,descriptors,numeric_descriptors)==0){return 3;}
                     let parameter_mode:i32=function_mir_symbol_code(parameter);
                     var owned_aggregate:i32=0;
                     if(parameter_type>=function_mir_owned_field_struct_type_code(0)){
@@ -1042,7 +1286,7 @@ requires_caps [allocate]
         if(found==0){return 5;}
         if(ordinal>0){canonical_mir_append_text(output,", ");}
         if(matched_mode==function_mir_mode_borrowed()){canonical_mir_append_text(output,"const ");}
-        if(canonical_c_append_type_with_catalog(output,matched_type,descriptors)!=0){return 3;}
+        if(canonical_c_append_type_with_complete_catalog(output,matched_type,descriptors,numeric_descriptors)!=0){return 3;}
         if(matched_mode!=function_mir_mode_value()){canonical_mir_append_text(output," *");}
         canonical_mir_append_text(output," m");canonical_mir_append_i64(output,ordinal);
         ordinal=checked_add(ordinal,1);
@@ -1675,6 +1919,178 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_append_declared_numeric_literal(
+    borrow source:Buffer,start:i64,length:i64,type_code:i32,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_declared_numeric(type_code)==0){return 1;}
+    let allocator:Allocator=system_allocator();
+    var normalized:Buffer=buffer_new(allocator,64);
+    let value_status:i32=canonical_mir_append_typed_const_source_with_catalog(
+        normalized,source,start,length,type_code,numeric_descriptors,1
+    );
+    var base:i32=0;
+    var status:i32=2;
+    if(value_status==0){
+        var index:i64=0;
+        while(index<vec_len<MirNumericTypeDescriptor>(numeric_descriptors)){
+            let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,index);
+            if(function_mir_numeric_descriptor_code(descriptor)==type_code){
+                if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_decimal_kind()){
+                    if(function_mir_numeric_descriptor_lower_high_or_precision(descriptor)<=18){
+                        base=function_mir_i64_type_code();
+                    }
+                }
+                if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_bounded_kind()){
+                    base=function_mir_numeric_descriptor_base(descriptor);
+                }
+            }
+            index=checked_add(index,1);
+        }
+        status=1;
+        if(base!=0){
+            status=canonical_c_append_scalar_integer_literal(normalized,0,buffer_len(normalized),base,output);
+        }
+    }
+    drop(normalized);
+    return status;
+}
+
+fn canonical_c_numeric_descriptor_index(
+    type_code:i32,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i64
+{
+    var index:i64=0;
+    while(index<vec_len<MirNumericTypeDescriptor>(numeric_descriptors)){
+        let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,index);
+        if(function_mir_numeric_descriptor_code(descriptor)==type_code){return index;}
+        index=checked_add(index,1);
+    }
+    return -1;
+}
+
+fn canonical_c_append_declared_numeric_binary(
+    borrow instruction:MirFunctionRecord,type_code:i32,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut features:Vec<i64>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let descriptor_index:i64=canonical_c_numeric_descriptor_index(type_code,numeric_descriptors);
+    if(descriptor_index<0){return 1;}
+    let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,descriptor_index);
+    let symbol:i32=function_mir_symbol_code(instruction);
+    canonical_mir_append_text(output," = merit_check_");
+    if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_decimal_kind()){
+        canonical_mir_append_text(output,"decimal_");
+        canonical_mir_append_i32(output,function_mir_numeric_descriptor_identity(descriptor));
+        buffer_push(output,40);
+        if(symbol==function_mir_binary_multiply_symbol()){
+            canonical_mir_append_text(output,"merit_round_decimal((__int128)m");
+            canonical_mir_append_i64(output,function_mir_left(instruction));
+            canonical_mir_append_text(output," * (__int128)m");
+            canonical_mir_append_i64(output,function_mir_right(instruction));
+        }else{if(symbol==function_mir_binary_divide_symbol()){
+            canonical_mir_append_text(output,"merit_round_decimal((__int128)m");
+            canonical_mir_append_i64(output,function_mir_left(instruction));
+            canonical_mir_append_text(output," * ");
+        }else{
+            canonical_mir_append_text(output,"(__int128)m");
+            canonical_mir_append_i64(output,function_mir_left(instruction));
+            if(symbol==function_mir_binary_add_symbol()){canonical_mir_append_text(output," + (__int128)m");}
+            else{if(symbol==function_mir_binary_subtract_symbol()){canonical_mir_append_text(output," - (__int128)m");}
+            else{return 1;}}
+            canonical_mir_append_i64(output,function_mir_right(instruction));
+        }}
+        if(symbol==function_mir_binary_multiply_symbol()){
+            canonical_mir_append_text(output,", ");
+        }
+        if(symbol==function_mir_binary_divide_symbol()){
+            var factor:i64=1;
+            var digit:i64=0;
+            let scale:i64=function_mir_numeric_descriptor_lower_low_or_scale(descriptor);
+            if(scale>18){return 1;}
+            while(digit<scale){factor=checked_mul(factor,10);digit=checked_add(digit,1);}
+            canonical_mir_append_i64(output,factor);
+            canonical_mir_append_text(output,", (__int128)m");
+            canonical_mir_append_i64(output,function_mir_right(instruction));
+            canonical_mir_append_text(output,", ");
+        }
+        if(symbol==function_mir_binary_multiply_symbol()){
+            var factor:i64=1;
+            var digit:i64=0;
+            let scale:i64=function_mir_numeric_descriptor_lower_low_or_scale(descriptor);
+            if(scale>18){return 1;}
+            while(digit<scale){factor=checked_mul(factor,10);digit=checked_add(digit,1);}
+            canonical_mir_append_i64(output,factor);
+            canonical_mir_append_text(output,", ");
+        }
+        if(symbol==function_mir_binary_multiply_symbol()){
+            canonical_mir_append_i32(output,function_mir_numeric_descriptor_policy(descriptor));
+            buffer_push(output,41);
+        }
+        if(symbol==function_mir_binary_divide_symbol()){
+            canonical_mir_append_i32(output,function_mir_numeric_descriptor_policy(descriptor));
+            buffer_push(output,41);
+        }
+        canonical_mir_append_text(output,");\n");
+        return 0;
+    }
+    if(function_mir_numeric_descriptor_kind(descriptor)!=function_mir_numeric_descriptor_bounded_kind()){return 1;}
+    let base:i32=function_mir_numeric_descriptor_base(descriptor);
+    let request:i64=canonical_c_checked_request_feature(base,symbol);
+    if(request<0){return 1;}
+    canonical_c_require_feature(request,features);
+    canonical_mir_append_text(output,"bounded_");
+    canonical_mir_append_i32(output,function_mir_numeric_descriptor_identity(descriptor));
+    canonical_mir_append_text(output,"(merit_checked_");
+    canonical_c_append_checked_operation_name(symbol,output);
+    buffer_push(output,95);canonical_c_append_checked_integer_name(base,output);
+    canonical_mir_append_text(output,"(m");
+    canonical_mir_append_i64(output,function_mir_left(instruction));
+    canonical_mir_append_text(output,", m");
+    canonical_mir_append_i64(output,function_mir_right(instruction));
+    canonical_mir_append_text(output,"));\n");
+    return 0;
+}
+
+fn canonical_c_append_declared_numeric_print(
+    type_code:i32,local_id:i64,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let descriptor_index:i64=canonical_c_numeric_descriptor_index(type_code,numeric_descriptors);
+    if(descriptor_index<0){return 1;}
+    let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,descriptor_index);
+    if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_decimal_kind()){
+        canonical_mir_append_text(output,"    merit_print_decimal((__int128)m");
+        canonical_mir_append_i64(output,local_id);
+        canonical_mir_append_text(output,", ");
+        canonical_mir_append_i64(output,function_mir_numeric_descriptor_lower_low_or_scale(descriptor));
+        canonical_mir_append_text(output,");\n");
+        return 0;
+    }
+    if(function_mir_numeric_descriptor_kind(descriptor)!=function_mir_numeric_descriptor_bounded_kind()){return 1;}
+    let base:i32=function_mir_numeric_descriptor_base(descriptor);
+    if(base==function_mir_u8_type_code()){
+        canonical_mir_append_text(output,"    printf(\"%llu\\n\", (unsigned long long)m");
+    }else{if(base==function_mir_u16_type_code()){
+        canonical_mir_append_text(output,"    printf(\"%llu\\n\", (unsigned long long)m");
+    }else{if(base==function_mir_u32_type_code()){
+        canonical_mir_append_text(output,"    printf(\"%llu\\n\", (unsigned long long)m");
+    }else{if(base==function_mir_u64_type_code()){
+        canonical_mir_append_text(output,"    printf(\"%llu\\n\", (unsigned long long)m");
+    }else{
+        canonical_mir_append_text(output,"    printf(\"%lld\\n\", (long long)m");
+    }}}}
+    canonical_mir_append_i64(output,local_id);
+    canonical_mir_append_text(output,");\n");
+    return 0;
+}
+
 // ASCII JSON spelling and UTF-8 output are representation boundaries.
 fn canonical_c_json_hex_digit(value:i64)->i64
 {
@@ -2272,6 +2688,7 @@ fn canonical_c_append_function_core_ordered(
     borrow records:Vec<MirFunctionRecord>,
     borrow callable_headers:Vec<MirFunctionRecord>,
     borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
     borrow contracts:Vec<MirFunctionContractRecord>,
@@ -2322,7 +2739,7 @@ requires_caps [allocate]
         }
     }
     if(function_mir_type_code(header)!=function_mir_unit_type_code()){
-        if(canonical_c_supported_catalog_local_type(function_mir_type_code(header),type_descriptors)==0){return 3;}
+        if(canonical_c_supported_complete_local_type(function_mir_type_code(header),type_descriptors,numeric_descriptors)==0){return 3;}
     }
     let cfg_record_count:i64=vec_len<MirCfgRecord>(cfg);
     if(cfg_record_count<2){return 4;}
@@ -2434,7 +2851,7 @@ requires_caps [allocate]
                     }
                 }
             }
-            if(canonical_c_supported_catalog_local_type(function_mir_type_code(record),type_descriptors)==0){return 9;}
+            if(canonical_c_supported_complete_local_type(function_mir_type_code(record),type_descriptors,numeric_descriptors)==0){return 9;}
             if(function_mir_symbol_code(record)!=function_mir_mode_value()){
                 let aggregate_borrow:i32=canonical_c_trivial_integer_aggregate_field_count(
                     function_mir_type_code(record),type_descriptors
@@ -2479,7 +2896,7 @@ requires_caps [allocate]
                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 10;}
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
             }
-            if(canonical_c_supported_catalog_local_type(function_mir_type_code(record),type_descriptors)==0){return 10;}
+            if(canonical_c_supported_complete_local_type(function_mir_type_code(record),type_descriptors,numeric_descriptors)==0){return 10;}
             if(function_mir_id(record)!=local_count){return 11;}
             local_count=checked_add(local_count,1);
         }else{
@@ -2506,7 +2923,7 @@ requires_caps [allocate]
                     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 12;}
                     canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
                 }
-                if(canonical_c_supported_catalog_local_type(function_mir_type_code(record),type_descriptors)==0){return 12;}
+                if(canonical_c_supported_complete_local_type(function_mir_type_code(record),type_descriptors,numeric_descriptors)==0){return 12;}
                 if(function_mir_id(record)!=local_count){return 13;}
                 local_count=checked_add(local_count,1);
             }else{
@@ -2710,11 +3127,11 @@ requires_caps [allocate]
         cfg_index=checked_add(cfg_index,1);
     }
     if(function_mir_ordinal(header)>local_count){return 26;}
-    let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,prototypes);
+    let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,numeric_descriptors,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
     buffer_push(prototypes,10);
     if(exported!=0){
-        let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,public_header);
+        let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,numeric_descriptors,public_header);
         if(header_status!=0){return checked_add(40,header_status);}
         buffer_push(public_header,10);
     }
@@ -2727,13 +3144,13 @@ requires_caps [allocate]
     if(body_borrowed_aggregate!=0){
         if(body_return_mode==function_mir_mode_borrowed()){canonical_mir_append_text(bodies,"const ");}
     }
-    if(canonical_c_append_type_with_catalog(bodies,body_return_type,type_descriptors)!=0){return 3;}
+    if(canonical_c_append_type_with_complete_catalog(bodies,body_return_type,type_descriptors,numeric_descriptors)!=0){return 3;}
     if(body_borrowed_aggregate!=0){
         if(body_return_mode!=function_mir_mode_value()){canonical_mir_append_text(bodies," *");}
     }
     buffer_push(bodies,32);
     canonical_c_append_function_name(source,header,bodies);
-    let parameters_status:i32=canonical_c_append_scalar_parameters(records,type_descriptors,bodies);
+    let parameters_status:i32=canonical_c_append_scalar_parameters(records,type_descriptors,numeric_descriptors,bodies);
     if(parameters_status!=0){return checked_add(50,parameters_status);}
     canonical_mir_append_text(bodies," {\n");
     var local_id:i64=function_mir_ordinal(header);
@@ -2747,8 +3164,8 @@ requires_caps [allocate]
         if(borrowed_aggregate_local!=0){
             if(declared_mode==function_mir_mode_borrowed()){canonical_mir_append_text(bodies,"const ");}
         }
-        if(canonical_c_append_type_with_catalog(
-            bodies,declared_type,type_descriptors
+        if(canonical_c_append_type_with_complete_catalog(
+            bodies,declared_type,type_descriptors,numeric_descriptors
         )!=0){return 12;}
         if(borrowed_aggregate_local!=0){
             if(declared_mode!=function_mir_mode_value()){canonical_mir_append_text(bodies," *");}
@@ -2770,13 +3187,15 @@ requires_caps [allocate]
             canonical_mir_append_text(bodies," = {0};\n");
         }else{if(initialized_type==function_mir_buffer_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
+        }else{if(function_mir_type_is_declared_numeric(initialized_type)!=0){
+            canonical_mir_append_text(bodies," = 0;\n");
         }else{if(initialized_type>=function_mir_copy_payload_enum_type_code(0)){
             if(initialized_type<function_mir_i64_struct_type_code(0)){
                 canonical_mir_append_text(bodies," = {0};\n");
             }else{if(initialized_type>=function_mir_owned_field_struct_type_code(0)){
                 canonical_mir_append_text(bodies," = {0};\n");
             }else{canonical_mir_append_text(bodies," = 0;\n");}}
-        }else{canonical_mir_append_text(bodies," = 0;\n");}}}}}}
+        }else{canonical_mir_append_text(bodies," = 0;\n");}}}}}}}
         local_id=checked_add(local_id,1);
     }
     var contract_local_index:i64=0;
@@ -2786,9 +3205,9 @@ requires_caps [allocate]
             return canonical_c_contract_invalid_local_status();
         }
         let contract_type:i32=assembly_local_type(contract_local);
-        if(canonical_c_supported_catalog_local_type(contract_type,type_descriptors)==0){return canonical_c_contract_invalid_type_status();}
+        if(canonical_c_supported_complete_local_type(contract_type,type_descriptors,numeric_descriptors)==0){return canonical_c_contract_invalid_type_status();}
         canonical_mir_append_text(bodies,"    ");
-        if(canonical_c_append_type_with_catalog(bodies,contract_type,type_descriptors)!=0){return canonical_c_contract_invalid_type_status();}
+        if(canonical_c_append_type_with_complete_catalog(bodies,contract_type,type_descriptors,numeric_descriptors)!=0){return canonical_c_contract_invalid_type_status();}
         canonical_mir_append_text(bodies," m");canonical_mir_append_i64(bodies,assembly_local_id(contract_local));
         if(contract_type==function_mir_string_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
@@ -2921,12 +3340,18 @@ requires_caps [allocate]
                             if(canonical_c_append_string_literal(
                                 source,function_mir_start(instruction),function_mir_length(instruction),bodies
                             )!=0){return 107;}
+                        }else{if(function_mir_type_is_declared_numeric(constant_type)!=0){
+                            canonical_mir_append_text(bodies," = ");
+                            if(canonical_c_append_declared_numeric_literal(
+                                source,function_mir_start(instruction),function_mir_length(instruction),
+                                constant_type,numeric_descriptors,bodies
+                            )!=0){return 106;}
                         }else{
                             canonical_mir_append_text(bodies," = ");
                             if(canonical_c_append_scalar_integer_literal(
                                 source,function_mir_start(instruction),function_mir_length(instruction),constant_type,bodies
                             )!=0){return 106;}
-                        }}
+                        }}}
                         canonical_mir_append_text(bodies,";\n");
                     }
                     if(instruction_kind==function_mir_kind_copy_to_binding()){
@@ -3151,9 +3576,11 @@ requires_caps [allocate]
                         if(left_type==function_mir_allocator_type_code()){return 98;}
                         if(is_comparison!=0){
                             if(function_mir_type_is_integer(left_type)==0){
-                                if(left_type!=function_mir_bool_type_code()){return 98;}
-                                if(binary_symbol!=function_mir_binary_equal_symbol()){
-                                    if(binary_symbol!=function_mir_binary_not_equal_symbol()){return 98;}
+                                if(function_mir_type_is_declared_numeric(left_type)==0){
+                                    if(left_type!=function_mir_bool_type_code()){return 98;}
+                                    if(binary_symbol!=function_mir_binary_equal_symbol()){
+                                        if(binary_symbol!=function_mir_binary_not_equal_symbol()){return 98;}
+                                    }
                                 }
                             }
                         }else{
@@ -3173,7 +3600,11 @@ requires_caps [allocate]
                             canonical_mir_append_i64(bodies,function_mir_right(instruction));
                             canonical_mir_append_text(bodies,";\n");
                         }else{
-                        if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
+                        if(function_mir_type_is_declared_numeric(result_type)!=0){
+                            if(canonical_c_append_declared_numeric_binary(
+                                instruction,result_type,numeric_descriptors,features,bodies
+                            )!=0){return 98;}
+                        }else{if(function_mir_numeric_policy(instruction)==function_mir_checked_numeric_policy()){
                             let checked_request:i64=canonical_c_checked_request_feature(result_type,binary_symbol);
                             if(checked_request<0){return 98;}
                             canonical_c_require_feature(checked_request,features);
@@ -3192,7 +3623,7 @@ requires_caps [allocate]
                             if(binary_symbol==function_mir_binary_divide_symbol()){canonical_mir_append_text(bodies," / m");}
                             canonical_mir_append_i64(bodies,function_mir_right(instruction));
                             canonical_mir_append_text(bodies,";\n");
-                        }
+                        }}
                         }
                     }
                     if(instruction_kind==function_mir_kind_print()){
@@ -3200,7 +3631,11 @@ requires_caps [allocate]
                         if(printed_type==0){return 105;}
                         if(printed_type==function_mir_allocator_type_code()){return 105;}
                         canonical_c_require_feature(canonical_c_i64_print_feature(),features);
-                        if(printed_type==function_mir_string_type_code()){
+                        if(function_mir_type_is_declared_numeric(printed_type)!=0){
+                            if(canonical_c_append_declared_numeric_print(
+                                printed_type,function_mir_left(instruction),numeric_descriptors,bodies
+                            )!=0){return 105;}
+                        }else{if(printed_type==function_mir_string_type_code()){
                             canonical_mir_append_text(bodies,"    fwrite(m");
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));
                             canonical_mir_append_text(bodies,".data, 1, m");
@@ -3221,7 +3656,7 @@ requires_caps [allocate]
                         }else{
                             canonical_mir_append_text(bodies,"    printf(\"%lld\\n\", (long long)m");
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));canonical_mir_append_text(bodies,");\n");
-                        }}
+                        }}}
                     }
                     if(instruction_kind==function_mir_kind_call()){
                         var callee_found:i32=0;var callee_header:MirFunctionRecord=header;var callee_index:i64=0;
@@ -3775,6 +4210,7 @@ fn canonical_c_append_function_core(
     borrow records:Vec<MirFunctionRecord>,
     borrow callable_headers:Vec<MirFunctionRecord>,
     borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
     borrow contracts:Vec<MirFunctionContractRecord>,
@@ -3868,10 +4304,30 @@ requires_caps [allocate]
     }
     if(vec_len<MirCfgRecord>(ordered)!=vec_len<MirCfgRecord>(cfg)){return 7;}
     let status:i32=canonical_c_append_function_core_ordered(
-        source,records,callable_headers,type_descriptors,sources,ownership_records,contracts,contract_locals,ordered,placements,
+        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,ordered,placements,
         prototypes,bodies,public_header,features,emit_public_header
     );
     drop(ordered);
+    return status;
+}
+
+fn canonical_c_append_function_core_without_numeric(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow contracts:Vec<MirFunctionContractRecord>,borrow contract_locals:Vec<MirFunctionContractLocal>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,borrow_mut public_header:Buffer,
+    borrow_mut features:Vec<i64>,emit_public_header:i32
+)->i32
+requires_caps [allocate]
+{
+    var no_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_function_core(
+        source,records,callable_headers,type_descriptors,no_numeric,sources,ownership_records,
+        contracts,contract_locals,cfg,placements,prototypes,bodies,public_header,features,emit_public_header
+    );
+    drop(no_numeric);
     return status;
 }
 
@@ -3889,7 +4345,7 @@ requires_caps [allocate]
     let empty_types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,0);
     let empty_contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
     let empty_contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
-    let status:i32=canonical_c_append_function_core(
+    let status:i32=canonical_c_append_function_core_without_numeric(
         source,records,callable_headers,empty_types,empty_sources,empty_effects,empty_contracts,empty_contract_locals,cfg,placements,
         prototypes,bodies,public_header,features,1
     );
@@ -3912,7 +4368,7 @@ requires_caps [allocate]
     if(vec_len<MirOwnershipRecord>(ownership_records)==0){return canonical_c_resource_missing_effect_status();}
     let empty_contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(system_allocator(),0);
     let empty_contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(system_allocator(),0);
-    let status:i32=canonical_c_append_function_core(
+    let status:i32=canonical_c_append_function_core_without_numeric(
         source,records,callable_headers,type_descriptors,sources,ownership_records,
         empty_contracts,empty_contract_locals,cfg,placements,
         prototypes,bodies,public_header,features,1
@@ -3982,6 +4438,31 @@ pub fn canonical_c_append_function_with_contracts_header_selection(
 )->i32
 requires_caps [allocate]
 {
+    var no_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_function_with_numeric_contracts_header_selection(
+        source,records,callable_headers,type_descriptors,no_numeric,sources,ownership_records,
+        contracts,contract_locals,cfg,placements,prototypes,bodies,public_header,features,emit_public_header
+    );
+    drop(no_numeric);
+    return status;
+}
+
+pub fn canonical_c_append_function_with_numeric_contracts_header_selection(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow contracts:Vec<MirFunctionContractRecord>,
+    borrow contract_locals:Vec<MirFunctionContractLocal>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>,
+    emit_public_header:i32
+)->i32
+requires_caps [allocate]
+{
     if(vec_len<MirOwnershipRecord>(ownership_records)==0){
         var source_index:i64=0;
         while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
@@ -3993,7 +4474,7 @@ requires_caps [allocate]
         }
     }
     return canonical_c_append_function_core(
-        source,records,callable_headers,type_descriptors,sources,ownership_records,contracts,contract_locals,cfg,placements,
+        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,cfg,placements,
         prototypes,bodies,public_header,features,emit_public_header
     );
 }
@@ -4556,7 +5037,8 @@ fn canonical_c_finish_module_with_copy_vectors(
     borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
     borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
     borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
-    borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+    borrow numeric_type_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -4664,6 +5146,16 @@ requires_caps [allocate]
     if(needs_text!=0){canonical_mir_append_text(output,"#include <stddef.h>\n");}
     canonical_mir_append_text(output,"#include <stdint.h>\n");
     var needs_stdio:i32=canonical_c_has_checked_feature(features);
+    let needs_numeric:i32=vec_len<i32>(numeric_type_codes)>0;
+    var needs_decimal:i32=0;
+    var numeric_probe_index:i64=0;
+    while(numeric_probe_index<vec_len<i32>(numeric_type_codes)){
+        if(vec_get<i32>(numeric_type_codes,numeric_probe_index)<function_mir_bounded_type_code(0)){
+            needs_decimal=1;
+        }
+        numeric_probe_index=checked_add(numeric_probe_index,1);
+    }
+    if(needs_numeric!=0){needs_stdio=1;}
     if(canonical_c_has_feature(canonical_c_i64_print_feature(),features)!=0){needs_stdio=1;}
     if(needs_text!=0){needs_stdio=1;}
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
@@ -4681,6 +5173,7 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"    return (int64_t)value.data[index];\n");
         canonical_mir_append_text(output,"}\n\n");
     }}
+    if(needs_decimal!=0){canonical_c_append_decimal_print_runtime(output);}
     if(needs_vector!=0){
         bootstrap_buffer_append(output,vector_typedefs,0,buffer_len(vector_typedefs));
     }
@@ -4728,6 +5221,63 @@ requires_caps [allocate]
         }
         checked_type_rank=checked_add(checked_type_rank,1);
     }
+    if(needs_numeric!=0){
+        var decimal_count:i64=0;
+        var bounded_count:i64=0;
+        var numeric_index:i64=0;
+        while(numeric_index<vec_len<i32>(numeric_type_codes)){
+            let numeric_code:i32=vec_get<i32>(numeric_type_codes,numeric_index);
+            let allocator:Allocator=system_allocator();
+            var spelling:Buffer=buffer_new(allocator,32);
+            let numeric_status:i32=canonical_c_append_numeric_type_with_catalog(
+                spelling,numeric_code,numeric_descriptors
+            );
+            drop(spelling);
+            if(numeric_status!=0){return 4;}
+            var prior:i64=0;
+            while(prior<numeric_index){
+                if(vec_get<i32>(numeric_type_codes,prior)==numeric_code){return 4;}
+                prior=checked_add(prior,1);
+            }
+            if(numeric_code<function_mir_bounded_type_code(0)){decimal_count=checked_add(decimal_count,1);}
+            else{bounded_count=checked_add(bounded_count,1);}
+            numeric_index=checked_add(numeric_index,1);
+        }
+        canonical_mir_append_text(output,
+            "static void merit_exact_numeric_failure(const char *message) { fprintf(stderr, \"Merit %s\\n\", message); exit(70); }\n");
+        if(decimal_count>0){canonical_c_append_decimal_round_helper(output);}
+        var kind_rank:i32=0;
+        while(kind_rank<2){
+            var remaining:i64=decimal_count;
+            if(kind_rank!=0){remaining=bounded_count;}
+            var previous:i32= -1;
+            while(remaining>0){
+                var best:i32=0;
+                numeric_index=0;
+                while(numeric_index<vec_len<i32>(numeric_type_codes)){
+                    let candidate:i32=vec_get<i32>(numeric_type_codes,numeric_index);
+                    var same_kind:i32=0;
+                    if(kind_rank==0){if(candidate<function_mir_bounded_type_code(0)){same_kind=1;}}
+                    else{if(candidate>=function_mir_bounded_type_code(0)){same_kind=1;}}
+                    if(same_kind!=0){
+                        if(candidate>previous){
+                            if(best==0){best=candidate;}
+                            else{if(candidate<best){best=candidate;}}
+                        }
+                    }
+                    numeric_index=checked_add(numeric_index,1);
+                }
+                if(best==0){return 4;}
+                var helper_status:i32=0;
+                if(kind_rank==0){helper_status=canonical_c_append_decimal_checker(best,numeric_descriptors,output);}
+                else{helper_status=canonical_c_append_bounded_checker(best,numeric_descriptors,output);}
+                if(helper_status!=0){return 4;}
+                previous=best;
+                remaining=checked_sub(remaining,1);
+            }
+            kind_rank=checked_add(kind_rank,1);
+        }
+    }
     if(needs_vector!=0){
         bootstrap_buffer_append(output,vector_runtime,0,buffer_len(vector_runtime));
     }
@@ -4735,10 +5285,30 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"static void merit_contract_failure(const char *kind) { (void)kind; abort(); }\n");
     }
     if(needs_checked!=0){buffer_push(output,10);}
-    if(needs_vector!=0){if(needs_checked==0){buffer_push(output,10);}}
+    if(needs_numeric!=0){if(needs_checked==0){buffer_push(output,10);}}
+    if(needs_vector!=0){if(needs_checked==0){if(needs_numeric==0){buffer_push(output,10);}}}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
     drop(vector_runtime);drop(vector_typedefs);drop(sorted_codes);
     return 0;
+}
+
+fn canonical_c_finish_module_without_numeric(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
+    borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var no_numeric_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var no_numeric_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
+    let status:i32=canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,no_numeric_codes,descriptors,no_numeric_descriptors,output
+    );
+    drop(no_numeric_descriptors);drop(no_numeric_codes);
+    return status;
 }
 
 pub fn canonical_c_finish_scalar_module(
@@ -4753,7 +5323,7 @@ requires_caps [allocate]
     var enum_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
-    let status:i32=canonical_c_finish_module_with_copy_vectors(
+    let status:i32=canonical_c_finish_module_without_numeric(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,descriptors,output
     );
@@ -4776,7 +5346,7 @@ requires_caps [allocate]
     var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
     vec_push<i32>(vector_type_codes,vector_type_code);
-    let status:i32=canonical_c_finish_module_with_copy_vectors(
+    let status:i32=canonical_c_finish_module_without_numeric(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,descriptors,output
     );
@@ -4798,7 +5368,7 @@ requires_caps [allocate]
     var enum_type_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
-    let status:i32=canonical_c_finish_module_with_copy_vectors(
+    let status:i32=canonical_c_finish_module_without_numeric(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,descriptors,output
     );
@@ -4817,7 +5387,7 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     var owned_field_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var owned_enum_codes:Vec<i32>=vec_new<i32>(allocator,0);
-    let status:i32=canonical_c_finish_module_with_copy_vectors(
+    let status:i32=canonical_c_finish_module_without_numeric(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,descriptors,output
     );
@@ -4832,10 +5402,62 @@ pub fn canonical_c_finish_owned_aggregate_vector_catalog_module(
 )->i32
 requires_caps [allocate]
 {
-    return canonical_c_finish_module_with_copy_vectors(
+    return canonical_c_finish_module_without_numeric(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,descriptors,output
     );
+}
+
+pub fn canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
+    borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,borrow numeric_type_codes:Vec<i32>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,numeric_type_codes,descriptors,numeric_descriptors,output
+    );
+}
+
+pub fn canonical_c_collect_numeric_types_from_records(
+    borrow records:Vec<MirFunctionRecord>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut numeric_type_codes:Vec<i32>
+)->i32
+requires_caps [allocate]
+{
+    if(vec_len<MirFunctionRecord>(records)<2){return 1;}
+    let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
+    if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
+    var index:i64=0;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        let kind:i32=function_mir_kind(record);
+        var has_type:i32=0;
+        if(kind==function_mir_kind_function()){has_type=1;}
+        if(kind==function_mir_kind_parameter()){has_type=1;}
+        if(kind==function_mir_kind_source_local()){has_type=1;}
+        if(kind==function_mir_kind_temporary_local()){has_type=1;}
+        if(has_type!=0){
+            let code:i32=function_mir_type_code(record);
+            if(function_mir_type_is_declared_numeric(code)!=0){
+                let allocator:Allocator=system_allocator();
+                var spelling:Buffer=buffer_new(allocator,32);
+                let status:i32=canonical_c_append_numeric_type_with_catalog(spelling,code,numeric_descriptors);
+                drop(spelling);
+                if(status!=0){return 3;}
+                if(canonical_c_vector_code_selected(code,numeric_type_codes)==0){
+                    vec_push<i32>(numeric_type_codes,code);
+                }
+            }
+        }
+        index=checked_add(index,1);
+    }
+    return 0;
 }
 
 // Collect the vector types represented by canonical function locals and return

@@ -172,6 +172,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         var backend_copy_enum_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_owned_field_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_owned_enum_types:Vec<i32>=vec_new<i32>(allocator,4);
+        var backend_numeric_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_features:Vec<i64>=vec_new<i64>(allocator,16);
         var backend_prototypes:Buffer=buffer_new(allocator,4096);
         var backend_bodies:Buffer=buffer_new(allocator,8192);
@@ -878,8 +879,8 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                     source,backend_header,header_selections
                                                 );
                                             }
-                                            let backend_status:i32=canonical_c_append_function_with_contracts_header_selection(
-                                                source,body,backend_callable_headers,type_descriptors,sources,
+                                            let backend_status:i32=canonical_c_append_function_with_numeric_contracts_header_selection(
+                                                source,body,backend_callable_headers,type_descriptors,numeric_type_descriptors,sources,
                                                 ownership_records,contracts,contract_locals,cfg,placements,backend_prototypes,backend_bodies,
                                                 backend_declarations,backend_features,emit_public_header
                                             );
@@ -914,6 +915,14 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                         }
                                                     }
                                                 }
+                                            }
+                                        }
+                                        if(function_status==0){
+                                            let numeric_catalog_status:i32=canonical_c_collect_numeric_types_from_records(
+                                                body,numeric_type_descriptors,backend_numeric_types
+                                            );
+                                            if(numeric_catalog_status!=0){
+                                                function_status=native_driver_backend_catalog_failure_status(numeric_catalog_status);
                                             }
                                         }
                                         if(function_status==0){emitted_functions=checked_add(emitted_functions,1);}
@@ -966,10 +975,11 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         }else{
             var backend_source:Buffer=buffer_new(allocator,16384);
             var backend_header:Buffer=buffer_new(allocator,4096);
-            let module_status:i32=canonical_c_finish_owned_aggregate_vector_catalog_module(
+            let module_status:i32=canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
                 backend_prototypes,backend_bodies,backend_features,
                 backend_vector_types,backend_aggregate_types,backend_copy_enum_types,
-                backend_owned_field_types,backend_owned_enum_types,type_descriptors,backend_source
+                backend_owned_field_types,backend_owned_enum_types,backend_numeric_types,
+                type_descriptors,numeric_type_descriptors,backend_source
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
             let public_status:i32=canonical_c_finish_public_header_from_catalog_selected(
@@ -988,7 +998,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             drop(backend_header);drop(backend_source);
         }
         drop(backend_declarations);drop(backend_bodies);drop(backend_prototypes);
-        drop(backend_features);drop(backend_owned_enum_types);drop(backend_owned_field_types);
+        drop(backend_features);drop(backend_numeric_types);drop(backend_owned_enum_types);drop(backend_owned_field_types);
         drop(backend_copy_enum_types);drop(backend_aggregate_types);drop(backend_vector_types);drop(backend_callable_headers);
         drop(header_selections);
         drop(callable_parameters);drop(callable_signatures);

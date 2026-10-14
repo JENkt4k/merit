@@ -1481,6 +1481,9 @@ def emit_c_module(module: MirModule) -> str:
         type_.name == "ByteSlice" and not type_.arguments for type_ in all_types
     )
     needs_decimal_runtime = any(_decimal_type(type_) is not None for type_ in all_types)
+    needs_exact_numeric_runtime = needs_decimal_runtime or any(
+        _bounded_type(type_) is not None for type_ in all_types
+    )
     filesystem_read_types: set[MirType] = set()
     filesystem_write_types: set[MirType] = set()
     for function in module.functions:
@@ -1499,7 +1502,7 @@ def emit_c_module(module: MirModule) -> str:
         "#include <stdbool.h>",
         *(["#include <stddef.h>"] if needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print or checked_operations or needs_decimal_runtime or needs_buffer_runtime or needs_text_runtime else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operations or needs_exact_numeric_runtime or needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdlib.h>",
         *(["#include <string.h>"] if needs_buffer_runtime else []),
         *(["#include <sys/stat.h>"] if needs_filesystem_runtime else []),
