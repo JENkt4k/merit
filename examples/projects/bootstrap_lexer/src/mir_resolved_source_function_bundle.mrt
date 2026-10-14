@@ -1068,6 +1068,21 @@ fn canonical_c_trivial_integer_aggregate_field_count(
     return canonical_c_trivial_integer_aggregate_field_count_depth(type_code,descriptors,0);
 }
 
+fn canonical_c_supported_copy_aggregate_field(
+    type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_integer(type_code)!=0){return 1;}
+    if(type_code==function_mir_bool_type_code()){return 1;}
+    if(function_mir_type_is_declared_numeric(type_code)!=0){
+        return canonical_c_supported_complete_local_type(type_code,descriptors,numeric_descriptors);
+    }
+    if(canonical_c_trivial_integer_aggregate_field_count(type_code,descriptors)>0){return 1;}
+    return 0;
+}
+
 fn canonical_c_append_vector_symbol(
     borrow_mut output:Buffer,operation:String,borrow suffix:Buffer
 )->i32
@@ -3380,13 +3395,11 @@ requires_caps [allocate]
                         if(field_type==0){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,result_local)!=aggregate_type){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,field_local)!=field_type){return canonical_c_aggregate_invalid_record_status();}
-                        if(owned_field==0){if(function_mir_type_is_integer(field_type)==0){
-                            if(field_type!=function_mir_bool_type_code()){
-                                if(canonical_c_trivial_integer_aggregate_field_count(field_type,type_descriptors)==0){
-                                    return canonical_c_aggregate_unsupported_field_status();
-                                }
-                            }
-                        }}
+                        if(owned_field==0){
+                            if(canonical_c_supported_copy_aggregate_field(
+                                field_type,type_descriptors,numeric_descriptors
+                            )==0){return canonical_c_aggregate_unsupported_field_status();}
+                        }
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
                         if(canonical_c_append_type_with_catalog(bodies,aggregate_type,type_descriptors)!=0){return canonical_c_aggregate_invalid_record_status();}
@@ -3408,13 +3421,9 @@ requires_caps [allocate]
                         );
                         if(field_type==0){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,result_local)!=field_type){return canonical_c_aggregate_invalid_record_status();}
-                        if(function_mir_type_is_integer(field_type)==0){
-                            if(field_type!=function_mir_bool_type_code()){
-                                if(canonical_c_trivial_integer_aggregate_field_count(field_type,type_descriptors)==0){
-                                    return canonical_c_aggregate_unsupported_field_status();
-                                }
-                            }
-                        }
+                        if(canonical_c_supported_copy_aggregate_field(
+                            field_type,type_descriptors,numeric_descriptors
+                        )==0){return canonical_c_aggregate_unsupported_field_status();}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,receiver_local);
                         if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_value()){
@@ -3436,13 +3445,9 @@ requires_caps [allocate]
                         if(field_type==0){return canonical_c_aggregate_invalid_record_status();}
                         if(function_mir_type_code(instruction)!=receiver_type){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_scalar_local_type(records,value_local)!=field_type){return canonical_c_aggregate_invalid_record_status();}
-                        if(function_mir_type_is_integer(field_type)==0){
-                            if(field_type!=function_mir_bool_type_code()){
-                                if(canonical_c_trivial_integer_aggregate_field_count(field_type,type_descriptors)==0){
-                                    return canonical_c_aggregate_unsupported_field_status();
-                                }
-                            }
-                        }
+                        if(canonical_c_supported_copy_aggregate_field(
+                            field_type,type_descriptors,numeric_descriptors
+                        )==0){return canonical_c_aggregate_unsupported_field_status();}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,receiver_local);
                         if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_mutable_borrow()){
                             canonical_mir_append_text(bodies,"->field_");
@@ -4778,8 +4783,9 @@ requires_caps [allocate]
 // Emit only aggregate types reached from function signatures and locals.
 // A field may depend on another aggregate; select the lowest ready identity
 // so declaration order is deterministic and cycles fail closed.
-pub fn canonical_c_append_integer_aggregate_typedefs(
-    borrow aggregate_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+pub fn canonical_c_append_aggregate_typedefs_with_numeric(
+    borrow aggregate_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -4828,10 +4834,12 @@ requires_caps [allocate]
                 if(function_mir_type_is_integer(child)==0){
                     if(child!=function_mir_bool_type_code()){
                         if(child<function_mir_aggregate_struct_type_code(0)){return 5;}
-                        if(child>=function_mir_decimal_type_code(0)){return 5;}
+                        if(child>=function_mir_decimal_type_code(0)){
+                            if(function_mir_type_is_declared_numeric(child)==0){return 5;}
+                        }
                     }
                 }
-                if(canonical_c_append_type_with_catalog(output,child,descriptors)!=0){return 5;}
+                if(canonical_c_append_type_with_complete_catalog(output,child,descriptors,numeric_descriptors)!=0){return 5;}
                 canonical_mir_append_text(output," field_");
                 canonical_mir_append_i32(output,ordinal);
                 canonical_mir_append_text(output,"; ");
@@ -4849,6 +4857,19 @@ requires_caps [allocate]
     if(vec_len<i32>(emitted)>0){buffer_push(output,10);}
     drop(emitted);
     return 0;
+}
+
+pub fn canonical_c_append_integer_aggregate_typedefs(
+    borrow aggregate_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var no_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
+    let status:i32=canonical_c_append_aggregate_typedefs_with_numeric(
+        aggregate_codes,descriptors,no_numeric,output
+    );
+    drop(no_numeric);return status;
 }
 
 pub fn canonical_c_append_copy_enum_typedefs(
@@ -5181,8 +5202,8 @@ requires_caps [allocate]
         owned_field_codes,descriptors,output
     );
     if(owned_field_status!=0){return checked_add(40,owned_field_status);}
-    let aggregate_status:i32=canonical_c_append_integer_aggregate_typedefs(
-        aggregate_type_codes,descriptors,output
+    let aggregate_status:i32=canonical_c_append_aggregate_typedefs_with_numeric(
+        aggregate_type_codes,descriptors,numeric_descriptors,output
     );
     if(aggregate_status!=0){return checked_add(20,aggregate_status);}
     let enum_status:i32=canonical_c_append_copy_enum_typedefs(enum_type_codes,descriptors,output);
@@ -5452,6 +5473,36 @@ requires_caps [allocate]
                 if(status!=0){return 3;}
                 if(canonical_c_vector_code_selected(code,numeric_type_codes)==0){
                     vec_push<i32>(numeric_type_codes,code);
+                }
+            }
+        }
+        index=checked_add(index,1);
+    }
+    return 0;
+}
+
+// Numeric leaves reached through aggregate fields need runtime/checker helpers
+// even when no function local has the leaf type directly.
+pub fn canonical_c_collect_numeric_types_from_aggregate_catalog(
+    borrow aggregate_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut numeric_type_codes:Vec<i32>
+)->i32
+requires_caps [allocate]
+{
+    var index:i64=0;
+    while(index<vec_len<MirTypeDescriptor>(descriptors)){
+        let field:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+        let parent:i32=function_mir_type_descriptor_code(field);
+        let child:i32=function_mir_type_descriptor_child(field);
+        if(canonical_c_vector_code_selected(parent,aggregate_codes)!=0){
+            if(function_mir_type_is_declared_numeric(child)!=0){
+                let allocator:Allocator=system_allocator();
+                var spelling:Buffer=buffer_new(allocator,32);
+                let status:i32=canonical_c_append_numeric_type_with_catalog(spelling,child,numeric_descriptors);
+                drop(spelling);
+                if(status!=0){return 1;}
+                if(canonical_c_vector_code_selected(child,numeric_type_codes)==0){
+                    vec_push<i32>(numeric_type_codes,child);
                 }
             }
         }

@@ -3345,6 +3345,230 @@ def test_merit_aggregate_typedefs_are_dependency_ordered_like_oracle(tmp_path: P
     )
 
 
+def test_merit_aggregate_numeric_fields_collect_and_emit_validated_c(tmp_path: Path) -> None:
+    probe = r'''module aggregate_numeric_field_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let aggregate:i32=function_mir_aggregate_struct_type_code(0);
+  let decimal:i32=function_mir_decimal_type_code(0);
+  let bounded:i32=function_mir_bounded_type_code(0);
+  var aggregates:Vec<i32>=vec_new<i32>(allocator,1);vec_push<i32>(aggregates,aggregate);
+  var descriptors:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,2);
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   aggregate,function_mir_type_descriptor_aggregate_struct_kind(),0,decimal,0,0,0,5,0,1,3));
+  vec_push<MirTypeDescriptor>(descriptors,function_mir_type_descriptor(
+   aggregate,function_mir_type_descriptor_aggregate_struct_kind(),0,bounded,0,1,0,5,0,1,3));
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,2);
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   decimal,function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   bounded,function_mir_numeric_descriptor_bounded_kind(),0,function_mir_u64_type_code(),0,
+   0,0,1,18446744073,709551615,0));
+  var codes:Vec<i32>=vec_new<i32>(allocator,0);
+  print(canonical_c_collect_numeric_types_from_aggregate_catalog(aggregates,descriptors,numeric,codes));
+  print(vec_len<i32>(codes));
+  print(canonical_c_collect_numeric_types_from_aggregate_catalog(aggregates,descriptors,numeric,codes));
+  print(vec_len<i32>(codes));
+  var output:Buffer=buffer_new(allocator,128);
+  print(canonical_c_append_aggregate_typedefs_with_numeric(aggregates,descriptors,numeric,output));
+  print(buffer_len(output));var index:i64=0;
+  while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
+  var absent:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
+  var rejected:Buffer=buffer_new(allocator,32);
+  print(canonical_c_append_aggregate_typedefs_with_numeric(aggregates,descriptors,absent,rejected));
+  drop(rejected);drop(absent);drop(output);drop(codes);drop(numeric);drop(descriptors);drop(aggregates);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'aggregate-numeric-fields')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:5] == [0, 2, 0, 2, 0]
+    length = values[5]
+    c_typedef = bytes(values[6:6 + length]).decode('ascii')
+    assert values[6 + length:] == [5]
+    assert c_typedef == (
+        'typedef struct { int64_t field_0; uint64_t field_1; } merit_struct_aggregate_0;\n\n'
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    source = tmp_path / 'aggregate_numeric_fields.c'
+    source.write_text(
+        '#include <stdint.h>\n' + c_typedef +
+        'int main(void) { merit_struct_aggregate_0 value = {123, 456}; '
+        'return value.field_0 == 123 && value.field_1 == 456 ? 0 : 1; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    program = tmp_path / 'aggregate-numeric-fields-executable'
+    subprocess.run([cc, '-std=c11', str(source), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
+@pytest.mark.parametrize('mode', ['local-only', 'construct-field', 'load-field', 'store-field'])
+def test_merit_aggregate_numeric_leaf_reaches_complete_oracle_c(
+    tmp_path: Path, mode: str,
+) -> None:
+    probe = r'''module aggregate_numeric_module_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"computePointvalue");
+  let aggregate:i32=function_mir_aggregate_struct_type_code(0);
+  let decimal:i32=function_mir_decimal_type_code(0);
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(records,function_mir_callable_header(0,7,0,7,function_mir_unit_type_code(),function_mir_mode_value(),-1,0,0));
+  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,aggregate,0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,0);
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(
+   aggregate,function_mir_type_descriptor_aggregate_struct_kind(),0,decimal,0,0,7,5,12,5,3));
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   decimal,function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+  var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+  var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+  var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(cfg,cfg_block(0,0));vec_push<MirCfgRecord>(cfg,cfg_return(0,-1));
+  var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,4);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_append_function_with_numeric_contracts_header_selection(
+   source,records,headers,types,numeric,sources,effects,contracts,contract_locals,cfg,placements,
+   prototypes,bodies,declarations,features,0));
+  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  var aggregates:Vec<i32>=vec_new<i32>(allocator,0);
+  var numeric_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  print(canonical_c_collect_aggregate_types_from_records(records,types,aggregates));
+  print(canonical_c_collect_numeric_types_from_records(records,numeric,numeric_codes));
+  print(vec_len<i32>(numeric_codes));
+  print(canonical_c_collect_numeric_types_from_aggregate_catalog(aggregates,types,numeric,numeric_codes));
+  print(vec_len<i32>(numeric_codes));
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,no_codes,aggregates,no_codes,no_codes,no_codes,numeric_codes,types,numeric,c_source));
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  drop(numeric_codes);drop(aggregates);drop(no_codes);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(placements);drop(cfg);drop(contract_locals);drop(contracts);drop(effects);drop(sources);
+  drop(numeric);drop(types);drop(headers);drop(records);drop(source);
+ }
+ return 0;
+}
+'''
+    if mode != 'local-only':
+        operation = ('function_mir_struct_construct(0,7,1,1,0,0,aggregate,1)'
+                     if mode != 'store-field' else
+                     'function_mir_struct_field_store(0,7,1,1,0,0,aggregate,1)')
+        probe = probe.replace(
+            'buffer_from_string(allocator,"computePointvalue")',
+            'buffer_from_string(allocator,"computePointvalue1.23")',
+        ).replace(
+            'vec_new<MirFunctionRecord>(allocator,2)', 'vec_new<MirFunctionRecord>(allocator,4)',
+        ).replace(
+            '  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,aggregate,0));',
+            '  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,decimal,0));\n'
+            '  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,aggregate,1));\n'
+            '  vec_push<MirFunctionRecord>(records,function_mir_const(17,4,0,0,decimal,0));\n'
+            '  vec_push<MirFunctionRecord>(records,' + operation + ');',
+        ).replace(
+            'var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);',
+            'var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,2);\n'
+            '  vec_push<MirPlacementRecord>(placements,mir_place(0,0,0));\n'
+            '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
+        )
+        if mode in {'load-field', 'store-field'}:
+            probe = probe.replace(
+                'vec_new<MirFunctionRecord>(allocator,4)', 'vec_new<MirFunctionRecord>(allocator,6)',
+            ).replace(
+                '  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,aggregate,1));',
+                '  vec_push<MirFunctionRecord>(records,function_mir_temporary(1,aggregate,1));\n'
+                '  vec_push<MirFunctionRecord>(records,function_mir_temporary(2,decimal,2));',
+            ).replace(
+                '  vec_push<MirFunctionRecord>(records,' + operation + ');',
+                '  vec_push<MirFunctionRecord>(records,' + operation + ');\n'
+                '  vec_push<MirFunctionRecord>(records,function_mir_struct_field_load(0,7,2,2,1,0,2));',
+            ).replace(
+                'function_mir_unit_type_code(),function_mir_mode_value(),-1,0,0',
+                'decimal,function_mir_mode_value(),-1,0,0',
+            ).replace(
+                'cfg_return(0,-1)', 'cfg_return(0,2)',
+            ).replace(
+                'vec_new<MirPlacementRecord>(allocator,2)',
+                'vec_new<MirPlacementRecord>(allocator,3)',
+            ).replace(
+                '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));',
+                '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));\n'
+                '  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));',
+            )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'aggregate-numeric-module')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:7] == ([0, 0, 0, 1, 0, 1, 0] if mode != 'local-only'
+                          else [0, 0, 0, 0, 0, 1, 0])
+    c_source = bytes(values[8:]).decode('utf-8')
+    assert values[7] == len(c_source.encode('utf-8'))
+    aggregate_type = MirType(
+        'struct_aggregate_0_destructor_-1__abi_3_506f696e74_76616c7565',
+        (MirType('decimal_0_18_2_3'),),
+    )
+    locals_ = ((MirLocal(0, '_t0', MirType('decimal_0_18_2_3')),
+                MirLocal(1, '_t1', aggregate_type),
+                *((MirLocal(2, '_t2', MirType('decimal_0_18_2_3')),) if mode in {'load-field', 'store-field'} else ()))
+               if mode != 'local-only'
+               else (MirLocal(0, '_t0', aggregate_type),))
+    instructions = ((
+        MirInstruction(0, 'const', result=0, value=123),
+        MirInstruction(1, 'construct' if mode != 'store-field' else 'store_field',
+                       result=1, operands=(0,), symbol='field_0'),
+        *((MirInstruction(2, 'load_field', result=2, operands=(1,), symbol='field_0'),)
+          if mode in {'load-field', 'store-field'} else ()),
+    ) if mode != 'local-only' else ())
+    module = MirModule('demo', (MirFunction(
+        'compute', MirType('decimal_0_18_2_3') if mode in {'load-field', 'store-field'} else MirType('unit'),
+        locals_,
+        (MirBlock(0, instructions, MirTerminator('return', operands=(2,))
+          if mode in {'load-field', 'store-field'} else MirTerminator('return')),), 0,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    c_file = tmp_path / 'aggregate_numeric_module.c'
+    driver = ('int main(void) { return compute() == 123 ? 0 : 1; }\n'
+              if mode in {'load-field', 'store-field'} else
+              'int main(void) { compute(); return 0; }\n')
+    c_file.write_text(c_source + '\n' + driver,
+                      encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'aggregate-numeric-module-executable'
+    subprocess.run([cc, '-std=c11', str(c_file), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
 def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
     root = _project(tmp_path, CANONICAL_C_BACKEND_PROBE)
     project = load_project(root / "Merit.toml")

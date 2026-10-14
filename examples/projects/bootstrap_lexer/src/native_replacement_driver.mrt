@@ -925,6 +925,14 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                 function_status=native_driver_backend_catalog_failure_status(numeric_catalog_status);
                                             }
                                         }
+                                        if(function_status==0){
+                                            let numeric_field_status:i32=canonical_c_collect_numeric_types_from_aggregate_catalog(
+                                                backend_aggregate_types,type_descriptors,numeric_type_descriptors,backend_numeric_types
+                                            );
+                                            if(numeric_field_status!=0){
+                                                function_status=native_driver_backend_catalog_failure_status(numeric_field_status);
+                                            }
+                                        }
                                         if(function_status==0){emitted_functions=checked_add(emitted_functions,1);}
                                     }
                                 }

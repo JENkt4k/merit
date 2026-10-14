@@ -607,6 +607,27 @@ does **not** close F4/F5: aggregate numeric fields/layout, public headers,
 whole-project acceptance, and broader numeric instruction combinations remain
 open.
 
+The aggregate-numeric F4 follow-on now discovers decimal/bounded leaves from
+reachable aggregate descriptors, deduplicates them across functions, and emits
+their validated C field storage through the shared aggregate typedef path.
+The direct two-field decimal/bounded probe rejects a missing numeric catalog
+and GCC-compiles the emitted typedef (`1 passed in 36.82s`); the preexisting
+aggregate dependency-order regression also passed. A complete module whose
+only decimal use is an aggregate field matches the Python oracle byte for byte
+and executes under GCC (`1 passed in 36.05s`). These tests do not yet prove
+numeric-field construct/load/store, aggregate call modes, stable public-header
+layout, or finance-project acceptance. F4 therefore remains partial.
+The existing nonnumeric v4 artifact baseline remains byte-identical after
+the shared finalizer change (`1 passed in 34.58s`).
+The same numeric-field catalog now passes complete native/Python C-byte and
+GCC execution checks for construction (`1 passed in 37.09s`) and field load
+plus initializing store (`2 passed in 71.83s`), with returned decimal storage
+checked at runtime. The backend still rejects replacement stores that would
+require cleanup. Aggregate parameter/return call modes and stable public
+headers remain separate F5/F6 work; this is not whole-project F4 closure.
+The seven-test numeric-aggregate boundary, including the old aggregate-order
+and v4 artifact baselines, passed together in 179.20s before check-in.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
