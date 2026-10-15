@@ -627,6 +627,31 @@ require cleanup. Aggregate parameter/return call modes and stable public
 headers remain separate F5/F6 work; this is not whole-project F4 closure.
 The seven-test numeric-aggregate boundary, including the old aggregate-order
 and v4 artifact baselines, passed together in 179.20s before check-in.
+After that check-in, a focused numeric-aggregate **by-value** parameter and
+return case matched the complete Python C artifact and executed under GCC
+(`1 passed in 35.60s`). Borrowed/mutable-borrow signatures and user-call
+arguments still pass through the older integer/bool-only aggregate field-count
+gate. Those checks form one descriptor-aware F5 mechanism rather than separate
+per-project exceptions; value-mode evidence does not close that mechanism.
+The descriptor-aware Copy aggregate field count now reaches native signature,
+borrowed-local, return, call-result, and callable-parameter checks without
+changing ownership modes. By-value, borrowed, and mutable-borrowed
+numeric-bearing aggregate signatures match complete Python C bytes and pass
+GCC execution. The focused signature/call-regression boundary passed 11 tests
+in 361.78s, including existing scalar-call rejection coverage. This does not
+yet prove an actual multi-function user-call artifact with a numeric-bearing
+aggregate argument; F5 remains partial until that and the broader acceptance
+matrix are exercised.
+That exact F5 user-call artifact now passes for value, borrowed, and mutable-
+borrowed aggregate arguments/results: native complete C bytes equal the Python
+oracle and each generated C program runs under GCC (`1 passed in 22.57s`,
+`2 passed in 74.56s`). Two borrowed-argument mode mismatches reject without
+silently changing a borrow into a value call (`2 passed in 74.14s`). Wider
+multi-module ownership/call combinations, numeric direct-call variants, and
+acceptance projects remain open.
+The six-test accepted/rejected numeric-aggregate user-call boundary, including
+the old scalar borrowed-parameter rejection, passed together in 128.38s
+before check-in.
 
 ## Finite capability families
 

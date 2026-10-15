@@ -3414,7 +3414,10 @@ fn main()->i32 {
     subprocess.run([str(program)], check=True, text=True, capture_output=True)
 
 
-@pytest.mark.parametrize('mode', ['local-only', 'construct-field', 'load-field', 'store-field'])
+@pytest.mark.parametrize('mode', [
+    'local-only', 'construct-field', 'load-field', 'store-field', 'value-return',
+    'borrow-return', 'mut-borrow-return',
+])
 def test_merit_aggregate_numeric_leaf_reaches_complete_oracle_c(
     tmp_path: Path, mode: str,
 ) -> None:
@@ -3475,7 +3478,7 @@ fn main()->i32 {
  return 0;
 }
 '''
-    if mode != 'local-only':
+    if mode in {'construct-field', 'load-field', 'store-field'}:
         operation = ('function_mir_struct_construct(0,7,1,1,0,0,aggregate,1)'
                      if mode != 'store-field' else
                      'function_mir_struct_field_store(0,7,1,1,0,0,aggregate,1)')
@@ -3520,6 +3523,20 @@ fn main()->i32 {
                 '  vec_push<MirPlacementRecord>(placements,mir_place(0,1,1));\n'
                 '  vec_push<MirPlacementRecord>(placements,mir_place(0,2,2));',
             )
+    if mode in {'value-return', 'borrow-return', 'mut-borrow-return'}:
+        return_mode = ('function_mir_mode_borrowed()' if mode == 'borrow-return'
+                       else 'function_mir_mode_mutable_borrow()' if mode == 'mut-borrow-return'
+                       else 'function_mir_mode_value()')
+        parameter_mode = return_mode
+        borrowed_origin = '0' if mode in {'borrow-return', 'mut-borrow-return'} else '-1'
+        probe = probe.replace(
+            'function_mir_unit_type_code(),function_mir_mode_value(),-1,0,0',
+            'aggregate,' + return_mode + ',' + borrowed_origin + ',1,0',
+        ).replace(
+            '  vec_push<MirFunctionRecord>(records,function_mir_temporary(0,aggregate,0));',
+            '  vec_push<MirFunctionRecord>(records,function_mir_parameter(0,7,0,aggregate,0,0,' +
+            parameter_mode + ',0));',
+        ).replace('cfg_return(0,-1)', 'cfg_return(0,0)')
     root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
     interpreted = interpret(project)
@@ -3527,7 +3544,7 @@ fn main()->i32 {
     native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
     assert native == interpreted
     values = [int(value) for value in native.splitlines()]
-    assert values[:7] == ([0, 0, 0, 1, 0, 1, 0] if mode != 'local-only'
+    assert values[:7] == ([0, 0, 0, 1, 0, 1, 0] if mode in {'construct-field', 'load-field', 'store-field'}
                           else [0, 0, 0, 0, 0, 1, 0])
     c_source = bytes(values[8:]).decode('utf-8')
     assert values[7] == len(c_source.encode('utf-8'))
@@ -3538,25 +3555,43 @@ fn main()->i32 {
     locals_ = ((MirLocal(0, '_t0', MirType('decimal_0_18_2_3')),
                 MirLocal(1, '_t1', aggregate_type),
                 *((MirLocal(2, '_t2', MirType('decimal_0_18_2_3')),) if mode in {'load-field', 'store-field'} else ()))
-               if mode != 'local-only'
-               else (MirLocal(0, '_t0', aggregate_type),))
+               if mode in {'construct-field', 'load-field', 'store-field'}
+               else (MirLocal(0, 'item' if mode in {'value-return', 'borrow-return', 'mut-borrow-return'} else '_t0',
+                              aggregate_type, ownership='borrowed' if mode == 'borrow-return'
+                              else 'mutable_borrow' if mode == 'mut-borrow-return' else 'value'),))
     instructions = ((
         MirInstruction(0, 'const', result=0, value=123),
         MirInstruction(1, 'construct' if mode != 'store-field' else 'store_field',
                        result=1, operands=(0,), symbol='field_0'),
         *((MirInstruction(2, 'load_field', result=2, operands=(1,), symbol='field_0'),)
           if mode in {'load-field', 'store-field'} else ()),
-    ) if mode != 'local-only' else ())
+    ) if mode in {'construct-field', 'load-field', 'store-field'} else ())
     module = MirModule('demo', (MirFunction(
-        'compute', MirType('decimal_0_18_2_3') if mode in {'load-field', 'store-field'} else MirType('unit'),
+        'compute', (MirType('decimal_0_18_2_3') if mode in {'load-field', 'store-field'}
+                    else aggregate_type if mode in {'value-return', 'borrow-return', 'mut-borrow-return'}
+                    else MirType('unit')),
         locals_,
         (MirBlock(0, instructions, MirTerminator('return', operands=(2,))
-          if mode in {'load-field', 'store-field'} else MirTerminator('return')),), 0,
+          if mode in {'load-field', 'store-field'} else
+          MirTerminator('return', operands=(0,)) if mode in {'value-return', 'borrow-return', 'mut-borrow-return'}
+          else MirTerminator('return')),), 0,
+        parameters=(MirParameter(0, mode='borrowed' if mode == 'borrow-return'
+                                 else 'mutable_borrow' if mode == 'mut-borrow-return' else 'value'),)
+        if mode in {'value-return', 'borrow-return', 'mut-borrow-return'} else (),
+        return_mode='borrowed' if mode == 'borrow-return'
+        else 'mutable_borrow' if mode == 'mut-borrow-return' else 'value',
+        borrowed_origin=0 if mode in {'borrow-return', 'mut-borrow-return'} else None,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_module
     assert c_source == emit_c_module(module)
     c_file = tmp_path / 'aggregate_numeric_module.c'
-    driver = ('int main(void) { return compute() == 123 ? 0 : 1; }\n'
+    driver = ('int main(void) { merit_struct_aggregate_0 value = {123}; '
+              'return compute(&value)->field_0 == 123 ? 0 : 1; }\n'
+              if mode in {'borrow-return', 'mut-borrow-return'} else
+              'int main(void) { merit_struct_aggregate_0 value = {123}; '
+              'return compute(value).field_0 == 123 ? 0 : 1; }\n'
+              if mode == 'value-return' else
+              'int main(void) { return compute() == 123 ? 0 : 1; }\n'
               if mode in {'load-field', 'store-field'} else
               'int main(void) { compute(); return 0; }\n')
     c_file.write_text(c_source + '\n' + driver,
@@ -3567,6 +3602,163 @@ fn main()->i32 {
     subprocess.run([cc, '-std=c11', str(c_file), '-o', str(program)],
                    check=True, text=True, capture_output=True)
     subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
+def _numeric_aggregate_user_call_probe(mode: str) -> str:
+    mode_code = {
+        'value': 'function_mir_mode_value()',
+        'borrowed': 'function_mir_mode_borrowed()',
+        'mutable_borrow': 'function_mir_mode_mutable_borrow()',
+    }[mode]
+    origin = '-1' if mode == 'value' else '0'
+    probe = r'''module numeric_aggregate_user_call_probe
+import bootstrap_mir_functions;
+import bootstrap_mir_cfg;
+import bootstrap_mir_cfg_placement;
+import bootstrap_mir_function_instruction_source;
+import bootstrap_mir_function_contracts;
+import bootstrap_mir_ownership_flow;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  let source:Buffer=buffer_from_string(allocator,"firstsecondPointvalue");
+  let aggregate:i32=function_mir_aggregate_struct_type_code(0);
+  let decimal:i32=function_mir_decimal_type_code(0);
+  var first:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,5);
+  vec_push<MirFunctionRecord>(first,function_mir_callable_header(0,5,0,5,aggregate,CALL_MODE,ORIGIN,1,0));
+  vec_push<MirFunctionRecord>(first,function_mir_parameter(0,5,0,aggregate,0,0,CALL_MODE,0));
+  vec_push<MirFunctionRecord>(first,function_mir_temporary_mode(1,aggregate,1,CALL_MODE));
+  vec_push<MirFunctionRecord>(first,function_mir_call(0,5,0,1,5,6,aggregate,CALL_MODE,0));
+  vec_push<MirFunctionRecord>(first,function_mir_call_argument(0,0,CALL_MODE,0));
+  var second:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,2);
+  vec_push<MirFunctionRecord>(second,function_mir_callable_header(5,6,5,6,aggregate,CALL_MODE,ORIGIN,1,1));
+  vec_push<MirFunctionRecord>(second,function_mir_parameter(5,6,0,aggregate,0,0,CALL_MODE,0));
+  var headers:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,4);
+  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(first,0));
+  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(first,1));
+  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(second,0));
+  vec_push<MirFunctionRecord>(headers,vec_get<MirFunctionRecord>(second,1));
+  var types:Vec<MirTypeDescriptor>=vec_new<MirTypeDescriptor>(allocator,1);
+  vec_push<MirTypeDescriptor>(types,function_mir_type_descriptor(
+   aggregate,function_mir_type_descriptor_aggregate_struct_kind(),0,decimal,0,0,11,5,16,5,3));
+  var numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,1);
+  vec_push<MirNumericTypeDescriptor>(numeric,function_mir_numeric_descriptor(
+   decimal,function_mir_numeric_descriptor_decimal_kind(),0,0,0,18,2,0,0,0,3));
+  var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,0);
+  var effects:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+  var contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+  var contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+  var first_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(first_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(first_cfg,cfg_return(0,1));
+  var second_cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,2);
+  vec_push<MirCfgRecord>(second_cfg,cfg_block(0,0));vec_push<MirCfgRecord>(second_cfg,cfg_return(0,0));
+  var first_places:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,1);
+  vec_push<MirPlacementRecord>(first_places,mir_place(0,0,0));
+  var second_places:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,0);
+  var features:Vec<i64>=vec_new<i64>(allocator,4);
+  var prototypes:Buffer=buffer_new(allocator,128);var bodies:Buffer=buffer_new(allocator,256);
+  var declarations:Buffer=buffer_new(allocator,128);var c_source:Buffer=buffer_new(allocator,4096);
+  print(canonical_c_append_function_with_numeric_contracts_header_selection(
+   source,first,headers,types,numeric,sources,effects,contracts,contract_locals,first_cfg,first_places,
+   prototypes,bodies,declarations,features,0));
+  print(canonical_c_append_function_with_numeric_contracts_header_selection(
+   source,second,headers,types,numeric,sources,effects,contracts,contract_locals,second_cfg,second_places,
+   prototypes,bodies,declarations,features,0));
+  var no_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  var aggregates:Vec<i32>=vec_new<i32>(allocator,0);
+  var numeric_codes:Vec<i32>=vec_new<i32>(allocator,0);
+  print(canonical_c_collect_aggregate_types_from_records(first,types,aggregates));
+  print(canonical_c_collect_numeric_types_from_aggregate_catalog(aggregates,types,numeric,numeric_codes));
+  print(canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
+   prototypes,bodies,features,no_codes,aggregates,no_codes,no_codes,no_codes,numeric_codes,types,numeric,c_source));
+  print(buffer_len(c_source));var index:i64=0;
+  while(index<buffer_len(c_source)){print(buffer_get(c_source,index));index=checked_add(index,1);}
+  drop(numeric_codes);drop(aggregates);drop(no_codes);drop(c_source);drop(declarations);drop(bodies);drop(prototypes);
+  drop(features);drop(second_places);drop(first_places);drop(second_cfg);drop(first_cfg);
+  drop(contract_locals);drop(contracts);drop(effects);drop(sources);drop(numeric);drop(types);
+  drop(headers);drop(second);drop(first);drop(source);
+ }
+ return 0;
+}
+'''
+    return probe.replace('CALL_MODE', mode_code).replace('ORIGIN', origin)
+
+
+@pytest.mark.parametrize('mode', ['value', 'borrowed', 'mutable_borrow'])
+def test_merit_numeric_aggregate_user_call_matches_oracle_and_executes(
+    tmp_path: Path, mode: str,
+) -> None:
+    probe = _numeric_aggregate_user_call_probe(mode)
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / f'numeric-aggregate-call-{mode}')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    assert values[:5] == [0, 0, 0, 0, 0]
+    c_length = values[5]
+    c_source = bytes(values[6:]).decode('utf-8')
+    assert c_length == len(c_source.encode('utf-8'))
+    aggregate_type = MirType(
+        'struct_aggregate_0_destructor_-1__abi_3_506f696e74_76616c7565',
+        (MirType('decimal_0_18_2_3'),),
+    )
+    local_ownership = 'value' if mode == 'value' else mode
+    module = MirModule('demo', (
+        MirFunction('first', aggregate_type, (
+            MirLocal(0, 'item', aggregate_type, ownership=local_ownership),
+            MirLocal(1, '_t1', aggregate_type, ownership=local_ownership),
+        ), (MirBlock(0, (MirInstruction(
+            0, 'call', result=1, operands=(0,), symbol='second',
+        ),), MirTerminator('return', operands=(1,))),), 0,
+            parameters=(MirParameter(0, mode=mode),), return_mode=mode,
+            borrowed_origin=0 if mode != 'value' else None),
+        MirFunction('second', aggregate_type, (
+            MirLocal(0, 'item', aggregate_type, ownership=local_ownership),
+        ), (MirBlock(0, (), MirTerminator('return', operands=(0,))),), 0,
+            parameters=(MirParameter(0, mode=mode),), return_mode=mode,
+            borrowed_origin=0 if mode != 'value' else None, exported=True),
+    ))
+    from merit.bootstrap.mir_to_c import emit_c_module
+    assert c_source == emit_c_module(module)
+    driver = ('int main(void) { merit_struct_aggregate_0 value = {123}; '
+              'return first(value).field_0 == 123 ? 0 : 1; }\n'
+              if mode == 'value' else
+              'int main(void) { merit_struct_aggregate_0 value = {123}; '
+              'return first(&value)->field_0 == 123 ? 0 : 1; }\n')
+    c_file = tmp_path / 'numeric_aggregate_user_call.c'
+    c_file.write_text(c_source + '\n' + driver, encoding='utf-8', newline='\n')
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'numeric-aggregate-user-call-executable'
+    subprocess.run([cc, '-std=c11', str(c_file), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, text=True, capture_output=True)
+
+
+@pytest.mark.parametrize('mode', ['borrowed', 'mutable_borrow'])
+def test_merit_numeric_aggregate_user_call_rejects_argument_mode_mismatch(
+    tmp_path: Path, mode: str,
+) -> None:
+    probe = _numeric_aggregate_user_call_probe(mode)
+    mode_code = ('function_mir_mode_borrowed()' if mode == 'borrowed'
+                 else 'function_mir_mode_mutable_borrow()')
+    original = f'function_mir_call_argument(0,0,{mode_code},0)'
+    assert original in probe
+    probe = probe.replace(
+        original, 'function_mir_call_argument(0,0,function_mir_mode_value(),0)',
+    )
+    root = _project(tmp_path, probe)
+    project = load_project(root / 'Merit.toml')
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / f'numeric-aggregate-call-mode-reject-{mode}')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    statuses = [int(value) for value in native.splitlines()[:2]]
+    assert statuses[0] != 0
 
 
 def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
