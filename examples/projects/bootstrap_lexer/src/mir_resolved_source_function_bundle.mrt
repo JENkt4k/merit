@@ -192,6 +192,77 @@ requires_caps [allocate]
     return canonical_mir_append_text(output,"{\"functions\":[");
 }
 
+fn canonical_mir_destructor_invalid_span_status()->i32{return 1;}
+fn canonical_mir_destructor_noncanonical_order_status()->i32{return 2;}
+fn canonical_mir_destructor_duplicate_target_status()->i32{return 3;}
+fn canonical_mir_destructor_unclaimed_rows_status()->i32{return 4;}
+
+// Validate the same contiguous, non-overlapping destructor sections required
+// by the independent Python snapshot decoder before native project assembly.
+// A zero-destructor project must have no orphan body/CFG/placement rows.
+pub fn canonical_mir_validate_destructor_sections(
+    borrow descriptors:Vec<MirDestructorDescriptor>,
+    borrow body:Vec<MirFunctionRecord>,
+    borrow cfg:Vec<MirCfgRecord>,
+    borrow placements:Vec<MirPlacementRecord>
+)->i32
+{
+    var body_cursor:i64=0;
+    var cfg_cursor:i64=0;
+    var placement_cursor:i64=0;
+    var index:i64=0;
+    while(index<vec_len<MirDestructorDescriptor>(descriptors)){
+        let item:MirDestructorDescriptor=vec_get<MirDestructorDescriptor>(descriptors,index);
+        let body_start:i64=function_mir_destructor_body_start(item);
+        let body_count:i64=function_mir_destructor_body_count(item);
+        let cfg_start:i64=function_mir_destructor_cfg_start(item);
+        let cfg_count:i64=function_mir_destructor_cfg_count(item);
+        let placement_start:i64=function_mir_destructor_placement_start(item);
+        let placement_count:i64=function_mir_destructor_placement_count(item);
+        if(function_mir_destructor_type_code(item)<=0){return canonical_mir_destructor_invalid_span_status();}
+        if(body_start<0){return canonical_mir_destructor_invalid_span_status();}
+        if(cfg_start<0){return canonical_mir_destructor_invalid_span_status();}
+        if(placement_start<0){return canonical_mir_destructor_invalid_span_status();}
+        if(body_count<0){return canonical_mir_destructor_invalid_span_status();}
+        if(cfg_count<0){return canonical_mir_destructor_invalid_span_status();}
+        if(placement_count<0){return canonical_mir_destructor_invalid_span_status();}
+        if(body_start!=body_cursor){return canonical_mir_destructor_noncanonical_order_status();}
+        if(cfg_start!=cfg_cursor){return canonical_mir_destructor_noncanonical_order_status();}
+        if(placement_start!=placement_cursor){return canonical_mir_destructor_noncanonical_order_status();}
+        if(body_count>checked_sub(vec_len<MirFunctionRecord>(body),body_start)){
+            return canonical_mir_destructor_invalid_span_status();
+        }
+        if(cfg_count>checked_sub(vec_len<MirCfgRecord>(cfg),cfg_start)){
+            return canonical_mir_destructor_invalid_span_status();
+        }
+        if(placement_count>checked_sub(vec_len<MirPlacementRecord>(placements),placement_start)){
+            return canonical_mir_destructor_invalid_span_status();
+        }
+        var previous:i64=0;
+        while(previous<index){
+            let prior:MirDestructorDescriptor=vec_get<MirDestructorDescriptor>(descriptors,previous);
+            if(function_mir_destructor_type_code(prior)==function_mir_destructor_type_code(item)){
+                return canonical_mir_destructor_duplicate_target_status();
+            }
+            previous=checked_add(previous,1);
+        }
+        body_cursor=checked_add(body_start,body_count);
+        cfg_cursor=checked_add(cfg_start,cfg_count);
+        placement_cursor=checked_add(placement_start,placement_count);
+        index=checked_add(index,1);
+    }
+    if(body_cursor!=vec_len<MirFunctionRecord>(body)){
+        return canonical_mir_destructor_unclaimed_rows_status();
+    }
+    if(cfg_cursor!=vec_len<MirCfgRecord>(cfg)){
+        return canonical_mir_destructor_unclaimed_rows_status();
+    }
+    if(placement_cursor!=vec_len<MirPlacementRecord>(placements)){
+        return canonical_mir_destructor_unclaimed_rows_status();
+    }
+    return 0;
+}
+
 pub fn canonical_mir_append_project_function(
     borrow single_function_module:Buffer,
     function_ordinal:i64,

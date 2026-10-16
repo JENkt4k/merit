@@ -52,6 +52,7 @@ pub fn native_driver_backend_function_failure_status(status:i32)->i32{return che
 pub fn native_driver_backend_module_failure_status(status:i32)->i32{return checked_add(4500,status);}
 pub fn native_driver_backend_header_failure_status(status:i32)->i32{return checked_add(4600,status);}
 pub fn native_driver_backend_catalog_failure_status(status:i32)->i32{return checked_add(4700,status);}
+pub fn native_driver_destructor_catalog_failure_status(status:i32)->i32{return checked_add(4800,status);}
 
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     return native_driver_emit(source_text,0);
@@ -967,6 +968,12 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             }
         }
         if (emitted_functions != function_count) { return native_driver_function_count_mismatch_status(); }
+        let destructor_catalog_status:i32=canonical_mir_validate_destructor_sections(
+            destructor_descriptors,destructor_body,destructor_cfg,destructor_placements
+        );
+        if(destructor_catalog_status!=0){
+            return native_driver_destructor_catalog_failure_status(destructor_catalog_status);
+        }
         let module_token: Token = vec_get<Token>(tokens, 1);
         let canonical_finish_status:i32=canonical_mir_finish_project_source(
             source,token_start(module_token),token_length(module_token),
