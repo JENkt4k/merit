@@ -660,12 +660,18 @@ regression passes in interpreter and native execution (`1 passed in 40.71s`).
 The destructor-bearing v4 artifact regression still fails at the absent
 canonical `destructors` entry. This closes only the fail-closed descriptor
 subfamily, not F3 MIR/C/header/runtime equivalence.
+The native canonical writer now consumes a validated destructor's body, CFG,
+and placement slice through the shared sourced-CFG materializer. It preserves
+the declared target and mutable-borrow `self` local, and the project assembly
+helper places destructor entries before functions in canonical key order.
+The focused interpreter/native probe checks byte-identical canonical MIR and
+project assembly (`1 passed in 34.31s`). This is MIR-writer evidence only:
+the production driver does not yet publish destructor entries, and native C
+emission, recursive cleanup, and complete artifact parity remain open.
 The remaining F3 mechanism is not a JSON post-processing shortcut: consume
-each validated descriptor's body/CFG/placement slice through the existing
-canonical executable writer, preserve `self` as a mutable-borrow local with
-the declared target type, assemble the `destructors` module field in canonical
-key order, and feed the same destructor catalog to C prototypes, bodies, and
-recursive cleanup. Compare the complete artifact against the Python oracle
+each validated descriptor through the native C backend, connect both writers
+to the production driver atomically, and feed the same destructor catalog to
+C prototypes, bodies, and recursive cleanup. Compare the complete artifact against the Python oracle
 before exercising an owned-local cleanup program; that latter probe currently
 hits the separate F4/F5 `4410` backend admission boundary.
 
