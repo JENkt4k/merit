@@ -1900,9 +1900,10 @@ requires_caps [allocate]
 
 // Lower only explicit, already-validated Alpha.2 resource effects. The MIR
 // effect remains independent of Buffer's physical allocation representation.
-pub fn canonical_c_append_resource_effect(
+fn canonical_c_append_resource_effect_with_destructors(
     borrow effect:MirOwnershipRecord,result_local:i64,
-    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -1920,6 +1921,24 @@ requires_caps [allocate]
     if(operand_local<0){return canonical_c_resource_invalid_operand_status();}
     let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
     let trivial_aggregate_fields:i32=canonical_c_trivial_integer_aggregate_field_count(resource_type,descriptors);
+    var source_destructor:i32=0;
+    var destructor_index:i64=0;
+    while(destructor_index<vec_len<MirDestructorDescriptor>(destructor_catalog)){
+        let declared:MirDestructorDescriptor=vec_get<MirDestructorDescriptor>(destructor_catalog,destructor_index);
+        if(function_mir_destructor_type_code(declared)==resource_type){
+            if(source_destructor!=0){return canonical_c_resource_invalid_operand_status();}
+            source_destructor=1;
+        }
+        destructor_index=checked_add(destructor_index,1);
+    }
+    if(source_destructor!=0){
+        if(resource_type<function_mir_destructor_i64_struct_type_code(0)){
+            return canonical_c_resource_invalid_operand_status();
+        }
+        if(resource_type>=function_mir_owned_payload_enum_type_code(0,0)){
+            return canonical_c_resource_invalid_operand_status();
+        }
+    }
     var recursive_owned:i32=0;
     if(resource_type>=function_mir_owned_field_struct_type_code(0)){
         if(resource_type<function_mir_aggregate_struct_type_code(0)){recursive_owned=1;}
@@ -1927,7 +1946,9 @@ requires_caps [allocate]
     if(resource_type!=function_mir_buffer_type_code()){
         if(resource_type<function_mir_vector_type_code(0)){
             if(trivial_aggregate_fields==0){
-                if(recursive_owned==0){return canonical_c_resource_invalid_operand_status();}
+                if(recursive_owned==0){
+                    if(source_destructor==0){return canonical_c_resource_invalid_operand_status();}
+                }
             }
         }
     }
@@ -1956,7 +1977,12 @@ requires_caps [allocate]
         canonical_mir_append_text(output,";\n");
     }else{
         if(result_local>=0){return canonical_c_resource_invalid_result_status();}
-        if(trivial_aggregate_fields!=0){
+        if(source_destructor!=0){
+            canonical_mir_append_text(output,"    merit_custom_destructor_merit_struct_i64_destructor_");
+            canonical_mir_append_i32(output,checked_sub(resource_type,function_mir_destructor_i64_struct_type_code(0)));
+            canonical_mir_append_text(output,"(&m");canonical_mir_append_i64(output,operand_local);
+            canonical_mir_append_text(output,");\n");
+        }else{if(trivial_aggregate_fields!=0){
             // Each Copy field lowers to the oracle's explicit no-op statement.
             var field_index:i32=0;
             while(field_index<trivial_aggregate_fields){
@@ -1984,10 +2010,24 @@ requires_caps [allocate]
                 canonical_mir_append_i64(output,operand_local);
                 canonical_mir_append_text(output,"));\n");
             }
-        }
+        }}
     }
     drop(vector_name);
     return 0;
+}
+
+pub fn canonical_c_append_resource_effect(
+    borrow effect:MirOwnershipRecord,result_local:i64,
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_resource_effect_with_destructors(
+        effect,result_local,records,descriptors,no_destructors,output
+    );
+    drop(no_destructors);
+    return status;
 }
 
 pub fn canonical_c_append_buffer_resource_effect(
@@ -2916,6 +2956,7 @@ fn canonical_c_append_function_core_ordered(
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,
     borrow contracts:Vec<MirFunctionContractRecord>,
     borrow contract_locals:Vec<MirFunctionContractLocal>,
     borrow cfg:Vec<MirCfgRecord>,
@@ -3463,7 +3504,11 @@ requires_caps [allocate]
                 canonical_mir_append_text(bodies," = {0};\n");
             }else{if(initialized_type>=function_mir_owned_field_struct_type_code(0)){
                 canonical_mir_append_text(bodies," = {0};\n");
-            }else{canonical_mir_append_text(bodies," = 0;\n");}}
+            }else{if(initialized_type>=function_mir_destructor_i64_struct_type_code(0)){
+                if(initialized_type<function_mir_owned_payload_enum_type_code(0,0)){
+                    canonical_mir_append_text(bodies," = {0};\n");
+                }else{canonical_mir_append_text(bodies," = 0;\n");}
+            }else{canonical_mir_append_text(bodies," = 0;\n");}}}
         }else{canonical_mir_append_text(bodies," = 0;\n");}}}}}}}
         local_id=checked_add(local_id,1);
     }
@@ -3548,8 +3593,9 @@ requires_caps [allocate]
                 let placed_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
                 if(ownership_record_instruction_id(placed_effect)!=instruction_id){return canonical_c_resource_instruction_mismatch_status();}
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
-                let effect_status:i32=canonical_c_append_resource_effect(
-                    placed_effect,assembly_source_result(placed_source),records,type_descriptors,bodies
+                let effect_status:i32=canonical_c_append_resource_effect_with_destructors(
+                    placed_effect,assembly_source_result(placed_source),records,type_descriptors,
+                    destructor_catalog,bodies
                 );
                 if(effect_status!=0){return canonical_c_resource_effect_failure_status(effect_status);}
                 instruction_found=1;record_index=vec_len<MirFunctionRecord>(records);
@@ -3660,7 +3706,14 @@ requires_caps [allocate]
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
                         if(canonical_c_append_type_with_catalog(bodies,aggregate_type,type_descriptors)!=0){return canonical_c_aggregate_invalid_record_status();}
-                        if(owned_field!=0){canonical_mir_append_text(bodies,") { ");}
+                        var positional_field:i32=owned_field;
+                        if(aggregate_type>=function_mir_destructor_i64_struct_type_code(0)){
+                            if(aggregate_type<function_mir_owned_payload_enum_type_code(0,0)){
+                                if(field_ordinal!=0){return canonical_c_aggregate_invalid_record_status();}
+                                positional_field=1;
+                            }
+                        }
+                        if(positional_field!=0){canonical_mir_append_text(bodies,") { ");}
                         else{
                             canonical_mir_append_text(bodies,") { .field_");canonical_mir_append_i32(bodies,field_ordinal);
                             canonical_mir_append_text(bodies," = ");
@@ -4485,6 +4538,7 @@ fn canonical_c_append_function_core(
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,
     borrow contracts:Vec<MirFunctionContractRecord>,
     borrow contract_locals:Vec<MirFunctionContractLocal>,
     borrow cfg:Vec<MirCfgRecord>,
@@ -4577,7 +4631,7 @@ requires_caps [allocate]
     }
     if(vec_len<MirCfgRecord>(ordered)!=vec_len<MirCfgRecord>(cfg)){return 7;}
     let status:i32=canonical_c_append_function_core_ordered(
-        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,ordered,placements,
+        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,destructor_catalog,contracts,contract_locals,ordered,placements,
         prototypes,bodies,public_header,features,emit_public_header,destructor_type_code
     );
     drop(ordered);
@@ -4596,11 +4650,13 @@ fn canonical_c_append_function_core_without_numeric(
 requires_caps [allocate]
 {
     var no_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_function_core(
         source,records,callable_headers,type_descriptors,no_numeric,sources,ownership_records,
-        contracts,contract_locals,cfg,placements,prototypes,bodies,public_header,features,emit_public_header,0
+        no_destructors,contracts,contract_locals,cfg,placements,
+        prototypes,bodies,public_header,features,emit_public_header,0
     );
-    drop(no_numeric);
+    drop(no_destructors);drop(no_numeric);
     return status;
 }
 
@@ -4720,13 +4776,14 @@ requires_caps [allocate]
     return status;
 }
 
-pub fn canonical_c_append_function_with_numeric_contracts_header_selection(
+pub fn canonical_c_append_function_with_numeric_contracts_header_selection_destructors(
     borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
     borrow callable_headers:Vec<MirFunctionRecord>,
     borrow type_descriptors:Vec<MirTypeDescriptor>,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow sources:Vec<MirFunctionInstructionSource>,
     borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,
     borrow contracts:Vec<MirFunctionContractRecord>,
     borrow contract_locals:Vec<MirFunctionContractLocal>,
     borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
@@ -4747,9 +4804,36 @@ requires_caps [allocate]
         }
     }
     return canonical_c_append_function_core(
-        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,cfg,placements,
+        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,
+        destructor_catalog,contracts,contract_locals,cfg,placements,
         prototypes,bodies,public_header,features,emit_public_header,0
     );
+}
+
+pub fn canonical_c_append_function_with_numeric_contracts_header_selection(
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow ownership_records:Vec<MirOwnershipRecord>,
+    borrow contracts:Vec<MirFunctionContractRecord>,
+    borrow contract_locals:Vec<MirFunctionContractLocal>,
+    borrow cfg:Vec<MirCfgRecord>,borrow placements:Vec<MirPlacementRecord>,
+    borrow_mut prototypes:Buffer,borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,borrow_mut features:Vec<i64>,
+    emit_public_header:i32
+)->i32
+requires_caps [allocate]
+{
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_function_with_numeric_contracts_header_selection_destructors(
+        source,records,callable_headers,type_descriptors,numeric_descriptors,sources,
+        ownership_records,no_destructors,contracts,contract_locals,cfg,placements,
+        prototypes,bodies,public_header,features,emit_public_header
+    );
+    drop(no_destructors);
+    return status;
 }
 
 pub fn canonical_c_append_resource_function_with_catalog(
@@ -8957,12 +9041,13 @@ requires_caps [allocate]
     let empty_ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
     let empty_contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
     let empty_contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+    let empty_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
     let status:i32=canonical_c_append_function_core(
         source,body,callable_headers,type_descriptors,numeric_descriptors,sources,
-        empty_ownership,empty_contracts,empty_contract_locals,cfg,placements,
+        empty_ownership,empty_destructors,empty_contracts,empty_contract_locals,cfg,placements,
         prototypes,bodies,public_header,features,0,function_mir_destructor_type_code(descriptor)
     );
-    drop(empty_contract_locals);drop(empty_contracts);drop(empty_ownership);
+    drop(empty_contract_locals);drop(empty_contracts);drop(empty_destructors);drop(empty_ownership);
     drop(sources);drop(placements);drop(cfg);drop(body);
     return status;
 }

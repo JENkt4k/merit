@@ -26,6 +26,8 @@ from merit.project.project_request import encode_loaded_project_request
 @pytest.mark.parametrize(("fields", "main_source", "expected_output"), [
     ("number:i64;", "return 0;", "23\n"),
     ("number:i64; other:i64;", "return 0;", "23\n"),
+    ("number:i64;", "let marker:Marker=Marker{number:23}; return 0;", "23\n"),
+    ("number:i64;", "let marker:Marker=Marker{number:23}; drop(marker); return 0;", "23\n"),
 ])
 def test_native_v4_artifact_retains_destructor_mir_and_c(
     tmp_path: Path, fields: str, main_source: str, expected_output: str,
@@ -77,6 +79,7 @@ def test_native_v4_artifact_retains_destructor_mir_and_c(
     assert bundle_baseline.returncode == 0, bundle_baseline.stderr.decode("utf-8", errors="replace")
     assert bundle_baseline.stdout.splitlines()[:2] == [b"1297236550", b"3"]
     bundle_completed = subprocess.run([str(bundle_executable)], input=request, capture_output=True)
+    assert bundle_completed.returncode == 0, bundle_completed.stderr.decode("utf-8", errors="replace")
     bundle_values = [int(line) for line in bundle_completed.stdout.splitlines()]
     partial_snapshot = decode_resolved_source_function_snapshot(
         bundle_values[4:4 + bundle_values[3]]
@@ -117,12 +120,15 @@ def test_native_v4_artifact_retains_destructor_mir_and_c(
     assert compiled.returncode == 0, compiled.stderr
     destructor = module.destructors[0]
     harness = tmp_path / "destructor-harness.c"
-    harness.write_text(
-        '#include "destructor-artifact.c"\n'
-        f'int main(void) {{ {_type(destructor.target)} value = {{ .field_0 = 23 }}; '
-        f'{_destructor_c_name(destructor.target)}(&value); return 0; }}\n',
-        encoding="utf-8", newline="\n",
-    )
+    if main_source == "return 0;":
+        harness_body = (
+            f'int main(void) {{ {_type(destructor.target)} value = {{ .field_0 = 23 }}; '
+            f'{_destructor_c_name(destructor.target)}(&value); return 0; }}\n'
+        )
+    else:
+        harness_body = "int main(void) { return merit_main(); }\n"
+    harness.write_text('#include "destructor-artifact.c"\n' + harness_body,
+                       encoding="utf-8", newline="\n")
     linked = subprocess.run(
         [compiler, "-std=c11", str(harness), "-o", str(tmp_path / "destructor-run.exe")],
         capture_output=True, text=True,

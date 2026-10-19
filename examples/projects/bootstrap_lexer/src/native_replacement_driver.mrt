@@ -882,9 +882,10 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                     source,backend_header,header_selections
                                                 );
                                             }
-                                            let backend_status:i32=canonical_c_append_function_with_numeric_contracts_header_selection(
+                                            let backend_status:i32=canonical_c_append_function_with_numeric_contracts_header_selection_destructors(
                                                 source,body,backend_callable_headers,type_descriptors,numeric_type_descriptors,sources,
-                                                ownership_records,contracts,contract_locals,cfg,placements,backend_prototypes,backend_bodies,
+                                                ownership_records,destructor_descriptors,contracts,contract_locals,cfg,placements,
+                                                backend_prototypes,backend_bodies,
                                                 backend_declarations,backend_features,emit_public_header
                                             );
                                             if(backend_status!=0){
