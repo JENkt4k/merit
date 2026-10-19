@@ -28,6 +28,8 @@ from merit.project.project_request import encode_loaded_project_request
     ("number:i64; other:i64;", "return 0;", "23\n"),
     ("number:i64;", "let marker:Marker=Marker{number:23}; return 0;", "23\n"),
     ("number:i64;", "let marker:Marker=Marker{number:23}; drop(marker); return 0;", "23\n"),
+    ("number:i64; other:i64;", "let marker:Marker=Marker{number:23,other:5}; return 0;", "23\n"),
+    ("number:i64; other:i64;", "let marker:Marker=Marker{number:23,other:5}; drop(marker); return 0;", "23\n"),
 ])
 def test_native_v4_artifact_retains_destructor_mir_and_c(
     tmp_path: Path, fields: str, main_source: str, expected_output: str,
@@ -137,3 +139,59 @@ def test_native_v4_artifact_retains_destructor_mir_and_c(
     executed = subprocess.run([str(tmp_path / "destructor-run.exe")], capture_output=True, text=True)
     assert executed.returncode == 0, executed.stderr
     assert executed.stdout == expected_output
+
+
+@pytest.mark.parametrize("entry", ["emit_replacement_bundle", "emit_native_project_artifacts"])
+def test_native_early_return_with_live_destructor_matches_oracle(tmp_path: Path, entry: str) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    compiler_root = tmp_path / "compiler"
+    shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    manifest = compiler_root / "Merit.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + '\n[executable]\nadapter = "stdin-string-i32"\n'
+        + f'entry = "{entry}"\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    source_root = tmp_path / "input"
+    (source_root / "src").mkdir(parents=True)
+    (source_root / "Merit.toml").write_text(
+        '[package]\nname = "probe"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (source_root / "src/main.mrt").write_text(
+        "module probe\nstruct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "pub fn main()->i32 { let marker:Marker=Marker{number:23}; "
+        "if (1 == 1) { return 0; } return 1; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    request = encode_loaded_project_request(load_project(source_root / "Merit.toml"))
+    completed = subprocess.run([str(executable)], input=request, capture_output=True)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    if entry == "emit_replacement_bundle":
+        bundle = decode_resolved_source_function_bundle(int(line) for line in completed.stdout.splitlines())
+        assert len(bundle.functions) == 1
+        assert len(bundle.functions[0].destructors) == 1
+        return
+    artifact = decode_native_project_artifact_transport(int(line) for line in completed.stdout.splitlines())
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert len(module.destructors) == 1
+    assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    if compiler is None:
+        pytest.skip("C compiler unavailable")
+    c_path = tmp_path / "early-return.c"
+    c_path.write_bytes(artifact.c_source_bytes)
+    harness = tmp_path / "harness.c"
+    harness.write_text('#include "early-return.c"\nint main(void) { return merit_main(); }\n',
+                       encoding="utf-8", newline="\n")
+    linked = subprocess.run([compiler, "-std=c11", str(harness), "-o", str(tmp_path / "early-return.exe")],
+                            capture_output=True, text=True)
+    assert linked.returncode == 0, linked.stderr
+    executed = subprocess.run([str(tmp_path / "early-return.exe")], capture_output=True, text=True)
+    assert executed.returncode == 0, executed.stderr
+    assert executed.stdout == "23\n"
