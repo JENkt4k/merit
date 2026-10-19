@@ -53,6 +53,7 @@ pub fn native_driver_backend_module_failure_status(status:i32)->i32{return check
 pub fn native_driver_backend_header_failure_status(status:i32)->i32{return checked_add(4600,status);}
 pub fn native_driver_backend_catalog_failure_status(status:i32)->i32{return checked_add(4700,status);}
 pub fn native_driver_destructor_catalog_failure_status(status:i32)->i32{return checked_add(4800,status);}
+pub fn native_driver_destructor_backend_failure_status(status:i32)->i32{return checked_add(4900,status);}
 
 pub fn emit_replacement_bundle(source_text: String) -> i32 {
     return native_driver_emit(source_text,0);
@@ -173,6 +174,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         var backend_copy_enum_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_owned_field_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_owned_enum_types:Vec<i32>=vec_new<i32>(allocator,4);
+        var backend_legacy_destructor_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_numeric_types:Vec<i32>=vec_new<i32>(allocator,4);
         var backend_features:Vec<i64>=vec_new<i64>(allocator,16);
         var backend_prototypes:Buffer=buffer_new(allocator,4096);
@@ -974,11 +976,78 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         if(destructor_catalog_status!=0){
             return native_driver_destructor_catalog_failure_status(destructor_catalog_status);
         }
+        var destructor_items:Buffer=buffer_new(allocator,4096);
+        var destructor_bodies:Buffer=buffer_new(allocator,4096);
+        var destructor_index:i64=0;
+        while(destructor_index<vec_len<MirDestructorDescriptor>(destructor_descriptors)){
+            let destructor:MirDestructorDescriptor=vec_get<MirDestructorDescriptor>(destructor_descriptors,destructor_index);
+            let destructor_type:i32=function_mir_destructor_type_code(destructor);
+            if(destructor_type>=function_mir_destructor_i64_struct_type_code(0)){
+                if(destructor_type<function_mir_owned_payload_enum_type_code(0,0)){
+                    vec_push<i32>(backend_legacy_destructor_types,destructor_type);
+                }
+            }
+            var canonical_destructor:Buffer=buffer_new(allocator,2048);
+            let materialize_status:i32=materialize_canonical_destructor_from_catalog(
+                source,destructor,destructor_body,destructor_cfg,destructor_placements,
+                type_descriptors,numeric_type_descriptors,canonical_destructor
+            );
+            if(materialize_status!=0){return native_driver_canonical_finish_failure_status(materialize_status);}
+            let append_status:i32=canonical_mir_append_project_destructor(
+                canonical_destructor,destructor_index,allocator,destructor_items
+            );
+            if(append_status!=0){return native_driver_canonical_finish_failure_status(append_status);}
+            drop(canonical_destructor);
+            if(artifact_mode!=0){
+                let c_status:i32=canonical_c_append_destructor_from_catalog(
+                    source,destructor,destructor_body,destructor_cfg,destructor_placements,
+                    backend_callable_headers,type_descriptors,numeric_type_descriptors,
+                    backend_prototypes,destructor_bodies,backend_declarations,backend_features
+                );
+                if(c_status!=0){return native_driver_destructor_backend_failure_status(c_status);}
+            }
+            destructor_index=checked_add(destructor_index,1);
+        }
+        if(destructor_index>0){
+            let vector_status:i32=canonical_c_collect_vector_types_from_records(
+                destructor_body,backend_vector_types
+            );
+            if(vector_status!=0){return native_driver_backend_catalog_failure_status(vector_status);}
+            let aggregate_status:i32=canonical_c_collect_aggregate_types_from_records(
+                destructor_body,type_descriptors,backend_aggregate_types
+            );
+            if(aggregate_status!=0){return native_driver_backend_catalog_failure_status(aggregate_status);}
+            let enum_status:i32=canonical_c_collect_copy_enum_types_from_records(
+                destructor_body,backend_copy_enum_types
+            );
+            if(enum_status!=0){return native_driver_backend_catalog_failure_status(enum_status);}
+            let owned_status:i32=canonical_c_collect_owned_types_from_records(
+                destructor_body,type_descriptors,backend_vector_types,backend_aggregate_types,
+                backend_copy_enum_types,backend_owned_field_types,backend_owned_enum_types
+            );
+            if(owned_status!=0){return native_driver_backend_catalog_failure_status(owned_status);}
+            let numeric_status:i32=canonical_c_collect_numeric_types_from_records(
+                destructor_body,numeric_type_descriptors,backend_numeric_types
+            );
+            if(numeric_status!=0){return native_driver_backend_catalog_failure_status(numeric_status);}
+        }
         let module_token: Token = vec_get<Token>(tokens, 1);
-        let canonical_finish_status:i32=canonical_mir_finish_project_source(
-            source,token_start(module_token),token_length(module_token),
-            emitted_functions,canonical_project
-        );
+        var complete_project:Buffer=buffer_new(allocator,4096);
+        var canonical_finish_status:i32=0;
+        if(destructor_index==0){
+            canonical_finish_status=canonical_mir_finish_project_source(
+                source,token_start(module_token),token_length(module_token),
+                emitted_functions,canonical_project
+            );
+            if(canonical_finish_status==0){
+                bootstrap_buffer_append(complete_project,canonical_project,0,buffer_len(canonical_project));
+            }
+        }else{
+            canonical_finish_status=canonical_mir_finish_project_source_with_destructors(
+                source,token_start(module_token),token_length(module_token),
+                emitted_functions,canonical_project,destructor_index,destructor_items,complete_project
+            );
+        }
         if(canonical_finish_status!=0){
             return native_driver_canonical_finish_failure_status(canonical_finish_status);
         }
@@ -990,10 +1059,19 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         }else{
             var backend_source:Buffer=buffer_new(allocator,16384);
             var backend_header:Buffer=buffer_new(allocator,4096);
-            let module_status:i32=canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
-                backend_prototypes,backend_bodies,backend_features,
+            var complete_bodies:Buffer=buffer_new(allocator,8192);
+            if(buffer_len(destructor_bodies)>0){
+                bootstrap_buffer_append(complete_bodies,destructor_bodies,0,buffer_len(destructor_bodies));
+                let separator:Buffer=buffer_from_string(allocator,"\n\n");
+                bootstrap_buffer_append(complete_bodies,separator,0,buffer_len(separator));
+                drop(separator);
+            }
+            bootstrap_buffer_append(complete_bodies,backend_bodies,0,buffer_len(backend_bodies));
+            let module_status:i32=canonical_c_finish_owned_aggregate_vector_numeric_destructor_catalog_module(
+                backend_prototypes,complete_bodies,backend_features,
                 backend_vector_types,backend_aggregate_types,backend_copy_enum_types,
-                backend_owned_field_types,backend_owned_enum_types,backend_numeric_types,
+                backend_owned_field_types,backend_owned_enum_types,backend_legacy_destructor_types,
+                backend_numeric_types,
                 type_descriptors,numeric_type_descriptors,backend_source
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
@@ -1007,13 +1085,16 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             );
             if(metadata_status!=0){return checked_add(6000,metadata_status);}
             let artifact_status:i32=print_resolved_source_function_project_artifacts(
-                canonical_project,backend_source,backend_header
+                complete_project,backend_source,backend_header
             );
             if(artifact_status!=0){return checked_add(6100,artifact_status);}
+            drop(complete_bodies);
             drop(backend_header);drop(backend_source);
         }
+        drop(complete_project);drop(destructor_bodies);drop(destructor_items);
         drop(backend_declarations);drop(backend_bodies);drop(backend_prototypes);
-        drop(backend_features);drop(backend_numeric_types);drop(backend_owned_enum_types);drop(backend_owned_field_types);
+        drop(backend_features);drop(backend_numeric_types);drop(backend_legacy_destructor_types);
+        drop(backend_owned_enum_types);drop(backend_owned_field_types);
         drop(backend_copy_enum_types);drop(backend_aggregate_types);drop(backend_vector_types);drop(backend_callable_headers);
         drop(header_selections);
         drop(callable_parameters);drop(callable_signatures);

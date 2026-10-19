@@ -556,7 +556,9 @@ pub fn function_mir_struct_field_replace(start: i64, length: i64, instruction_id
 // Stable structural validation. Semantic local availability is checked by the
 // canonical adapter because a flat stream interleaves local declarations with
 // instruction records while canonical MIR stores locals separately.
-fn validate_function_mir_records_with_cfg_returns(borrow nodes: Vec<MirFunctionRecord>,cfg_returns:i32) -> i32 {
+fn validate_function_mir_records_with_cfg_returns(
+    borrow nodes: Vec<MirFunctionRecord>,cfg_returns:i32,allow_implicit_return:i32
+) -> i32 {
     if (vec_len<MirFunctionRecord>(nodes) < 2) { return function_mir_too_few_records_status(); }
     let header: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, 0);
     if (header.kind != function_mir_kind_function()) { return function_mir_invalid_header_kind_status(); }
@@ -713,15 +715,23 @@ fn validate_function_mir_records_with_cfg_returns(borrow nodes: Vec<MirFunctionR
         }
         index = checked_add(index, 1);
     }
-    if (saw_return == 0) { return function_mir_missing_return_status(); }
+    if (saw_return == 0) {
+        if (allow_implicit_return == 0) { return function_mir_missing_return_status(); }
+    }
     if (next_parameter != header.ordinal) { return function_mir_parameter_count_mismatch_status(); }
     return 0;
 }
 
 pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
-    return validate_function_mir_records_with_cfg_returns(nodes,0);
+    return validate_function_mir_records_with_cfg_returns(nodes,0,0);
 }
 
 pub fn validate_function_mir_cfg_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
-    return validate_function_mir_records_with_cfg_returns(nodes,1);
+    return validate_function_mir_records_with_cfg_returns(nodes,1,0);
+}
+
+// Destructor bodies may end at their closing brace: the canonical CFG owns
+// the implicit unit return. Ordinary function-body contracts remain strict.
+pub fn validate_function_mir_destructor_cfg_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+    return validate_function_mir_records_with_cfg_returns(nodes,1,1);
 }

@@ -909,6 +909,13 @@ requires_caps [allocate]
             return 0;
         }
     }
+    if(type_code>=function_mir_destructor_i64_struct_type_code(0)){
+        if(type_code<function_mir_owned_payload_enum_type_code(0,0)){
+            canonical_mir_append_text(output,"merit_struct_i64_destructor_");
+            canonical_mir_append_i32(output,checked_sub(type_code,function_mir_destructor_i64_struct_type_code(0)));
+            return 0;
+        }
+    }
     if(type_code>=function_mir_aggregate_struct_type_code(0)){
         if(type_code<function_mir_decimal_type_code(0)){
             let identity:i32=checked_sub(type_code,function_mir_aggregate_struct_type_code(0));
@@ -988,6 +995,9 @@ requires_caps [allocate]
             return 1;
         }
     }
+    if(type_code>=function_mir_destructor_i64_struct_type_code(0)){
+        if(type_code<function_mir_owned_payload_enum_type_code(0,0)){return 1;}
+    }
     if(type_code<function_mir_aggregate_struct_type_code(0)){return 0;}
     if(type_code>=function_mir_decimal_type_code(0)){return 0;}
     let allocator:Allocator=system_allocator();
@@ -1019,6 +1029,12 @@ fn canonical_c_aggregate_field_type(
     type_code:i32,ordinal:i32,borrow descriptors:Vec<MirTypeDescriptor>
 )->i32
 {
+    if(type_code>=function_mir_destructor_i64_struct_type_code(0)){
+        if(type_code<function_mir_owned_payload_enum_type_code(0,0)){
+            if(ordinal==0){return function_mir_i64_type_code();}
+            return 0;
+        }
+    }
     if(type_code<function_mir_aggregate_struct_type_code(0)){return 0;}
     if(type_code>=function_mir_decimal_type_code(0)){return 0;}
     if(ordinal<0){return 0;}
@@ -2908,47 +2924,55 @@ fn canonical_c_append_function_core_ordered(
     borrow_mut bodies:Buffer,
     borrow_mut public_header:Buffer,
     borrow_mut features:Vec<i64>,
-    emit_public_header:i32
+    emit_public_header:i32,
+    destructor_type_code:i32
 )->i32
 requires_caps [allocate]
 {
     if(vec_len<MirFunctionRecord>(records)<2){return 1;}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     if(function_mir_kind(header)!=function_mir_kind_function()){return 2;}
-    let unit_return:i32=function_mir_type_code(header)==function_mir_unit_type_code();
+    var return_type_code:i32=function_mir_type_code(header);
+    if(destructor_type_code!=0){
+        return_type_code=function_mir_unit_type_code();
+        if(canonical_c_supported_complete_local_type(
+            destructor_type_code,type_descriptors,numeric_descriptors
+        )==0){return 3;}
+    }
+    let unit_return:i32=return_type_code==function_mir_unit_type_code();
     var exported:i32=function_mir_mutable(header);
     if(emit_public_header==0){exported=0;}
-    if(function_mir_type_code(header)==function_mir_string_type_code()){
+    if(return_type_code==function_mir_string_type_code()){
         canonical_c_require_feature(canonical_c_text_feature(),features);
         if(exported!=0){canonical_c_require_feature(canonical_c_public_string_feature(),features);}
     }
-    if(function_mir_type_code(header)==function_mir_allocator_type_code()){
+    if(return_type_code==function_mir_allocator_type_code()){
         if(exported!=0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
-    if(function_mir_type_code(header)==function_mir_byte_slice_type_code()){
+    if(return_type_code==function_mir_byte_slice_type_code()){
         if(exported!=0){return 3;}
         canonical_c_require_feature(canonical_c_slice_feature(),features);
     }
-    if(function_mir_type_code(header)==function_mir_buffer_type_code()){
+    if(return_type_code==function_mir_buffer_type_code()){
         if(exported!=0){return 3;}
         if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
-    if(function_mir_type_code(header)>=function_mir_vector_type_code(0)){
+    if(return_type_code>=function_mir_vector_type_code(0)){
         if(exported!=0){return 3;}
         if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
-    if(function_mir_type_code(header)>=function_mir_owned_field_struct_type_code(0)){
-        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){
+    if(return_type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(return_type_code<function_mir_aggregate_struct_type_code(0)){
             if(exported!=0){return 3;}
             if(function_mir_symbol_code(header)!=function_mir_mode_value()){return 3;}
             if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         }
     }
-    if(function_mir_type_code(header)!=function_mir_unit_type_code()){
-        if(canonical_c_supported_complete_local_type(function_mir_type_code(header),type_descriptors,numeric_descriptors)==0){return 3;}
+    if(return_type_code!=function_mir_unit_type_code()){
+        if(canonical_c_supported_complete_local_type(return_type_code,type_descriptors,numeric_descriptors)==0){return 3;}
     }
     let cfg_record_count:i64=vec_len<MirCfgRecord>(cfg);
     if(cfg_record_count<2){return 4;}
@@ -2973,7 +2997,7 @@ requires_caps [allocate]
         if(cfg_block_id(terminator)!=terminator_block_id){return 8;}
         let term_kind:i32=cfg_kind(terminator);
         if(term_kind==cfg_return_kind()){
-            if(function_mir_type_code(header)==function_mir_unit_type_code()){
+            if(return_type_code==function_mir_unit_type_code()){
                 if(cfg_operand(terminator)!=-1){return 17;}
             }else{if(cfg_operand(terminator)<0){return 17;}}
         }else{if(term_kind!=cfg_jump_kind()){
@@ -3213,7 +3237,7 @@ requires_caps [allocate]
         record_index=checked_add(record_index,1);
     }
     if(local_count<=0){
-        if(function_mir_type_code(header)!=function_mir_unit_type_code()){return 15;}
+            if(return_type_code!=function_mir_unit_type_code()){return 15;}
     }
     var resource_instruction_count:i64=0;
     var contract_instruction_count:i64=0;
@@ -3234,10 +3258,10 @@ requires_caps [allocate]
     if(checked_add(checked_add(instruction_count,resource_instruction_count),
                    contract_instruction_count)!=vec_len<MirPlacementRecord>(placements)){return 16;}
     var owned_return:i32=0;
-    if(function_mir_type_code(header)==function_mir_buffer_type_code()){owned_return=1;}
-    if(function_mir_type_code(header)>=function_mir_vector_type_code(0)){owned_return=1;}
-    if(function_mir_type_code(header)>=function_mir_owned_field_struct_type_code(0)){
-        if(function_mir_type_code(header)<function_mir_aggregate_struct_type_code(0)){owned_return=1;}
+    if(return_type_code==function_mir_buffer_type_code()){owned_return=1;}
+    if(return_type_code>=function_mir_vector_type_code(0)){owned_return=1;}
+    if(return_type_code>=function_mir_owned_field_struct_type_code(0)){
+        if(return_type_code<function_mir_aggregate_struct_type_code(0)){owned_return=1;}
     }
     if(owned_return!=0){
         // This bounded owned-return form is proven by the placed move that
@@ -3307,10 +3331,10 @@ requires_caps [allocate]
             if(cfg_target_b(terminator)>=cfg_block_count){return 80;}
         }
         if(term_kind==cfg_return_kind()){
-            if(function_mir_type_code(header)!=function_mir_unit_type_code()){
-                if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_type_code(header)){return 89;}
+            if(return_type_code!=function_mir_unit_type_code()){
+                if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=return_type_code){return 89;}
                 if(canonical_c_copy_aggregate_field_count(
-                    function_mir_type_code(header),type_descriptors,numeric_descriptors
+                    return_type_code,type_descriptors,numeric_descriptors
                 )!=0){
                     if(canonical_c_local_access_mode(records,cfg_operand(terminator))!=function_mir_symbol_code(header)){
                         return 24;
@@ -3339,20 +3363,47 @@ requires_caps [allocate]
         cfg_index=checked_add(cfg_index,1);
     }
     if(function_mir_ordinal(header)>local_count){return 26;}
+    if(destructor_type_code!=0){
+        canonical_mir_append_text(prototypes,"static void merit_custom_destructor_");
+        if(canonical_c_append_type_with_complete_catalog(
+            prototypes,destructor_type_code,type_descriptors,numeric_descriptors
+        )!=0){return 3;}
+        buffer_push(prototypes,40);
+        if(canonical_c_append_type_with_complete_catalog(
+            prototypes,destructor_type_code,type_descriptors,numeric_descriptors
+        )!=0){return 3;}
+        canonical_mir_append_text(prototypes," *self);\n");
+    }else{
     let prototype_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,numeric_descriptors,prototypes);
     if(prototype_status!=0){return checked_add(30,prototype_status);}
     buffer_push(prototypes,10);
+    }
     if(exported!=0){
         let header_status:i32=canonical_c_append_scalar_prototype(source,header,records,type_descriptors,numeric_descriptors,public_header);
         if(header_status!=0){return checked_add(40,header_status);}
         buffer_push(public_header,10);
     }
     if(buffer_len(bodies)>0){canonical_mir_append_text(bodies,"\n\n");}
-    let body_return_type:i32=function_mir_type_code(header);
+    let body_return_type:i32=return_type_code;
     let body_return_mode:i32=function_mir_symbol_code(header);
     let body_borrowed_aggregate:i32=canonical_c_copy_aggregate_field_count(
         body_return_type,type_descriptors,numeric_descriptors
     );
+    if(destructor_type_code!=0){
+        canonical_mir_append_text(bodies,"static void merit_custom_destructor_");
+        if(canonical_c_append_type_with_complete_catalog(
+            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        )!=0){return 3;}
+        buffer_push(bodies,40);
+        if(canonical_c_append_type_with_complete_catalog(
+            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        )!=0){return 3;}
+        canonical_mir_append_text(bodies," *self) {\n    ");
+        if(canonical_c_append_type_with_complete_catalog(
+            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        )!=0){return 3;}
+        canonical_mir_append_text(bodies," m0 = *self;\n");
+    }else{
     if(body_borrowed_aggregate!=0){
         if(body_return_mode==function_mir_mode_borrowed()){canonical_mir_append_text(bodies,"const ");}
     }
@@ -3365,7 +3416,13 @@ requires_caps [allocate]
     let parameters_status:i32=canonical_c_append_scalar_parameters(records,type_descriptors,numeric_descriptors,bodies);
     if(parameters_status!=0){return checked_add(50,parameters_status);}
     canonical_mir_append_text(bodies," {\n");
+    }
     var local_id:i64=function_mir_ordinal(header);
+    if(destructor_type_code!=0){
+        if(local_id!=0){return 26;}
+        if(canonical_c_scalar_local_type(records,0)!=destructor_type_code){return 26;}
+        local_id=1;
+    }
     while(local_id<local_count){
         canonical_mir_append_text(bodies,"    ");
         let declared_type:i32=canonical_c_scalar_local_type(records,local_id);
@@ -3433,7 +3490,8 @@ requires_caps [allocate]
     let reach_allocator:Allocator=system_allocator();
     var c_reachable:Vec<i64>=vec_new<i64>(reach_allocator,cfg_block_count);
     if(canonical_mir_cfg_collect_reachable(cfg,c_reachable)!=0){return 20;}
-    canonical_mir_append_text(bodies,"    goto b0;\n");
+    if(destructor_type_code!=0){canonical_mir_append_text(bodies,"    goto b_destructor_0;\n");}
+    else{canonical_mir_append_text(bodies,"    goto b0;\n");}
     var emitted_placements:i64=0;
     var active_block_id:i64=0;
     var cfg_emit_index:i64=cfg_block_count;
@@ -3448,7 +3506,9 @@ requires_caps [allocate]
             c_reachable_index=checked_add(c_reachable_index,1);
         }
         if(c_block_reachable!=0){
-        canonical_mir_append_text(bodies,"b");canonical_mir_append_i64(bodies,active_block_id);
+        if(destructor_type_code!=0){canonical_mir_append_text(bodies,"b_destructor_");}
+        else{canonical_mir_append_text(bodies,"b");}
+        canonical_mir_append_i64(bodies,active_block_id);
         canonical_mir_append_text(bodies,":\n");
         var block_placement_count:i64=0;placement_scan=0;
         while(placement_scan<vec_len<MirPlacementRecord>(placements)){
@@ -4327,25 +4387,30 @@ requires_caps [allocate]
     }
         let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_emit_index);
         if(cfg_kind(terminator)==cfg_return_kind()){
-            if(unit_return!=0){
+            if(destructor_type_code!=0){
+                canonical_mir_append_text(bodies,"    *self = m0;\n    return;\n");
+            }else{if(unit_return!=0){
                 canonical_mir_append_text(bodies,"    return;\n");
             }else{
                 canonical_mir_append_text(bodies,"    return m");
                 canonical_mir_append_i64(bodies,cfg_operand(terminator));
                 canonical_mir_append_text(bodies,";\n");
-            }
+            }}
         }
         if(cfg_kind(terminator)==cfg_jump_kind()){
-            canonical_mir_append_text(bodies,"    goto b");
+            if(destructor_type_code!=0){canonical_mir_append_text(bodies,"    goto b_destructor_");}
+            else{canonical_mir_append_text(bodies,"    goto b");}
             canonical_mir_append_i64(bodies,cfg_target_a(terminator));
             canonical_mir_append_text(bodies,";\n");
         }
         if(cfg_kind(terminator)==cfg_branch_kind()){
             canonical_mir_append_text(bodies,"    if (m");
             canonical_mir_append_i64(bodies,cfg_operand(terminator));
-            canonical_mir_append_text(bodies,") goto b");
+            if(destructor_type_code!=0){canonical_mir_append_text(bodies,") goto b_destructor_");}
+            else{canonical_mir_append_text(bodies,") goto b");}
             canonical_mir_append_i64(bodies,cfg_target_a(terminator));
-            canonical_mir_append_text(bodies,";\n    goto b");
+            if(destructor_type_code!=0){canonical_mir_append_text(bodies,";\n    goto b_destructor_");}
+            else{canonical_mir_append_text(bodies,";\n    goto b");}
             canonical_mir_append_i64(bodies,cfg_target_b(terminator));
             canonical_mir_append_text(bodies,";\n");
         }
@@ -4366,9 +4431,11 @@ requires_caps [allocate]
                 if(cfg_kind(item)==cfg_switch_case_kind()){
                     canonical_mir_append_text(bodies,"    case ");
                     canonical_mir_append_i64(bodies,cfg_case_value(item));
-                    canonical_mir_append_text(bodies,": goto b");
+                    if(destructor_type_code!=0){canonical_mir_append_text(bodies,": goto b_destructor_");}
+                    else{canonical_mir_append_text(bodies,": goto b");}
                 }else{
-                    canonical_mir_append_text(bodies,"    default: goto b");
+                    if(destructor_type_code!=0){canonical_mir_append_text(bodies,"    default: goto b_destructor_");}
+                    else{canonical_mir_append_text(bodies,"    default: goto b");}
                     default_emitted=1;
                 }
                 canonical_mir_append_i64(bodies,cfg_target_a(item));
@@ -4426,7 +4493,8 @@ fn canonical_c_append_function_core(
     borrow_mut bodies:Buffer,
     borrow_mut public_header:Buffer,
     borrow_mut features:Vec<i64>,
-    emit_public_header:i32
+    emit_public_header:i32,
+    destructor_type_code:i32
 )->i32
 requires_caps [allocate]
 {
@@ -4510,7 +4578,7 @@ requires_caps [allocate]
     if(vec_len<MirCfgRecord>(ordered)!=vec_len<MirCfgRecord>(cfg)){return 7;}
     let status:i32=canonical_c_append_function_core_ordered(
         source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,ordered,placements,
-        prototypes,bodies,public_header,features,emit_public_header
+        prototypes,bodies,public_header,features,emit_public_header,destructor_type_code
     );
     drop(ordered);
     return status;
@@ -4530,7 +4598,7 @@ requires_caps [allocate]
     var no_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_function_core(
         source,records,callable_headers,type_descriptors,no_numeric,sources,ownership_records,
-        contracts,contract_locals,cfg,placements,prototypes,bodies,public_header,features,emit_public_header
+        contracts,contract_locals,cfg,placements,prototypes,bodies,public_header,features,emit_public_header,0
     );
     drop(no_numeric);
     return status;
@@ -4680,7 +4748,7 @@ requires_caps [allocate]
     }
     return canonical_c_append_function_core(
         source,records,callable_headers,type_descriptors,numeric_descriptors,sources,ownership_records,contracts,contract_locals,cfg,placements,
-        prototypes,bodies,public_header,features,emit_public_header
+        prototypes,bodies,public_header,features,emit_public_header,0
     );
 }
 
@@ -5258,6 +5326,7 @@ fn canonical_c_finish_module_with_copy_vectors(
     borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
     borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
     borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
+    borrow legacy_destructor_codes:Vec<i32>,
     borrow numeric_type_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
@@ -5398,6 +5467,28 @@ requires_caps [allocate]
     if(needs_vector!=0){
         bootstrap_buffer_append(output,vector_typedefs,0,buffer_len(vector_typedefs));
     }
+    var selected_destructors:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(legacy_destructor_codes));
+    while(vec_len<i32>(selected_destructors)<vec_len<i32>(legacy_destructor_codes)){
+        var best_code:i32=0;
+        var legacy_index:i64=0;
+        while(legacy_index<vec_len<i32>(legacy_destructor_codes)){
+            let candidate:i32=vec_get<i32>(legacy_destructor_codes,legacy_index);
+            if(candidate<function_mir_destructor_i64_struct_type_code(0)){return 3;}
+            if(candidate>=function_mir_owned_payload_enum_type_code(0,0)){return 3;}
+            if(canonical_c_vector_code_selected(candidate,selected_destructors)==0){
+                if(best_code==0){best_code=candidate;}
+                else{if(candidate<best_code){best_code=candidate;}}
+            }
+            legacy_index=checked_add(legacy_index,1);
+        }
+        if(best_code==0){return 3;}
+        canonical_mir_append_text(output,"typedef struct { int64_t field_0; } merit_struct_i64_destructor_");
+        canonical_mir_append_i32(output,checked_sub(best_code,function_mir_destructor_i64_struct_type_code(0)));
+        canonical_mir_append_text(output,";\n");
+        vec_push<i32>(selected_destructors,best_code);
+    }
+    if(vec_len<i32>(selected_destructors)>0){buffer_push(output,10);}
+    drop(selected_destructors);
     let owned_field_status:i32=canonical_c_append_owned_field_typedefs(
         owned_field_codes,descriptors,output
     );
@@ -5523,12 +5614,14 @@ requires_caps [allocate]
 {
     let allocator:Allocator=system_allocator();
     var no_numeric_codes:Vec<i32>=vec_new<i32>(allocator,0);
+    var no_legacy_destructors:Vec<i32>=vec_new<i32>(allocator,0);
     var no_numeric_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
-        owned_field_codes,owned_enum_codes,no_numeric_codes,descriptors,no_numeric_descriptors,output
+        owned_field_codes,owned_enum_codes,no_legacy_destructors,
+        no_numeric_codes,descriptors,no_numeric_descriptors,output
     );
-    drop(no_numeric_descriptors);drop(no_numeric_codes);
+    drop(no_numeric_descriptors);drop(no_legacy_destructors);drop(no_numeric_codes);
     return status;
 }
 
@@ -5638,9 +5731,30 @@ pub fn canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
 )->i32
 requires_caps [allocate]
 {
+    var no_legacy_destructors:Vec<i32>=vec_new<i32>(system_allocator(),0);
+    let status:i32=canonical_c_finish_module_with_copy_vectors(
+        prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
+        owned_field_codes,owned_enum_codes,no_legacy_destructors,
+        numeric_type_codes,descriptors,numeric_descriptors,output
+    );
+    drop(no_legacy_destructors);
+    return status;
+}
+
+pub fn canonical_c_finish_owned_aggregate_vector_numeric_destructor_catalog_module(
+    borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
+    borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
+    borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
+    borrow legacy_destructor_codes:Vec<i32>,borrow numeric_type_codes:Vec<i32>,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
     return canonical_c_finish_module_with_copy_vectors(
         prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
-        owned_field_codes,owned_enum_codes,numeric_type_codes,descriptors,numeric_descriptors,output
+        owned_field_codes,owned_enum_codes,legacy_destructor_codes,
+        numeric_type_codes,descriptors,numeric_descriptors,output
     );
 }
 
@@ -8023,7 +8137,9 @@ requires_caps [allocate]
     if(vec_len<MirFunctionInstructionSource>(sources)>0){sourced=1;}
     if(destructor_type_code>0){sourced=1;}
     if(sourced!=0){
-        if(validate_function_mir_cfg_records(records)!=0){return 1;}
+        if(destructor_type_code>0){
+            if(validate_function_mir_destructor_cfg_records(records)!=0){return 1;}
+        }else{if(validate_function_mir_cfg_records(records)!=0){return 1;}}
     }else{
         if(validate_function_mir_records(records)!=0){return 1;}
     }
@@ -8031,8 +8147,14 @@ requires_caps [allocate]
     if(record_count<2){return 2;}
     let header:MirFunctionRecord=vec_get<MirFunctionRecord>(records,0);
     let tail:MirFunctionRecord=vec_get<MirFunctionRecord>(records,checked_sub(record_count,1));
+    var body_record_end:i64=record_count;
+    if(function_mir_kind(tail)==function_mir_kind_return()){
+        body_record_end=checked_sub(record_count,1);
+    }
     if(function_mir_kind(header)!=function_mir_kind_function()){return 4;}
-    if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
+    if(destructor_type_code==0){
+        if(function_mir_kind(tail)!=function_mir_kind_return()){return 5;}
+    }
     if(sourced==0){
         if(vec_len<MirPlacementRecord>(placements)==0){
             if(record_count!=checked_add(function_mir_ordinal(header),2)){return 2;}
@@ -8083,7 +8205,7 @@ requires_caps [allocate]
         if(ownership_binding_needs_drop(binding)<0){return 65;}
         if(ownership_binding_needs_drop(binding)>ownership_binding_owned(binding)){return 65;}
         var binding_local_matches:i64=0;var binding_record_index:i64=1;
-        while(binding_record_index<checked_sub(record_count,1)){
+        while(binding_record_index<body_record_end){
             let binding_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,binding_record_index);
             if(function_mir_kind(binding_local)==function_mir_kind_source_local()){
                 if(function_mir_binding_id(binding_local)==ownership_binding_id(binding)){
@@ -8208,7 +8330,7 @@ requires_caps [allocate]
                             if(record_count<3){return 40;}
                             var body_match_count:i64=0;
                             var body_record_index:i64=1;
-                            while(body_record_index<checked_sub(record_count,1)){
+                            while(body_record_index<body_record_end){
                                 let body_candidate:MirFunctionRecord=vec_get<MirFunctionRecord>(records,body_record_index);
                                 if(canonical_mir_is_body_instruction(function_mir_kind(body_candidate))!=0){
                                     if(function_mir_id(body_candidate)==assembly_source_id(source_record)){
@@ -8339,7 +8461,7 @@ requires_caps [allocate]
                             let ownership_value:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,ownership_id);
                             if(assembly_source_left(source_record)!=ownership_record_operand_local(ownership_value)){return 44;}
                             var ownership_local_matches:i64=0;var ownership_local_index:i64=1;
-                            while(ownership_local_index<checked_sub(record_count,1)){
+    while(ownership_local_index<body_record_end){
                                 let ownership_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,ownership_local_index);
                                 let ownership_local_kind:i32=function_mir_kind(ownership_local);
                                 if(ownership_local_kind==function_mir_kind_source_local()){
@@ -8405,7 +8527,7 @@ requires_caps [allocate]
     }
     canonical_mir_append_text(output,",\"locals\":[");
     var local_record_index:i64=1;var emitted_local_count:i64=0;
-    while(local_record_index<checked_sub(record_count,1)){
+    while(local_record_index<body_record_end){
         let local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,local_record_index);
         let emitted_local_kind:i32=function_mir_kind(local);
         var emit_local:i32=0;
@@ -8558,7 +8680,7 @@ requires_caps [allocate]
         var parameter_ordinal:i64=0;
         while(parameter_ordinal<function_mir_ordinal(header)){
             var parameter_index:i64=1;var parameter_matches:i64=0;
-            while(parameter_index<checked_sub(record_count,1)){
+    while(parameter_index<body_record_end){
                 let parameter:MirFunctionRecord=vec_get<MirFunctionRecord>(records,parameter_index);
                 if(function_mir_kind(parameter)==function_mir_kind_parameter()){
                     if(function_mir_ordinal(parameter)==parameter_ordinal){
@@ -8764,6 +8886,85 @@ requires_caps [allocate]
     drop(placements);drop(cfg);drop(body);
     if(status!=0){return checked_add(100,status);}
     return 0;
+}
+
+// Preserve the descriptor's existing body/CFG instruction identities while
+// sharing the ordinary C instruction emitter. Destructor mode changes only
+// signature, local zero, block labels, and return/write-back conventions.
+pub fn canonical_c_append_destructor_from_catalog(
+    borrow source:Buffer,
+    borrow descriptor:MirDestructorDescriptor,
+    borrow all_body:Vec<MirFunctionRecord>,
+    borrow all_cfg:Vec<MirCfgRecord>,
+    borrow all_placements:Vec<MirPlacementRecord>,
+    borrow callable_headers:Vec<MirFunctionRecord>,
+    borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut prototypes:Buffer,
+    borrow_mut bodies:Buffer,
+    borrow_mut public_header:Buffer,
+    borrow_mut features:Vec<i64>
+)->i32
+requires_caps [allocate]
+{
+    let body_start:i64=function_mir_destructor_body_start(descriptor);
+    let body_count:i64=function_mir_destructor_body_count(descriptor);
+    let cfg_start:i64=function_mir_destructor_cfg_start(descriptor);
+    let cfg_count:i64=function_mir_destructor_cfg_count(descriptor);
+    let placement_start:i64=function_mir_destructor_placement_start(descriptor);
+    let placement_count:i64=function_mir_destructor_placement_count(descriptor);
+    if(body_start<0){return 1;}if(body_count<0){return 1;}
+    if(cfg_start<0){return 1;}if(cfg_count<0){return 1;}
+    if(placement_start<0){return 1;}if(placement_count<0){return 1;}
+    if(body_start>vec_len<MirFunctionRecord>(all_body)){return 1;}
+    if(cfg_start>vec_len<MirCfgRecord>(all_cfg)){return 1;}
+    if(placement_start>vec_len<MirPlacementRecord>(all_placements)){return 1;}
+    if(body_count>checked_sub(vec_len<MirFunctionRecord>(all_body),body_start)){return 1;}
+    if(cfg_count>checked_sub(vec_len<MirCfgRecord>(all_cfg),cfg_start)){return 1;}
+    if(placement_count>checked_sub(vec_len<MirPlacementRecord>(all_placements),placement_start)){return 1;}
+    let allocator:Allocator=system_allocator();
+    var body:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,body_count);
+    var cfg:Vec<MirCfgRecord>=vec_new<MirCfgRecord>(allocator,cfg_count);
+    var placements:Vec<MirPlacementRecord>=vec_new<MirPlacementRecord>(allocator,placement_count);
+    var sources:Vec<MirFunctionInstructionSource>=vec_new<MirFunctionInstructionSource>(allocator,body_count);
+    var index:i64=0;
+    while(index<body_count){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(all_body,checked_add(body_start,index));
+        if(canonical_mir_is_body_instruction(function_mir_kind(record))!=0){
+            if(function_mir_id(record)!=vec_len<MirFunctionInstructionSource>(sources)){return 2;}
+            vec_push<MirFunctionInstructionSource>(sources,MirFunctionInstructionSource{
+                global_id:function_mir_id(record),source_kind:assembly_source_body_kind(),
+                source_id:function_mir_id(record),contract_kind:assembly_source_no_contract_phase(),
+                clause_ordinal:assembly_source_absent_record_value(),result:function_mir_result(record),
+                left:function_mir_left(record),right:function_mir_right(record)
+            });
+        }
+        vec_push<MirFunctionRecord>(body,record);
+        index=checked_add(index,1);
+    }
+    index=0;
+    while(index<cfg_count){
+        vec_push<MirCfgRecord>(cfg,vec_get<MirCfgRecord>(all_cfg,checked_add(cfg_start,index)));
+        index=checked_add(index,1);
+    }
+    index=0;
+    while(index<placement_count){
+        vec_push<MirPlacementRecord>(
+            placements,vec_get<MirPlacementRecord>(all_placements,checked_add(placement_start,index))
+        );
+        index=checked_add(index,1);
+    }
+    let empty_ownership:Vec<MirOwnershipRecord>=vec_new<MirOwnershipRecord>(allocator,0);
+    let empty_contracts:Vec<MirFunctionContractRecord>=vec_new<MirFunctionContractRecord>(allocator,0);
+    let empty_contract_locals:Vec<MirFunctionContractLocal>=vec_new<MirFunctionContractLocal>(allocator,0);
+    let status:i32=canonical_c_append_function_core(
+        source,body,callable_headers,type_descriptors,numeric_descriptors,sources,
+        empty_ownership,empty_contracts,empty_contract_locals,cfg,placements,
+        prototypes,bodies,public_header,features,0,function_mir_destructor_type_code(descriptor)
+    );
+    drop(empty_contract_locals);drop(empty_contracts);drop(empty_ownership);
+    drop(sources);drop(placements);drop(cfg);drop(body);
+    return status;
 }
 
 pub fn materialize_bounded_cfg_canonical_mir(
