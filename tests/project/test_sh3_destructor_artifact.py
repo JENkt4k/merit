@@ -18,7 +18,12 @@ from merit.bootstrap.resolved_source_function_bundle import (
 )
 from merit.project.build import build
 from merit.project.loader import load_project
-from merit.project.project_request import encode_loaded_project_request
+from merit.project.project_request import (
+    ProjectRequest,
+    ProjectRequestUnit,
+    encode_loaded_project_request,
+    encode_project_request,
+)
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
@@ -195,3 +200,35 @@ def test_native_early_return_with_live_destructor_matches_oracle(tmp_path: Path,
     executed = subprocess.run([str(tmp_path / "early-return.exe")], capture_output=True, text=True)
     assert executed.returncode == 0, executed.stderr
     assert executed.stdout == "23\n"
+
+
+@pytest.mark.parametrize(("declarations", "expected_status"), [
+    ("destructor Marker { print(self.number); }\n" * 2, 971),
+    ("destructor Ghost { print(self.number); }\n", 992),
+])
+def test_native_source_destructor_catalog_fails_closed(
+    tmp_path: Path, declarations: str, expected_status: int,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    compiler_root = tmp_path / "compiler"
+    shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    manifest = compiler_root / "Merit.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + '\n[executable]\nadapter = "stdin-string-i32"\n'
+        + 'entry = "emit_native_project_artifacts"\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    source = (
+        "module probe\nstruct Marker { number:i64; }\n"
+        + declarations + "pub fn main()->i32 { return 0; }\n"
+    ).encode("utf-8")
+    request = encode_project_request(ProjectRequest(
+        package="probe", entry="src/main.mrt",
+        units=(ProjectRequestUnit(path="src/main.mrt", source=source),),
+    ))
+    completed = subprocess.run([str(executable)], input=request, capture_output=True)
+    assert completed.returncode == expected_status, completed.stderr.decode("utf-8", errors="replace")
+    assert completed.stderr.strip() == f"replacement driver status {expected_status}".encode("ascii")
