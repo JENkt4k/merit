@@ -9,8 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from merit.bootstrap.mir_contract import parse_mir
+from merit.bootstrap.mir_contract import canonical_mir_json, parse_mir
 from merit.bootstrap.mir_to_c import _destructor_c_name, _type, emit_c_header, emit_c_module
+from merit.bootstrap.replacement_project import (
+    ReplacementFunctionInput,
+    build_replacement_project_artifact,
+)
 from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
 from merit.bootstrap.resolved_source_function_bundle import (
     decode_native_project_artifact_transport,
@@ -232,3 +236,171 @@ def test_native_source_destructor_catalog_fails_closed(
     completed = subprocess.run([str(executable)], input=request, capture_output=True)
     assert completed.returncode == expected_status, completed.stderr.decode("utf-8", errors="replace")
     assert completed.stderr.strip() == f"replacement driver status {expected_status}".encode("ascii")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    compiler_root = tmp_path / "compiler"
+    shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    manifest = compiler_root / "Merit.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + '\n[executable]\nadapter = "stdin-string-i32"\n'
+        + 'entry = "emit_native_project_artifacts"\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    request = encode_project_request(ProjectRequest(
+        package="probe", entry="src/main.mrt",
+        units=(
+            ProjectRequestUnit(
+                path="src/helper.mrt",
+                source=(
+                    "module helper\npub struct Marker { number:i64; }\n"
+                    "destructor Marker { print(self.number); }\n"
+                    "pub fn get()->i32 { return 1; }\n"
+                ).encode("utf-8"),
+            ),
+            ProjectRequestUnit(
+                path="src/main.mrt",
+                source=(
+                    "module probe\nimport helper;\n"
+                    "pub fn main()->i32 { let marker:Marker=Marker{number:23}; "
+                    "return helper.get(); }\n"
+                ).encode("utf-8"),
+            ),
+        ),
+    ))
+    completed = subprocess.run([str(executable)], input=request, capture_output=True)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in completed.stdout.splitlines()
+    )
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'entry = "emit_native_project_artifacts"', 'entry = "emit_replacement_bundle"'
+        ), encoding="utf-8", newline="\n",
+    )
+    _, _, bundle_executable = build(load_project(manifest), tmp_path / "build" / "bundle-compiler")
+    bundled = subprocess.run([str(bundle_executable)], input=request, capture_output=True)
+    assert bundled.returncode == 0, bundled.stderr.decode("utf-8", errors="replace")
+    bundle = decode_resolved_source_function_bundle(int(line) for line in bundled.stdout.splitlines())
+    assert len(bundle.functions) == 2
+    oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+                module_name=bundle.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(bundle.capability_names)},
+            )
+            for values in bundle.encoded_snapshots
+        ),
+        module_name=bundle.module_name,
+    )
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert len(module.functions) == 2
+    assert len(module.destructors) == 1
+    assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    c_path = tmp_path / "multimodule.c"
+    c_path.write_bytes(artifact.c_source_bytes)
+    harness = tmp_path / "multimodule-harness.c"
+    harness.write_text('#include "multimodule.c"\nint main(void) { return merit_main(); }\n',
+                       encoding="utf-8", newline="\n")
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    linked = subprocess.run([compiler, "-std=c11", str(harness), "-o", str(tmp_path / "multimodule.exe")],
+                            capture_output=True, text=True)
+    assert linked.returncode == 0, linked.stderr
+    executed = subprocess.run([str(tmp_path / "multimodule.exe")], capture_output=True, text=True)
+    assert executed.returncode == 1, executed.stderr
+    assert executed.stdout == "23\n"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+@pytest.mark.parametrize(("outer_fields", "outer_destructor", "main_source", "expected_output"), [
+    ("inner:Inner;", "", "let outer:Outer=Outer{inner:Inner{number:23}}; return 0;", "23\n"),
+    ("inner:Inner;", "", "let outer:Outer=Outer{inner:Inner{number:23}}; drop(outer); return 0;", "23\n"),
+    ("inner:Inner; other:i64;", "",
+     "let outer:Outer=Outer{inner:Inner{number:23},other:5}; return 0;", "23\n"),
+    ("inner:Inner; other:i64;", "destructor Outer { print(self.other); }\n",
+     "let outer:Outer=Outer{inner:Inner{number:23},other:5}; return 0;", "5\n23\n"),
+], ids=("owned-implicit", "owned-explicit", "aggregate-implicit", "aggregate-custom"))
+def test_native_nested_owned_field_destructor_cleanup_matches_oracle(
+    tmp_path: Path, outer_fields: str, outer_destructor: str,
+    main_source: str, expected_output: str,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    compiler_root = tmp_path / "compiler"
+    shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    manifest = compiler_root / "Merit.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + '\n[executable]\nadapter = "stdin-string-i32"\n'
+        + 'entry = "emit_native_project_artifacts"\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    source = (
+        "module probe\n"
+        "struct Inner { number:i64; }\n"
+        "destructor Inner { print(self.number); }\n"
+        f"struct Outer {{ {outer_fields} }}\n"
+        + outer_destructor
+        + f"pub fn main()->i32 {{ {main_source} }}\n"
+    ).encode("utf-8")
+    request = encode_project_request(ProjectRequest(
+        package="probe", entry="src/main.mrt",
+        units=(ProjectRequestUnit(path="src/main.mrt", source=source),),
+    ))
+    completed = subprocess.run([str(executable)], input=request, capture_output=True)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in completed.stdout.splitlines()
+    )
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'entry = "emit_native_project_artifacts"', 'entry = "emit_replacement_bundle"'
+        ), encoding="utf-8", newline="\n",
+    )
+    _, _, bundle_executable = build(load_project(manifest), tmp_path / "build" / "bundle-compiler")
+    bundled = subprocess.run([str(bundle_executable)], input=request, capture_output=True)
+    assert bundled.returncode == 0, bundled.stderr.decode("utf-8", errors="replace")
+    bundle = decode_resolved_source_function_bundle(int(line) for line in bundled.stdout.splitlines())
+    oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+                module_name=bundle.module_name,
+                snapshot_values=values,
+                capability_names={index + 1: name for index, name in enumerate(bundle.capability_names)},
+            )
+            for values in bundle.encoded_snapshots
+        ),
+        module_name=bundle.module_name,
+    )
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert len(module.destructors) == 1 + bool(outer_destructor)
+    assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    c_path = tmp_path / "nested-owned.c"
+    c_path.write_bytes(artifact.c_source_bytes)
+    harness = tmp_path / "nested-owned-harness.c"
+    harness.write_text('#include "nested-owned.c"\nint main(void) { return merit_main(); }\n',
+                       encoding="utf-8", newline="\n")
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    linked = subprocess.run([compiler, "-std=c11", str(harness), "-o", str(tmp_path / "nested-owned.exe")],
+                            capture_output=True, text=True)
+    assert linked.returncode == 0, linked.stderr
+    executed = subprocess.run([str(tmp_path / "nested-owned.exe")], capture_output=True, text=True)
+    assert executed.returncode == 0, executed.stderr
+    assert executed.stdout == expected_output

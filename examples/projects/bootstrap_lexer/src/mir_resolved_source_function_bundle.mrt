@@ -1827,9 +1827,9 @@ requires_caps [allocate]
 // Emit the oracle's resource cleanup from the semantic MIR type graph. This
 // helper does not admit an owned local: callers must still validate effects,
 // placements, descriptors, and the availability of vector runtime helpers.
-pub fn canonical_c_append_recursive_resource_drop(
+fn canonical_c_append_recursive_resource_drop_with_destructors(
     borrow expression:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
-    indent:i32,depth:i64,borrow_mut output:Buffer
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,indent:i32,depth:i64,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -1837,6 +1837,94 @@ requires_caps [allocate]
         return canonical_c_recursive_drop_depth_status();
     }
     if(indent<0){return canonical_c_recursive_drop_invalid_catalog_status();}
+    var has_custom_destructor:i32=0;
+    var destructor_index:i64=0;
+    while(destructor_index<vec_len<MirDestructorDescriptor>(destructor_catalog)){
+        let declared:MirDestructorDescriptor=vec_get<MirDestructorDescriptor>(destructor_catalog,destructor_index);
+        if(function_mir_destructor_type_code(declared)==type_code){
+            if(has_custom_destructor!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
+            has_custom_destructor=1;
+        }
+        destructor_index=checked_add(destructor_index,1);
+    }
+    if(type_code>=function_mir_destructor_i64_struct_type_code(0)){
+        if(type_code<function_mir_owned_payload_enum_type_code(0,0)){
+            if(has_custom_destructor==0){return canonical_c_recursive_drop_unsupported_type_status();}
+            let allocator:Allocator=system_allocator();
+            var spelling:Buffer=buffer_new(allocator,64);
+            if(canonical_c_append_type_with_catalog(spelling,type_code,descriptors)!=0){
+                return canonical_c_recursive_drop_invalid_catalog_status();
+            }
+            canonical_c_append_drop_indent(output,indent);
+            canonical_mir_append_text(output,"merit_custom_destructor_");
+            bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+            canonical_mir_append_text(output,"(&(");
+            bootstrap_buffer_append(output,expression,0,buffer_len(expression));
+            canonical_mir_append_text(output,"));\n");
+            drop(spelling);return 0;
+        }
+    }
+    if(type_code>=function_mir_aggregate_struct_type_code(0)){
+        if(type_code<function_mir_decimal_type_code(0)){
+            var count:i32=0;var policy_count:i32=0;var index:i64=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let field:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(field)==type_code){
+                    if(function_mir_type_descriptor_kind(field)!=function_mir_type_descriptor_aggregate_struct_kind()){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_identity(field)!=checked_sub(type_code,function_mir_aggregate_struct_type_code(0))){
+                        return canonical_c_recursive_drop_invalid_catalog_status();
+                    }
+                    if(function_mir_type_descriptor_ordinal(field)!=count){return canonical_c_recursive_drop_invalid_catalog_status();}
+                    let policy:i32=function_mir_type_descriptor_destructor_policy(field);
+                    if(policy!=0){
+                        if(policy!=1){return canonical_c_recursive_drop_invalid_catalog_status();}
+                        policy_count=checked_add(policy_count,1);
+                    }
+                    count=checked_add(count,1);
+                }
+                index=checked_add(index,1);
+            }
+            if(count==0){return canonical_c_recursive_drop_invalid_catalog_status();}
+            if(policy_count>1){return canonical_c_recursive_drop_invalid_catalog_status();}
+            if(has_custom_destructor!=policy_count){return canonical_c_recursive_drop_invalid_catalog_status();}
+            if(has_custom_destructor!=0){
+                let allocator:Allocator=system_allocator();
+                var spelling:Buffer=buffer_new(allocator,64);
+                if(canonical_c_append_type_with_catalog(spelling,type_code,descriptors)!=0){
+                    return canonical_c_recursive_drop_invalid_catalog_status();
+                }
+                canonical_c_append_drop_indent(output,indent);
+                canonical_mir_append_text(output,"merit_custom_destructor_");
+                bootstrap_buffer_append(output,spelling,0,buffer_len(spelling));
+                canonical_mir_append_text(output,"(&(");
+                bootstrap_buffer_append(output,expression,0,buffer_len(expression));
+                canonical_mir_append_text(output,"));\n");
+                drop(spelling);
+            }
+            var ordinal:i32=0;index=0;
+            while(index<vec_len<MirTypeDescriptor>(descriptors)){
+                let field:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
+                if(function_mir_type_descriptor_code(field)==type_code){
+                    let allocator:Allocator=system_allocator();
+                    var field_expression:Buffer=buffer_new(allocator,64);
+                    bootstrap_buffer_append(field_expression,expression,0,buffer_len(expression));
+                    canonical_mir_append_text(field_expression,".field_");
+                    canonical_mir_append_i32(field_expression,ordinal);
+                    let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+                        field_expression,function_mir_type_descriptor_child(field),descriptors,
+                        destructor_catalog,indent,checked_add(depth,1),output
+                    );
+                    drop(field_expression);
+                    if(status!=0){return status;}
+                    ordinal=checked_add(ordinal,1);
+                }
+                index=checked_add(index,1);
+            }
+            return 0;
+        }
+    }
     if(type_code==function_mir_buffer_type_code()){
         canonical_c_append_drop_indent(output,indent);
         canonical_mir_append_text(output,"merit_buffer_drop(&(");
@@ -1877,8 +1965,8 @@ requires_caps [allocate]
             var field:Buffer=buffer_new(allocator,64);
             bootstrap_buffer_append(field,expression,0,buffer_len(expression));
             canonical_mir_append_text(field,".field_0");
-            let status:i32=canonical_c_append_recursive_resource_drop(
-                field,child,descriptors,indent,checked_add(depth,1),output
+            let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+                field,child,descriptors,destructor_catalog,indent,checked_add(depth,1),output
             );
             drop(field);return status;
         }
@@ -1907,9 +1995,9 @@ requires_caps [allocate]
                     var payload:Buffer=buffer_new(allocator,64);
                     bootstrap_buffer_append(payload,expression,0,buffer_len(expression));
                     canonical_mir_append_text(payload,".payload.variant_");canonical_mir_append_i32(payload,ordinal);
-                    let status:i32=canonical_c_append_recursive_resource_drop(
+                    let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
                         payload,function_mir_type_descriptor_child(item),descriptors,
-                        checked_add(indent,4),checked_add(depth,1),output
+                        destructor_catalog,checked_add(indent,4),checked_add(depth,1),output
                     );
                     drop(payload);if(status!=0){return status;}
                     canonical_c_append_drop_indent(output,checked_add(indent,4));
@@ -1929,6 +2017,19 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"/* explicit no-op in scalar bootstrap C subset */\n");return 0;
     }
     return canonical_c_recursive_drop_unsupported_type_status();
+}
+
+pub fn canonical_c_append_recursive_resource_drop(
+    borrow expression:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    indent:i32,depth:i64,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    var empty_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+        expression,type_code,descriptors,empty_destructors,indent,depth,output
+    );
+    drop(empty_destructors);return status;
 }
 
 // Lower only explicit, already-validated Alpha.2 resource effects. The MIR
@@ -1955,6 +2056,14 @@ requires_caps [allocate]
     let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
     let trivial_aggregate_fields:i32=canonical_c_trivial_integer_aggregate_field_count(resource_type,descriptors);
     let destructor_aggregate_fields:i32=canonical_c_destructor_scalar_aggregate_field_count(resource_type,descriptors);
+    var recursive_aggregate:i32=0;
+    if(resource_type>=function_mir_aggregate_struct_type_code(0)){
+        if(resource_type<function_mir_decimal_type_code(0)){
+            if(trivial_aggregate_fields==0){
+                if(destructor_aggregate_fields==0){recursive_aggregate=1;}
+            }
+        }
+    }
     var source_destructor:i32=0;
     var destructor_index:i64=0;
     while(destructor_index<vec_len<MirDestructorDescriptor>(destructor_catalog)){
@@ -1977,7 +2086,9 @@ requires_caps [allocate]
             }
         }
         if(legacy_destructor==0){
-            if(trivial_aggregate_destructor==0){return canonical_c_resource_invalid_operand_status();}
+            if(trivial_aggregate_destructor==0){
+                if(recursive_aggregate==0){return canonical_c_resource_invalid_operand_status();}
+            }
         }
     }
     var recursive_owned:i32=0;
@@ -1988,7 +2099,9 @@ requires_caps [allocate]
         if(resource_type<function_mir_vector_type_code(0)){
             if(trivial_aggregate_fields==0){
                 if(recursive_owned==0){
-                    if(source_destructor==0){return canonical_c_resource_invalid_operand_status();}
+                    if(source_destructor==0){
+                        if(recursive_aggregate==0){return canonical_c_resource_invalid_operand_status();}
+                    }
                 }
             }
         }
@@ -2019,6 +2132,7 @@ requires_caps [allocate]
     }else{
         if(result_local>=0){return canonical_c_resource_invalid_result_status();}
         if(source_destructor!=0){
+            if(recursive_aggregate==0){
             var destructor_type_name:Buffer=buffer_new(allocator,64);
             if(canonical_c_append_type_with_catalog(destructor_type_name,resource_type,descriptors)!=0){
                 return canonical_c_resource_invalid_operand_status();
@@ -2040,6 +2154,7 @@ requires_caps [allocate]
                     destructor_field=checked_add(destructor_field,1);
                 }
             }
+            }
         }else{if(trivial_aggregate_fields!=0){
             // Each Copy field lowers to the oracle's explicit no-op statement.
             var field_index:i32=0;
@@ -2051,8 +2166,16 @@ requires_caps [allocate]
             if(recursive_owned!=0){
                 var expression:Buffer=buffer_new(allocator,32);
                 canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
-                let drop_status:i32=canonical_c_append_recursive_resource_drop(
-                    expression,resource_type,descriptors,4,0,output
+                let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+                    expression,resource_type,descriptors,destructor_catalog,4,0,output
+                );
+                drop(expression);
+                if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
+            }else{if(recursive_aggregate!=0){
+                var expression:Buffer=buffer_new(allocator,32);
+                canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
+                let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+                    expression,resource_type,descriptors,destructor_catalog,4,0,output
                 );
                 drop(expression);
                 if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
@@ -2067,8 +2190,19 @@ requires_caps [allocate]
                 }
                 canonical_mir_append_i64(output,operand_local);
                 canonical_mir_append_text(output,"));\n");
-            }
+            }}
         }}
+        if(source_destructor!=0){
+            if(recursive_aggregate!=0){
+                var expression:Buffer=buffer_new(allocator,32);
+                canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
+                let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
+                    expression,resource_type,descriptors,destructor_catalog,4,0,output
+                );
+                drop(expression);
+                if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
+            }
+        }
     }
     drop(vector_name);
     return 0;
@@ -3759,7 +3893,11 @@ requires_caps [allocate]
                         if(owned_field==0){
                             if(canonical_c_supported_copy_aggregate_field(
                                 field_type,type_descriptors,numeric_descriptors
-                            )==0){return canonical_c_aggregate_unsupported_field_status();}
+                            )==0){
+                                if(function_mir_type_uses_ownership_transfer(field_type)==0){
+                                    return canonical_c_aggregate_unsupported_field_status();
+                                }
+                            }
                         }
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
@@ -3815,7 +3953,11 @@ requires_caps [allocate]
                         if(canonical_c_scalar_local_type(records,value_local)!=field_type){return canonical_c_aggregate_invalid_record_status();}
                         if(canonical_c_supported_copy_aggregate_field(
                             field_type,type_descriptors,numeric_descriptors
-                        )==0){return canonical_c_aggregate_unsupported_field_status();}
+                        )==0){
+                            if(function_mir_type_uses_ownership_transfer(field_type)==0){
+                                return canonical_c_aggregate_unsupported_field_status();
+                            }
+                        }
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,receiver_local);
                         if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_mutable_borrow()){
                             canonical_mir_append_text(bodies,"->field_");
@@ -5081,7 +5223,12 @@ requires_caps [allocate]
                 }
                 if(child>=function_mir_copy_payload_enum_type_code(0)){
                     if(child<function_mir_owned_field_struct_type_code(0)){
-                        return canonical_c_owned_typedef_unsupported_child_status();
+                        if(child<function_mir_destructor_i64_struct_type_code(0)){
+                            return canonical_c_owned_typedef_unsupported_child_status();
+                        }
+                        if(child>=function_mir_owned_payload_enum_type_code(0,0)){
+                            return canonical_c_owned_typedef_unsupported_child_status();
+                        }
                     }
                 }
                 if(child>=function_mir_recursive_owned_payload_enum_type_code(0)){
@@ -5243,7 +5390,20 @@ requires_caps [allocate]
                 let child:i32=function_mir_type_descriptor_child(field);
                 if(function_mir_type_is_integer(child)==0){
                     if(child!=function_mir_bool_type_code()){
-                        if(child<function_mir_aggregate_struct_type_code(0)){return 5;}
+                        if(child<function_mir_aggregate_struct_type_code(0)){
+                            var declared_before_aggregate:i32=0;
+                            if(child>=function_mir_destructor_i64_struct_type_code(0)){
+                                if(child<function_mir_owned_payload_enum_type_code(0,0)){
+                                    declared_before_aggregate=1;
+                                }
+                            }
+                            if(child>=function_mir_owned_field_struct_type_code(0)){
+                                if(child<function_mir_recursive_owned_payload_enum_type_code(0)){
+                                    declared_before_aggregate=1;
+                                }
+                            }
+                            if(declared_before_aggregate==0){return 5;}
+                        }
                         if(child>=function_mir_decimal_type_code(0)){
                             if(function_mir_type_is_declared_numeric(child)==0){return 5;}
                         }
