@@ -2002,6 +2002,107 @@ fn canonical_c_resource_missing_effect_status()->i32{return 110;}
 fn canonical_c_resource_instruction_mismatch_status()->i32{return 111;}
 fn canonical_c_resource_operand_mismatch_status()->i32{return 112;}
 fn canonical_c_resource_effect_failure_status(status:i32)->i32{return checked_add(113,status);}
+
+fn canonical_c_entry_body_ordinal(
+    borrow sources:Vec<MirFunctionInstructionSource>,borrow placements:Vec<MirPlacementRecord>,
+    instruction_id:i64
+)->i64
+{
+    var ordinal:i64=function_mir_absent_record_value();
+    var source_index:i64=0;
+    while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
+        let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,source_index);
+        if(assembly_source_kind(source_record)==assembly_source_body_kind()){
+            if(assembly_source_id(source_record)==instruction_id){
+                var placement_index:i64=0;
+                while(placement_index<vec_len<MirPlacementRecord>(placements)){
+                    let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
+                    if(placement_instruction_id(placement)==assembly_source_global_id(source_record)){
+                        if(placement_block_id(placement)==cfg_entry_block_id()){
+                            if(ordinal>=0){return function_mir_absent_record_value();}
+                            ordinal=placement_ordinal(placement);
+                        }
+                    }
+                    placement_index=checked_add(placement_index,1);
+                }
+            }
+        }
+        source_index=checked_add(source_index,1);
+    }
+    return ordinal;
+}
+
+// Alpha.2 source lowering may initialize one owned binding from a fresh
+// temporary in entry, then return that binding after a loop. This is a
+// transfer of the binding, not permission to copy an owned source binding.
+fn canonical_c_owned_return_entry_copy(
+    borrow records:Vec<MirFunctionRecord>,borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow placements:Vec<MirPlacementRecord>,return_local:i64,return_type:i32
+)->i32
+{
+    var copy_count:i64=0;
+    var copy_id:i64=function_mir_absent_record_value();
+    var source_local:i64=function_mir_absent_record_value();
+    var index:i64=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(record)==function_mir_kind_copy_to_binding()){
+            if(function_mir_result(record)==return_local){
+                copy_count=checked_add(copy_count,1);
+                copy_id=function_mir_id(record);source_local=function_mir_left(record);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(copy_count!=1){return 0;}
+    let copy_ordinal:i64=canonical_c_entry_body_ordinal(sources,placements,copy_id);
+    if(copy_ordinal<0){return 0;}
+    var temporary_count:i64=0;
+    index=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(record)==function_mir_kind_temporary_local()){
+            if(function_mir_id(record)==source_local){
+                if(function_mir_type_code(record)!=return_type){return 0;}
+                if(function_mir_numeric_policy(record)!=function_mir_mode_value()){return 0;}
+                temporary_count=checked_add(temporary_count,1);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(temporary_count!=1){return 0;}
+    var producer_count:i64=0;
+    var source_write_count:i64=0;
+    index=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_result(record)==source_local){
+            source_write_count=checked_add(source_write_count,1);
+            let kind:i32=function_mir_kind(record);
+            var fresh:i32=0;
+            if(kind==function_mir_kind_call()){
+                if(function_mir_numeric_policy(record)==function_mir_mode_value()){fresh=1;}
+            }
+            if(kind==function_mir_kind_struct_construct()){fresh=1;}
+            if(kind==function_mir_kind_enum_construct()){fresh=1;}
+            if(fresh!=0){
+                if(function_mir_type_code(record)==return_type){
+                    let producer_ordinal:i64=canonical_c_entry_body_ordinal(
+                        sources,placements,function_mir_id(record)
+                    );
+                    if(producer_ordinal>=0){
+                        if(producer_ordinal<copy_ordinal){producer_count=checked_add(producer_count,1);}
+                    }
+                }
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(source_write_count!=1){return 0;}
+    if(producer_count!=1){return 0;}
+    return 1;
+}
+
 fn canonical_c_aggregate_invalid_record_status()->i32{return 120;}
 fn canonical_c_aggregate_unsupported_field_status()->i32{return 121;}
 fn canonical_c_aggregate_replace_requires_cleanup_status()->i32{return 122;}
@@ -3926,7 +4027,11 @@ requires_caps [allocate]
                                 constructor_index=checked_add(constructor_index,1);
                             }
                         }
-                        if(move_matches!=1){if(constructed!=1){return canonical_c_resource_missing_effect_status();}}
+                        if(move_matches!=1){if(constructed!=1){
+                            if(canonical_c_owned_return_entry_copy(
+                                records,sources,placements,cfg_operand(return_record),return_type_code
+                            )==0){return canonical_c_resource_missing_effect_status();}
+                        }}
                         return_count=checked_add(return_count,1);
                     }
                     reach_index=checked_add(reach_index,1);

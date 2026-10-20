@@ -150,10 +150,9 @@ def test_native_filesystem_call_rejects_invalid_source(
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
                     reason="C compiler unavailable")
-def test_native_borrowed_vector_parameter_matches_oracle(
-    compiler_paths: tuple[Path, Path], tmp_path: Path,
-) -> None:
-    source = (
+@pytest.mark.parametrize(("module_name", "source", "expected_output"), [
+    (
+        "vector_borrow",
         "module vector_borrow\ncapability allocate;\n"
         "fn append(borrow_mut values:Vec<i64>)->i64 requires_caps [allocate] {\n"
         "    vec_push<i64>(values, 7); return vec_len<i64>(values);\n}\n"
@@ -161,11 +160,31 @@ def test_native_borrowed_vector_parameter_matches_oracle(
         "    let allocator:Allocator=system_allocator();\n"
         "    var values:Vec<i64>=vec_new<i64>(allocator, 0);\n"
         "    print(append(values)); drop(values);\n"
-        "} return 0; }\n"
-    ).encode("utf-8")
+        "} return 0; }\n",
+        [b"1"],
+    ),
+    (
+        "vector_return_after_loop",
+        "module vector_return_after_loop\ncapability allocate;\n"
+        "fn make()->Vec<i64> requires_caps [allocate] {\n"
+        "    let allocator:Allocator=system_allocator();\n"
+        "    var values:Vec<i64>=vec_new<i64>(allocator, 0);\n"
+        "    var index:i64=0;\n"
+        "    while index<2 { vec_push<i64>(values,index); index=checked_add(index,1); }\n"
+        "    return values;\n}\n"
+        "fn main()->i32 { with capability allocate {\n"
+        "    var values:Vec<i64>=make(); print(vec_len<i64>(values)); drop(values);\n"
+        "} return 0; }\n",
+        [b"2"],
+    ),
+], ids=["borrowed-vector-parameter", "owned-vector-return-after-loop"])
+def test_native_vector_resource_flow_matches_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+    module_name: str, source: str, expected_output: list[bytes],
+) -> None:
     request = encode_project_request(ProjectRequest(
-        "vector_borrow", "src/main.mrt",
-        (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
+        module_name, "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", source.encode("utf-8")),), header_exports=(),
     ))
     native_compiler, legacy_compiler = compiler_paths
     native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
@@ -195,14 +214,14 @@ def test_native_borrowed_vector_parameter_matches_oracle(
     assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
         module, exported_names=frozenset()
     )
-    generated = tmp_path / "vector-borrow.c"
+    generated = tmp_path / "vector-resource.c"
     generated.write_bytes(artifact.c_source_bytes)
     c_compiler = shutil.which("cc") or shutil.which("gcc")
     assert c_compiler is not None
-    executable = tmp_path / "vector-borrow.exe"
+    executable = tmp_path / "vector-resource.exe"
     linked = subprocess.run([c_compiler, "-std=c11", str(generated), "-o", str(executable)],
                             capture_output=True, text=True)
     assert linked.returncode == 0, linked.stderr
     native_run = subprocess.run([str(executable)], capture_output=True)
     assert native_run.returncode == 0
-    assert native_run.stdout.splitlines() == [b"1"]
+    assert native_run.stdout.splitlines() == expected_output

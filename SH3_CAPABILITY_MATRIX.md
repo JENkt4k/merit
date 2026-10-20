@@ -923,6 +923,24 @@ to resource-effect status `4510` (40.27s). The latter is the next F2/F5
 ownership/CFG seam to isolate; it is not evidence that `bootstrap_lexer` or
 F4/F5 is complete. The final tree still needs broad subsystem/full gates.
 
+The next compiler-project `4510` was narrowed to `parse_clause_records`,
+which returns a live owned vector after a loop. Its Alpha.2 MIR initializes
+the owned source binding in the entry block from a fresh `vec_new` temporary,
+then returns that binding in a later block; the old C guard accepted only a
+move or enum construction in the return block. The native backend now accepts
+only a unique entry-block copy from a value-mode temporary with one earlier,
+same-type fresh producer. It does not admit copying another owned binding.
+The owned-vector return-after-loop fixture matches Python canonical MIR,
+C/header bytes, and GCC runtime (`2 passed in 53.89s` with the borrowed-vector
+case). The 45-module request advances to `4468` (41.63s), now the next F5
+call-mode boundary. Six of seven existing owned-return cases passed on the
+first focused run; the seventh expected the now-supported `Vec<Buffer>` to
+fail. Existing positive `Vec<Buffer>` oracle/runtime coverage was verified,
+and the malformed-descriptor fixture now uses non-storable `Vec<unit>` while
+retaining the same rejection assertion (`4 passed in 117.90s`). This closes
+only the evidenced owned-entry-return subset, not F2/F5 or the compiler
+project.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

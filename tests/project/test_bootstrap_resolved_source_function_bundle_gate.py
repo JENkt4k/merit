@@ -6718,7 +6718,7 @@ def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: P
     ), 110),
     (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
         'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_i64_type_code()',
-        'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_buffer_type_code()',
+        'function_mir_type_descriptor_vector_kind(),0,\n    function_mir_unit_type_code()',
     ), 207),
 ])
 def test_merit_owned_vector_return_fails_closed_without_supported_move_and_layout(
