@@ -821,6 +821,53 @@ full/subsystem gate. Direct owned-parameter returns with branch-scoped
 `nested_transfer` effects remain a distinct represented shape to audit;
 the current producer check still fails closed for that shape.
 
+The post-commit `8f516ee` v4 request sweep completed all ten acceptance
+requests. Seven return a complete artifact: `binary_packet`,
+`borrowed_views`, `cobol_finance_modernization`, `generic_collections`,
+`generic_result`, `text_pipeline`, and `trait_bounds`. The first remaining
+statuses are `bootstrap_lexer` `4486`, `filesystem_capabilities` `4465`, and
+`ledger_app` `4465`. The extra `result_app` example stops at `4502` and is
+not counted among the ten acceptance applications. Only COBOL finance has
+the full project MIR/C/header/runtime differential evidence recorded above;
+the other six successful responses still need complete F8 comparison.
+
+### Filesystem calls, resource placement, and numeric enum payload boundary
+
+The `4465` first failure shared by `filesystem_capabilities` and `ledger_app`
+is the native C writer's fail-closed unknown-builtin path for `file_read` and
+`file_write`, not two unrelated project defects. Treat them as one F4/F5
+capability family. The Python oracle selects the result type from the call's
+resolved local, emits a type-mangled helper call, requires `FileReadResult`
+storage to be a recursive owned enum with `Buffer` and `i64` payloads, and
+requires `FileWriteResult` storage to be a copy-payload enum. Its module
+prelude conditionally adds `errno.h` and `sys/stat.h`; its runtime emits the
+filesystem error mapper, directory probe, and type-specific read/write
+helpers after function prototypes and before checked/numeric/vector helpers.
+The native writer must preserve that exact ordering and use the resolved MIR
+argument modes when passing the `Buffer` pointer to `file_write`.
+
+The native writer now selects result-specific helpers from explicit call
+features, validates the two operand types and resolved result storage, and
+emits the oracle's conditional includes, helpers, and separator ordering.
+Copy-payload enum mangling and numeric payload typedefs use the canonical
+catalog. The ledger request exposed two independent later first failures:
+the backend incorrectly equated an ownership producer instruction ID with a
+contract-shifted global placement ID (`4511`), and the copy-enum typedef
+writer lacked numeric descriptors for `LedgerResult(USD)` (`4534`). Both are
+corrected without changing canonical MIR or Alpha.2 behavior. The focused
+two-project test compares complete native/Python canonical MIR, C, and selected
+header bytes, compiles the native C with GCC, and compares stdout and written
+file bytes with independent reference builds (`2 passed in 40.83s`). Two
+malformed source calls (wrong read result type and wrong write payload type)
+reject in native artifact mode; the four-case accepted/rejected file passes
+(`4 passed in 39.64s`). The adjacent call/owned-result suite passes (`5 passed
+in 82.41s`), and destructor/cleanup artifacts pass (`15 passed in 501.28s`).
+The legacy bundle endpoint is intentionally only a record producer and need
+not reject these malformed calls before native backend validation. This
+evidence closes the filesystem/numeric-copy-enum/contract-shifted-placement
+mechanism for the two affected acceptance projects; it does not close all
+F4/F5/F8 surfaces or justify a full gate yet.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

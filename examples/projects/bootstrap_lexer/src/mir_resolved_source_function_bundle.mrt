@@ -533,6 +533,29 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"566563_a_");
         return canonical_c_append_catalog_type_mangle(source,child,descriptors,checked_add(depth,1),output);
     }
+    if(type_code>=function_mir_copy_payload_enum_type_code(0)){
+        if(type_code<function_mir_i64_struct_type_code(0)){
+            let count:i32=canonical_c_copy_enum_payload_count(type_code,descriptors);
+            if(count<=0){return 6;}
+            let allocator:Allocator=system_allocator();
+            var name:Buffer=buffer_new(allocator,48);
+            canonical_mir_append_text(name,"enum_copy_payload_");
+            canonical_mir_append_i32(name,checked_sub(type_code,function_mir_copy_payload_enum_type_code(0)));
+            canonical_c_append_mangle_name(name,output);drop(name);
+            var ordinal:i32=0;
+            while(ordinal<count){
+                if(ordinal==0){canonical_mir_append_text(output,"_a_");}
+                else{canonical_mir_append_text(output,"_z_");}
+                let child:i32=canonical_c_copy_enum_payload_type_i32(type_code,ordinal,descriptors);
+                if(child<=0){return 6;}
+                if(canonical_c_append_catalog_type_mangle(
+                    source,child,descriptors,checked_add(depth,1),output
+                )!=0){return 6;}
+                ordinal=checked_add(ordinal,1);
+            }
+            return 0;
+        }
+    }
     if(type_code>=function_mir_owned_field_struct_type_code(0)){
         if(type_code<function_mir_recursive_owned_payload_enum_type_code(0)){
             var found:i32=0;var child:i32=0;var index:i64=0;
@@ -1758,6 +1781,22 @@ fn canonical_c_public_string_feature()->i64{return 11;}
 fn canonical_c_buffer_runtime_feature()->i64{return 12;}
 fn canonical_c_slice_feature()->i64{return 13;}
 fn canonical_c_contract_feature()->i64{return 14;}
+// The type-code suffix lets the module writer emit exactly the result-specific
+// filesystem helpers requested by canonical MIR, without inspecting C text.
+fn canonical_c_file_read_feature_base()->i64{return 1099511627776;}
+fn canonical_c_file_write_feature_base()->i64{return 2199023255552;}
+fn canonical_c_filesystem_invalid_call_status()->i32{return 66;}
+fn canonical_c_filesystem_type_feature(base:i64,type_code:i32)->i64
+{
+    var remaining:i32=type_code;var bit:i64=1;var suffix:i64=0;
+    while(remaining>0){
+        let half:i32=remaining/2;
+        if(remaining!=checked_mul(half,2)){suffix=checked_add(suffix,bit);}
+        remaining=half;
+        if(remaining>0){bit=checked_mul(bit,2);}
+    }
+    return checked_add(base,suffix);
+}
 fn canonical_c_contract_missing_record_status()->i32{return 130;}
 fn canonical_c_contract_invalid_record_status()->i32{return 131;}
 fn canonical_c_contract_unsupported_kind_status()->i32{return 132;}
@@ -3366,6 +3405,82 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_append_filesystem_call(
+    borrow source:Buffer,borrow instruction:MirFunctionRecord,
+    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut bodies:Buffer,borrow_mut features:Vec<i64>,is_read:i32
+)->i32
+requires_caps [allocate]
+{
+    let result_code:i32=function_mir_type_code(instruction);
+    let result_local:i64=function_mir_result(instruction);
+    if(result_local<0){return canonical_c_filesystem_invalid_call_status();}
+    if(canonical_c_scalar_local_type(records,result_local)!=result_code){return 95;}
+    if(is_read!=0){
+        if(canonical_c_recursive_enum_payload_count(result_code,descriptors)!=2){return canonical_c_filesystem_invalid_call_status();}
+        if(canonical_c_recursive_enum_payload_type_i32(result_code,0,descriptors)!=function_mir_buffer_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+        if(canonical_c_recursive_enum_payload_type_i32(result_code,1,descriptors)!=function_mir_i64_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+    }else{
+        if(canonical_c_copy_enum_payload_count(result_code,descriptors)<0){return canonical_c_filesystem_invalid_call_status();}
+    }
+    var first_local:i64= -1;var second_local:i64= -1;var count:i64=0;var index:i64=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+            if(function_mir_id(argument)==function_mir_id(instruction)){
+                if(function_mir_ordinal(argument)==0){
+                    if(first_local>=0){return canonical_c_filesystem_invalid_call_status();}
+                    first_local=function_mir_left(argument);
+                }else{if(function_mir_ordinal(argument)==1){
+                    if(second_local>=0){return canonical_c_filesystem_invalid_call_status();}
+                    second_local=function_mir_left(argument);
+                }else{return canonical_c_filesystem_invalid_call_status();}}
+                count=checked_add(count,1);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(count!=2){return canonical_c_filesystem_invalid_call_status();}
+    if(first_local<0){return canonical_c_filesystem_invalid_call_status();}
+    if(second_local<0){return canonical_c_filesystem_invalid_call_status();}
+    if(is_read!=0){
+        if(canonical_c_scalar_local_type(records,first_local)!=function_mir_allocator_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+        if(canonical_c_scalar_local_type(records,second_local)!=function_mir_string_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+        canonical_c_require_feature(canonical_c_filesystem_type_feature(canonical_c_file_read_feature_base(),result_code),features);
+    }else{
+        if(canonical_c_scalar_local_type(records,first_local)!=function_mir_string_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+        if(canonical_c_scalar_local_type(records,second_local)!=function_mir_buffer_type_code()){
+            return canonical_c_filesystem_invalid_call_status();
+        }
+        canonical_c_require_feature(canonical_c_filesystem_type_feature(canonical_c_file_write_feature_base(),result_code),features);
+    }
+    canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
+    canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
+    if(is_read!=0){canonical_mir_append_text(bodies," = merit_file_read_");}
+    else{canonical_mir_append_text(bodies," = merit_file_write_");}
+    if(canonical_c_append_catalog_type_mangle(source,result_code,descriptors,0,bodies)!=0){return 95;}
+    canonical_mir_append_text(bodies,"(m");canonical_mir_append_i64(bodies,first_local);
+    canonical_mir_append_text(bodies,", ");
+    if(is_read==0){
+        if(canonical_c_local_access_mode(records,second_local)==function_mir_mode_value()){
+            canonical_mir_append_text(bodies,"&");
+        }
+    }
+    canonical_mir_append_text(bodies,"m");canonical_mir_append_i64(bodies,second_local);
+    canonical_mir_append_text(bodies,");\n");
+    return 0;
+}
+
 fn canonical_c_append_function_core_ordered(
     borrow source:Buffer,
     borrow records:Vec<MirFunctionRecord>,
@@ -4075,7 +4190,10 @@ requires_caps [allocate]
                 if(effect_id<0){return canonical_c_resource_missing_effect_status();}
                 if(effect_id>=vec_len<MirOwnershipRecord>(ownership_records)){return canonical_c_resource_missing_effect_status();}
                 let placed_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
-                if(ownership_record_instruction_id(placed_effect)!=instruction_id){return canonical_c_resource_instruction_mismatch_status();}
+                // The effect record's producer instruction ID is not the
+                // assembly stream's global placement ID when contract records
+                // precede body effects. The versioned source row selects the
+                // exact effect by index; validate its operand and emit it once.
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
                 let effect_status:i32=canonical_c_append_resource_effect_with_destructors(
                     source,placed_effect,assembly_source_result(placed_source),records,type_descriptors,
@@ -4512,6 +4630,23 @@ requires_caps [allocate]
                             )!=0){callee_found=0;}
                         }
                         if(callee_found==0){
+                            let file_read_builtin:i32=canonical_c_source_name_equals(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"file_read"
+                            );
+                            let file_write_builtin:i32=canonical_c_source_name_equals(
+                                source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"file_write"
+                            );
+                            if(file_read_builtin!=0){
+                                let filesystem_status:i32=canonical_c_append_filesystem_call(
+                                    source,instruction,records,type_descriptors,bodies,features,1
+                                );
+                                if(filesystem_status!=0){return filesystem_status;}
+                            }else{if(file_write_builtin!=0){
+                                let filesystem_status:i32=canonical_c_append_filesystem_call(
+                                    source,instruction,records,type_descriptors,bodies,features,0
+                                );
+                                if(filesystem_status!=0){return filesystem_status;}
+                            }else{
                             var copy_vector_operation:i32=0;
                             if(canonical_c_source_vector_call_name(
                                 source,function_mir_symbol_start(instruction),function_mir_symbol_length(instruction),"vec_get"
@@ -4821,6 +4956,7 @@ requires_caps [allocate]
                             }else{canonical_mir_append_text(bodies,"();\n");}
                             }
                             }}}
+                            }}
                         }else{
                         if(function_mir_type_code(callee_header)!=function_mir_type_code(instruction)){return 66;}
                         if(function_mir_numeric_policy(instruction)!=function_mir_symbol_code(callee_header)){return 66;}
@@ -5783,8 +5919,9 @@ requires_caps [allocate]
     drop(no_numeric);return status;
 }
 
-pub fn canonical_c_append_copy_enum_typedefs(
-    borrow enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+fn canonical_c_append_copy_enum_typedefs_with_numeric(
+    borrow enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -5833,7 +5970,9 @@ requires_caps [allocate]
             while(index<vec_len<MirTypeDescriptor>(descriptors)){
                 let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
                 if(function_mir_type_descriptor_code(item)==best){
-                    if(canonical_c_append_type_with_catalog(output,function_mir_type_descriptor_child(item),descriptors)!=0){return 4;}
+                    if(canonical_c_append_type_with_complete_catalog(
+                        output,function_mir_type_descriptor_child(item),descriptors,numeric_descriptors
+                    )!=0){return 4;}
                     canonical_mir_append_text(output," variant_");
                     canonical_mir_append_i32(output,field_ordinal);
                     canonical_mir_append_text(output,"; ");
@@ -5850,6 +5989,19 @@ requires_caps [allocate]
     if(vec_len<i32>(emitted)>0){buffer_push(output,10);}
     drop(emitted);
     return 0;
+}
+
+pub fn canonical_c_append_copy_enum_typedefs(
+    borrow enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    let status:i32=canonical_c_append_copy_enum_typedefs_with_numeric(
+        enum_codes,descriptors,empty_numeric,output
+    );
+    drop(empty_numeric);
+    return status;
 }
 
 fn canonical_c_append_checked_integer_name(type_code:i32,borrow_mut output:Buffer)->i32
@@ -5969,6 +6121,67 @@ requires_caps [allocate]
     return 0;
 }
 
+fn canonical_c_append_filesystem_runtime_helper(
+    borrow source:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut output:Buffer,is_read:i32
+)->i32
+requires_caps [allocate]
+{
+    let allocator:Allocator=system_allocator();
+    var c_type:Buffer=buffer_new(allocator,64);
+    var suffix:Buffer=buffer_new(allocator,96);
+    if(canonical_c_append_type_with_catalog(c_type,type_code,descriptors)!=0){return 1;}
+    if(canonical_c_append_catalog_type_mangle(source,type_code,descriptors,0,suffix)!=0){return 1;}
+    canonical_mir_append_text(output,"static ");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+    if(is_read!=0){
+        canonical_mir_append_text(output," merit_file_read_");bootstrap_buffer_append(output,suffix,0,buffer_len(suffix));
+        canonical_mir_append_text(output,"(merit_Allocator allocator, merit_String path) {\n");
+        canonical_mir_append_text(output,"    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, \"Merit allocation failed\\n\"); exit(80); }\n");
+        canonical_mir_append_text(output,"    memcpy(name, path.data, path.len); name[path.len] = 0;\n");
+        canonical_mir_append_text(output,"    FILE *file = fopen(name, \"rb\"); int open_error = errno; free(name);\n");
+        canonical_mir_append_text(output,"    if (!file) return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 1, .payload.variant_1 = merit_fs_error(open_error) };\n");
+        canonical_mir_append_text(output,"    if (fseek(file, 0, SEEK_END) != 0) { int error = errno; fclose(file);\n");
+        canonical_mir_append_text(output,"        return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 1, .payload.variant_1 = merit_fs_error(error) }; }\n");
+        canonical_mir_append_text(output,"    long length = ftell(file); if (length < 0) { int error = errno; fclose(file);\n");
+        canonical_mir_append_text(output,"        return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 1, .payload.variant_1 = merit_fs_error(error) }; }\n");
+        canonical_mir_append_text(output,"    rewind(file); merit_Buffer buffer = merit_buffer_new(allocator, (int64_t)length);\n");
+        canonical_mir_append_text(output,"    if (length > 0) { size_t got = fread(buffer.data, 1, (size_t)length, file);\n");
+        canonical_mir_append_text(output,"        if (got != (size_t)length) { int error = errno; merit_buffer_drop(&buffer); fclose(file);\n");
+        canonical_mir_append_text(output,"            return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 1, .payload.variant_1 = merit_fs_error(error) }; } buffer.len = got; }\n");
+        canonical_mir_append_text(output,"    if (fclose(file) != 0) { merit_buffer_drop(&buffer);\n");
+        canonical_mir_append_text(output,"        return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 1, .payload.variant_1 = merit_fs_error(errno) }; }\n");
+        canonical_mir_append_text(output,"    return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ .tag = 0, .payload.variant_0 = buffer };\n}\n");
+    }else{
+        canonical_mir_append_text(output," merit_file_write_");bootstrap_buffer_append(output,suffix,0,buffer_len(suffix));
+        canonical_mir_append_text(output,"(merit_String path, const merit_Buffer *buffer) {\n");
+        canonical_mir_append_text(output,"    char *name = (char *)malloc(path.len + 1); if (!name) { fprintf(stderr, \"Merit allocation failed\\n\"); exit(80); }\n");
+        canonical_mir_append_text(output,"    memcpy(name, path.data, path.len); name[path.len] = 0;\n");
+        canonical_mir_append_text(output,"    if (merit_path_is_directory(name)) { free(name); return (");
+        bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ 1, 2 }; }\n");
+        canonical_mir_append_text(output,"    FILE *file = fopen(name, \"wb\"); int open_error = errno; free(name);\n");
+        canonical_mir_append_text(output,"    if (!file) return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ 1, merit_fs_error(open_error) };\n");
+        canonical_mir_append_text(output,"    size_t wrote = buffer->len ? fwrite(buffer->data, 1, buffer->len, file) : 0;\n");
+        canonical_mir_append_text(output,"    if (wrote != buffer->len) { int error = errno; fclose(file); return (");
+        bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ 1, merit_fs_error(error) }; }\n");
+        canonical_mir_append_text(output,"    if (fclose(file) != 0) return (");
+        bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ 1, merit_fs_error(errno) };\n");
+        canonical_mir_append_text(output,"    return (");bootstrap_buffer_append(output,c_type,0,buffer_len(c_type));
+        canonical_mir_append_text(output,"){ 0, (int64_t)wrote };\n}\n");
+    }
+    drop(suffix);drop(c_type);
+    return 0;
+}
+
 fn canonical_c_finish_module_with_copy_vectors(
     borrow source:Buffer,borrow prototypes:Buffer,borrow bodies:Buffer,borrow features:Vec<i64>,
     borrow vector_type_codes:Vec<i32>,borrow aggregate_type_codes:Vec<i32>,borrow enum_type_codes:Vec<i32>,
@@ -6062,6 +6275,28 @@ requires_caps [allocate]
     if(needs_vector!=0){needs_buffer=1;}
     var needs_slice:i32=canonical_c_has_feature(canonical_c_slice_feature(),features);
     var needs_text:i32=canonical_c_has_feature(canonical_c_text_feature(),features);
+    var filesystem_read_codes:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(owned_enum_codes));
+    var filesystem_write_codes:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(enum_type_codes));
+    var filesystem_index:i64=0;
+    while(filesystem_index<vec_len<i32>(owned_enum_codes)){
+        let candidate:i32=vec_get<i32>(owned_enum_codes,filesystem_index);
+        if(canonical_c_has_feature(canonical_c_filesystem_type_feature(canonical_c_file_read_feature_base(),candidate),features)!=0){
+            vec_push<i32>(filesystem_read_codes,candidate);
+        }
+        filesystem_index=checked_add(filesystem_index,1);
+    }
+    filesystem_index=0;
+    while(filesystem_index<vec_len<i32>(enum_type_codes)){
+        let candidate:i32=vec_get<i32>(enum_type_codes,filesystem_index);
+        if(canonical_c_has_feature(canonical_c_filesystem_type_feature(canonical_c_file_write_feature_base(),candidate),features)!=0){
+            vec_push<i32>(filesystem_write_codes,candidate);
+        }
+        filesystem_index=checked_add(filesystem_index,1);
+    }
+    var needs_filesystem:i32=0;
+    if(vec_len<i32>(filesystem_read_codes)>0){needs_filesystem=1;}
+    if(vec_len<i32>(filesystem_write_codes)>0){needs_filesystem=1;}
+    if(needs_filesystem!=0){needs_buffer=1;needs_text=1;}
     var owned_descriptor_index:i64=0;
     while(owned_descriptor_index<vec_len<MirTypeDescriptor>(descriptors)){
         let owned_descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,owned_descriptor_index);
@@ -6079,7 +6314,9 @@ requires_caps [allocate]
     }
     if(needs_buffer!=0){needs_text=1;}
     if(needs_slice!=0){needs_text=1;}
-    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n#include <stdbool.h>\n");
+    canonical_mir_append_text(output,"/* generated from bootstrap-mir-v1; deterministic, do not edit */\n");
+    if(needs_filesystem!=0){canonical_mir_append_text(output,"#include <errno.h>\n");}
+    canonical_mir_append_text(output,"#include <stdbool.h>\n");
     if(needs_text!=0){canonical_mir_append_text(output,"#include <stddef.h>\n");}
     canonical_mir_append_text(output,"#include <stdint.h>\n");
     var needs_stdio:i32=canonical_c_has_checked_feature(features);
@@ -6098,6 +6335,7 @@ requires_caps [allocate]
     if(needs_stdio!=0){canonical_mir_append_text(output,"#include <stdio.h>\n");}
     canonical_mir_append_text(output,"#include <stdlib.h>\n");
     if(needs_buffer!=0){canonical_mir_append_text(output,"#include <string.h>\n");}
+    if(needs_filesystem!=0){canonical_mir_append_text(output,"#include <sys/stat.h>\n");}
     buffer_push(output,10);
     if(needs_text!=0){
         canonical_mir_append_text(output,"typedef struct { const uint8_t *data; size_t len; } merit_String;\ntypedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;\nstatic inline int64_t merit_string_len(merit_String value) { return (int64_t)value.len; }\nstatic inline uint8_t merit_string_byte(merit_String value, int64_t index) {\n    if (index < 0 || (size_t)index >= value.len) return 0;\n    return value.data[index];\n}\n\n");
@@ -6144,13 +6382,31 @@ requires_caps [allocate]
         aggregate_type_codes,descriptors,numeric_descriptors,output
     );
     if(aggregate_status!=0){return checked_add(20,aggregate_status);}
-    let enum_status:i32=canonical_c_append_copy_enum_typedefs(enum_type_codes,descriptors,output);
+    let enum_status:i32=canonical_c_append_copy_enum_typedefs_with_numeric(
+        enum_type_codes,descriptors,numeric_descriptors,output
+    );
     if(enum_status!=0){return checked_add(30,enum_status);}
     let owned_enum_status:i32=canonical_c_append_recursive_owned_enum_typedefs_with_aggregates(
         owned_enum_codes,aggregate_type_codes,descriptors,output
     );
     if(owned_enum_status!=0){return checked_add(50,owned_enum_status);}
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);
+    if(needs_filesystem!=0){
+        canonical_mir_append_text(output,"static int64_t merit_fs_error(int error) { if (error == ENOENT) return 0; if (error == EACCES || error == EPERM) return 1; return 2; }\n");
+        canonical_mir_append_text(output,"static int merit_path_is_directory(const char *path) { struct stat info; return stat(path, &info) == 0 && S_ISDIR(info.st_mode); }\n");
+        filesystem_index=0;
+        while(filesystem_index<vec_len<i32>(filesystem_read_codes)){
+            let type_code:i32=vec_get<i32>(filesystem_read_codes,filesystem_index);
+            if(canonical_c_append_filesystem_runtime_helper(source,type_code,descriptors,output,1)!=0){return 5;}
+            filesystem_index=checked_add(filesystem_index,1);
+        }
+        filesystem_index=0;
+        while(filesystem_index<vec_len<i32>(filesystem_write_codes)){
+            let type_code:i32=vec_get<i32>(filesystem_write_codes,filesystem_index);
+            if(canonical_c_append_filesystem_runtime_helper(source,type_code,descriptors,output,0)!=0){return 5;}
+            filesystem_index=checked_add(filesystem_index,1);
+        }
+    }
     let needs_checked:i32=canonical_c_has_checked_feature(features);
     if(needs_checked!=0){
         canonical_mir_append_text(output,"static void merit_numeric_failure(const char *operation) { fprintf(stderr, \"Merit %s\\n\", operation); exit(70); }\n");
@@ -6243,10 +6499,15 @@ requires_caps [allocate]
     if(canonical_c_has_feature(canonical_c_contract_feature(),features)!=0){
         canonical_mir_append_text(output,"static void merit_contract_failure(const char *kind) { (void)kind; abort(); }\n");
     }
-    if(needs_checked!=0){buffer_push(output,10);}
-    if(needs_numeric!=0){if(needs_checked==0){buffer_push(output,10);}}
-    if(needs_vector!=0){if(needs_checked==0){if(needs_numeric==0){buffer_push(output,10);}}}
+    var emitted_runtime:i32=0;
+    if(needs_filesystem!=0){emitted_runtime=1;}
+    if(needs_checked!=0){emitted_runtime=1;}
+    if(needs_numeric!=0){emitted_runtime=1;}
+    if(needs_vector!=0){emitted_runtime=1;}
+    if(canonical_c_has_feature(canonical_c_contract_feature(),features)!=0){emitted_runtime=1;}
+    if(emitted_runtime!=0){buffer_push(output,10);}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
+    drop(filesystem_write_codes);drop(filesystem_read_codes);
     drop(vector_runtime);drop(vector_typedefs);drop(sorted_codes);
     return 0;
 }
