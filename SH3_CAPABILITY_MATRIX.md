@@ -868,6 +868,25 @@ evidence closes the filesystem/numeric-copy-enum/contract-shifted-placement
 mechanism for the two affected acceptance projects; it does not close all
 F4/F5/F8 surfaces or justify a full gate yet.
 
+### Alpha.2 integer branch condition (focused CFG boundary)
+
+The earlier `bootstrap_lexer` first failure `4486` mapped to the native C
+writer's bool-only CFG branch guard. The reference checker accepts a direct
+`i32` condition, while canonical Python MIR-to-C emits a C branch for the
+resolved operand without changing its type. The native guard now admits only
+the existing `bool` and Alpha.2 `i32` representations; the invalid `i64`
+condition remains rejected. A source-backed i32 branch produces parseable
+native MIR with an i32 branch local, byte-identical Python-oracle C/header,
+GCC compilation, and expected runtime output. The
+new fixture plus the existing boolean-branch and malformed-CFG cases pass
+(`8 passed in 272.26s`). This proves the focused condition family, not that
+the 45-module compiler project advances past its next failure.
+
+A read-only legacy snapshot probe of the full compiler project ran longer
+than seven minutes and ended at status `4861` without a decodable bundle;
+that result cannot identify the original branch's function or prove v4
+compiler-project completion. Do not repeat that long diagnostic automatically.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

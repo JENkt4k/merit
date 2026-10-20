@@ -3936,7 +3936,12 @@ requires_caps [allocate]
         let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
         let term_kind:i32=cfg_kind(terminator);
         if(term_kind==cfg_branch_kind()){
-            if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_bool_type_code()){return 86;}
+            let condition_type:i32=canonical_c_scalar_local_type(records,cfg_operand(terminator));
+            if(condition_type!=function_mir_bool_type_code()){
+                // Alpha.2 source `if` and `while` accept i32 conditions;
+                // comparisons are represented as boolean MIR locals.
+                if(condition_type!=function_mir_i32_type_code()){return 86;}
+            }
             if(cfg_target_b(terminator)<0){return 80;}
             if(cfg_target_b(terminator)>=cfg_block_count){return 80;}
         }
