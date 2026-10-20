@@ -1,4 +1,4 @@
-"""SH3 filesystem calls use the canonical MIR result and oracle C runtime."""
+"""SH3 acceptance artifacts match the independent MIR/C oracle and runtime."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(scope="module")
 def compiler_paths(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    temporary = tmp_path_factory.mktemp("sh3-filesystem-compilers")
+    temporary = tmp_path_factory.mktemp("sh3-acceptance-compilers")
     compiler_root = temporary / "compiler"
     shutil.copytree(ROOT / "examples/projects/bootstrap_lexer", compiler_root,
                     ignore=shutil.ignore_patterns("build", ".merit"))
@@ -52,11 +52,19 @@ def compiler_paths(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
                     reason="C compiler unavailable")
 @pytest.mark.parametrize("project_name, side_effect", [
+    ("binary_packet", None),
+    ("borrowed_views", None),
+    ("cobol_finance_modernization", None),
     ("filesystem_capabilities", "merit-filesystem-capabilities.bin"),
+    ("generic_collections", None),
+    ("generic_result", None),
     ("ledger_app", "ledger_report.txt"),
+    ("text_pipeline", None),
+    ("trait_bounds", None),
 ])
-def test_native_filesystem_project_matches_oracle(
-    compiler_paths: tuple[Path, Path], tmp_path: Path, project_name: str, side_effect: str,
+def test_native_acceptance_project_matches_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path, project_name: str,
+    side_effect: str | None,
 ) -> None:
     project = load_project(ROOT / "examples/projects" / project_name / "Merit.toml")
     request = encode_loaded_project_request(project, header_exports=())
@@ -108,9 +116,10 @@ def test_native_filesystem_project_matches_oracle(
     reference_run = subprocess.run([str(reference)], cwd=reference_directory, capture_output=True)
     assert native_run.returncode == reference_run.returncode == 0
     assert native_run.stdout == reference_run.stdout
-    assert (native_directory / side_effect).read_bytes() == (
-        reference_directory / side_effect
-    ).read_bytes()
+    if side_effect is not None:
+        assert (native_directory / side_effect).read_bytes() == (
+            reference_directory / side_effect
+        ).read_bytes()
 
 
 @pytest.mark.parametrize("body", [

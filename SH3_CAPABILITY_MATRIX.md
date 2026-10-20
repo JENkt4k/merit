@@ -887,6 +887,23 @@ than seven minutes and ended at status `4861` without a decodable bundle;
 that result cannot identify the original branch's function or prove v4
 compiler-project completion. Do not repeat that long diagnostic automatically.
 
+### Nine-project full artifact differential boundary
+
+The focused acceptance-artifact fixture now builds one native v4 compiler and
+one legacy snapshot producer, then checks every required acceptance project
+except `bootstrap_lexer`. For each of the nine, native canonical MIR bytes
+equal independently materialized Python-oracle MIR; native C and selected
+header bytes equal the Python MIR-to-C emitter; GCC compiles the native C;
+and the native executable's stdout matches the reference project build.
+`filesystem_capabilities` and `ledger_app` also match their reference-written
+file bytes in isolated directories. The two malformed filesystem calls still
+reject in native artifact mode (`11 passed in 46.36s`). This supersedes the
+earlier seven-of-ten request-status sweep: nine of ten acceptance projects
+now have full focused artifact/runtime parity, while `bootstrap_lexer` has
+neither a complete v4 artifact nor this evidence. F8 still requires the
+45-module compiler project, accepted/rejected corpus, protocol/diagnostic
+coverage, and deterministic repeated-build proof.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
