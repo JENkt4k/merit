@@ -1065,6 +1065,21 @@ requires_caps [allocate]
     return canonical_c_append_type_with_catalog(output,type_code,descriptors);
 }
 
+fn canonical_c_append_type_with_complete_source_catalog(
+    borrow source:Buffer,borrow_mut output:Buffer,type_code:i32,
+    borrow descriptors:Vec<MirTypeDescriptor>,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>
+)->i32
+requires_caps [allocate]
+{
+    if(function_mir_type_is_declared_numeric(type_code)!=0){
+        return canonical_c_append_numeric_type_with_catalog(output,type_code,numeric_descriptors);
+    }
+    if(type_code>=function_mir_vector_type_code(0)){
+        return canonical_c_append_vector_type_name_with_source(source,type_code,descriptors,output);
+    }
+    return canonical_c_append_type_with_catalog(output,type_code,descriptors);
+}
+
 // All fixed-width integer locals use the same scalar C declaration path.
 // Keep resource and aggregate admission separate from this storage check.
 fn canonical_c_supported_builtin_local_type(type_code:i32)->i32 {
@@ -1643,19 +1658,19 @@ requires_caps [allocate]
             if(return_mode!=function_mir_mode_mutable_borrow()){return 5;}
         }}
     }
-    if(canonical_c_append_type_with_complete_catalog(output,function_mir_type_code(header),descriptors,numeric_descriptors)!=0){return 3;}
+    if(canonical_c_append_type_with_complete_source_catalog(source,output,function_mir_type_code(header),descriptors,numeric_descriptors)!=0){return 3;}
     if(borrowed_aggregate!=0){
         if(return_mode!=function_mir_mode_value()){canonical_mir_append_text(output," *");}
     }
     buffer_push(output,32);
     canonical_c_append_function_name(source,header,output);
-    if(canonical_c_append_scalar_parameters(records,descriptors,numeric_descriptors,output)!=0){return 4;}
+    if(canonical_c_append_scalar_parameters(source,records,descriptors,numeric_descriptors,output)!=0){return 4;}
     buffer_push(output,59);
     return 0;
 }
 
 fn canonical_c_append_scalar_parameters(
-    borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow source:Buffer,borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -1680,6 +1695,8 @@ requires_caps [allocate]
                     if(parameter_type>=function_mir_owned_field_struct_type_code(0)){
                         if(parameter_type<function_mir_aggregate_struct_type_code(0)){owned_aggregate=1;}
                     }
+                    if(parameter_type==function_mir_buffer_type_code()){owned_aggregate=1;}
+                    if(parameter_type>=function_mir_vector_type_code(0)){owned_aggregate=1;}
                     if(parameter_mode!=function_mir_mode_value()){
                         if(parameter_mode!=function_mir_mode_borrowed()){
                             if(parameter_mode!=function_mir_mode_mutable_borrow()){return 4;}
@@ -1703,7 +1720,7 @@ requires_caps [allocate]
         if(found==0){return 5;}
         if(ordinal>0){canonical_mir_append_text(output,", ");}
         if(matched_mode==function_mir_mode_borrowed()){canonical_mir_append_text(output,"const ");}
-        if(canonical_c_append_type_with_complete_catalog(output,matched_type,descriptors,numeric_descriptors)!=0){return 3;}
+        if(canonical_c_append_type_with_complete_source_catalog(source,output,matched_type,descriptors,numeric_descriptors)!=0){return 3;}
         if(matched_mode!=function_mir_mode_value()){canonical_mir_append_text(output," *");}
         canonical_mir_append_text(output," m");canonical_mir_append_i64(output,ordinal);
         ordinal=checked_add(ordinal,1);
@@ -2938,7 +2955,9 @@ requires_caps [allocate]
     canonical_mir_append_text(output," = merit_vec_len_");
     let prefix_length:i64=string_len("merit_Vec_");
     bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
-    canonical_mir_append_text(output,"(&m");
+    if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_value()){
+        canonical_mir_append_text(output,"(&m");
+    }else{canonical_mir_append_text(output,"(m");}
     canonical_mir_append_i64(output,receiver_local);
     canonical_mir_append_text(output,");\n");
     drop(vector_name);
@@ -3035,7 +3054,11 @@ requires_caps [allocate]
     canonical_mir_append_text(output,"    merit_vec_push_");
     let prefix_length:i64=string_len("merit_Vec_");
     bootstrap_buffer_append(output,vector_name,prefix_length,checked_sub(buffer_len(vector_name),prefix_length));
-    canonical_mir_append_text(output,"(&m");canonical_mir_append_i64(output,receiver_local);
+    if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_borrowed()){return 68;}
+    if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_value()){
+        canonical_mir_append_text(output,"(&m");
+    }else{canonical_mir_append_text(output,"(m");}
+    canonical_mir_append_i64(output,receiver_local);
     canonical_mir_append_text(output,", m");canonical_mir_append_i64(output,element_local);
     canonical_mir_append_text(output,");\n");
     drop(vector_name);
@@ -3180,11 +3203,9 @@ requires_caps [allocate]
     if(operation==canonical_c_vector_transfer_operation()){
         canonical_c_append_vector_symbol(output,"transfer",suffix);
     }
-    if(operation==canonical_c_vector_transfer_operation()){
-        if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_mutable_borrow()){
-            canonical_mir_append_text(output,"(m");
-        }else{canonical_mir_append_text(output,"(&m");}
-    }else{canonical_mir_append_text(output,"(&m");}
+    if(canonical_c_local_access_mode(records,receiver_local)==function_mir_mode_value()){
+        canonical_mir_append_text(output,"(&m");
+    }else{canonical_mir_append_text(output,"(m");}
     canonical_mir_append_i64(output,receiver_local);
     if(expected_count>1){
         if(operation==canonical_c_vector_transfer_operation()){
@@ -3678,6 +3699,8 @@ requires_caps [allocate]
                 if(function_mir_type_code(record)>=function_mir_owned_field_struct_type_code(0)){
                     if(function_mir_type_code(record)<function_mir_aggregate_struct_type_code(0)){owned_borrow=1;}
                 }
+                if(function_mir_type_code(record)==function_mir_buffer_type_code()){owned_borrow=1;}
+                if(function_mir_type_code(record)>=function_mir_vector_type_code(0)){owned_borrow=1;}
                 if(function_mir_symbol_code(record)==function_mir_mode_mutable_borrow()){
                     if(aggregate_borrow==0){if(owned_borrow==0){return 24;}}
                 }else{
@@ -4002,12 +4025,12 @@ requires_caps [allocate]
     if(function_mir_ordinal(header)>local_count){return 26;}
     if(destructor_type_code!=0){
         canonical_mir_append_text(prototypes,"static void merit_custom_destructor_");
-        if(canonical_c_append_type_with_complete_catalog(
-            prototypes,destructor_type_code,type_descriptors,numeric_descriptors
+        if(canonical_c_append_type_with_complete_source_catalog(
+            source,prototypes,destructor_type_code,type_descriptors,numeric_descriptors
         )!=0){return 3;}
         buffer_push(prototypes,40);
-        if(canonical_c_append_type_with_complete_catalog(
-            prototypes,destructor_type_code,type_descriptors,numeric_descriptors
+        if(canonical_c_append_type_with_complete_source_catalog(
+            source,prototypes,destructor_type_code,type_descriptors,numeric_descriptors
         )!=0){return 3;}
         canonical_mir_append_text(prototypes," *self);\n");
     }else{
@@ -4028,29 +4051,29 @@ requires_caps [allocate]
     );
     if(destructor_type_code!=0){
         canonical_mir_append_text(bodies,"static void merit_custom_destructor_");
-        if(canonical_c_append_type_with_complete_catalog(
-            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        if(canonical_c_append_type_with_complete_source_catalog(
+            source,bodies,destructor_type_code,type_descriptors,numeric_descriptors
         )!=0){return 3;}
         buffer_push(bodies,40);
-        if(canonical_c_append_type_with_complete_catalog(
-            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        if(canonical_c_append_type_with_complete_source_catalog(
+            source,bodies,destructor_type_code,type_descriptors,numeric_descriptors
         )!=0){return 3;}
         canonical_mir_append_text(bodies," *self) {\n    ");
-        if(canonical_c_append_type_with_complete_catalog(
-            bodies,destructor_type_code,type_descriptors,numeric_descriptors
+        if(canonical_c_append_type_with_complete_source_catalog(
+            source,bodies,destructor_type_code,type_descriptors,numeric_descriptors
         )!=0){return 3;}
         canonical_mir_append_text(bodies," m0 = *self;\n");
     }else{
     if(body_borrowed_aggregate!=0){
         if(body_return_mode==function_mir_mode_borrowed()){canonical_mir_append_text(bodies,"const ");}
     }
-    if(canonical_c_append_type_with_complete_catalog(bodies,body_return_type,type_descriptors,numeric_descriptors)!=0){return 3;}
+    if(canonical_c_append_type_with_complete_source_catalog(source,bodies,body_return_type,type_descriptors,numeric_descriptors)!=0){return 3;}
     if(body_borrowed_aggregate!=0){
         if(body_return_mode!=function_mir_mode_value()){canonical_mir_append_text(bodies," *");}
     }
     buffer_push(bodies,32);
     canonical_c_append_function_name(source,header,bodies);
-    let parameters_status:i32=canonical_c_append_scalar_parameters(records,type_descriptors,numeric_descriptors,bodies);
+    let parameters_status:i32=canonical_c_append_scalar_parameters(source,records,type_descriptors,numeric_descriptors,bodies);
     if(parameters_status!=0){return checked_add(50,parameters_status);}
     canonical_mir_append_text(bodies," {\n");
     }
@@ -4075,8 +4098,8 @@ requires_caps [allocate]
                 source,declared_type,type_descriptors,bodies
             )!=0){return 12;}
         }else{
-            if(canonical_c_append_type_with_complete_catalog(
-                bodies,declared_type,type_descriptors,numeric_descriptors
+            if(canonical_c_append_type_with_complete_source_catalog(
+                source,bodies,declared_type,type_descriptors,numeric_descriptors
             )!=0){return 12;}
         }
         if(borrowed_aggregate_local!=0){
@@ -4123,7 +4146,7 @@ requires_caps [allocate]
         let contract_type:i32=assembly_local_type(contract_local);
         if(canonical_c_supported_complete_local_type(contract_type,type_descriptors,numeric_descriptors)==0){return canonical_c_contract_invalid_type_status();}
         canonical_mir_append_text(bodies,"    ");
-        if(canonical_c_append_type_with_complete_catalog(bodies,contract_type,type_descriptors,numeric_descriptors)!=0){return canonical_c_contract_invalid_type_status();}
+        if(canonical_c_append_type_with_complete_source_catalog(source,bodies,contract_type,type_descriptors,numeric_descriptors)!=0){return canonical_c_contract_invalid_type_status();}
         canonical_mir_append_text(bodies," m");canonical_mir_append_i64(bodies,assembly_local_id(contract_local));
         if(contract_type==function_mir_string_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
@@ -4992,7 +5015,6 @@ requires_caps [allocate]
                                                         if(canonical_c_copy_aggregate_field_count(
                                                             function_mir_type_code(parameter),type_descriptors,numeric_descriptors
                                                         )==0){
-                                                            if(function_mir_type_is_declared_numeric(function_mir_type_code(parameter))==0){return 73;}
                                                             if(canonical_c_supported_complete_local_type(function_mir_type_code(parameter),type_descriptors,numeric_descriptors)==0){return 73;}
                                                         }
                                                     }
@@ -5006,19 +5028,22 @@ requires_caps [allocate]
                                 let aggregate_parameter:i32=canonical_c_copy_aggregate_field_count(
                                     function_mir_type_code(parameter),type_descriptors,numeric_descriptors
                                 );
+                                var owned_parameter:i32=0;
+                                if(function_mir_type_code(parameter)==function_mir_buffer_type_code()){owned_parameter=1;}
+                                if(function_mir_type_code(parameter)>=function_mir_vector_type_code(0)){owned_parameter=1;}
+                                if(function_mir_type_code(parameter)>=function_mir_owned_field_struct_type_code(0)){
+                                    if(function_mir_type_code(parameter)<function_mir_aggregate_struct_type_code(0)){owned_parameter=1;}
+                                }
                                 if(function_mir_symbol_code(parameter)==function_mir_mode_mutable_borrow()){
-                                    if(aggregate_parameter==0){return 74;}
+                                    if(aggregate_parameter==0){if(owned_parameter==0){return 74;}}
                                 }else{
                                     if(function_mir_symbol_code(parameter)!=function_mir_mode_borrowed()){return 74;}
                                     if(function_mir_type_code(parameter)!=function_mir_string_type_code()){
                                         if(function_mir_type_code(parameter)!=function_mir_buffer_type_code()){
-                                            if(aggregate_parameter==0){return 74;}
+                                            if(aggregate_parameter==0){if(owned_parameter==0){return 74;}}
                                         }
                                     }
                                 }
-                            }
-                            if(function_mir_type_code(parameter)==function_mir_buffer_type_code()){
-                                if(function_mir_symbol_code(parameter)!=function_mir_mode_borrowed()){return 74;}
                             }
                             callee_parameter_ordinal=checked_add(callee_parameter_ordinal,1);
                         }

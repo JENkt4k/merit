@@ -910,6 +910,19 @@ coverage, and deterministic repeated-build proof.
 exists for a subset, not the complete family. `Unverified` means the source
 surface exists but there is no sufficient end-to-end SH3 evidence.
 
+The next F4/F5 vector-name and borrow boundary is focused, not a full-project
+claim. Production prototype, parameter, body, and contract-local C type
+spelling now carries source identity through the vector catalog; mutable
+borrowed `Buffer`/`Vec` parameter admission and vector helper calls use the
+existing pointer directly rather than taking its address again. A borrowed
+`Vec<i64>` fixture matches the Python oracle's canonical MIR, C, and header
+bytes and GCC runtime output, and the nine accepted application artifacts and
+two malformed filesystem cases remain green (`12 passed in 41.10s`). The
+45-module compiler request advances from backend type-spelling status `4434`
+to resource-effect status `4510` (40.27s). The latter is the next F2/F5
+ownership/CFG seam to isolate; it is not evidence that `bootstrap_lexer` or
+F4/F5 is complete. The final tree still needs broad subsystem/full gates.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

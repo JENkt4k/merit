@@ -146,3 +146,63 @@ def test_native_filesystem_call_rejects_invalid_source(
     response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
     assert response.returncode != 0
     assert b"replacement driver status" in response.stderr
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_borrowed_vector_parameter_matches_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    source = (
+        "module vector_borrow\ncapability allocate;\n"
+        "fn append(borrow_mut values:Vec<i64>)->i64 requires_caps [allocate] {\n"
+        "    vec_push<i64>(values, 7); return vec_len<i64>(values);\n}\n"
+        "fn main()->i32 { with capability allocate {\n"
+        "    let allocator:Allocator=system_allocator();\n"
+        "    var values:Vec<i64>=vec_new<i64>(allocator, 0);\n"
+        "    print(append(values)); drop(values);\n"
+        "} return 0; }\n"
+    ).encode("utf-8")
+    request = encode_project_request(ProjectRequest(
+        "vector_borrow", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
+    ))
+    native_compiler, legacy_compiler = compiler_paths
+    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert native_response.returncode == 0, native_response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in native_response.stdout.splitlines()
+    )
+    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
+    assert legacy_response.returncode == 0
+    bundle = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_response.stdout.splitlines()
+    )
+    oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+                module_name=bundle.module_name,
+                snapshot_values=values,
+                capability_names={index: name for index, name in enumerate(bundle.capability_names)},
+            )
+            for values in bundle.encoded_snapshots
+        ), module_name=bundle.module_name,
+    )
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
+    generated = tmp_path / "vector-borrow.c"
+    generated.write_bytes(artifact.c_source_bytes)
+    c_compiler = shutil.which("cc") or shutil.which("gcc")
+    assert c_compiler is not None
+    executable = tmp_path / "vector-borrow.exe"
+    linked = subprocess.run([c_compiler, "-std=c11", str(generated), "-o", str(executable)],
+                            capture_output=True, text=True)
+    assert linked.returncode == 0, linked.stderr
+    native_run = subprocess.run([str(executable)], capture_output=True)
+    assert native_run.returncode == 0
+    assert native_run.stdout.splitlines() == [b"1"]
