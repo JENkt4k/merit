@@ -764,6 +764,21 @@ statuses are `bootstrap_lexer` 4486, `cobol_finance_modernization` 4534,
 `filesystem_capabilities` 4465, and `ledger_app` 4493. These statuses need
 root-cause grouping before the next implementation family.
 
+The next F4/F5 enum-CFG candidate isolates `ledger_app` `4493`: the Python
+materializer switches directly on nested payload-free `LedgerError` (Copy-enum
+identity 0), and the Python C emitter reads its `.tag`; the native backend had
+required an `i64` switch local. A minimal nested-enum source reproduced `4493`.
+Native switch validation/emission now admits descriptor-valid Copy and recursive
+owned enum subjects, including the established payload-free Copy-enum storage,
+and emits the tag access. This exposed module status `4534` for an outer Copy
+enum containing an inner Copy enum; the typedef emitter now accepts only an
+already-emitted inner Copy enum, retaining fail-closed ordering. The focused
+nested match matches native/Python C and header bytes, GCC-compiles, and runs
+with the expected output (`1 passed in 33.81s`). `ledger_app` advances to
+module status `4515`; `cobol_finance_modernization` remains at module `4534`,
+while the unrelated bootstrap and filesystem first statuses remain `4486` and
+`4465`. These are not yet whole-project acceptance or F4/F5 closure.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence

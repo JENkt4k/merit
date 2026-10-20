@@ -3719,10 +3719,32 @@ requires_caps [allocate]
             }
         }
         if(term_kind==cfg_switch_case_kind()){
-            if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_i64_type_code()){return 93;}
+            let subject_type:i32=canonical_c_scalar_local_type(records,cfg_operand(terminator));
+            if(subject_type!=function_mir_i64_type_code()){
+                var copy_enum:i32=0;
+                if(subject_type>=function_mir_copy_payload_enum_type_code(0)){
+                    if(subject_type<function_mir_i64_struct_type_code(0)){
+                        if(canonical_c_copy_enum_payload_count(subject_type,type_descriptors)>=0){copy_enum=1;}
+                    }
+                }
+                if(copy_enum==0){
+                    if(canonical_c_recursive_enum_payload_count(subject_type,type_descriptors)<=0){return 93;}
+                }
+            }
         }
         if(term_kind==cfg_switch_default_kind()){
-            if(canonical_c_scalar_local_type(records,cfg_operand(terminator))!=function_mir_i64_type_code()){return 93;}
+            let subject_type:i32=canonical_c_scalar_local_type(records,cfg_operand(terminator));
+            if(subject_type!=function_mir_i64_type_code()){
+                var copy_enum:i32=0;
+                if(subject_type>=function_mir_copy_payload_enum_type_code(0)){
+                    if(subject_type<function_mir_i64_struct_type_code(0)){
+                        if(canonical_c_copy_enum_payload_count(subject_type,type_descriptors)>=0){copy_enum=1;}
+                    }
+                }
+                if(copy_enum==0){
+                    if(canonical_c_recursive_enum_payload_count(subject_type,type_descriptors)<=0){return 93;}
+                }
+            }
         }
         var has_target:i32=0;
         if(term_kind==cfg_jump_kind()){has_target=1;}
@@ -4845,6 +4867,10 @@ requires_caps [allocate]
         if(is_switch!=0){
             canonical_mir_append_text(bodies,"    switch (m");
             canonical_mir_append_i64(bodies,cfg_operand(terminator));
+            let switch_type:i32=canonical_c_scalar_local_type(records,cfg_operand(terminator));
+            if(switch_type!=function_mir_i64_type_code()){
+                canonical_mir_append_text(bodies,".tag");
+            }
             canonical_mir_append_text(bodies,") {\n");
             var switch_index:i64=cfg_emit_index;
             var default_emitted:i32=0;
@@ -5643,7 +5669,11 @@ requires_caps [allocate]
                 if(child<=0){return 3;}
                 if(function_mir_type_uses_ownership_transfer(child)!=0){return 4;}
                 if(child>=function_mir_copy_payload_enum_type_code(0)){
-                    if(child<function_mir_aggregate_struct_type_code(0)){return 4;}
+                    if(child<function_mir_i64_struct_type_code(0)){
+                        if(canonical_c_vector_code_selected(child,emitted)==0){return 4;}
+                    }else{
+                        if(child<function_mir_aggregate_struct_type_code(0)){return 4;}
+                    }
                 }
                 ordinal=checked_add(ordinal,1);
             }
