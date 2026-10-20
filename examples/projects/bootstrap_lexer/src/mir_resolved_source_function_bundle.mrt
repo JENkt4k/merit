@@ -1473,6 +1473,7 @@ requires_caps [allocate]
     if(canonical_c_append_type_with_catalog(element_type,child,descriptors)!=0){
         return 7;
     }
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
     var suffix:Buffer=buffer_new(allocator,64);
     let prefix_length:i64=string_len("merit_Vec_");
     bootstrap_buffer_append(suffix,vector_type,prefix_length,checked_sub(buffer_len(vector_type),prefix_length));
@@ -1525,7 +1526,9 @@ requires_caps [allocate]
         canonical_mir_append_text(element_at,"((");
         bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
         canonical_mir_append_text(element_at," *)value->data)[index]");
-        if(canonical_c_append_recursive_resource_drop(element_at,child,descriptors,4,0,output)!=0){return 7;}
+        if(canonical_c_append_recursive_resource_drop_with_destructors(
+            source,element_at,child,descriptors,numeric_descriptors,no_destructors,4,0,output
+        )!=0){return 7;}
         drop(element_at);
     }else{
         var replace_noop_count:i32=copy_field_count;
@@ -1553,7 +1556,9 @@ requires_caps [allocate]
         canonical_mir_append_text(element_at,"((");
         bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
         canonical_mir_append_text(element_at," *)value->data)[index]");
-        if(canonical_c_append_recursive_resource_drop(element_at,child,descriptors,8,0,output)!=0){return 7;}
+        if(canonical_c_append_recursive_resource_drop_with_destructors(
+            source,element_at,child,descriptors,numeric_descriptors,no_destructors,8,0,output
+        )!=0){return 7;}
         drop(element_at);
     }else{
         var drop_noop_count:i32=copy_field_count;
@@ -1569,7 +1574,7 @@ requires_caps [allocate]
     buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *destination, ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *source) {\n    if (destination == source) { fprintf(stderr, \"Merit vector transfer aliases itself\\n\"); exit(90); }\n    if (!merit_allocator_compatible(destination->allocator, source->allocator)) { fprintf(stderr, \"Merit incompatible vector allocators\\n\"); exit(90); }\n    if (destination->len) { fprintf(stderr, \"Merit vector transfer destination is not empty\\n\"); exit(90); }\n    free(destination->data); destination->data = source->data; destination->len = source->len; destination->capacity = source->capacity;\n    source->data = NULL; source->len = 0; source->capacity = 0;\n}\n");
-    drop(suffix);drop(element_type);drop(vector_type);
+    drop(no_destructors);drop(suffix);drop(element_type);drop(vector_type);
     return 0;
 }
 
@@ -1960,7 +1965,8 @@ requires_caps [allocate]
 // helper does not admit an owned local: callers must still validate effects,
 // placements, descriptors, and the availability of vector runtime helpers.
 fn canonical_c_append_recursive_resource_drop_with_destructors(
-    borrow expression:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow source:Buffer,borrow expression:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow destructor_catalog:Vec<MirDestructorDescriptor>,indent:i32,depth:i64,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -2045,8 +2051,8 @@ requires_caps [allocate]
                     canonical_mir_append_text(field_expression,".field_");
                     canonical_mir_append_i32(field_expression,ordinal);
                     let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                        field_expression,function_mir_type_descriptor_child(field),descriptors,
-                        destructor_catalog,indent,checked_add(depth,1),output
+                        source,field_expression,function_mir_type_descriptor_child(field),descriptors,
+                        numeric_descriptors,destructor_catalog,indent,checked_add(depth,1),output
                     );
                     drop(field_expression);
                     if(status!=0){return status;}
@@ -2066,7 +2072,7 @@ requires_caps [allocate]
     if(type_code>=function_mir_vector_type_code(0)){
         let allocator:Allocator=system_allocator();
         var name:Buffer=buffer_new(allocator,64);
-        if(canonical_c_append_vector_type_name(type_code,descriptors,name)!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
+        if(canonical_c_append_vector_type_name_with_source(source,type_code,descriptors,name)!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
         canonical_c_append_drop_indent(output,indent);
         canonical_mir_append_text(output,"merit_vec_drop_");
         let prefix_length:i64=string_len("merit_Vec_");
@@ -2098,7 +2104,8 @@ requires_caps [allocate]
             bootstrap_buffer_append(field,expression,0,buffer_len(expression));
             canonical_mir_append_text(field,".field_0");
             let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                field,child,descriptors,destructor_catalog,indent,checked_add(depth,1),output
+                source,field,child,descriptors,numeric_descriptors,destructor_catalog,
+                indent,checked_add(depth,1),output
             );
             drop(field);return status;
         }
@@ -2128,8 +2135,8 @@ requires_caps [allocate]
                     bootstrap_buffer_append(payload,expression,0,buffer_len(expression));
                     canonical_mir_append_text(payload,".payload.variant_");canonical_mir_append_i32(payload,ordinal);
                     let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                        payload,function_mir_type_descriptor_child(item),descriptors,
-                        destructor_catalog,checked_add(indent,4),checked_add(depth,1),output
+                        source,payload,function_mir_type_descriptor_child(item),descriptors,
+                        numeric_descriptors,destructor_catalog,checked_add(indent,4),checked_add(depth,1),output
                     );
                     drop(payload);if(status!=0){return status;}
                     canonical_c_append_drop_indent(output,checked_add(indent,4));
@@ -2148,6 +2155,14 @@ requires_caps [allocate]
         canonical_c_append_drop_indent(output,indent);
         canonical_mir_append_text(output,"/* explicit no-op in scalar bootstrap C subset */\n");return 0;
     }
+    if(function_mir_type_is_declared_numeric(type_code)!=0){
+        var spelling:Buffer=buffer_new(system_allocator(),32);
+        let status:i32=canonical_c_append_numeric_type_with_catalog(spelling,type_code,numeric_descriptors);
+        drop(spelling);
+        if(status!=0){return canonical_c_recursive_drop_invalid_catalog_status();}
+        canonical_c_append_drop_indent(output,indent);
+        canonical_mir_append_text(output,"/* explicit no-op in scalar bootstrap C subset */\n");return 0;
+    }
     return canonical_c_recursive_drop_unsupported_type_status();
 }
 
@@ -2158,10 +2173,13 @@ pub fn canonical_c_append_recursive_resource_drop(
 requires_caps [allocate]
 {
     var empty_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
+    var empty_source:Buffer=buffer_new(system_allocator(),0);
+    var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-        expression,type_code,descriptors,empty_destructors,indent,depth,output
+        empty_source,expression,type_code,descriptors,empty_numeric,empty_destructors,
+        indent,depth,output
     );
-    drop(empty_destructors);return status;
+    drop(empty_numeric);drop(empty_source);drop(empty_destructors);return status;
 }
 
 // Lower only explicit, already-validated Alpha.2 resource effects. The MIR
@@ -2169,6 +2187,7 @@ requires_caps [allocate]
 fn canonical_c_append_resource_effect_with_destructors(
     borrow source:Buffer,borrow effect:MirOwnershipRecord,result_local:i64,
     borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow destructor_catalog:Vec<MirDestructorDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -2299,7 +2318,8 @@ requires_caps [allocate]
                 var expression:Buffer=buffer_new(allocator,32);
                 canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
                 let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                    expression,resource_type,descriptors,destructor_catalog,4,0,output
+                    source,expression,resource_type,descriptors,numeric_descriptors,
+                    destructor_catalog,4,0,output
                 );
                 drop(expression);
                 if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
@@ -2307,7 +2327,8 @@ requires_caps [allocate]
                 var expression:Buffer=buffer_new(allocator,32);
                 canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
                 let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                    expression,resource_type,descriptors,destructor_catalog,4,0,output
+                    source,expression,resource_type,descriptors,numeric_descriptors,
+                    destructor_catalog,4,0,output
                 );
                 drop(expression);
                 if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
@@ -2329,7 +2350,8 @@ requires_caps [allocate]
                 var expression:Buffer=buffer_new(allocator,32);
                 canonical_mir_append_text(expression,"m");canonical_mir_append_i64(expression,operand_local);
                 let drop_status:i32=canonical_c_append_recursive_resource_drop_with_destructors(
-                    expression,resource_type,descriptors,destructor_catalog,4,0,output
+                    source,expression,resource_type,descriptors,numeric_descriptors,
+                    destructor_catalog,4,0,output
                 );
                 drop(expression);
                 if(drop_status!=0){return canonical_c_resource_invalid_operand_status();}
@@ -2348,10 +2370,11 @@ requires_caps [allocate]
 {
     var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
     var empty_source:Buffer=buffer_new(system_allocator(),0);
+    var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_resource_effect_with_destructors(
-        empty_source,effect,result_local,records,descriptors,no_destructors,output
+        empty_source,effect,result_local,records,descriptors,empty_numeric,no_destructors,output
     );
-    drop(no_destructors);drop(empty_source);
+    drop(empty_numeric);drop(no_destructors);drop(empty_source);
     return status;
 }
 
@@ -2519,7 +2542,7 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     var normalized:Buffer=buffer_new(allocator,64);
     let value_status:i32=canonical_mir_append_typed_const_source_with_catalog(
-        normalized,source,start,length,type_code,numeric_descriptors,1
+        normalized,source,start,length,type_code,numeric_descriptors,0
     );
     var base:i32=0;
     var status:i32=2;
@@ -2561,8 +2584,8 @@ fn canonical_c_numeric_descriptor_index(
     return -1;
 }
 
-fn canonical_c_append_declared_numeric_binary(
-    borrow instruction:MirFunctionRecord,type_code:i32,
+fn canonical_c_append_declared_numeric_binary_operands(
+    symbol:i32,left:i64,right:i64,type_code:i32,assignment:i32,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow_mut features:Vec<i64>,borrow_mut output:Buffer
 )->i32
@@ -2571,28 +2594,28 @@ requires_caps [allocate]
     let descriptor_index:i64=canonical_c_numeric_descriptor_index(type_code,numeric_descriptors);
     if(descriptor_index<0){return 1;}
     let descriptor:MirNumericTypeDescriptor=vec_get<MirNumericTypeDescriptor>(numeric_descriptors,descriptor_index);
-    let symbol:i32=function_mir_symbol_code(instruction);
-    canonical_mir_append_text(output," = merit_check_");
+    if(assignment!=0){canonical_mir_append_text(output," = ");}
+    canonical_mir_append_text(output,"merit_check_");
     if(function_mir_numeric_descriptor_kind(descriptor)==function_mir_numeric_descriptor_decimal_kind()){
         canonical_mir_append_text(output,"decimal_");
         canonical_mir_append_i32(output,function_mir_numeric_descriptor_identity(descriptor));
         buffer_push(output,40);
         if(symbol==function_mir_binary_multiply_symbol()){
             canonical_mir_append_text(output,"merit_round_decimal((__int128)m");
-            canonical_mir_append_i64(output,function_mir_left(instruction));
+            canonical_mir_append_i64(output,left);
             canonical_mir_append_text(output," * (__int128)m");
-            canonical_mir_append_i64(output,function_mir_right(instruction));
+            canonical_mir_append_i64(output,right);
         }else{if(symbol==function_mir_binary_divide_symbol()){
             canonical_mir_append_text(output,"merit_round_decimal((__int128)m");
-            canonical_mir_append_i64(output,function_mir_left(instruction));
+            canonical_mir_append_i64(output,left);
             canonical_mir_append_text(output," * ");
         }else{
             canonical_mir_append_text(output,"(__int128)m");
-            canonical_mir_append_i64(output,function_mir_left(instruction));
+            canonical_mir_append_i64(output,left);
             if(symbol==function_mir_binary_add_symbol()){canonical_mir_append_text(output," + (__int128)m");}
             else{if(symbol==function_mir_binary_subtract_symbol()){canonical_mir_append_text(output," - (__int128)m");}
             else{return 1;}}
-            canonical_mir_append_i64(output,function_mir_right(instruction));
+            canonical_mir_append_i64(output,right);
         }}
         if(symbol==function_mir_binary_multiply_symbol()){
             canonical_mir_append_text(output,", ");
@@ -2605,7 +2628,7 @@ requires_caps [allocate]
             while(digit<scale){factor=checked_mul(factor,10);digit=checked_add(digit,1);}
             canonical_mir_append_i64(output,factor);
             canonical_mir_append_text(output,", (__int128)m");
-            canonical_mir_append_i64(output,function_mir_right(instruction));
+            canonical_mir_append_i64(output,right);
             canonical_mir_append_text(output,", ");
         }
         if(symbol==function_mir_binary_multiply_symbol()){
@@ -2639,11 +2662,24 @@ requires_caps [allocate]
     canonical_c_append_checked_operation_name(symbol,output);
     buffer_push(output,95);canonical_c_append_checked_integer_name(base,output);
     canonical_mir_append_text(output,"(m");
-    canonical_mir_append_i64(output,function_mir_left(instruction));
+    canonical_mir_append_i64(output,left);
     canonical_mir_append_text(output,", m");
-    canonical_mir_append_i64(output,function_mir_right(instruction));
+    canonical_mir_append_i64(output,right);
     canonical_mir_append_text(output,"));\n");
     return 0;
+}
+
+fn canonical_c_append_declared_numeric_binary(
+    borrow instruction:MirFunctionRecord,type_code:i32,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow_mut features:Vec<i64>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_append_declared_numeric_binary_operands(
+        function_mir_symbol_code(instruction),function_mir_left(instruction),
+        function_mir_right(instruction),type_code,1,numeric_descriptors,features,output
+    );
 }
 
 fn canonical_c_append_declared_numeric_print(
@@ -3136,6 +3172,7 @@ fn canonical_c_append_contract_instruction(
     borrow body_records:Vec<MirFunctionRecord>,
     borrow contract_locals:Vec<MirFunctionContractLocal>,
     borrow type_descriptors:Vec<MirTypeDescriptor>,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow_mut output:Buffer,borrow_mut features:Vec<i64>
 )->i32
 requires_caps [allocate]
@@ -3171,7 +3208,16 @@ requires_caps [allocate]
         if(result_type==function_mir_bool_type_code()){
             if(canonical_c_append_boolean_literal(source,function_contract_start(record),function_contract_length(record),output)!=0){return canonical_c_contract_invalid_literal_status();}
         }else{
-            if(canonical_c_append_scalar_integer_literal(source,function_contract_start(record),function_contract_length(record),result_type,output)!=0){return canonical_c_contract_invalid_literal_status();}
+            if(function_mir_type_is_declared_numeric(result_type)!=0){
+                if(canonical_c_append_declared_numeric_literal(
+                    source,function_contract_start(record),function_contract_length(record),
+                    result_type,numeric_descriptors,output
+                )!=0){return canonical_c_contract_invalid_literal_status();}
+            }else{
+                if(canonical_c_append_scalar_integer_literal(
+                    source,function_contract_start(record),function_contract_length(record),result_type,output
+                )!=0){return canonical_c_contract_invalid_literal_status();}
+            }
         }
     }else{if(kind==function_contract_call_kind()){
         if(function_contract_symbol(record)!=function_contract_slice_len_symbol()){
@@ -3192,7 +3238,13 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"m");canonical_mir_append_i64(output,left);
     }else{if(kind==function_contract_field_load_kind()){
         let receiver_type:i32=canonical_c_contract_local_type(body_records,contract_locals,left);
-        if(canonical_c_trivial_integer_aggregate_field_count(receiver_type,type_descriptors)<=function_contract_symbol(record)){
+        let field_ordinal:i32=function_contract_symbol(record);
+        let field_count:i32=canonical_c_copy_aggregate_field_count(
+            receiver_type,type_descriptors,numeric_descriptors
+        );
+        if(field_ordinal<0){return canonical_c_contract_invalid_type_status();}
+        if(field_count<=field_ordinal){return canonical_c_contract_invalid_type_status();}
+        if(canonical_c_aggregate_field_type(receiver_type,field_ordinal,type_descriptors)!=result_type){
             return canonical_c_contract_invalid_type_status();
         }
         canonical_mir_append_text(output,"m");canonical_mir_append_i64(output,left);
@@ -3213,9 +3265,17 @@ requires_caps [allocate]
         if(symbol==function_mir_binary_less_equal_symbol()){comparison=1;}
         if(symbol==function_mir_binary_greater_symbol()){comparison=1;}
         if(symbol==function_mir_binary_less_symbol()){comparison=1;}
+        let declared_numeric:i32=function_mir_type_is_declared_numeric(left_type);
+        if(declared_numeric!=0){
+            if(canonical_c_numeric_descriptor_index(left_type,numeric_descriptors)<0){
+                return canonical_c_contract_invalid_type_status();
+            }
+        }
         if(left_type!=function_mir_i64_type_code()){
             if(left_type!=function_mir_i32_type_code()){
-                if(left_type!=function_mir_bool_type_code()){return canonical_c_contract_unsupported_kind_status();}
+                if(left_type!=function_mir_bool_type_code()){
+                    if(declared_numeric==0){return canonical_c_contract_unsupported_kind_status();}
+                }
             }
         }
         if(comparison!=0){
@@ -3247,6 +3307,11 @@ requires_caps [allocate]
                 }
             }
             if(function_contract_policy(record)==function_mir_checked_numeric_policy()){
+                if(declared_numeric!=0){
+                    return canonical_c_append_declared_numeric_binary_operands(
+                        symbol,left,right,left_type,0,numeric_descriptors,features,output
+                    );
+                }
                 if(left_type==function_mir_i32_type_code()){
                     if(symbol==function_mir_binary_add_symbol()){
                         canonical_c_require_feature(canonical_c_checked_i32_add_feature(),features);
@@ -3887,7 +3952,9 @@ requires_caps [allocate]
             canonical_mir_append_text(bodies," = {0};\n");
         }else{if(contract_type==function_mir_byte_slice_type_code()){
             canonical_mir_append_text(bodies," = {0};\n");
-        }else{if(canonical_c_trivial_integer_aggregate_field_count(contract_type,type_descriptors)!=0){
+        }else{if(canonical_c_copy_aggregate_field_count(
+            contract_type,type_descriptors,numeric_descriptors
+        )!=0){
             canonical_mir_append_text(bodies," = {0};\n");
         }else{canonical_mir_append_text(bodies," = 0;\n");}}}
         contract_local_index=checked_add(contract_local_index,1);
@@ -3955,7 +4022,7 @@ requires_caps [allocate]
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
                 let effect_status:i32=canonical_c_append_resource_effect_with_destructors(
                     source,placed_effect,assembly_source_result(placed_source),records,type_descriptors,
-                    destructor_catalog,bodies
+                    numeric_descriptors,destructor_catalog,bodies
                 );
                 if(effect_status!=0){return canonical_c_resource_effect_failure_status(effect_status);}
                 instruction_found=1;record_index=vec_len<MirFunctionRecord>(records);
@@ -3972,7 +4039,8 @@ requires_caps [allocate]
                             contract_matches=checked_add(contract_matches,1);
                             if(contract_matches!=1){return canonical_c_contract_invalid_record_status();}
                             let contract_status:i32=canonical_c_append_contract_instruction(
-                                source,contract_record,placed_source,records,contract_locals,type_descriptors,bodies,features
+                                source,contract_record,placed_source,records,contract_locals,type_descriptors,
+                                numeric_descriptors,bodies,features
                             );
                             if(contract_status!=0){return contract_status;}
                         }

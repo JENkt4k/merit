@@ -779,6 +779,25 @@ module status `4515`; `cobol_finance_modernization` remains at module `4534`,
 while the unrelated bootstrap and filesystem first statuses remain `4486` and
 `4465`. These are not yet whole-project acceptance or F4/F5 closure.
 
+### Numeric aggregate cleanup and contract boundary (Windows candidate)
+
+The native C backend now threads the validated numeric catalog through recursive
+aggregate/vector cleanup. Declared-numeric Copy leaves emit the same explicit
+no-op cleanup as the Python oracle. Contract emission reuses the existing
+declared-numeric literal and checked-arithmetic writers, admits validated
+numeric aggregate field loads, and preserves the established rule that a
+bounded comparison constant may lie outside the bounded value's domain.
+One focused v4 fixture covers decimal and bounded fields, explicit aggregate
+drop, decimal pre/postconditions, an out-of-domain bounded precondition,
+exact Python-oracle C/header bytes, GCC linking, and native execution
+(`1 passed in 34.30s` on the latest tree). Four adjacent numeric/contract
+test selections passed seven parameterized cases in 267.85s on the final
+candidate tree. This is focused evidence, not a subsystem or full gate.
+On the latest built candidate, `ledger_app` advanced from `4515` through
+`4534` to `4465`; `cobol_finance_modernization` moved from `4534` to `4510`.
+Both are first-failure diagnostics, **not** acceptance passes. The remaining
+statuses are separate mechanisms and do not close F4/F5.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
