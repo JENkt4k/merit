@@ -3409,31 +3409,10 @@ requires_caps [allocate]
                                     if(function_mir_type_code(record)==function_mir_unit_type_code()){
                                         if(function_mir_result(record)!=-1){return 60;}
                                     }else{if(function_mir_result(record)<0){return 60;}}
-                                    if(function_mir_type_code(record)!=function_mir_i64_type_code()){
-                                        if(function_mir_type_code(record)!=function_mir_i32_type_code()){
-                                            if(function_mir_type_code(record)!=function_mir_bool_type_code()){
-                                                if(function_mir_type_code(record)!=function_mir_unit_type_code()){
-                                                    if(function_mir_type_code(record)!=function_mir_string_type_code()){
-                                                    if(function_mir_type_code(record)!=function_mir_allocator_type_code()){
-                                                        if(function_mir_type_code(record)!=function_mir_u8_type_code()){
-                                                            if(function_mir_type_code(record)!=function_mir_byte_slice_type_code()){
-                                                                if(function_mir_type_code(record)!=function_mir_buffer_type_code()){
-                                                                if(function_mir_type_code(record)<function_mir_vector_type_code(0)){
-                                                                    if(canonical_c_copy_aggregate_field_count(
-                                                                        function_mir_type_code(record),type_descriptors,numeric_descriptors
-                                                                    )==0){
-                                                                        if(function_mir_type_is_declared_numeric(function_mir_type_code(record))==0){return 61;}
-                                                                        if(canonical_c_supported_complete_local_type(function_mir_type_code(record),type_descriptors,numeric_descriptors)==0){return 61;}
-                                                                    }
-                                                                }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                    if(function_mir_type_code(record)!=function_mir_unit_type_code()){
+                                        if(canonical_c_supported_complete_local_type(
+                                            function_mir_type_code(record),type_descriptors,numeric_descriptors
+                                        )==0){return 61;}
                                     }
                                     if(function_mir_numeric_policy(record)!=function_mir_mode_value()){
                                         if(canonical_c_copy_aggregate_field_count(

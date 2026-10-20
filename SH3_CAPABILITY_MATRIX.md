@@ -725,6 +725,21 @@ passed in 128.83s`). The direct scalar-field and multi-module tests do not yet
 cover arbitrary project ordering, vector/enum-nested resources, move/replace,
 or cross-module conflicting destructor declarations.
 
+The next F5 call-result probe found an older hardcoded admission subset in the
+native C backend. It rejected an otherwise descriptor-valid owned struct result
+at driver status `4461`. Call-result admission now uses the same complete
+catalog-backed type validator as local declarations, with `unit` explicitly
+retained as a result-less call type; existing result mode and callee/result
+identity checks remain intact. An owned-struct destructor result and a Copy
+payload-enum result match independent Python MIR/C/header bytes and execute
+with expected cleanup/output. The existing black-box v4 artifact test also
+passes on the final tree (`3 passed in 103.14s`). This is a bounded call-result
+subset, **not** F5 closure. A fresh read-only request sweep with empty
+public-header selection returns v4 for `text_pipeline`, advances
+`generic_collections` from `4461` to backend status `4412`,
+`filesystem_capabilities` from `4461` to `4465`, and `ledger_app` from `4461`
+to `4493`. These next boundaries require separate diagnosis and coverage.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
