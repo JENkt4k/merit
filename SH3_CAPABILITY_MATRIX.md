@@ -739,6 +739,30 @@ public-header selection returns v4 for `text_pipeline`, advances
 `generic_collections` from `4461` to backend status `4412`,
 `filesystem_capabilities` from `4461` to `4465`, and `ledger_app` from `4461`
 to `4493`. These next boundaries require separate diagnosis and coverage.
+The `generic_collections` `4412` root was isolated with temporary return-site
+instrumentation, then restored: local C type spelling rejects vector code
+`1500002`, whose descriptor child is aggregate `1200001` (`Pair<i64,i32>`).
+`canonical_c_append_catalog_type_mangle` has no aggregate branch and lacks the
+source buffer needed for the aggregate's span-derived ABI identity. This is an
+F4 vector/aggregate name-transport dependency, not an ownership-metadata or
+recursive-enum defect. Preserve the existing fail-closed result until native
+source-aware vector naming matches the Python MIR/C mangle and runtime helpers.
+
+The source-aware F4/F5 candidate now carries aggregate identity through vector
+type mangling, local/call/resource spelling, and runtime emission. It also
+admits descriptor-validated Copy aggregate vector elements, the existing
+owned-field and recursive-enum payload loads, and the existing owned-vector
+transfer call. The `generic_collections` request now returns a complete v4
+artifact; its native C/header bytes equal the independent Python emitter for
+the native MIR, the C compiles, and its executable output equals the reference
+project build (`1 passed in 20.06s`). This closes the observed vector/aggregate
+name-transport slice, **not** all F4/F5 coverage or native-versus-Python MIR
+materialization. A read-only request sweep on this candidate returns v4 for
+`text_pipeline`, `binary_packet`, `generic_result`, `trait_bounds`,
+`generic_collections`, and `borrowed_views`; the first remaining project
+statuses are `bootstrap_lexer` 4486, `cobol_finance_modernization` 4534,
+`filesystem_capabilities` 4465, and `ledger_app` 4493. These statuses need
+root-cause grouping before the next implementation family.
 
 ## Finite capability families
 

@@ -1069,7 +1069,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             }
             bootstrap_buffer_append(complete_bodies,backend_bodies,0,buffer_len(backend_bodies));
             let module_status:i32=canonical_c_finish_owned_aggregate_vector_numeric_destructor_catalog_module(
-                backend_prototypes,complete_bodies,backend_features,
+                source,backend_prototypes,complete_bodies,backend_features,
                 backend_vector_types,backend_aggregate_types,backend_copy_enum_types,
                 backend_owned_field_types,backend_owned_enum_types,backend_legacy_destructor_types,
                 backend_numeric_types,
