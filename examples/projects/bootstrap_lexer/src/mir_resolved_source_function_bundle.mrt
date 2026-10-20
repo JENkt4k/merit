@@ -3545,6 +3545,17 @@ requires_caps [allocate]
             }
             if(canonical_c_supported_complete_local_type(function_mir_type_code(record),type_descriptors,numeric_descriptors)==0){return 9;}
             if(function_mir_symbol_code(record)!=function_mir_mode_value()){
+                var parameter_effect_index:i64=0;
+                while(parameter_effect_index<vec_len<MirOwnershipRecord>(ownership_records)){
+                    let parameter_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,parameter_effect_index);
+                    if(ownership_record_operand_local(parameter_effect)==function_mir_id(record)){
+                        let effect_kind:i32=ownership_record_kind(parameter_effect);
+                        if(effect_kind==ownership_record_kind_move()){return 9;}
+                        if(effect_kind==ownership_record_kind_replace_move()){return 9;}
+                        if(effect_kind==ownership_record_kind_nested_transfer()){return 9;}
+                    }
+                    parameter_effect_index=checked_add(parameter_effect_index,1);
+                }
                 let aggregate_borrow:i32=canonical_c_copy_aggregate_field_count(
                     function_mir_type_code(record),type_descriptors,numeric_descriptors
                 );
@@ -3702,45 +3713,91 @@ requires_caps [allocate]
         if(return_type_code<function_mir_aggregate_struct_type_code(0)){owned_return=1;}
     }
     if(owned_return!=0){
-        // This bounded owned-return form is proven by the placed move that
-        // produces the return local. Multi-block resource dataflow remains
-        // fail-closed until its full ownership proof is represented here.
-        if(cfg_block_count!=1){return canonical_c_resource_missing_effect_status();}
-        let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,1);
-        if(cfg_kind(return_record)!=cfg_return_kind()){
+        // A return may be reached from any CFG block. Its owned local must
+        // come from one placed move or a freshly constructed enum in that block.
+        var reachable_returns:Vec<i64>=vec_new<i64>(system_allocator(),cfg_block_count);
+        if(canonical_mir_cfg_collect_reachable(cfg,reachable_returns)!=0){
             return canonical_c_resource_missing_effect_status();
         }
-        var return_move_count:i64=0;
-        var return_source_index:i64=0;
-        while(return_source_index<vec_len<MirFunctionInstructionSource>(sources)){
-            let return_source:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,return_source_index);
-            if(assembly_source_kind(return_source)==assembly_source_ownership_kind()){
-                if(assembly_source_result(return_source)==cfg_operand(return_record)){
-                    let effect_id:i64=assembly_source_id(return_source);
-                    if(effect_id<0){return canonical_c_resource_missing_effect_status();}
-                    if(effect_id>=vec_len<MirOwnershipRecord>(ownership_records)){
-                        return canonical_c_resource_missing_effect_status();
-                    }
-                    let return_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
-                    if(ownership_record_kind(return_effect)==ownership_record_kind_move()){
-                        var placed:i64=0;
-                        var return_placement_index:i64=0;
-                        while(return_placement_index<vec_len<MirPlacementRecord>(placements)){
-                            let return_placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,return_placement_index);
-                            if(placement_instruction_id(return_placement)==assembly_source_global_id(return_source)){
-                                if(placement_block_id(return_placement)==cfg_block_id(return_record)){
-                                    placed=checked_add(placed,1);
+        var return_count:i64=0;
+        var return_index:i64=0;
+        while(return_index<vec_len<MirCfgRecord>(cfg)){
+            let return_record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,return_index);
+            if(cfg_kind(return_record)==cfg_return_kind()){
+                var reach_index:i64=0;
+                while(reach_index<vec_len<i64>(reachable_returns)){
+                    if(vec_get<i64>(reachable_returns,reach_index)==cfg_block_id(return_record)){
+                        var move_matches:i64=0;
+                        var return_source_index:i64=0;
+                        while(return_source_index<vec_len<MirFunctionInstructionSource>(sources)){
+                            let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,return_source_index);
+                            if(assembly_source_kind(source_record)==assembly_source_ownership_kind()){
+                                if(assembly_source_result(source_record)==cfg_operand(return_record)){
+                                    let effect_id:i64=assembly_source_id(source_record);
+                                    if(effect_id<0){return canonical_c_resource_missing_effect_status();}
+                                    if(effect_id>=vec_len<MirOwnershipRecord>(ownership_records)){
+                                        return canonical_c_resource_missing_effect_status();
+                                    }
+                                    let effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
+                                    if(ownership_record_kind(effect)==ownership_record_kind_move()){
+                                        var placement_index:i64=0;
+                                        while(placement_index<vec_len<MirPlacementRecord>(placements)){
+                                            let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
+                                            if(placement_instruction_id(placement)==assembly_source_global_id(source_record)){
+                                                if(placement_block_id(placement)==cfg_block_id(return_record)){
+                                                    move_matches=checked_add(move_matches,1);
+                                                }
+                                            }
+                                            placement_index=checked_add(placement_index,1);
+                                        }
+                                    }
                                 }
                             }
-                            return_placement_index=checked_add(return_placement_index,1);
+                            return_source_index=checked_add(return_source_index,1);
                         }
-                        if(placed==1){return_move_count=checked_add(return_move_count,1);}
+                        var constructed:i64=0;
+                        if(move_matches==0){
+                            var constructor_index:i64=0;
+                            while(constructor_index<vec_len<MirFunctionRecord>(records)){
+                                let constructor:MirFunctionRecord=vec_get<MirFunctionRecord>(records,constructor_index);
+                                if(function_mir_kind(constructor)==function_mir_kind_enum_construct()){
+                                    if(function_mir_result(constructor)==cfg_operand(return_record)){
+                                        if(function_mir_type_code(constructor)==return_type_code){
+                                            var source_index:i64=0;
+                                            while(source_index<vec_len<MirFunctionInstructionSource>(sources)){
+                                                let source_record:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,source_index);
+                                                if(assembly_source_kind(source_record)==assembly_source_body_kind()){
+                                                    if(assembly_source_id(source_record)==function_mir_id(constructor)){
+                                                        var placement_index:i64=0;
+                                                        while(placement_index<vec_len<MirPlacementRecord>(placements)){
+                                                            let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_index);
+                                                            if(placement_instruction_id(placement)==assembly_source_global_id(source_record)){
+                                                                if(placement_block_id(placement)==cfg_block_id(return_record)){
+                                                                    constructed=checked_add(constructed,1);
+                                                                }
+                                                            }
+                                                            placement_index=checked_add(placement_index,1);
+                                                        }
+                                                    }
+                                                }
+                                                source_index=checked_add(source_index,1);
+                                            }
+                                        }
+                                    }
+                                }
+                                constructor_index=checked_add(constructor_index,1);
+                            }
+                        }
+                        if(move_matches!=1){if(constructed!=1){return canonical_c_resource_missing_effect_status();}}
+                        return_count=checked_add(return_count,1);
                     }
+                    reach_index=checked_add(reach_index,1);
                 }
             }
-            return_source_index=checked_add(return_source_index,1);
+            return_index=checked_add(return_index,1);
         }
-        if(return_move_count!=1){return canonical_c_resource_missing_effect_status();}
+        if(return_count==0){return canonical_c_resource_missing_effect_status();}
+        drop(reachable_returns);
     }
     var placement_scan:i64=0;
     while(placement_scan<vec_len<MirPlacementRecord>(placements)){
@@ -5528,8 +5585,9 @@ requires_caps [allocate]
 
 // Recursive payload enums appear after Copy-payload enums in the oracle.
 // Their ordered descriptor rows become one tagged union declaration.
-pub fn canonical_c_append_recursive_owned_enum_typedefs(
-    borrow owned_enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+fn canonical_c_append_recursive_owned_enum_typedefs_with_aggregates(
+    borrow owned_enum_codes:Vec<i32>,borrow aggregate_codes:Vec<i32>,
+    borrow descriptors:Vec<MirTypeDescriptor>,
     borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -5576,8 +5634,15 @@ requires_caps [allocate]
                     }
                 }
                 if(child>=function_mir_recursive_owned_payload_enum_type_code(0)){
-                    if(child<function_mir_vector_type_code(0)){
+                    if(child<function_mir_aggregate_struct_type_code(0)){
                         if(canonical_c_vector_code_selected(child,emitted)==0){
+                            return canonical_c_owned_typedef_unsupported_child_status();
+                        }
+                    }
+                }
+                if(child>=function_mir_aggregate_struct_type_code(0)){
+                    if(child<function_mir_decimal_type_code(0)){
+                        if(canonical_c_vector_code_selected(child,aggregate_codes)==0){
                             return canonical_c_owned_typedef_unsupported_child_status();
                         }
                     }
@@ -5598,6 +5663,19 @@ requires_caps [allocate]
     }
     if(vec_len<i32>(emitted)>0){buffer_push(output,10);}
     drop(emitted);return 0;
+}
+
+pub fn canonical_c_append_recursive_owned_enum_typedefs(
+    borrow owned_enum_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
+    borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    var no_aggregates:Vec<i32>=vec_new<i32>(system_allocator(),0);
+    let status:i32=canonical_c_append_recursive_owned_enum_typedefs_with_aggregates(
+        owned_enum_codes,no_aggregates,descriptors,output
+    );
+    drop(no_aggregates);return status;
 }
 
 // Emit only aggregate types reached from function signatures and locals.
@@ -6068,8 +6146,8 @@ requires_caps [allocate]
     if(aggregate_status!=0){return checked_add(20,aggregate_status);}
     let enum_status:i32=canonical_c_append_copy_enum_typedefs(enum_type_codes,descriptors,output);
     if(enum_status!=0){return checked_add(30,enum_status);}
-    let owned_enum_status:i32=canonical_c_append_recursive_owned_enum_typedefs(
-        owned_enum_codes,descriptors,output
+    let owned_enum_status:i32=canonical_c_append_recursive_owned_enum_typedefs_with_aggregates(
+        owned_enum_codes,aggregate_type_codes,descriptors,output
     );
     if(owned_enum_status!=0){return checked_add(50,owned_enum_status);}
     bootstrap_buffer_append(output,prototypes,0,buffer_len(prototypes));buffer_push(output,10);

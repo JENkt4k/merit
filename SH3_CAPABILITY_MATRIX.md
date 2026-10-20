@@ -798,6 +798,29 @@ On the latest built candidate, `ledger_app` advanced from `4515` through
 Both are first-failure diagnostics, **not** acceptance passes. The remaining
 statuses are separate mechanisms and do not close F4/F5.
 
+### Multi-block owned-result and aggregate-payload boundary (Windows candidate)
+
+The first `cobol_finance_modernization` backend failure, `4510`, was the
+single-block owned-return guard. Its nine reachable return blocks construct
+fresh owned `TransferResult` values; canonical MIR has no separate move
+instruction for those returns. The backend now requires each reachable owned
+return to have either one placed move or a same-block, same-type enum
+constructor, while retaining fail-closed rejection for unproved producers.
+The next failure, `4553`, was a recursive owned-enum typedef guard that
+mistook an already-emitted aggregate payload for another owned enum. The
+production writer now requires that aggregate payload to be present in the
+aggregate catalog emitted earlier. A focused two-branch aggregate-payload
+fixture and the complete COBOL finance project pass exact native-versus-Python
+canonical MIR, C, and selected-header bytes, GCC compilation, and native
+output equality with the reference project build (`1 passed in 37.92s`).
+The final-tree finance fixture plus adjacent owned-enum and rejected-transfer
+selection passed seven cases in 255.82s. A contradictory borrowed parameter
+with an owned move now fails closed with the established status `9`.
+This is one acceptance project through v4, **not** F4/F5/F8 closure or a
+full/subsystem gate. Direct owned-parameter returns with branch-scoped
+`nested_transfer` effects remain a distinct represented shape to audit;
+the current producer check still fails closed for that shape.
+
 ## Finite capability families
 
 `Open` means known missing or incomplete. `Partial` means focused evidence
