@@ -21,8 +21,8 @@ from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     ReplacementProjectError,
-    build_replacement_project,
-    build_replacement_shared,
+    build_legacy_oracle_project as build_replacement_project,
+    build_legacy_oracle_shared as build_replacement_shared,
     load_replacement_inputs,
 )
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
@@ -1127,8 +1127,8 @@ def test_native_project_request_desugars_legacy_i64vec_without_python_rewrite(
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_project_cli_defaults_to_fresh_native_replacement_compilation(
-    tmp_path: Path, driver: NativeReplacementDriver,
+def test_project_cli_rejects_legacy_bundle_as_production_artifact(
+    tmp_path: Path, driver: NativeReplacementDriver, capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = _project(tmp_path)
     output = root / "build" / "production-default"
@@ -1138,9 +1138,15 @@ def test_project_cli_defaults_to_fresh_native_replacement_compilation(
     ])
 
     expected_output = output.with_suffix(".exe") if sys.platform.startswith("win") else output
-    assert status == 0
-    assert expected_output.is_file()
-    assert subprocess.run([str(expected_output)]).returncode == 7
+    assert status == 1
+    assert "incompatible with v4" in capsys.readouterr().err
+    assert not expected_output.exists()
+
+    check_status = project_cli_main([
+        "check", str(root), "--replacement-driver", str(driver.executable),
+    ])
+    assert check_status == 1
+    assert "incompatible with v4" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

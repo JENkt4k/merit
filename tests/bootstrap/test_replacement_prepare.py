@@ -268,9 +268,11 @@ class RejectSemanticImports(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, RejectSemanticImports())
 from merit.project.replacement_loader import load_replacement_project
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
+from merit.project.cli import main as project_main
 project = load_replacement_project(Path(sys.argv[1]) / 'Merit.toml')
 prepared = prepare_replacement_artifacts(project, NativeReplacementDriver(Path(sys.argv[2])))
 assert prepared.snapshot_paths == ()
+assert project_main(['check', sys.argv[1], '--replacement-driver', sys.argv[2]]) == 0
 """
     completed = subprocess.run(
         [sys.executable, "-c", probe, str(root), str(driver)],

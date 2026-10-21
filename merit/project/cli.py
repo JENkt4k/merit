@@ -9,12 +9,9 @@ import subprocess
 import sys
 
 from merit.bootstrap.replacement_build import ReplacementBuildError
-from merit.compiler import CompileError, LayoutEngine, audit_payload
 from merit.diagnostics import diagnostic_from_exception, render_exception
 
-from .build import build, build_shared, check, interpret
-from .loader import ProjectError, load_project
-from .replacement import build_replacement_project, build_replacement_shared
+from .replacement import build_replacement_project, build_replacement_shared, require_native_project_artifact
 from .replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 from .replacement_loader import load_replacement_project
 
@@ -56,8 +53,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--diagnostic-format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
+    replacement_mode = args.compiler == "replacement" or args.command == "prepare-replacement"
+    reference_compile_errors: tuple[type[Exception], ...] = ()
+    handled_errors: tuple[type[Exception], ...] = (
+        ReplacementBuildError, ValueError, subprocess.CalledProcessError,
+    )
     try:
-        replacement_mode = args.compiler == "replacement" or args.command == "prepare-replacement"
+        if not replacement_mode:
+            from merit.compiler import CompileError, LayoutEngine, audit_payload
+
+            from .build import build, build_shared, check, interpret
+            from .loader import ProjectError, load_project
+
+            reference_compile_errors = (CompileError,)
+            handled_errors += (ProjectError,)
         project = load_replacement_project(_manifest(args.path)) if replacement_mode else load_project(_manifest(args.path))
         if args.command == "prepare-replacement":
             if not args.replacement_driver:
@@ -92,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
                     "MERIT_REPLACEMENT_DRIVER, or install merit-replacement-frontend on PATH"
                 )
             prepared = prepare_replacement_artifacts(project, NativeReplacementDriver(driver_path))
+            require_native_project_artifact(project)
             print(f"checked {len(project.units)} modules through the native replacement frontend")
             print(prepared.manifest_path)
             return 0
@@ -141,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"verified {len(project.units)} modules; output matches ({len(actual)} bytes)")
         return 0
-    except CompileError as exc:
+    except reference_compile_errors as exc:
         span = getattr(exc, "span", None)
         source_path = Path(span.source_name) if span is not None and span.source_name else _manifest(args.path)
         source = source_path.read_text() if source_path.is_file() else ""
@@ -150,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(render_exception(exc, source_path, source), file=sys.stderr)
         return 1
-    except (ProjectError, ReplacementBuildError, ValueError, subprocess.CalledProcessError) as exc:
+    except handled_errors as exc:
         if args.diagnostic_format == "json":
             span=getattr(exc,"span",None)
             diagnostic_path=Path(span.source_name) if span is not None and getattr(span,"source_name",None) else _manifest(args.path)

@@ -1,9 +1,8 @@
 """Fail-closed production project boundary for replacement compiler artifacts.
 
-Normal project tooling can use this module once a Merit-native frontend has
-published resolved-source-function snapshots beside project sources. Python is
-only a transport/materialization layer here: it does not parse, check, infer,
-or silently fall back to the reference compiler.
+Normal project tooling consumes only complete Merit-native v4 MIR/C/header
+artifacts. Historical snapshot materialization remains available through
+explicitly named oracle helpers, never as a production fallback.
 """
 
 from __future__ import annotations
@@ -131,6 +130,23 @@ def _load_native_project_artifact(
     except UnicodeDecodeError as exc:
         raise ReplacementProjectError("native replacement project artifacts must be UTF-8") from exc
     return ReplacementBuildArtifact(module=None, c_source=c_source, c_header=c_header)
+
+
+def require_native_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementBuildArtifact:
+    """Require a complete, current v4 artifact for a production project action."""
+
+    artifact = _load_native_project_artifact(project, header_exports=header_exports)
+    if artifact is None:
+        raise ReplacementProjectError(
+            "native frontend artifacts are missing or incompatible with v4; "
+            "run prepare-replacement with a v4 compiler; refusing to fall back "
+            "to Python snapshot materialization"
+        )
+    return artifact
 
 
 def _type_names(raw: object) -> Mapping[int, MirType] | None:
@@ -313,15 +329,11 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
     return tuple(resolved)
 
 
-def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
-    """Build only from native-resolved snapshots; never invoke reference semantics."""
-
-    artifact = _load_native_project_artifact(project)
-    if artifact is None:
-        from merit.bootstrap.replacement_project import build_replacement_project_artifact
-
-        inputs = load_replacement_inputs(project)
-        artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+def _compile_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    artifact: ReplacementBuildArtifact,
+) -> ReplacementProjectArtifact:
     if project.manifest.executable_adapter is not None:
         from merit.project.executable_adapter import link_executable_adapter
 
@@ -347,20 +359,32 @@ def build_replacement_project(project: LoadedProject | ReplacementLoadedProject,
     return ReplacementProjectArtifact(c_path=c_path, executable=executable)
 
 
-def build_replacement_shared(
+def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
+    """Build only from complete Merit-native v4 artifacts."""
+
+    artifact = require_native_project_artifact(project)
+    return _compile_project_artifact(project, output, artifact)
+
+
+def build_legacy_oracle_project(
+    project: LoadedProject | ReplacementLoadedProject, output: Path,
+) -> ReplacementProjectArtifact:
+    """Compile historical snapshots explicitly for independent oracle tests."""
+
+    from merit.bootstrap.replacement_project import build_replacement_project_artifact
+
+    inputs = load_replacement_inputs(project)
+    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    return _compile_project_artifact(project, output, artifact)
+
+
+def _compile_shared_artifact(
     project: LoadedProject | ReplacementLoadedProject,
     output: Path,
+    artifact: ReplacementBuildArtifact,
     *,
     header_exports: frozenset[str] | None = None,
 ) -> ReplacementSharedProjectArtifact:
-    """Build a shared library solely from native-resolved replacement artifacts."""
-
-    artifact = _load_native_project_artifact(project, header_exports=header_exports)
-    if artifact is None:
-        from merit.bootstrap.replacement_project import build_replacement_project_artifact
-
-        inputs = load_replacement_inputs(project)
-        artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
     c_path, header_path, library = compile_replacement_shared_artifact(
         artifact,
         output,
@@ -368,3 +392,34 @@ def build_replacement_shared(
         c_flags=project.manifest.c_flags,
     )
     return ReplacementSharedProjectArtifact(c_path, header_path, library)
+
+
+def build_replacement_shared(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementSharedProjectArtifact:
+    """Build a shared library only from complete Merit-native v4 artifacts."""
+
+    artifact = require_native_project_artifact(project, header_exports=header_exports)
+    return _compile_shared_artifact(
+        project, output, artifact, header_exports=header_exports,
+    )
+
+
+def build_legacy_oracle_shared(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementSharedProjectArtifact:
+    """Compile historical snapshot headers explicitly for oracle tests."""
+
+    from merit.bootstrap.replacement_project import build_replacement_project_artifact
+
+    inputs = load_replacement_inputs(project)
+    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    return _compile_shared_artifact(
+        project, output, artifact, header_exports=header_exports,
+    )
