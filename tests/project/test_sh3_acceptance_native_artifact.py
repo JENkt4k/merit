@@ -190,8 +190,14 @@ def test_native_filesystem_call_rejects_invalid_source(
         "} return 0; }\n",
         [b"1"],
     ),
-], ids=["borrowed-vector-parameter", "owned-vector-return-after-loop", "mutable-to-shared-reborrow"])
-def test_native_vector_resource_flow_matches_oracle(
+    (
+        "bool_into_i32",
+        "module bool_into_i32\n"
+        "fn main()->i32 { let flag:i32=1==1; print(flag); return 0; }\n",
+        [b"1"],
+    ),
+], ids=["borrowed-vector-parameter", "owned-vector-return-after-loop", "mutable-to-shared-reborrow", "bool-into-i32"])
+def test_native_resource_and_coercion_flow_matches_oracle(
     compiler_paths: tuple[Path, Path], tmp_path: Path,
     module_name: str, source: str, expected_output: list[bytes],
 ) -> None:

@@ -4411,7 +4411,15 @@ requires_caps [allocate]
                     if(instruction_kind==function_mir_kind_copy_to_binding()){
                         let copied_type:i32=canonical_c_scalar_local_type(records,function_mir_left(instruction));
                         if(copied_type==0){return 101;}
-                        if(copied_type!=canonical_c_scalar_local_type(records,function_mir_result(instruction))){return 102;}
+                        let destination_type:i32=canonical_c_scalar_local_type(records,function_mir_result(instruction));
+                        var compatible_copy:i32=0;
+                        if(copied_type==destination_type){compatible_copy=1;}
+                        // Alpha.2 source conditions are represented as MIR bools;
+                        // an explicitly i32-bound condition keeps its 0/1 value.
+                        if(copied_type==function_mir_bool_type_code()){
+                            if(destination_type==function_mir_i32_type_code()){compatible_copy=1;}
+                        }
+                        if(compatible_copy==0){return 102;}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,function_mir_result(instruction));
                         canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,function_mir_left(instruction));
                         canonical_mir_append_text(bodies,";\n");
