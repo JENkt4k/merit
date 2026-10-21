@@ -952,6 +952,18 @@ and adjacent resource-flow fixtures remain green (`14 passed in 42.13s`).
 The 45-module request advances to `4861` (43.51s), which is now a separate
 project-finalization/backend-catalog boundary. F5 remains partial.
 
+The `4861` status was not project finalization: its nested path is native
+assembly `3861`, semantic lowering `861`, ownership flow `61` (a conditional
+move with no `else`) in `canonical_c_append_function_core_ordered`. The
+function initialized an owned `callee_header` placeholder from `header`
+before searching for a user-call target, conditionally overwrote it, and
+never read it on the builtin path. Moving the actual catalog lookup into the
+already guarded found-target branch removes that unnecessary conditional
+move without changing emitted C or relaxing the ownership state machine.
+All 14 focused application/vector artifact tests pass (`57.30s`), and the
+45-module request advances to backend module status `4502` (`44.96s`). The
+compiler project still has no complete v4 artifact; F2/F4/F8 remain open.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

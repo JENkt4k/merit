@@ -4734,7 +4734,7 @@ requires_caps [allocate]
                         }}}
                     }
                     if(instruction_kind==function_mir_kind_call()){
-                        var callee_found:i32=0;var callee_header:MirFunctionRecord=header;var callee_index:i64=0;
+                        var callee_found:i32=0;var callee_index:i64=0;
                         var candidate_index:i64=0;
                         while(candidate_index<vec_len<MirFunctionRecord>(callable_headers)){
                             let candidate:MirFunctionRecord=vec_get<MirFunctionRecord>(callable_headers,candidate_index);
@@ -4752,7 +4752,7 @@ requires_caps [allocate]
                                 }
                                 if(same!=0){
                                     if(callee_found!=0){return 64;}
-                                    callee_found=1;callee_header=candidate;callee_index=candidate_index;
+                                    callee_found=1;callee_index=candidate_index;
                                 }
                             }}
                             candidate_index=checked_add(candidate_index,1);
@@ -5091,6 +5091,7 @@ requires_caps [allocate]
                             }}}
                             }}
                         }else{
+                        let callee_header:MirFunctionRecord=vec_get<MirFunctionRecord>(callable_headers,callee_index);
                         if(function_mir_type_code(callee_header)!=function_mir_type_code(instruction)){return 66;}
                         if(function_mir_numeric_policy(instruction)!=function_mir_symbol_code(callee_header)){return 66;}
                         if(function_mir_type_code(instruction)!=function_mir_unit_type_code()){
