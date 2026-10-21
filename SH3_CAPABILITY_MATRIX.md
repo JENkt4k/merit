@@ -941,6 +941,17 @@ retaining the same rejection assertion (`4 passed in 117.90s`). This closes
 only the evidenced owned-entry-return subset, not F2/F5 or the compiler
 project.
 
+The subsequent `4468` in `plan_function_contract_namespace` was the C
+user-call guard rejecting an Alpha.2 mutable-to-shared reborrow: a
+`borrow_mut Vec<i64>` local passed to a helper's `borrow Vec<i64>` parameter.
+Only shared-borrow argument forwarding now accepts an existing mutable
+pointer, without adding an address operator or relaxing value/mutable
+parameter checks. The focused fixture compares native MIR/C/header bytes to
+the Python oracle and executes through GCC; the nine acceptance applications
+and adjacent resource-flow fixtures remain green (`14 passed in 42.13s`).
+The 45-module request advances to `4861` (43.51s), which is now a separate
+project-finalization/backend-catalog boundary. F5 remains partial.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

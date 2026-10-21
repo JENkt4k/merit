@@ -5183,7 +5183,9 @@ requires_caps [allocate]
                                                 if(access_mode==function_mir_mode_value()){
                                                     canonical_mir_append_text(bodies,"&");
                                                 }else{
-                                                    if(access_mode!=function_mir_mode_borrowed()){return 68;}
+                                                    if(access_mode!=function_mir_mode_borrowed()){
+                                                        if(access_mode!=function_mir_mode_mutable_borrow()){return 68;}
+                                                    }
                                                 }
                                             }
                                             if(function_mir_symbol_code(parameter)==function_mir_mode_mutable_borrow()){

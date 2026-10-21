@@ -177,7 +177,20 @@ def test_native_filesystem_call_rejects_invalid_source(
         "} return 0; }\n",
         [b"2"],
     ),
-], ids=["borrowed-vector-parameter", "owned-vector-return-after-loop"])
+    (
+        "vector_mutable_reborrow",
+        "module vector_mutable_reborrow\ncapability allocate;\n"
+        "fn count(borrow values:Vec<i64>)->i64 { return vec_len<i64>(values); }\n"
+        "fn append_and_count(borrow_mut values:Vec<i64>)->i64 requires_caps [allocate] {\n"
+        "    vec_push<i64>(values,7); return count(values);\n}\n"
+        "fn main()->i32 { with capability allocate {\n"
+        "    let allocator:Allocator=system_allocator();\n"
+        "    var values:Vec<i64>=vec_new<i64>(allocator,0);\n"
+        "    print(append_and_count(values)); drop(values);\n"
+        "} return 0; }\n",
+        [b"1"],
+    ),
+], ids=["borrowed-vector-parameter", "owned-vector-return-after-loop", "mutable-to-shared-reborrow"])
 def test_native_vector_resource_flow_matches_oracle(
     compiler_paths: tuple[Path, Path], tmp_path: Path,
     module_name: str, source: str, expected_output: list[bytes],
