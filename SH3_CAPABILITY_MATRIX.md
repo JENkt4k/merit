@@ -996,11 +996,21 @@ that the MIR itself matches independent Python materialization or that the
 compiled compiler has matching runtime/protocol behavior. F4/F5 admission is
 stronger, while F7/F8/F9 remain open.
 
-The independent full-compiler MIR comparison is now a focused regression in
-`test_sh3_acceptance_native_artifact.py`. Syntax and collection pass; execution
-is deliberately pending a logged manual run because the 45-module Python-oracle
-materialization may exceed the seven-minute unattended-test limit. Its outcome
-is the next F1/F2/F8 decision point; no parity claim is made yet.
+The independent full-compiler MIR comparison remains the next F1/F2/F8
+decision point. Its 45-module Python-oracle materialization may exceed the
+seven-minute unattended-test limit, so it requires a logged manual run before
+being committed as a regression; no full-compiler MIR parity claim is made yet.
+
+The full compiler's native C also links and runs with the same `main` result
+as the reference-built compiler (`1 passed in 133.95s`). A native-emitted
+compiler linked through the generic stdin adapter matches stage 0 on accepted
+and source-invalid v2 project requests (`1 passed in 143.90s`). A separate
+unsupported-version eight-byte request exposed a stage-0 Windows heap-corruption
+exit (`0xC0000374`) while the native-emitted stage rejected it with status
+`4606`. This is a distinct F8 malformed-request/cleanup lead, not evidence of
+rejected-protocol parity; reproduce and repair before claiming the complete
+rejected corpus. The focused protocol regression uses the well-formed rejected
+request and does not suppress this open defect.
 
 F7 host cutover candidate: normal `build`, `run`, `build-shared`, and `check`
 now require a current complete native v4 artifact; v3-only manifests reject

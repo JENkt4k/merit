@@ -11,12 +11,14 @@ import pytest
 
 from merit.bootstrap.mir_contract import canonical_mir_json, parse_mir
 from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+from merit.bootstrap.replacement_build import ReplacementBuildArtifact, compile_replacement_shared_artifact
 from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
 from merit.bootstrap.resolved_source_function_bundle import (
     decode_native_project_artifact_transport,
     decode_resolved_source_function_bundle,
 )
 from merit.project.build import build
+from merit.project.executable_adapter import link_executable_adapter
 from merit.project.loader import load_project
 from merit.project.project_request import (
     ProjectRequest, ProjectRequestUnit, encode_loaded_project_request, encode_project_request,
@@ -170,6 +172,67 @@ def test_native_compiler_project_c_matches_oracle_and_compiles(
         capture_output=True, text=True,
     )
     assert compiled.returncode == 0, compiled.stderr
+
+    executable = tmp_path / "native-compiler-main.exe"
+    linked = subprocess.run(
+        [c_compiler, "-std=c11", str(generated), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert linked.returncode == 0, linked.stderr
+    _, _, reference = build(project, tmp_path / "reference-compiler-main")
+    native_run = subprocess.run([str(executable)], capture_output=True, timeout=30)
+    reference_run = subprocess.run([str(reference)], capture_output=True, timeout=30)
+    assert (native_run.returncode, native_run.stdout, native_run.stderr) == (
+        reference_run.returncode, reference_run.stdout, reference_run.stderr,
+    )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_compiler_artifact_adapter_matches_stage_zero_protocol(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    project = load_project(ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml")
+    request = encode_loaded_project_request(
+        project, header_exports=frozenset({"emit_native_project_artifacts"}),
+    )
+    stage_zero, _ = compiler_paths
+    response = subprocess.run([str(stage_zero)], input=request, capture_output=True)
+    assert response.returncode == 0, response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in response.stdout.splitlines()
+    )
+    _, _, library = compile_replacement_shared_artifact(
+        ReplacementBuildArtifact(
+            module=None,
+            c_source=artifact.c_source_bytes.decode("utf-8"),
+            c_header=artifact.c_header_bytes.decode("utf-8"),
+        ),
+        tmp_path / "native-compiler-library",
+        header_exports=frozenset({"emit_native_project_artifacts"}),
+    )
+    stage_one = link_executable_adapter(
+        tmp_path / "native-compiler-stage-one",
+        library=library,
+        adapter="stdin-string-i32",
+        entry="emit_native_project_artifacts",
+    )
+    accepted_probe = encode_project_request(ProjectRequest(
+        "probe", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", b"module probe\nfn main()->i32 { return 7; }\n"),),
+        header_exports=(),
+    ))
+    rejected_probe = encode_project_request(ProjectRequest(
+        "probe", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", b"module probe\nfn main()->i32 { return ; }\n"),),
+        header_exports=(),
+    ))
+    for probe in (accepted_probe, rejected_probe):
+        expected = subprocess.run([str(stage_zero)], input=probe, capture_output=True, timeout=30)
+        actual = subprocess.run([str(stage_one)], input=probe, capture_output=True, timeout=30)
+        assert (actual.returncode, actual.stdout, actual.stderr) == (
+            expected.returncode, expected.stdout, expected.stderr,
+        )
 
 
 @pytest.mark.parametrize("body", [
