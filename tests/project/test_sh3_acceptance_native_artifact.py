@@ -122,6 +122,27 @@ def test_native_acceptance_project_matches_oracle(
         ).read_bytes()
 
 
+def test_native_compiler_project_emits_deterministic_complete_artifact(
+    compiler_paths: tuple[Path, Path],
+) -> None:
+    project = load_project(ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml")
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, _ = compiler_paths
+    first = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert first.returncode == 0, first.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in first.stdout.splitlines()
+    )
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert module.functions
+    assert artifact.c_source_bytes
+    assert artifact.c_header_bytes
+
+    second = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert second.returncode == 0, second.stderr.decode("utf-8", errors="replace")
+    assert second.stdout == first.stdout
+
+
 @pytest.mark.parametrize("body", [
     'let result:i64 = file_read(allocator, "missing.bin");',
     'let result:FileWriteResult = file_write("out.bin", 7);',

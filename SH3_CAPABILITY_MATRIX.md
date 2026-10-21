@@ -975,6 +975,19 @@ output, and the full focused artifact plus malformed-local family passes
 assembly status `4861` (`46.7s`), not a complete artifact. This is F5 parity
 for one Alpha.2 representation crossing, not permission for new coercions.
 
+The subsequent `4861` was in `canonical_c_append_function_core`: CFG
+normalization moved a local `MirCfgRecord` into `ordered` only inside a
+conditional branch, leaving the Alpha.2 ownership join divergent. The backend
+now pushes a fresh record read from the borrowed CFG at each selected row;
+selection, order, and emitted content are unchanged, and the ownership checker
+is not relaxed. All 15 acceptance/resource/coercion artifact cases pass
+(`59.92s`). A full 45-module compiler request now returns a parseable native
+v4 MIR/C/header artifact twice with byte-identical transport
+(`1 passed in 185.83s`). This closes the immediate compiler-project admission
+failure, **not** F8: the compiler artifact still needs independent full-project
+oracle C/header/MIR comparison, GCC/runtime, complete corpus, and production
+cutover evidence. Temporary diagnostic printing was removed.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

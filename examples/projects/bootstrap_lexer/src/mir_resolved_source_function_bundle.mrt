@@ -5369,7 +5369,7 @@ requires_caps [allocate]
             if(cfg_kind(record)==cfg_block_kind()){
                 if(cfg_block_id(record)==block_count){
                     if(found!=0){return 6;}
-                    vec_push<MirCfgRecord>(ordered,record);found=1;
+                    vec_push<MirCfgRecord>(ordered,vec_get<MirCfgRecord>(cfg,index));found=1;
                 }
             }
             index=checked_add(index,1);
@@ -5405,12 +5405,12 @@ requires_caps [allocate]
                         if(kind==cfg_switch_case_kind()){
                             if(cfg_ordinal(record)==ordinal){
                                 if(found!=0){return 91;}
-                                vec_push<MirCfgRecord>(ordered,record);found=1;
+                                vec_push<MirCfgRecord>(ordered,vec_get<MirCfgRecord>(cfg,index));found=1;
                             }
                         }else{if(kind==cfg_switch_default_kind()){
                             if(cfg_ordinal(record)==ordinal){
                                 if(found!=0){return 91;}
-                                vec_push<MirCfgRecord>(ordered,record);found=1;
+                                vec_push<MirCfgRecord>(ordered,vec_get<MirCfgRecord>(cfg,index));found=1;
                             }
                         }}
                     }
@@ -5424,7 +5424,7 @@ requires_caps [allocate]
             while(index<vec_len<MirCfgRecord>(cfg)){
                 let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,index);
                 if(cfg_block_id(record)==block_id){
-                    if(cfg_kind(record)!=cfg_block_kind()){vec_push<MirCfgRecord>(ordered,record);}
+                    if(cfg_kind(record)!=cfg_block_kind()){vec_push<MirCfgRecord>(ordered,vec_get<MirCfgRecord>(cfg,index));}
                 }
                 index=checked_add(index,1);
             }
