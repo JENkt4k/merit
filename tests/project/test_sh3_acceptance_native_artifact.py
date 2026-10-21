@@ -143,6 +143,35 @@ def test_native_compiler_project_emits_deterministic_complete_artifact(
     assert second.stdout == first.stdout
 
 
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_compiler_project_c_matches_oracle_and_compiles(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    project = load_project(ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml")
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, _ = compiler_paths
+    response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert response.returncode == 0, response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in response.stdout.splitlines()
+    )
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
+    generated = tmp_path / "compiler.c"
+    generated.write_bytes(artifact.c_source_bytes)
+    c_compiler = shutil.which("cc") or shutil.which("gcc")
+    assert c_compiler is not None
+    compiled = subprocess.run(
+        [c_compiler, "-std=c11", "-fsyntax-only", str(generated)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+
+
 @pytest.mark.parametrize("body", [
     'let result:i64 = file_read(allocator, "missing.bin");',
     'let result:FileWriteResult = file_write("out.bin", 7);',
