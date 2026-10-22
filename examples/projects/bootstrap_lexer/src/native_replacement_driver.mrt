@@ -76,10 +76,12 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             request_source, allocator, original_source
         );
         drop(request_source);
-        if(header_selection_mode>1){return native_driver_backend_header_failure_status(6);}
         let original_tokens: Vec<Token> = lex(original_source, allocator);
         var source: Buffer = buffer_new(allocator, buffer_len(original_source));
         var tokens: Vec<Token> = vec_new<Token>(allocator, 0);
+        // Stage-0's early-return epilogue cleans up these three owned locals.
+        // Keep malformed-request rejection after their initialization.
+        if(header_selection_mode>1){return native_driver_backend_header_failure_status(6);}
         if (request_status != 0) { return request_status; }
         let expansion_status: i32 = expand_generic_source(
             original_source, original_tokens, allocator, source

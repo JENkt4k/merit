@@ -1005,12 +1005,16 @@ The full compiler's native C also links and runs with the same `main` result
 as the reference-built compiler (`1 passed in 133.95s`). A native-emitted
 compiler linked through the generic stdin adapter matches stage 0 on accepted
 and source-invalid v2 project requests (`1 passed in 143.90s`). A separate
-unsupported-version eight-byte request exposed a stage-0 Windows heap-corruption
-exit (`0xC0000374`) while the native-emitted stage rejected it with status
-`4606`. This is a distinct F8 malformed-request/cleanup lead, not evidence of
-rejected-protocol parity; reproduce and repair before claiming the complete
-rejected corpus. The focused protocol regression uses the well-formed rejected
-request and does not suppress this open defect.
+unsupported-version eight-byte request initially exposed a stage-0 Windows
+heap-corruption exit (`0xC0000374`) while the native-emitted stage rejected it
+with status `4606`. Inspection of generated stage-0 C showed that its early
+return jumped to an epilogue dropping `original_source`, `source`, and `tokens`
+before all were initialized. The driver now checks this error after those
+locals are initialized; stage 0 and native-emitted stage both reject with
+`4606`, while accepted and source-invalid v2 probes still agree (`1 passed in
+139.24s` on the final tree). The underlying reference C-emitter early-return cleanup limitation
+is a separate architectural seam; do not infer complete rejected-corpus parity
+from this three-probe test.
 
 F7 host cutover candidate: normal `build`, `run`, `build-shared`, and `check`
 now require a current complete native v4 artifact; v3-only manifests reject

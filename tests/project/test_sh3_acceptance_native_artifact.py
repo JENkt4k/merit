@@ -227,9 +227,12 @@ def test_native_compiler_artifact_adapter_matches_stage_zero_protocol(
         (ProjectRequestUnit("src/main.mrt", b"module probe\nfn main()->i32 { return ; }\n"),),
         header_exports=(),
     ))
-    for probe in (accepted_probe, rejected_probe):
+    unsupported_version_probe = b"MPRQ" + (99).to_bytes(4, "big")
+    for probe in (accepted_probe, rejected_probe, unsupported_version_probe):
         expected = subprocess.run([str(stage_zero)], input=probe, capture_output=True, timeout=30)
         actual = subprocess.run([str(stage_one)], input=probe, capture_output=True, timeout=30)
+        if probe is unsupported_version_probe:
+            assert expected.returncode == 4606, expected.stderr
         assert (actual.returncode, actual.stdout, actual.stderr) == (
             expected.returncode, expected.stdout, expected.stderr,
         )
