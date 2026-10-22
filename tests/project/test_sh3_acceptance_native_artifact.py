@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -227,14 +228,72 @@ def test_native_compiler_artifact_adapter_matches_stage_zero_protocol(
         (ProjectRequestUnit("src/main.mrt", b"module probe\nfn main()->i32 { return ; }\n"),),
         header_exports=(),
     ))
+    capability_probe = encode_project_request(ProjectRequest(
+        "probe", "src/main.mrt",
+        (ProjectRequestUnit(
+            "src/main.mrt",
+            b"module probe\ncapability allocate;\n"
+            b"fn main()->i32 { let allocator:Allocator=system_allocator(); "
+            b"let data:Buffer=buffer_new(allocator,8); drop(data); return 0; }\n",
+        ),),
+        header_exports=(),
+    ))
     unsupported_version_probe = b"MPRQ" + (99).to_bytes(4, "big")
-    for probe in (accepted_probe, rejected_probe, unsupported_version_probe):
+    for probe in (accepted_probe, rejected_probe, capability_probe, unsupported_version_probe):
         expected = subprocess.run([str(stage_zero)], input=probe, capture_output=True, timeout=30)
         actual = subprocess.run([str(stage_one)], input=probe, capture_output=True, timeout=30)
+        if probe is not accepted_probe:
+            assert expected.returncode != 0, expected.stdout
         if probe is unsupported_version_probe:
             assert expected.returncode == 4606, expected.stderr
         assert (actual.returncode, actual.stdout, actual.stderr) == (
             expected.returncode, expected.stdout, expected.stderr,
+        )
+
+
+def test_native_compiler_project_mir_matches_independent_oracle(
+    compiler_paths: tuple[Path, Path],
+) -> None:
+    project = load_project(ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml")
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, legacy_compiler = compiler_paths
+    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert native_response.returncode == 0, native_response.stderr.decode(
+        "utf-8", errors="replace"
+    )
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in native_response.stdout.splitlines()
+    )
+    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
+    assert legacy_response.returncode == 0, legacy_response.stderr.decode(
+        "utf-8", errors="replace"
+    )
+    bundle = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_response.stdout.splitlines()
+    )
+    oracle = build_replacement_project_artifact(
+        (
+            ReplacementFunctionInput.from_values(
+                source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+                module_name=bundle.module_name,
+                snapshot_values=values,
+                capability_names={index: name for index, name in enumerate(bundle.capability_names)},
+            )
+            for values in bundle.encoded_snapshots
+        ), module_name=bundle.module_name,
+    )
+    expected = canonical_mir_json(oracle.module).encode("utf-8")
+    actual = artifact.canonical_mir_bytes
+    if actual != expected:
+        first_difference = next(
+            (index for index, (left, right) in enumerate(zip(actual, expected)) if left != right),
+            min(len(actual), len(expected)),
+        )
+        pytest.fail(
+            "full compiler canonical MIR differs from independent oracle: "
+            f"byte={first_difference}, native={len(actual)} bytes/"
+            f"{hashlib.sha256(actual).hexdigest()}, oracle={len(expected)} bytes/"
+            f"{hashlib.sha256(expected).hexdigest()}"
         )
 
 

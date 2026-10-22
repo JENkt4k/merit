@@ -997,9 +997,10 @@ compiled compiler has matching runtime/protocol behavior. F4/F5 admission is
 stronger, while F7/F8/F9 remain open.
 
 The independent full-compiler MIR comparison remains the next F1/F2/F8
-decision point. Its 45-module Python-oracle materialization may exceed the
-seven-minute unattended-test limit, so it requires a logged manual run before
-being committed as a regression; no full-compiler MIR parity claim is made yet.
+decision point. Its regression is present and collects, but the 45-module
+Python-oracle materialization may exceed the seven-minute unattended-test
+limit, so it still requires a logged manual execution. Committing the test
+does not establish a passing result or full-compiler MIR parity.
 
 The full compiler's native C also links and runs with the same `main` result
 as the reference-built compiler (`1 passed in 133.95s`). A native-emitted
@@ -1028,6 +1029,18 @@ Focused CLI (`15 passed in 20.79s`), v4 check guard (`1 passed in 0.52s`),
 legacy-oracle runtime/shared (`2 passed in 20.54s`), and preparation/manifest
 (`14 passed in 2.39s`) tests pass. The complete legacy oracle suite, v4
 acceptance/corpus, and long full gates have not yet been rerun on this tree.
+
+Current burn-down checkpoint after `515d29a`: all implementation and focused
+evidence described below for F1-F7 is committed and pushed; the parenthetical
+"uncommitted" labels in older detailed rows describe their original draft
+state, not the current worktree. F1-F6 remain partial despite those commits;
+F7 is a focused cutover candidate, not a completed gate. F8 now has focused
+full-compiler C/header, linked `main`, accepted/source-invalid/missing-allocate-
+capability/malformed-version stage-0 versus native-emitted protocol evidence;
+the four-probe test passes (`1 passed in 139.59s`). Complete MIR-oracle and
+corpus results are absent. The full-compiler MIR-oracle regression collects
+and awaits a logged manual execution because its expected duration exceeds
+the seven-minute unattended-test threshold. F9 remains open.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
