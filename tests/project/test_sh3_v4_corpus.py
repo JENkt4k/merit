@@ -18,6 +18,7 @@ from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST, ReplacementProjectError, build_replacement_project,
+    build_replacement_shared,
 )
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 
@@ -237,3 +238,79 @@ def test_sh3_v4_public_shared_build_selects_only_manifest_entry(
     assert manifest["producer_protocol"] == (
         "merit-project-request-v2/resolved-source-function-bundle-v4"
     )
+
+
+@pytest.mark.parametrize("entry", ["private_entry", "missing_entry"])
+def test_sh3_v4_public_shared_build_rejects_unexportable_entry(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver, entry: str,
+) -> None:
+    root = tmp_path / entry
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="unexportable"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n\n'
+        f'[executable]\nadapter="stdin-string-i32"\nentry="{entry}"\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module unexportable\n'
+        'fn private_entry(source:String)->i32 { return 0; }\n'
+        'pub fn available(source:String)->i32 { return 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    output = tmp_path / "unexportable-library"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) != 0
+    assert not (root / ".merit" / REPLACEMENT_MANIFEST).exists()
+    assert not output.with_suffix(".h").exists()
+
+
+def test_sh3_v4_public_shared_build_preserves_stable_struct_abi(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "shared_struct_api"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="shared_struct_api"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module shared_struct_api\n'
+        'pub stable("point-v1") struct Point { x:i32; y:i32; }\n'
+        'pub fn point_sum(point:Point)->i32 { return checked_add(point.x,point.y); }\n'
+        'fn main()->i32 { return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    assert project_cli_main([
+        "build", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(tmp_path / "plain-executable"),
+    ]) == 0
+    with pytest.raises(ReplacementProjectError, match="missing or incompatible"):
+        build_replacement_shared(
+            load_project(root / "Merit.toml"), tmp_path / "stale-empty-header",
+        )
+    output = tmp_path / "shared_struct_api"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    header = output.with_suffix(".h").read_text(encoding="utf-8")
+    assert "merit_point_sum" in header
+    assert "sizeof(merit_Point) == 8" in header
+    manifest = json.loads((root / ".merit" / REPLACEMENT_MANIFEST).read_text(encoding="utf-8"))
+    assert manifest["producer_protocol"] == (
+        "merit-project-request-v1/resolved-source-function-bundle-v4"
+    )
+
+    class Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_int32), ("y", ctypes.c_int32)]
+
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    library = ctypes.CDLL(str(output.with_suffix(suffix)))
+    point_sum = library.merit_point_sum
+    point_sum.argtypes = [Point]
+    point_sum.restype = ctypes.c_int32
+    assert point_sum(Point(19, 23)) == 42

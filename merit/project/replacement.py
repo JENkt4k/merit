@@ -67,6 +67,7 @@ def _load_native_project_artifact(
     project: LoadedProject | ReplacementLoadedProject,
     *,
     header_exports: frozenset[str] | None = None,
+    require_all_public: bool = False,
 ) -> ReplacementBuildArtifact | None:
     """Load a complete native backend artifact without interpreting its MIR."""
 
@@ -83,7 +84,7 @@ def _load_native_project_artifact(
         header_exports = _manifest_header_exports(project)
         # Ordinary v4 executable builds request no public C exports explicitly.
         # Retain historical v1 artifacts only when the manifest says v1.
-        if (header_exports is None and
+        if (not require_all_public and header_exports is None and
                 payload.get("producer_protocol") == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2):
             header_exports = frozenset()
     expected_protocol = (
@@ -141,10 +142,13 @@ def require_native_project_artifact(
     project: LoadedProject | ReplacementLoadedProject,
     *,
     header_exports: frozenset[str] | None = None,
+    require_all_public: bool = False,
 ) -> ReplacementBuildArtifact:
     """Require a complete, current v4 artifact for a production project action."""
 
-    artifact = _load_native_project_artifact(project, header_exports=header_exports)
+    artifact = _load_native_project_artifact(
+        project, header_exports=header_exports, require_all_public=require_all_public,
+    )
     if artifact is None:
         raise ReplacementProjectError(
             "native frontend artifacts are missing or incompatible with v4; "
@@ -407,7 +411,10 @@ def build_replacement_shared(
 ) -> ReplacementSharedProjectArtifact:
     """Build a shared library only from complete Merit-native v4 artifacts."""
 
-    artifact = require_native_project_artifact(project, header_exports=header_exports)
+    artifact = require_native_project_artifact(
+        project, header_exports=header_exports,
+        require_all_public=(header_exports is None and project.manifest.executable_adapter is None),
+    )
     return _compile_shared_artifact(
         project, output, artifact, header_exports=header_exports,
     )

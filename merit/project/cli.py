@@ -27,6 +27,14 @@ def _production_header_exports(project) -> frozenset[str]:
     return frozenset({project.manifest.executable_entry or ""})
 
 
+def _shared_header_exports(project) -> frozenset[str] | None:
+    if project.manifest.executable_adapter is None:
+        # Preserve the Alpha.2 shared-library ABI: the native compiler owns
+        # selection of all public declarations under the original request.
+        return None
+    return _production_header_exports(project)
+
+
 def _replacement_driver_path(argument: str | None) -> Path | None:
     configured = argument or os.environ.get("MERIT_REPLACEMENT_DRIVER")
     discovered = configured or shutil.which("merit-replacement-frontend")
@@ -127,7 +135,11 @@ def main(argv: list[str] | None = None) -> int:
             if driver_path is not None:
                 prepare_replacement_artifacts(
                     project, NativeReplacementDriver(driver_path),
-                    header_exports=_production_header_exports(project),
+                    header_exports=(
+                        _shared_header_exports(project)
+                        if args.command == "build-shared"
+                        else _production_header_exports(project)
+                    ),
                 )
             if args.command == "build-shared":
                 replacement_shared = build_replacement_shared(project, output)
