@@ -21,6 +21,12 @@ def _manifest(value: str) -> Path:
     return path / "Merit.toml" if path.is_dir() else path
 
 
+def _production_header_exports(project) -> frozenset[str]:
+    if project.manifest.executable_adapter is None:
+        return frozenset()
+    return frozenset({project.manifest.executable_entry or ""})
+
+
 def _replacement_driver_path(argument: str | None) -> Path | None:
     configured = argument or os.environ.get("MERIT_REPLACEMENT_DRIVER")
     discovered = configured or shutil.which("merit-replacement-frontend")
@@ -74,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
                     "prepare-replacement requires --replacement-driver EXECUTABLE"
                 )
             driver = NativeReplacementDriver(Path(args.replacement_driver))
-            prepared = prepare_replacement_artifacts(project, driver)
+            prepared = prepare_replacement_artifacts(
+                project, driver, header_exports=_production_header_exports(project),
+            )
             print(prepared.manifest_path)
             return 0
         if args.command == "graph":
@@ -100,7 +108,10 @@ def main(argv: list[str] | None = None) -> int:
                     "replacement frontend is not configured; use --replacement-driver, "
                     "MERIT_REPLACEMENT_DRIVER, or install merit-replacement-frontend on PATH"
                 )
-            prepared = prepare_replacement_artifacts(project, NativeReplacementDriver(driver_path))
+            prepared = prepare_replacement_artifacts(
+                project, NativeReplacementDriver(driver_path),
+                header_exports=_production_header_exports(project),
+            )
             require_native_project_artifact(project)
             print(f"checked {len(project.units)} modules through the native replacement frontend")
             print(prepared.manifest_path)
@@ -114,7 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.compiler == "replacement" and args.command in {"build", "build-shared", "run"}:
             driver_path = _replacement_driver_path(args.replacement_driver)
             if driver_path is not None:
-                prepare_replacement_artifacts(project, NativeReplacementDriver(driver_path))
+                prepare_replacement_artifacts(
+                    project, NativeReplacementDriver(driver_path),
+                    header_exports=_production_header_exports(project),
+                )
             if args.command == "build-shared":
                 replacement_shared = build_replacement_shared(project, output)
                 print(replacement_shared.library)

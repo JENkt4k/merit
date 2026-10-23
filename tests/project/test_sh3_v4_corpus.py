@@ -1,8 +1,9 @@
-"""Run the fixed Alpha.1 convergence corpus through the SH3 native-v4 path."""
+"""Run fixed corpus and acceptance projects through the SH3 native-v4 path."""
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import pytest
 
 from merit.compiler import CompileError
 from merit.project.build import build, check
+from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST, ReplacementProjectError, build_replacement_project,
@@ -59,8 +61,8 @@ def _write_case(root: Path, case: dict[str, object]) -> Path:
     return manifest
 
 
-def _result(executable: Path) -> tuple[int, bytes, bytes]:
-    completed = subprocess.run([str(executable)], capture_output=True, timeout=30)
+def _result(executable: Path, *, cwd: Path | None = None) -> tuple[int, bytes, bytes]:
+    completed = subprocess.run([str(executable)], cwd=cwd, capture_output=True, timeout=30)
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -117,3 +119,75 @@ def test_sh3_v4_rejects_complete_alpha1_corpus(
     first = rejection()
     assert first[0] == "prepare", (case["id"], first)
     assert rejection() == first
+
+
+@pytest.mark.parametrize("name, side_effect", [
+    ("binary_packet", None),
+    ("borrowed_views", None),
+    ("cobol_finance_modernization", None),
+    ("filesystem_capabilities", "merit-filesystem-capabilities.bin"),
+    ("generic_collections", None),
+    ("generic_result", None),
+    ("ledger_app", "ledger_report.txt"),
+    ("text_pipeline", None),
+    ("trait_bounds", None),
+])
+def test_sh3_v4_acceptance_project_builds_through_production_path(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+    name: str, side_effect: str | None,
+) -> None:
+    project_root = tmp_path / name
+    shutil.copytree(ROOT / "examples/projects" / name, project_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    project = load_project(project_root / "Merit.toml")
+    _, _, reference = build(project, tmp_path / "reference")
+    native_output = tmp_path / "native-v4"
+    assert project_cli_main([
+        "build", str(project_root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(native_output),
+    ]) == 0
+    manifest = json.loads((project_root / ".merit" / REPLACEMENT_MANIFEST).read_text(
+        encoding="utf-8"
+    ))
+    assert manifest["producer_protocol"] == (
+        "merit-project-request-v2/resolved-source-function-bundle-v4"
+    )
+    assert set(manifest["native_artifacts"]) == {"canonical_mir", "c_source", "c_header"}
+    native_executable = native_output.with_suffix(".exe") if os.name == "nt" else native_output
+
+    reference_directory = tmp_path / "reference-run"
+    native_directory = tmp_path / "native-run"
+    reference_directory.mkdir()
+    native_directory.mkdir()
+    expected = _result(reference, cwd=reference_directory)
+    actual = _result(native_executable, cwd=native_directory)
+    assert expected[0] == 0, expected
+    assert actual == expected
+    if side_effect is not None:
+        assert (native_directory / side_effect).read_bytes() == (
+            reference_directory / side_effect
+        ).read_bytes()
+
+
+def test_sh3_v4_public_check_shared_and_run_keep_explicit_empty_exports(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    project_root = tmp_path / "generic_result"
+    shutil.copytree(ROOT / "examples/projects/generic_result", project_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    driver = str(native_v4_driver.executable)
+    assert project_cli_main(["check", str(project_root), "--compiler-path", driver]) == 0
+    assert project_cli_main([
+        "build-shared", str(project_root), "--compiler-path", driver,
+        "-o", str(tmp_path / "native-shared"),
+    ]) == 0
+    assert project_cli_main([
+        "run", str(project_root), "--compiler-path", driver,
+        "-o", str(tmp_path / "native-run"),
+    ]) == 0
+    manifest = json.loads((project_root / ".merit" / REPLACEMENT_MANIFEST).read_text(
+        encoding="utf-8"
+    ))
+    assert manifest["producer_protocol"] == (
+        "merit-project-request-v2/resolved-source-function-bundle-v4"
+    )

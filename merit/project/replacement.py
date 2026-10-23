@@ -81,6 +81,11 @@ def _load_native_project_artifact(
         raise ReplacementProjectError(f"unsupported replacement build manifest schema: {manifest_path}")
     if header_exports is None:
         header_exports = _manifest_header_exports(project)
+        # Ordinary v4 executable builds request no public C exports explicitly.
+        # Retain historical v1 artifacts only when the manifest says v1.
+        if (header_exports is None and
+                payload.get("producer_protocol") == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2):
+            header_exports = frozenset()
     expected_protocol = (
         REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
         if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL

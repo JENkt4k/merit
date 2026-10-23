@@ -251,8 +251,8 @@ def test_default_build_prepares_with_configured_native_driver_without_reference_
     executable = root / "build" / "replacement_project"
     observed: list[str] = []
 
-    def fake_prepare(project, configured_driver):
-        observed.append(f"prepare:{configured_driver.executable}")
+    def fake_prepare(project, configured_driver, *, header_exports):
+        observed.append(f"prepare:{configured_driver.executable}:{sorted(header_exports)}")
 
     def fake_build(project, output: Path):
         observed.append(f"build:{output}")
@@ -265,7 +265,7 @@ def test_default_build_prepares_with_configured_native_driver_without_reference_
 
     assert status == 0
     assert observed == [
-        f"prepare:{driver}",
+        f"prepare:{driver}:[]",
         f"build:{root / 'build' / 'replacement_project'}",
     ]
     assert capsys.readouterr().out.strip() == str(executable)
@@ -295,7 +295,8 @@ def test_default_check_runs_native_frontend_preparation(
     manifest = root / ".merit" / REPLACEMENT_MANIFEST
     observed: list[Path] = []
 
-    def fake_prepare(_project, configured_driver):
+    def fake_prepare(_project, configured_driver, *, header_exports):
+        assert header_exports == frozenset()
         observed.append(configured_driver.executable)
         return SimpleNamespace(manifest_path=manifest)
 
