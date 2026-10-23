@@ -499,7 +499,7 @@ def _extract_generic_templates(source: str):
     for a,b in reversed(spans): source=source[:a]+''.join('\n' if ch=='\n' else ' ' for ch in source[a:b])+source[b:]
     return source,templates
 
-def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]], request_lines=None, base_line=1) -> str:
+def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]], request_lines=None, base_line=1, preserve_request=False) -> str:
     # Qualified enum variants are rewritten before ordinary applications.
     changed=True
     while changed:
@@ -511,7 +511,8 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                 args=_split_generic_args(m.group(1)); key=(name,tuple(args));requested.add(key);changed=True
                 if request_lines is not None:
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
-                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
+                    site=(line,m.start()-line_start+1,m.end()-line_start+1)
+                    if key not in request_lines or (not preserve_request and site<request_lines[key]):request_lines[key]=site
                 return _mangle_generic(name,args)+'__'+m.group(2)
             text=_sub_code(pat,qrepl,text)
         for name in templates:
@@ -521,7 +522,8 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                 args=_split_generic_args(m.group(1));key=(name,tuple(args));requested.add(key);changed=True
                 if request_lines is not None:
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
-                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
+                    site=(line,m.start()-line_start+1,m.end()-line_start+1)
+                    if key not in request_lines or (not preserve_request and site<request_lines[key]):request_lines[key]=site
                 return _mangle_generic(name,args)
             text=_sub_code(pat,repl,text)
     return text
@@ -597,7 +599,7 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
             variants=re.findall(r'\b([A-Za-z_]\w*)\s*(?:\(|,|\})', body+',')
             for variant in sorted(set(variants),key=len,reverse=True):
                 text=_sub_code(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
-        text=_replace_applications(text,templates,requested,request_lines,t['line'])
+        text=_replace_applications(text,templates,requested,request_lines,t['line'],True)
         generated.append(text);generated_origins.append(t['line']);generated_requests.append(request_lines.get((name,args)))
     expanded=_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
     if not with_source_map:return expanded

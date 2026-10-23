@@ -1130,6 +1130,17 @@ native v1 request then produces the callable shared library (`1 passed in
 20.39s`).
 This does not close the complete F6 ABI matrix.
 
+The current-tree canonical Alpha.1 corpus gate first exposed an independent
+Python-oracle `M7001` span regression: the constructor scan recorded a later
+`Pair<i64>` before the type-annotation scan could record the earlier source
+site. The reference expander now chooses the earliest request in the original
+source while retaining a caller's site during generated-template expansion.
+The unchanged diagnostic test file passes (`32 passed`), and the canonical
+corpus gate passes after that focused repair (`212` reference authority and
+`23` same-source convergence tests; `MERIT_GATE_RESULT=PASS`, 70.111s on
+native Windows). This does not substitute for the full SH3 compiler MIR oracle
+or final subsystem/full gates.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |
