@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -186,6 +188,50 @@ def test_sh3_v4_public_check_shared_and_run_keep_explicit_empty_exports(
         "-o", str(tmp_path / "native-run"),
     ]) == 0
     manifest = json.loads((project_root / ".merit" / REPLACEMENT_MANIFEST).read_text(
+        encoding="utf-8"
+    ))
+    assert manifest["producer_protocol"] == (
+        "merit-project-request-v2/resolved-source-function-bundle-v4"
+    )
+
+
+def test_sh3_v4_public_shared_build_selects_only_manifest_entry(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "selected"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="selected"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n\n'
+        '[executable]\nadapter="stdin-string-i32"\nentry="selected"\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module selected\n'
+        'pub fn selected(source:String)->i32 { return 0; }\n'
+        'pub fn omitted()->i32 { return 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    output = tmp_path / "selected-library"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    header = output.with_suffix(".h").read_text(encoding="utf-8")
+    assert "merit_selected" in header
+    assert "merit_omitted" not in header
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    library = ctypes.CDLL(str(output.with_suffix(suffix)))
+
+    class MeritString(ctypes.Structure):
+        _fields_ = [("data", ctypes.POINTER(ctypes.c_uint8)), ("len", ctypes.c_size_t)]
+
+    selected = library.merit_selected
+    selected.argtypes = [MeritString]
+    selected.restype = ctypes.c_int32
+    text = (ctypes.c_uint8 * 3)(97, 98, 99)
+    assert selected(MeritString(text, 3)) == 0
+    manifest = json.loads((root / ".merit" / REPLACEMENT_MANIFEST).read_text(
         encoding="utf-8"
     ))
     assert manifest["producer_protocol"] == (
