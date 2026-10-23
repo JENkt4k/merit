@@ -127,6 +127,8 @@ fn project_request_unimported_qualified_status()->i32{return 7116;}
 fn project_request_private_qualified_status()->i32{return 7117;}
 fn project_request_unknown_import_status()->i32{return 7118;}
 fn project_request_duplicate_module_status()->i32{return 7119;}
+fn project_request_duplicate_type_status()->i32{return 7120;}
+fn project_request_nonentry_main_status()->i32{return 7121;}
 
 fn project_request_has_import(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow names: Buffer,
@@ -333,6 +335,7 @@ pub fn prepare_native_project_source(
     cursor = checked_add(cursor, 4);
     if (entry_length <= 0) { return 7104; }
     if (checked_add(cursor, entry_length) > buffer_len(input)) { return 7105; }
+    let entry_start: i64 = cursor;
     cursor = checked_add(cursor, entry_length);
     if(request_version==project_request_v2_version()){
         let export_count:i64=project_request_read_u32(input,cursor);
@@ -354,12 +357,18 @@ pub fn prepare_native_project_source(
 
     var units: Vec<ProjectRequestUnitSpan> = vec_new<ProjectRequestUnitSpan>(allocator, unit_count);
     var names: Buffer = buffer_new(allocator, 64);
+    var declaration_starts: Vec<i64> = vec_new<i64>(allocator, 8);
+    var declaration_lengths: Vec<i64> = vec_new<i64>(allocator, 8);
     var unit_index: i64 = 0;
     while (unit_index < unit_count) {
         let path_length: i64 = project_request_read_u32(input, cursor);
         cursor = checked_add(cursor, 4);
         if (path_length <= 0) { return 7107; }
         if (checked_add(cursor, path_length) > buffer_len(input)) { return 7108; }
+        let path_start: i64 = cursor;
+        let is_entry: i32 = project_request_span_equal(
+            input, path_start, path_length, input, entry_start, entry_length
+        );
         cursor = checked_add(cursor, path_length);
         let source_length: i64 = project_request_read_u32(input, cursor);
         cursor = checked_add(cursor, 4);
@@ -376,6 +385,56 @@ pub fn prepare_native_project_source(
         if (token_kind(name_token) != token_identifier_kind()) { return 7113; }
         if (project_request_module_index(unit_source, name_token, names, units) >= 0) {
             return project_request_duplicate_module_status();
+        }
+        var scan: i64 = 0;
+        var brace_depth: i64 = 0;
+        while (scan < vec_len<Token>(tokens)) {
+            let current: Token = vec_get<Token>(tokens, scan);
+            if (token_kind(current) == token_punctuation_kind()) {
+                if (token_length(current) == 1) {
+                    let punctuation: i64 = buffer_get(unit_source, token_start(current));
+                    if (punctuation == 123) { brace_depth = checked_add(brace_depth, 1); }
+                    if (punctuation == 125) { brace_depth = checked_sub(brace_depth, 1); }
+                }
+            }
+            if (brace_depth == 0) {
+                if (checked_add(scan, 1) < vec_len<Token>(tokens)) {
+                    let declaration_name: Token = vec_get<Token>(tokens, checked_add(scan, 1));
+                    if (token_kind(declaration_name) == token_identifier_kind()) {
+                        if (is_entry == 0) {
+                            if (matches_fn(unit_source, current) != 0) {
+                                if (project_request_token_equals_string(
+                                    unit_source, declaration_name, allocator, "main"
+                                ) != 0) { return project_request_nonentry_main_status(); }
+                            }
+                        }
+                        var is_type: i32 = 0;
+                        if (project_request_token_equals_string(unit_source, current, allocator, "struct") != 0) { is_type = 1; }
+                        if (project_request_token_equals_string(unit_source, current, allocator, "enum") != 0) { is_type = 1; }
+                        if (project_request_token_equals_string(unit_source, current, allocator, "trait") != 0) { is_type = 1; }
+                        if (project_request_token_equals_string(unit_source, current, allocator, "decimal") != 0) { is_type = 1; }
+                        if (project_request_token_equals_string(unit_source, current, allocator, "bounded") != 0) { is_type = 1; }
+                        if (is_type != 0) {
+                            var prior: i64 = 0;
+                            while (prior < vec_len<i64>(declaration_starts)) {
+                                if (project_request_token_matches(
+                                    unit_source, declaration_name, names,
+                                    vec_get<i64>(declaration_starts, prior),
+                                    vec_get<i64>(declaration_lengths, prior)
+                                ) != 0) { return project_request_duplicate_type_status(); }
+                                prior = checked_add(prior, 1);
+                            }
+                            let declaration_start: i64 = buffer_len(names);
+                            bootstrap_buffer_append(
+                                names, unit_source, token_start(declaration_name), token_length(declaration_name)
+                            );
+                            vec_push<i64>(declaration_starts, declaration_start);
+                            vec_push<i64>(declaration_lengths, token_length(declaration_name));
+                        }
+                    }
+                }
+            }
+            scan = checked_add(scan, 1);
         }
         let module_start: i64 = buffer_len(names);
         bootstrap_buffer_append(names, unit_source, token_start(name_token), token_length(name_token));
@@ -543,6 +602,7 @@ pub fn prepare_native_project_source(
         unit_index = checked_add(unit_index, 1);
     }
     drop(legacy_vector_lengths); drop(legacy_vector_starts);
-    drop(capability_lengths); drop(capability_starts); drop(names); drop(units);
+    drop(capability_lengths); drop(capability_starts);
+    drop(declaration_lengths); drop(declaration_starts); drop(names); drop(units);
     return 0;
 }

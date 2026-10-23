@@ -1105,6 +1105,15 @@ passed in 49.37s`). This remains focused evidence, not the final SH3 gates.
 The same native module catalog now rejects two source units declaring one
 module before flattening; the raw-request regression reproduced acceptance
 before the check and passes after it (`1 passed in 35.66s`).
+The next grouped catalog probe found native v4 already rejects an import cycle
+and duplicate function name, but accepted a duplicate top-level type name and
+`main` outside the manifest entry unit. The pre-flattening native declaration
+catalog now rejects those two cases without changing source syntax; all four
+raw-request cases pass together (`4 passed in 35.69s`). The wider v4
+corpus/request plus native artifact-entry checks pass on this tree (`53 passed
+in 78.41s`). The four cases also assert independent reference-loader rejection
+(`4 passed in 19.95s`). This is a focused family boundary, not a subsystem or
+full gate.
 
 The public `build-shared` v4 entry-selection boundary also rejects both a
 private manifest entry and an absent one without publishing a prepared

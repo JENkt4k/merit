@@ -175,6 +175,54 @@ def test_sh3_v4_rejects_duplicate_module_without_python_loader(
     assert b"replacement driver status" in response.stderr
 
 
+@pytest.mark.parametrize(("case_name", "library", "entry_source"), [
+    (
+        "import-cycle",
+        b"module library\nimport main;\nfn helper()->i32 { return 1; }\n",
+        b"module main\nimport library;\nfn main()->i32 { return library.helper(); }\n",
+    ),
+    (
+        "duplicate-function",
+        b"module library\nfn clash()->i32 { return 1; }\n",
+        b"module main\nfn clash()->i32 { return 2; }\nfn main()->i32 { return 0; }\n",
+    ),
+    (
+        "duplicate-type",
+        b"module library\nstruct Item { value:i32; }\n",
+        b"module main\nstruct Item { value:i32; }\nfn main()->i32 { return 0; }\n",
+    ),
+    (
+        "nonentry-main",
+        b"module library\nfn main()->i32 { return 1; }\n",
+        b"module main\nfn run()->i32 { return 0; }\n",
+    ),
+])
+def test_sh3_v4_rejects_invalid_cross_module_catalog_without_python_loader(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+    case_name: str, library: bytes, entry_source: bytes,
+) -> None:
+    manifest = _write_case(tmp_path / case_name, {
+        "id": case_name,
+        "files": {
+            "src/library.mrt": library.decode("utf-8"),
+            "src/main.mrt": entry_source.decode("utf-8"),
+        },
+    })
+    with pytest.raises((ProjectError, CompileError)):
+        load_project(manifest)
+    request = encode_project_request(ProjectRequest(
+        case_name.replace("-", "_"), "src/main.mrt", (
+            ProjectRequestUnit("src/library.mrt", library),
+            ProjectRequestUnit("src/main.mrt", entry_source),
+        ), header_exports=(),
+    ))
+    response = subprocess.run(
+        [str(native_v4_driver.executable)], input=request, capture_output=True,
+    )
+    assert response.returncode != 0, case_name
+    assert b"replacement driver status" in response.stderr
+
+
 @pytest.mark.parametrize("name, side_effect", [
     ("binary_packet", None),
     ("borrowed_views", None),
