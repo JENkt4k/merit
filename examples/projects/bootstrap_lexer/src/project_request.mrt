@@ -126,6 +126,7 @@ fn project_request_is_import(borrow source: Buffer, borrow token: Token) -> i32 
 fn project_request_unimported_qualified_status()->i32{return 7116;}
 fn project_request_private_qualified_status()->i32{return 7117;}
 fn project_request_unknown_import_status()->i32{return 7118;}
+fn project_request_duplicate_module_status()->i32{return 7119;}
 
 fn project_request_has_import(
     borrow source: Buffer, borrow tokens: Vec<Token>, borrow names: Buffer,
@@ -373,6 +374,9 @@ pub fn prepare_native_project_source(
         let name_token: Token = vec_get<Token>(tokens, 1);
         if (project_request_is_module(unit_source, module_token) == 0) { return 7112; }
         if (token_kind(name_token) != token_identifier_kind()) { return 7113; }
+        if (project_request_module_index(unit_source, name_token, names, units) >= 0) {
+            return project_request_duplicate_module_status();
+        }
         let module_start: i64 = buffer_len(names);
         bootstrap_buffer_append(names, unit_source, token_start(name_token), token_length(name_token));
         vec_push<ProjectRequestUnitSpan>(units, ProjectRequestUnitSpan {

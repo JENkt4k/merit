@@ -159,6 +159,22 @@ def test_sh3_v4_rejects_missing_import_without_python_loader(
     assert b"replacement driver status" in response.stderr
 
 
+def test_sh3_v4_rejects_duplicate_module_without_python_loader(
+    native_v4_driver: NativeReplacementDriver,
+) -> None:
+    request = encode_project_request(ProjectRequest(
+        "duplicate_module", "src/main.mrt", (
+            ProjectRequestUnit("src/library.mrt", b"module repeated\nfn helper()->i32 { return 1; }\n"),
+            ProjectRequestUnit("src/main.mrt", b"module repeated\nfn main()->i32 { return 0; }\n"),
+        ), header_exports=(),
+    ))
+    response = subprocess.run(
+        [str(native_v4_driver.executable)], input=request, capture_output=True,
+    )
+    assert response.returncode != 0
+    assert b"replacement driver status" in response.stderr
+
+
 @pytest.mark.parametrize("name, side_effect", [
     ("binary_packet", None),
     ("borrowed_views", None),

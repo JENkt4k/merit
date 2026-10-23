@@ -1102,6 +1102,9 @@ absent from the request. The three focused raw-request rejections pass (`3
 passed in 35.40s`); the complete affected v4 corpus/request suite passes (`47
 passed in 28.77s`), and the native artifact-entry integration passes (`1
 passed in 49.37s`). This remains focused evidence, not the final SH3 gates.
+The same native module catalog now rejects two source units declaring one
+module before flattening; the raw-request regression reproduced acceptance
+before the check and passes after it (`1 passed in 35.66s`).
 
 The public `build-shared` v4 entry-selection boundary also rejects both a
 private manifest entry and an absent one without publishing a prepared
