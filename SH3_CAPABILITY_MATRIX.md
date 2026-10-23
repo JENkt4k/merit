@@ -1091,6 +1091,18 @@ contract closes. The 23 `bootstrap_corpus_v1.json` source/expression fragments
 are not standalone accepted/rejected projects; their existing interpreter and
 native subsystem tests remain a separate validation boundary.
 
+The stricter rejected-corpus audit found a fail-closed F8 gap: four cases stop
+at the historical Python loader before native preparation. Direct v2 requests
+prove native rejection for wrong generic arity and a missing trait impl. The
+private and unimported qualified-call sources initially passed native v4
+because `project_request.mrt` erased module/import qualifiers without checking
+them. The native request path now validates cross-module import edges and
+public declarations before flattening, and rejects an import of a module
+absent from the request. The three focused raw-request rejections pass (`3
+passed in 35.40s`); the complete affected v4 corpus/request suite passes (`47
+passed in 28.77s`), and the native artifact-entry integration passes (`1
+passed in 49.37s`). This remains focused evidence, not the final SH3 gates.
+
 The public `build-shared` v4 entry-selection boundary also rejects both a
 private manifest entry and an absent one without publishing a prepared
 manifest or C header (`2 passed in 20.22s`). Together with the selected-entry

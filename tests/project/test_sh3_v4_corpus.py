@@ -16,6 +16,7 @@ from merit.compiler import CompileError
 from merit.project.build import build, check
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
+from merit.project.project_request import ProjectRequest, ProjectRequestUnit, encode_project_request
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST, ReplacementProjectError, build_replacement_project,
     build_replacement_shared,
@@ -103,7 +104,24 @@ def test_sh3_v4_rejects_complete_alpha1_corpus(
     try:
         project = load_project(manifest)
     except (ProjectError, CompileError, ValueError):
-        return  # Shared project loader rejects before either compiler stage.
+        assert case["id"] in {
+            "wrong-generic-arity", "missing-trait-implementation",
+            "private-qualified-call", "unimported-qualified-call",
+        }
+        units = tuple(
+            ProjectRequestUnit(path, str(source).encode("utf-8"))
+            for path, source in sorted(dict(case["files"]).items())
+        )
+        request = encode_project_request(ProjectRequest(
+            manifest.parent.name.replace("-", "_"), "src/main.mrt", units,
+            header_exports=(),
+        ))
+        response = subprocess.run(
+            [str(native_v4_driver.executable)], input=request, capture_output=True,
+        )
+        assert response.returncode != 0, case["id"]
+        assert b"replacement driver status" in response.stderr
+        return
     with pytest.raises((ProjectError, CompileError, ValueError)):
         check(project)
 
@@ -122,6 +140,23 @@ def test_sh3_v4_rejects_complete_alpha1_corpus(
     first = rejection()
     assert first[0] == "prepare", (case["id"], first)
     assert rejection() == first
+
+
+def test_sh3_v4_rejects_missing_import_without_python_loader(
+    native_v4_driver: NativeReplacementDriver,
+) -> None:
+    request = encode_project_request(ProjectRequest(
+        "missing_import", "src/main.mrt",
+        (ProjectRequestUnit(
+            "src/main.mrt",
+            b"module main\nimport absent;\nfn main()->i32 { return 0; }\n",
+        ),), header_exports=(),
+    ))
+    response = subprocess.run(
+        [str(native_v4_driver.executable)], input=request, capture_output=True,
+    )
+    assert response.returncode != 0
+    assert b"replacement driver status" in response.stderr
 
 
 @pytest.mark.parametrize("name, side_effect", [
