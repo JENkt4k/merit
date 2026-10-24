@@ -1180,6 +1180,24 @@ bootstrap/project tests in `13559.27s` (3h46m), with terminal
 previously failing cases and does not include the separately run M7 replacement
 acceptance gate or the full gate. Final-tree full/hosted evidence remains open.
 
+The first full-gate attempt on `cfeb913` completed pytest with `1655 passed,
+1 failed` in `8587.20s` before M7 began. The sole failure was
+`test_defect_matrix_is_executable_and_matches_declared_scope`: the invoking
+shell put GCC but not `.venv/Scripts` on `PATH`, so the benchmark could not
+resolve its installed `merit.exe` console script. The focused test passes
+(`1 passed in 7.08s`) when that directory is restored. This is a gate-launch
+environment error, not evidence of a compiler semantic regression; the
+terminal full result remains `FAIL` and requires a complete corrected rerun.
+
+To avoid repeating multi-hour validation on every PR update, the canonical
+`pr` gate now runs fast tests, focused native-v4 artifact/fail-closed and
+semantic-import probes, and Alpha.1 corpus convergence. On native Windows it
+passes `111` focused tests plus `212` reference and `23` native corpus tests in
+`151.37s` (`MERIT_GATE_RESULT=PASS`). The hosted workflow runs this short gate
+automatically on Ubuntu and native Windows; long full, M7, reproducibility,
+and corpus jobs require explicit manual dispatch. The full gate's test content
+is unchanged. A short PR pass is not SH3 full-gate or SH6 hosted evidence.
+
 A current-tree production-authority audit traced `merit.project.cli`'s
 replacement commands through transport-only `replacement_loader`, native
 request preparation, v4 artifact digest/source validation, and host C

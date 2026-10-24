@@ -3,6 +3,17 @@ name: Local Gate
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      gate:
+        description: Long validation gate to run deliberately
+        type: choice
+        required: true
+        default: full
+        options:
+          - full
+          - reproducibility
+          - acceptance-replacement
+          - corpus
 
 concurrency:
   group: merit-local-gate-${{ github.workflow }}-${{ github.ref }}
@@ -12,8 +23,67 @@ permissions:
   contents: read
 
 jobs:
+  linux-pr:
+    name: Python 3.11 / Ubuntu / short PR gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install Merit and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-build-isolation -e ".[dev]"
+      - name: Run short canonical PR gate
+        run: |
+          python scripts/doctor.py
+          python scripts/gate.py pr --durations 10
+
+  windows-pr:
+    name: Python 3.11 / Windows / short PR gate
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Set up MSYS2 UCRT64 GCC
+        id: msys2-pr
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+      - name: Create Windows virtual environment and install Merit
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+          .\.venv\Scripts\python.exe -m pip install --no-build-isolation -e ".[dev]"
+      - name: Run short canonical PR gate
+        shell: pwsh
+        run: |
+          .\scripts\activate-windows-dev.ps1 -Msys2Root "${{ steps.msys2-pr.outputs.msys2-location }}"
+          .\.venv\Scripts\python.exe scripts\doctor.py
+          .\.venv\Scripts\python.exe scripts\gate.py pr --durations 10
+
   linux-reproducibility:
     name: Python 3.11 / Ubuntu / M9 stage reproducibility
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'reproducibility'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -41,6 +111,7 @@ jobs:
 
   windows-reproducibility:
     name: Python 3.11 / Windows / M9 stage reproducibility
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'reproducibility'
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
@@ -81,6 +152,7 @@ jobs:
 
   linux-corpus:
     name: Python 3.11 / Ubuntu / Alpha 1 corpus convergence
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'corpus'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -108,8 +180,9 @@ jobs:
 
   linux-acceptance-replacement:
     name: Python 3.11 / Ubuntu / M7 replacement acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'acceptance-replacement'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -135,8 +208,9 @@ jobs:
 
   linux-full:
     name: Python 3.11 / Ubuntu / full gate
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'full'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 360
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -171,8 +245,9 @@ jobs:
 
   windows-full:
     name: Python 3.11 / Windows / native full gate
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'full'
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
