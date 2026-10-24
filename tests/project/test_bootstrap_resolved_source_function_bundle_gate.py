@@ -2679,10 +2679,10 @@ def test_merit_two_copy_vector_module_matches_oracle_order_and_executes(
     ), 6),
     (CANONICAL_C_TWO_VECTOR_MODULE_PROBE.replace(
         'function_mir_i32_type_code(),0,0,0,0,0,0,0',
-        'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
-    ), 7),
+        'function_mir_unresolved_type_code(),0,0,0,0,0,0,0',
+    ), 6),
 ])
-def test_merit_two_copy_vector_module_rejects_duplicate_or_owned_catalog(
+def test_merit_two_copy_vector_module_rejects_duplicate_or_invalid_catalog(
     tmp_path: Path, probe: str, status: int,
 ) -> None:
     root = _project(tmp_path, probe)
@@ -6845,16 +6845,18 @@ fn main()->i32 {
   vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,0,function_mir_mode_mutable_borrow(),0));
   vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,2,function_mir_mode_value(),1));
   vec_push<MirFunctionRecord>(records,function_mir_call_argument(15,4,function_mir_mode_value(),2));
+  let source:Buffer=buffer_new(allocator,0);
+  var numeric_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
   var output:Buffer=buffer_new(allocator,256);
-  print(canonical_c_append_vec_push_call(push_call,records,descriptors,output));
-  print(canonical_c_append_vector_operation_call(canonical_c_vector_pop_operation(),pop_call,records,descriptors,output));
-  print(canonical_c_append_vector_operation_call(canonical_c_vector_replace_operation(),replace_call,records,descriptors,output));
-  print(canonical_c_append_vector_operation_call(canonical_c_vector_get_operation(),get_call,records,descriptors,output));
-  print(canonical_c_append_vector_operation_call(canonical_c_vector_set_operation(),set_call,records,descriptors,output));
+  print(canonical_c_append_vec_push_call(source,push_call,records,descriptors,output));
+  print(canonical_c_append_vector_operation_call(source,canonical_c_vector_pop_operation(),pop_call,records,descriptors,numeric_descriptors,output));
+  print(canonical_c_append_vector_operation_call(source,canonical_c_vector_replace_operation(),replace_call,records,descriptors,numeric_descriptors,output));
+  print(canonical_c_append_vector_operation_call(source,canonical_c_vector_get_operation(),get_call,records,descriptors,numeric_descriptors,output));
+  print(canonical_c_append_vector_operation_call(source,canonical_c_vector_set_operation(),set_call,records,descriptors,numeric_descriptors,output));
   print(buffer_len(output));
   var index:i64=0;
   while(index<buffer_len(output)){print(buffer_get(output,index));index=checked_add(index,1);}
-  drop(output);drop(records);drop(descriptors);
+  drop(output);drop(numeric_descriptors);drop(source);drop(records);drop(descriptors);
  }
  return 0;
 }
@@ -6968,7 +6970,7 @@ def test_merit_placed_vector_len_rejects_invalid_call_contract(
     assert native.stdout == ''
 
 
-def test_merit_placed_vector_drop_rejects_unimplemented_owned_element_runtime(tmp_path: Path) -> None:
+def test_merit_placed_owned_element_vector_drop_matches_oracle_and_executes(tmp_path: Path) -> None:
     probe = CANONICAL_C_VECTOR_DROP_FUNCTION_PROBE.replace(
         'function_mir_i64_type_code(),0,0,0,0,0,0,0',
         'function_mir_buffer_type_code(),0,0,0,0,0,0,0',
@@ -6976,11 +6978,45 @@ def test_merit_placed_vector_drop_rejects_unimplemented_owned_element_runtime(tm
     assert probe != CANONICAL_C_VECTOR_DROP_FUNCTION_PROBE
     root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
-    assert interpret(project) == ''
-    _, _, executable = build(project, root / 'build' / 'owned-element-vector-rejected')
-    native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 207
-    assert native.stdout == ''
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / 'build' / 'owned-element-vector-drop')
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode('utf-8')
+    c_header = bytes(values[2 + c_length:]).decode('utf-8')
+    vector_type = MirType('Vec', (MirType('Buffer'),))
+    module = MirModule('demo', (MirFunction(
+        'consume', MirType('unit'), (
+            MirLocal(0, 'value', vector_type, ownership='owned'),
+        ), (MirBlock(0, (
+            MirInstruction(0, 'drop', operands=(0,), ownership='owned'),
+        ), MirTerminator('return')),), 0,
+        parameters=(MirParameter(0),),
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+
+    generated = tmp_path / 'owned_element_vector_drop.c'
+    generated.write_text(c_source, encoding='utf-8', newline='\n')
+    driver = tmp_path / 'owned_element_vector_drop_driver.c'
+    driver.write_text(
+        '#include "owned_element_vector_drop.c"\n'
+        'int main(void) { merit_Allocator allocator = merit_system_allocator(); '
+        'merit_Vec_427566666572 values = merit_vec_new_427566666572(allocator, 1); '
+        'merit_Buffer child = merit_buffer_new(allocator, 1); '
+        'merit_buffer_push(&child, 42); merit_vec_push_427566666572(&values, child); '
+        'consume(values); return 0; }\n',
+        encoding='utf-8', newline='\n',
+    )
+    cc = shutil.which('cc') or shutil.which('gcc')
+    assert cc is not None
+    program = tmp_path / 'owned-element-vector-drop-program'
+    subprocess.run([cc, '-std=c11', str(driver), '-o', str(program)],
+                   check=True, text=True, capture_output=True)
+    subprocess.run([str(program)], check=True, capture_output=True)
 
 
 @pytest.mark.parametrize("probe", (CANONICAL_C_BUFFER_RETURN_PROBE, CANONICAL_C_TYPED_BUFFER_RETURN_PROBE))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
 import shutil
@@ -471,7 +472,16 @@ def test_merit_owned_straight_line_materializer_matches_canonical_oracle(tmp_pat
     length = interpreted[artifact_start + 1]
     artifact = bytes(interpreted[artifact_start + 2:]).decode("utf-8")
     assert len(artifact.encode("utf-8")) == length
-    assert artifact == canonical_mir_json(_reference_mir())
+    reference = json.loads(canonical_mir_json(_reference_mir()))
+    instructions = reference["functions"][0]["blocks"][0]["instructions"]
+    literals = [instruction for instruction in instructions if instruction["kind"] == "const"]
+    assert [(instruction["id"], instruction["value"]) for instruction in literals] == [
+        (0, "1"), (1, "2"), (4, "3"), (7, "4"),
+    ]
+    # HIR retains source lexemes; resolved-source MIR stores checked integer values.
+    for instruction in literals:
+        instruction["value"] = int(instruction["value"])
+    assert artifact == json.dumps(reference, sort_keys=True, separators=(",", ":"))
 
     _, _, executable = build(project, project_root / "mir-function-canonical")
     native = [

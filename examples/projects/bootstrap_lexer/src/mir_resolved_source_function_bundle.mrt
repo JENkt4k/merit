@@ -2689,9 +2689,10 @@ requires_caps [allocate]
     return 0;
 }
 
-fn canonical_c_append_declared_numeric_literal(
+fn canonical_c_append_declared_numeric_literal_with_domain_policy(
     borrow source:Buffer,start:i64,length:i64,type_code:i32,
-    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    enforce_bounded_domain:i32,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -2699,7 +2700,7 @@ requires_caps [allocate]
     let allocator:Allocator=system_allocator();
     var normalized:Buffer=buffer_new(allocator,64);
     let value_status:i32=canonical_mir_append_typed_const_source_with_catalog(
-        normalized,source,start,length,type_code,numeric_descriptors,0
+        normalized,source,start,length,type_code,numeric_descriptors,enforce_bounded_domain
     );
     var base:i32=0;
     var status:i32=2;
@@ -2726,6 +2727,17 @@ requires_caps [allocate]
     }
     drop(normalized);
     return status;
+}
+
+fn canonical_c_append_declared_numeric_literal(
+    borrow source:Buffer,start:i64,length:i64,type_code:i32,
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
+)->i32
+requires_caps [allocate]
+{
+    return canonical_c_append_declared_numeric_literal_with_domain_policy(
+        source,start,length,type_code,numeric_descriptors,1,output
+    );
 }
 
 fn canonical_c_numeric_descriptor_index(
@@ -3370,9 +3382,9 @@ requires_caps [allocate]
             if(canonical_c_append_boolean_literal(source,function_contract_start(record),function_contract_length(record),output)!=0){return canonical_c_contract_invalid_literal_status();}
         }else{
             if(function_mir_type_is_declared_numeric(result_type)!=0){
-                if(canonical_c_append_declared_numeric_literal(
+                if(canonical_c_append_declared_numeric_literal_with_domain_policy(
                     source,function_contract_start(record),function_contract_length(record),
-                    result_type,numeric_descriptors,output
+                    result_type,numeric_descriptors,0,output
                 )!=0){return canonical_c_contract_invalid_literal_status();}
             }else{
                 if(canonical_c_append_scalar_integer_literal(
@@ -4325,8 +4337,21 @@ requires_caps [allocate]
                 let placed_effect:MirOwnershipRecord=vec_get<MirOwnershipRecord>(ownership_records,effect_id);
                 // The effect record's producer instruction ID is not the
                 // assembly stream's global placement ID when contract records
-                // precede body effects. The versioned source row selects the
-                // exact effect by index; validate its operand and emit it once.
+                // precede body effects. Count only body/ownership source rows
+                // before this placement to recover the producer's input ID.
+                var producer_input_id:i64=0;
+                var prior_source_index:i64=0;
+                while(prior_source_index<instruction_id){
+                    let prior_source:MirFunctionInstructionSource=vec_get<MirFunctionInstructionSource>(sources,prior_source_index);
+                    if(assembly_source_kind(prior_source)==assembly_source_body_kind()){
+                        producer_input_id=checked_add(producer_input_id,1);
+                    }
+                    if(assembly_source_kind(prior_source)==assembly_source_ownership_kind()){
+                        producer_input_id=checked_add(producer_input_id,1);
+                    }
+                    prior_source_index=checked_add(prior_source_index,1);
+                }
+                if(ownership_record_instruction_id(placed_effect)!=producer_input_id){return canonical_c_resource_instruction_mismatch_status();}
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
                 let effect_status:i32=canonical_c_append_resource_effect_with_destructors(
                     source,placed_effect,assembly_source_result(placed_source),records,type_descriptors,
@@ -9677,8 +9702,12 @@ requires_caps [allocate]
                 if(canonical_mir_append_mode(output,function_mir_numeric_policy(local))!=0){return 67;}
             }else{canonical_mir_append_text(output,"value");}}}
         }else{if(function_mir_kind(local)==function_mir_kind_parameter()){
-            if(local_owned!=0){canonical_mir_append_text(output,"owned");}
-            else{if(canonical_mir_append_mode(output,function_mir_symbol_code(local))!=0){return 67;}}
+            if(function_mir_symbol_code(local)==function_mir_mode_value()){
+                if(local_owned!=0){canonical_mir_append_text(output,"owned");}
+                else{canonical_mir_append_text(output,"value");}
+            }else{
+                if(canonical_mir_append_mode(output,function_mir_symbol_code(local))!=0){return 67;}
+            }
         }else{if(local_owned!=0){canonical_mir_append_text(output,"owned");}
         else{if(function_mir_kind(local)==function_mir_kind_temporary_local()){
             if(canonical_mir_append_mode(output,function_mir_numeric_policy(local))!=0){return 67;}

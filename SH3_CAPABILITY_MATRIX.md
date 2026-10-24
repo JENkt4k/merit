@@ -988,19 +988,20 @@ failure, **not** F8: the compiler artifact still needs independent full-project
 oracle C/header/MIR comparison, GCC/runtime, complete corpus, and production
 cutover evidence. Temporary diagnostic printing was removed.
 
-The next 45-module evidence check parses the complete native MIR, regenerates
+The next 46-module evidence check parses the complete native MIR, regenerates
 the C and header through the independent Python emitter, compares both byte for
 byte, and runs GCC's C11 syntax check (`1 passed in 126.84s`). This establishes
-full-compiler C/header fidelity *given* the native MIR; it does not yet prove
-that the MIR itself matches independent Python materialization or that the
-compiled compiler has matching runtime/protocol behavior. F4/F5 admission is
-stronger, while F7/F8/F9 remain open.
+full-compiler C/header fidelity *given* the native MIR. The later independent
+MIR-oracle and focused compiler runtime/protocol comparisons are recorded
+below. F4/F5 admission is stronger, while F7/F8/F9 remain open.
 
-The independent full-compiler MIR comparison remains the next F1/F2/F8
-decision point. Its regression is present and collects, but the 45-module
-Python-oracle materialization may exceed the seven-minute unattended-test
-limit, so it still requires a logged manual execution. Committing the test
-does not establish a passing result or full-compiler MIR parity.
+The independent full-compiler MIR comparison now passes on `740425c`: the
+complete 46-module native compiler MIR matches the independent Python
+materializer byte-for-byte (`1 passed in 2157.91s`, 35m57s) on native Windows.
+The specifically authorized test wrote its external log to
+`C:\Temp\merit-tests\sh3-compiler-mir-oracle-740425c-agent.log`. This proves
+compiler-project canonical MIR parity, not replacement-acceptance or broader
+Alpha.2 evidence.
 
 The full compiler's native C also links and runs with the same `main` result
 as the reference-built compiler (`1 passed in 133.95s`). A native-emitted
@@ -1037,10 +1038,9 @@ state, not the current worktree. F1-F6 remain partial despite those commits;
 F7 is a focused cutover candidate, not a completed gate. F8 now has focused
 full-compiler C/header, linked `main`, accepted/source-invalid/missing-allocate-
 capability/malformed-version stage-0 versus native-emitted protocol evidence;
-the four-probe test passes (`1 passed in 139.59s`). Complete MIR-oracle and
-corpus results are absent. The full-compiler MIR-oracle regression collects
-and awaits a logged manual execution because its expected duration exceeds
-the seven-minute unattended-test threshold. F9 remains open.
+the four-probe test passes (`1 passed in 139.59s`). The full-compiler MIR
+oracle and canonical Alpha.1 corpus subsequently passed as recorded in this
+ledger. F9 remains open.
 
 On the current `26a6455` tree, the nine non-compiler acceptance differential
 cases pass together (`9 passed in 42.22s`). The complete SH3 acceptance-artifact
@@ -1141,6 +1141,34 @@ corpus gate passes after that focused repair (`212` reference authority and
 native Windows). This does not substitute for the full SH3 compiler MIR oracle
 or final subsystem/full gates.
 
+The current-tree native-Windows `acceptance-replacement` gate also passes:
+`11 passed in 3656.18s`, `10/10` projects, and terminal
+`MERIT_GATE_RESULT=PASS` (`3656.931s` total). The `bootstrap_lexer` case took
+`3630.006s`; this run was substantially slower than prior local examples.
+Its machine-readable report is
+`.merit/gates/acceptance-replacement/result.json`, with per-project coverage
+in `.merit/gates/acceptance-replacement/coverage.json`. This is the legacy M7
+replacement migration gate, distinct from the focused native-v4 acceptance
+differential evidence above. Subsystem and full gates are still required.
+
+The first current-tree Windows subsystem gate on `740425c` failed after
+`899 passed, 10 failed` in `13703.31s` (3h48m). Its external log is
+`C:\Temp\merit-tests\sh3-subsystem-740425c-agent.log`; the terminal result is
+`MERIT_GATE_RESULT=FAIL`. The failures grouped into stale SH2/SH3 test
+assumptions and three real fail-closed/parity gaps: an ordinary bounded C
+literal skipped domain enforcement while contract comparison literals must
+remain exempt; borrowed parameter ownership was overridden by an owned
+binding label; and C resource-effect lowering did not verify its producer
+instruction ID after accounting for preceding contract rows. These were
+repaired without changing the versioned MIR rows or Alpha.2 language behavior.
+The outdated tests now retain their coverage through explicit legacy-oracle
+builds, current unsupported-version status, UTF-8 decoding, exact numeric MIR
+representation, valid owned-vector execution, and malformed catalog rejection.
+Focused reruns of all ten original failures pass, as do eight neighboring
+numeric/ownership/drop cases (`8 passed in 293.74s`). This is a repair
+candidate, not a passing subsystem gate; the repaired tree still requires
+subsystem and full validation.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial (uncommitted).** `test_merit_catalog_types_match_python_mir_json` passes against `_descriptor_type_names` and `_numeric_descriptor_type_names` for builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded i64 extremes, and legacy copy-enum/i64-struct names. Cyclic and invalid-decimal catalogs reject. Focused owned-CFG and sourced-contract-local tests pass after numeric threading. The production materializer now uses the catalog for normal locals, contract locals, and return types. Other malformed catalogs, full function/project parity, and all instruction/destructor type use sites remain open. Seven committed-baseline acceptance requests stop at `4129`. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |
@@ -1150,7 +1178,7 @@ or final subsystem/full gates.
 | F5 | **C instruction/control/cleanup closure.** Lower every canonical Alpha.2 instruction: constants, copy/move/borrow, construct/load/store, checked/exact numeric and conversion, user/builtin calls, contracts, capability checks, print, drop/deallocate/nop, and return/jump/branch/switch/unreachable. Include filesystem and generic vector operations and destructors. | **Partial.** Native core directly emits const/copy, limited binary/print/call, explicit resource effects, and CFG terminators. A shared C-backend boundary now normalizes dense CFG rows by block and switch ordinal: an interleaved-switch fixture emits byte-identical C (`1 passed in 61.84s`), while all six malformed-switch fixtures preserve their rejection statuses (`6 passed in 178.70s`). Value-mode `ByteSlice` user-call forwarding passes native MIR/C/header byte comparison to the Python oracle plus GCC runtime execution (`1 passed in 33.72s`). The complete eight-width checked `+`, `-`, `*`, `/` helper mechanism now passes direct 32-helper oracle/GCC evidence, sampled new-width full-module oracle/C compilation, all eight old-width full-module cases, narrow runtime/overflow traps, and mixed-feature deterministic order (details above). The full 32-case module cross-product, sparse block IDs, and other instruction/call/cleanup surfaces remain open. Python `_instruction` has the complete dispatch. The candidate acceptance statuses `4492` and `4473` predate these changes. | Table-driven accepted/rejected instruction cases with byte-identical oracle C, side-effect-once and cleanup evidence, native run parity, and deterministic artifacts across the complete accepted corpus. |
 | F6 | **Public-header intent and stable ABI.** Select the manifest-requested exported function(s) separately from Merit `pub` visibility; validate unknown/private/unsupported selections; emit ordered stable aggregate layout and borrow ABI declarations. | **Partial; public selected-export path proved.** Additive MPRQ v2 carries explicit sorted header exports while v1 remains unchanged; native header selection, empty selection, private/unknown and malformed-name rejection pass focused tests. Manifest executable entry flows through preparation and versioned digest validation. Stable nested aggregate and borrowed-view headers match the Python oracle, and a separate C consumer compiles. A real-driver public `build-shared` selects only the manifest entry in its C header and a foreign call through the built library succeeds (`1 passed in 20.52s`). Wider public layout/type combinations and complete ABI evidence remain open. | Explicit native input policy preserving MPRQ v1, selected/unselected and malformed cases, exact compiler/public header bytes, and broader shared-library ABI probes; no host C/header patching or inferred export. |
 | F7 | **Versioned artifact authority and host cutover.** The normal project path must consume only the complete native v4 artifact, validate framing/digests/source identity, publish atomically, and never invoke Python snapshot/MIR/C semantics or silently fall back. | **Cutover candidate, focused evidence green.** Normal build/check/shared/run require complete current v4 artifacts; v3 remains an explicitly named oracle-only helper. Production commands request explicit v2 header intent for ordinary executables and adapter-selected shared builds; no-adapter shared builds retain v1's native all-public ABI policy. Historical v1 manifests remain readable under their recorded protocol/digest. V4 publication/digest and fresh-process import guards pass. Nine acceptance applications build publicly, and a real-driver check/shared/run probe passes. Final-tree subsystem/full/hosted gates remain open. | Public build/check/shared/run path uses the native artifact only and rejects absent/stale/incompatible responses; import/process guard proves no Python semantic/backend authority; legacy readers remain oracle/compatibility only. |
-| F8 | **Compiler project and complete accepted/rejected evidence.** Compile all 46 required compiler modules, ten acceptance applications, and the complete accepted/rejected corpus through the v4 path; compare interpreter/native, protocol, diagnostics, MIR, C, and header bytes without weakening tests. | **Partial; fixed Alpha.1 corpus and nine public application builds complete.** All 22 accepted/rejected Alpha.1 corpus cases pass through native-v4 preparation/build with deterministic artifacts or native rejection. Nine non-compiler acceptance applications pass exact native/Python MIR, C/header, GCC/runtime/output comparison and now build through the public v4 path with reference runtime/side-effect parity. The 46-module compiler emits deterministic v4 MIR/C/header; its C/header match the Python emitter for that MIR, GCC compiles it, and focused `main`/adapter protocol behavior matches stage 0. Independent full-compiler MIR materialization, compiler-to-compiler public build, legacy M7 replacement acceptance, and broader Alpha.2 evidence remain open. | Complete the independent compiler MIR oracle, replacement acceptance and wider accepted/rejected evidence, and an uninterrupted compiler-project run with artifact hashes and fail-closed cases; do not infer these from the fixed Alpha.1 corpus. |
+| F8 | **Compiler project and complete accepted/rejected evidence.** Compile all 46 required compiler modules, ten acceptance applications, and the complete accepted/rejected corpus through the v4 path; compare interpreter/native, protocol, diagnostics, MIR, C, and header bytes without weakening tests. | **Partial; independent compiler MIR and legacy M7 acceptance pass.** All 22 accepted/rejected Alpha.1 corpus cases pass through native-v4 preparation/build with deterministic artifacts or native rejection. Nine non-compiler acceptance applications pass exact native/Python MIR, C/header, GCC/runtime/output comparison and now build through the public v4 path with reference runtime/side-effect parity. The 46-module compiler emits deterministic v4 MIR/C/header; its MIR matches independent Python materialization byte-for-byte on `740425c` (`1 passed in 2157.91s`), its C/header match the Python emitter for that MIR, GCC compiles it, and focused `main`/adapter protocol behavior matches stage 0. The current-tree legacy M7 replacement gate passes all ten projects (`11 passed`, `MERIT_GATE_RESULT=PASS`); that gate is not itself a native-v4 differential. Compiler-to-compiler public build belongs to SH4. Broader Alpha.2 subsystem/full evidence remains open for SH3. | Complete wider accepted/rejected evidence and an uninterrupted compiler-project run with artifact hashes and fail-closed cases; do not infer these from the fixed Alpha.1 corpus or legacy M7 gate alone. |
 | F9 | **SH3 validation and PR handoff.** Confirm the final tree's focused family evidence, affected subsystem gate, clean full gate, hosted authorities, scope/representation audit, and one PR for manual merge review. | **Open.** Older full-gate results predate SH3 changes. No SH3 PR exists. | `SELF_HOSTING.md` per-PR evidence items 1–10, terminal gate markers/results for the final tree, canonical hosted checks, PR link; never auto-merge. SH4–SH6 self-hosting gates are not redefined as SH3 completion. |
 
 ## Execution order and boundary rule
