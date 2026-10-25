@@ -206,6 +206,7 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
 @pytest.mark.parametrize(
     "resource_kind", (
         "nested-vector", "owned-enum-vector", "empty-enum-vector", "replaced-enum-vector",
+        "popped-enum-vector", "transferred-enum-vector",
     )
 )
 def test_native_owned_vector_cleanup_matches_alpha2_oracle(
@@ -226,7 +227,7 @@ def test_native_owned_vector_cleanup_matches_alpha2_oracle(
         expected_output = b"53\n"
     else:
         declarations += "enum MaybeMarker { SomeMarker(Marker), NoMarker }\n"
-        if resource_kind == "owned-enum-vector":
+        if resource_kind in ("owned-enum-vector", "popped-enum-vector", "transferred-enum-vector"):
             payload = "let marker:Marker=Marker{number:61}; let wrapped:MaybeMarker=SomeMarker(marker); "
             expected_output = b"61\n"
         elif resource_kind == "replaced-enum-vector":
@@ -248,6 +249,13 @@ def test_native_owned_vector_cleanup_matches_alpha2_oracle(
         )
         if resource_kind != "replaced-enum-vector":
             body += "vec_push<MaybeMarker>(values,wrapped); "
+        if resource_kind == "popped-enum-vector":
+            body += "let restored:MaybeMarker=vec_pop<MaybeMarker>(values); drop(restored); "
+        if resource_kind == "transferred-enum-vector":
+            body += (
+                "var destination:Vec<MaybeMarker>=vec_new<MaybeMarker>(allocator,0); "
+                "vec_transfer<MaybeMarker>(destination,values); "
+            )
     source = (
         declarations + "fn main()->i32 { with capability allocate { "
         "let allocator:Allocator=system_allocator(); " + body
@@ -305,6 +313,44 @@ def test_native_owned_vector_cleanup_matches_alpha2_oracle(
     assert actual.returncode == 0, actual.stderr
     assert (actual.returncode, actual.stdout) == (expected.returncode, expected.stdout)
     assert actual.stdout.replace(b"\r\n", b"\n") == expected_output
+
+
+def test_native_owned_enum_vector_get_rejects_implicit_copy(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    source = (
+        "module owned_enum_copy\ncapability allocate;\n"
+        "struct Marker { number:i32; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "enum MaybeMarker { SomeMarker(Marker), NoMarker }\n"
+        "fn main()->i32 { with capability allocate { "
+        "let allocator:Allocator=system_allocator(); "
+        "var values:Vec<MaybeMarker>=vec_new<MaybeMarker>(allocator,1); "
+        "let marker:Marker=Marker{number:61}; "
+        "let wrapped:MaybeMarker=SomeMarker(marker); "
+        "vec_push<MaybeMarker>(values,wrapped); "
+        "let copied:MaybeMarker=vec_get<MaybeMarker>(values,0); drop(copied); "
+        "} return 0; }\n"
+    ).encode("utf-8")
+    root = tmp_path / "reference-project"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname = "owned_enum_copy"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_bytes(source)
+    with pytest.raises(CompileError, match="cannot copy owned element"):
+        build(load_project(root / "Merit.toml"), tmp_path / "reference-program")
+    request = encode_project_request(ProjectRequest(
+        "owned_enum_copy", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
+    ))
+    native_compiler, _ = compiler_paths
+    response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert response.returncode != 0
+    assert b"replacement driver status" in response.stderr
+    with pytest.raises(ValueError):
+        decode_native_project_artifact_transport(int(line) for line in response.stdout.splitlines())
 
 
 @pytest.mark.parametrize("constructor", ["SomeMarker()", "NoMarker(7)"])

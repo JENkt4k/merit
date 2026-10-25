@@ -1322,6 +1322,13 @@ the new one drops at scope exit. Together with the nested `Vec<Vec<Marker>>`
 case, all four Alpha.2-accepted resource shapes match independent MIR/C/header
 bytes and reference/GCC runtime output (`4 passed in 42.12s`). Other nested
 resource and project combinations remain unproven.
+The owned-enum vector lifecycle matrix now additionally proves `vec_pop`
+transfers the payload to one explicit drop and `vec_transfer` preserves the
+destination's single cleanup obligation. An attempted `vec_get` copy of the
+owned enum is rejected by both the Alpha.2 reference checker and native v4,
+which emits no complete artifact. The six accepted and one rejected cases
+pass together (`7 passed in 42.61s`); no ownership or vector API semantics
+were expanded.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
