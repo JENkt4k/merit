@@ -4077,6 +4077,17 @@ pub fn lower_source_function_body_records_from_catalog(
                                     ));
                                     vec_set<i64>(counters,1,checked_add(instruction_id,1));
                                     vec_set<i64>(counters,2,checked_add(vec_get<i64>(counters,2),1));
+                                }else{
+                                    let destination_type:i32=sfr_local_type_code(records,target_result);
+                                    if(destination_type==function_mir_unresolved_type_code()){return sfr_invalid_assignment_target_status();}
+                                    let value:StatementOperand=vec_get<StatementOperand>(operands,value_index);
+                                    let source_local:i64=sfr_emit_expression(
+                                        source,tokens,binding_starts,binding_lengths,
+                                        statement_operand_start(value),statement_operand_length(value),
+                                        destination_type,enum_catalog,struct_catalog,function_signatures,
+                                        function_parameters,allocator,records,counters
+                                    );
+                                    if(source_local<0){return sfr_invalid_assignment_value_status();}
                                 }
                             } else {
                             if (kind == statement_record_assign_kind()) {

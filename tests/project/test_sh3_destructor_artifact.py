@@ -331,7 +331,17 @@ def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -
      "let outer:Outer=Outer{inner:Inner{number:23},other:5}; return 0;", "23\n"),
     ("inner:Inner; other:i64;", "destructor Outer { print(self.other); }\n",
      "let outer:Outer=Outer{inner:Inner{number:23},other:5}; return 0;", "5\n23\n"),
-], ids=("owned-implicit", "owned-explicit", "aggregate-implicit", "aggregate-custom"))
+    ("inner:Inner;", "",
+     "let inner:Inner=Inner{number:23}; let outer:Outer=Outer{inner:inner}; return 0;", "23\n"),
+    ("inner:Inner;", "",
+     "var outer:Outer=Outer{inner:Inner{number:23}}; "
+     "let replacement:Outer=Outer{inner:Inner{number:5}}; "
+     "replace(outer,replacement); return 0;", "23\n5\n"),
+    ("inner:Inner;", "",
+     "var outer:Outer=Outer{inner:Inner{number:23}}; "
+     "replace(outer,Outer{inner:Inner{number:5}}); return 0;", "23\n5\n"),
+], ids=("owned-implicit", "owned-explicit", "aggregate-implicit", "aggregate-custom",
+        "moved-child", "replaced-owned-child", "replaced-inline-owned-child"))
 def test_native_nested_owned_field_destructor_cleanup_matches_oracle(
     tmp_path: Path, outer_fields: str, outer_destructor: str,
     main_source: str, expected_output: str,
