@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from merit.compiler import CompileError
 from merit.bootstrap.mir_contract import canonical_mir_json, parse_mir
 from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 from merit.bootstrap.replacement_build import ReplacementBuildArtifact, compile_replacement_shared_artifact
@@ -127,8 +128,13 @@ def test_native_acceptance_project_matches_oracle(
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
                     reason="C compiler unavailable")
+@pytest.mark.parametrize(("payload_source", "expected_output"), [
+    ("let marker:Marker=Marker{number:23}; let value:Maybe=SomeMarker(marker); ", b"23\n"),
+    ("", b""),
+], ids=("owned-and-empty", "empty-only"))
 def test_native_payload_free_enum_storage_matches_alpha2_oracle(
     compiler_paths: tuple[Path, Path], tmp_path: Path,
+    payload_source: str, expected_output: bytes,
 ) -> None:
     source_root = tmp_path / "source"
     (source_root / "src").mkdir(parents=True)
@@ -140,8 +146,8 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
         "module probe\nstruct Marker { number:i32; }\n"
         "destructor Marker { print(self.number); }\n"
         "enum Maybe { SomeMarker(Marker), NoMarker }\n"
-        "pub fn main()->i32 { let marker:Marker=Marker{number:23}; "
-        "let value:Maybe=SomeMarker(marker); return 7; }\n",
+        "pub fn main()->i32 { " + payload_source
+        + "let empty:Maybe=NoMarker(); return 7; }\n",
         encoding="utf-8", newline="\n",
     )
     project = load_project(source_root / "Merit.toml")
@@ -192,7 +198,36 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
     reference_run = subprocess.run([str(reference)], capture_output=True)
     assert native_run.returncode == reference_run.returncode == 7
     assert native_run.stdout == reference_run.stdout
-    assert native_run.stdout.replace(b"\r\n", b"\n") == b"23\n"
+    assert native_run.stdout.replace(b"\r\n", b"\n") == expected_output
+
+
+@pytest.mark.parametrize("constructor", ["SomeMarker()", "NoMarker(7)"])
+def test_native_owned_enum_constructor_rejects_wrong_payload_shape(
+    compiler_paths: tuple[Path, Path], tmp_path: Path, constructor: str,
+) -> None:
+    source_root = tmp_path / "source"
+    (source_root / "src").mkdir(parents=True)
+    (source_root / "Merit.toml").write_text(
+        '[package]\nname = "probe"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (source_root / "src/main.mrt").write_text(
+        "module probe\nstruct Marker { number:i32; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "enum Maybe { SomeMarker(Marker), NoMarker }\n"
+        f"pub fn main()->i32 {{ let bad:Maybe={constructor}; return 7; }}\n",
+        encoding="utf-8", newline="\n",
+    )
+    project = load_project(source_root / "Merit.toml")
+    with pytest.raises(CompileError, match="M6003"):
+        build(project, tmp_path / "reference" / "program")
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, _ = compiler_paths
+    response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert response.returncode != 0
+    assert b"replacement driver status" in response.stderr
+    with pytest.raises(ValueError):
+        decode_native_project_artifact_transport(int(line) for line in response.stdout.splitlines())
 
 
 def test_native_compiler_project_emits_deterministic_complete_artifact(

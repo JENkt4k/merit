@@ -2694,6 +2694,53 @@ def test_merit_two_copy_vector_module_rejects_duplicate_or_invalid_catalog(
     assert [int(line) for line in native.splitlines()] == [status, 0]
 
 
+def test_owned_enum_constructor_catalog_validates_absent_payload(tmp_path: Path) -> None:
+    probe = '''module owned_enum_constructor_catalog_probe
+import bootstrap_mir_functions;
+import bootstrap_statement_semantics;
+import bootstrap_mir_resolved_source_function_bundle;
+capability allocate;
+fn main()->i32 {
+ with capability allocate {
+  let allocator:Allocator=system_allocator();
+  var records:Vec<MirFunctionRecord>=vec_new<MirFunctionRecord>(allocator,1);
+  var variants:Vec<EnumVariantCatalogEntry>=vec_new<EnumVariantCatalogEntry>(allocator,2);
+  vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{
+    enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:0,ordinal:0,
+    name_start:0,name_length:0,payload_owned:1,payload_type_code:function_mir_buffer_type_code()
+  });
+  vec_push<EnumVariantCatalogEntry>(variants,EnumVariantCatalogEntry{
+    enum_id:0,enum_name_start:0,enum_name_length:0,variant_id:1,ordinal:1,
+    name_start:0,name_length:0,payload_owned:0,payload_type_code:function_mir_unresolved_type_code()
+  });
+  let enum_type:i32=function_mir_recursive_owned_payload_enum_type_code(0);
+  vec_push<MirFunctionRecord>(records,function_mir_construct(0,0,0,0,-1,1,enum_type,0));
+  print(canonical_c_validate_owned_enum_constructor_catalog(records,variants));
+  vec_set<MirFunctionRecord>(records,0,function_mir_construct(0,0,0,0,-1,0,enum_type,0));
+  print(canonical_c_validate_owned_enum_constructor_catalog(records,variants));
+  vec_set<MirFunctionRecord>(records,0,function_mir_construct(0,0,0,0,1,0,enum_type,0));
+  print(canonical_c_validate_owned_enum_constructor_catalog(records,variants));
+  vec_set<MirFunctionRecord>(records,0,function_mir_construct(0,0,0,0,1,1,enum_type,0));
+  print(canonical_c_validate_owned_enum_constructor_catalog(records,variants));
+  vec_set<MirFunctionRecord>(records,0,function_mir_construct(0,0,0,0,-1,2,enum_type,0));
+  print(canonical_c_validate_owned_enum_constructor_catalog(records,variants));
+  drop(variants);drop(records);
+ }
+ return 0;
+}
+'''
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "owned-enum-constructor-catalog")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    statuses = [int(line) for line in native.splitlines()]
+    assert len(statuses) == 5
+    assert statuses[0] == statuses[2] == 0
+    assert statuses[1] != 0 and statuses[3] != 0 and statuses[4] != 0
+
+
 def test_merit_owned_buffer_vector_module_compiles_and_executes(tmp_path: Path) -> None:
     probe = CANONICAL_C_COPY_VECTOR_RUNTIME_PROBE.replace(
         'function_mir_i64_type_code(),0,0,0,0,0,0,0',

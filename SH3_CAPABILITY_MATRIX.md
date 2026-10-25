@@ -1258,36 +1258,28 @@ passed (`1 passed in 42.27s`); all three multi-module cases passed together
 (`3 passed in 104.37s`). This resolves the specific cross-module
 conflict/ordering evidence gap, not all possible project topologies.
 
-F3 payload-free enum storage has a focused frozen-Alpha.2 oracle/runtime
-regression. An owned-payload enum with a second payload-free variant produces
-byte-identical native/Python canonical MIR, C, and public header; the established placeholder
-for that variant is `i64` in the enum type graph and `int64_t` in emitted C.
-The generated C compiles with GCC, and its destructor output and exit status
-match the reference executable (`1 passed in 42.67s` on native Windows).
-This proves the declared payload-free variant's storage representation, not
-construction of that variant: `Maybe::NoMarker` is invalid expression syntax
-and bare `NoMarker` is rejected by the Alpha.2 reference checker (`M3003`).
-No SH3 semantic extension was made. Other enum/ownership combinations remain
-open.
-
-A separate accepted Alpha.2 constructor exposes the remaining F3/F5 boundary:
-adding `let empty:Maybe=NoMarker();` to that fixture compiles and links through
-the reference project build, but the native-v4 response stops with backend
-status `4520`. The legacy bundle producer returns successfully; its snapshot
-contains a no-operand `variant_1` construct and the frozen owned-enum type
-descriptor records the payload-free variant with an `i64` storage placeholder.
-The independent Python MIR assembler reaches the same construct but its C
-emitter raises `MirToCError: payload-free construction requires a Copy-payload
-enum result`. Temporary distinct native statuses at the two literal
-`return 20` checks in the function C writer did not change `4520`, so those
-checks are not the source of this failure; the diagnostic edits were reverted.
-This is a **known accepted-source divergence**, not evidence that Alpha.2
-rejects `NoMarker()`. Close it without changing serialized MIR/ABI: validate
-the no-payload variant against the source catalog before permitting an absent
-operand, then emit inert storage for the owned enum in both native and
-independent Python backends. Add accepted oracle-byte/runtime and malformed
-payload-required-without-operand rejection tests. Do not mark F3/F5/F8 closed
-until this case passes.
+F3/F5 payload-free owned-enum construction now has focused frozen-Alpha.2
+oracle/runtime evidence. `NoMarker()` is accepted by the reference compiler;
+the native driver validates its absent operand against the original source
+variant catalog before emission. The established owned-enum `i64`/`int64_t`
+storage placeholder and serialized MIR schema remain unchanged. The Python
+oracle adapter now marks a no-operand owned-enum construct as `owned`, matching
+native MIR, and both independent C emitters initialize inert union storage.
+The fixtures cover both an owned payload followed by a payload-free value and
+the payload-free value alone. They compare exact native/Python canonical MIR,
+C, and public-header bytes, then match GCC execution to the reference
+destructor output (once for the owned payload, none for the empty-only case)
+and exit status. Missing required payload and extra payload on a payload-free
+variant both reject in the reference and native source paths (`4 passed in
+42.59s` for the accepted/rejected family). A direct catalog-guard probe checks valid
+present/absent payloads plus missing, extra, and unknown-variant records with
+interpreter/native parity (`1 passed in 39.94s`). Copy-enum switch (`1 passed
+in 21.32s`) and owned/copy call-result (`2 passed in 84.31s`) regressions pass.
+The Python MIR-to-C emitter file passes all `49` cases, including a direct
+malformed owned-enum storage rejection; snapshot adapter tests pass `31` cases.
+The earlier `4520` was backend-function status `4400 + 120`, not module status
+`4500 + 20`; all temporary diagnostic edits were reverted. This closes this
+constructor mechanism, not the broader F3/F5/F8 families or final-tree gates.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |

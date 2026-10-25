@@ -884,12 +884,15 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                                     source,backend_header,header_selections
                                                 );
                                             }
-                                            let backend_status:i32=canonical_c_append_function_with_numeric_contracts_header_selection_destructors(
-                                                source,body,backend_callable_headers,type_descriptors,numeric_type_descriptors,sources,
-                                                ownership_records,destructor_descriptors,contracts,contract_locals,cfg,placements,
-                                                backend_prototypes,backend_bodies,
-                                                backend_declarations,backend_features,emit_public_header
-                                            );
+                                            var backend_status:i32=canonical_c_validate_owned_enum_constructor_catalog(body,variants);
+                                            if(backend_status==0){
+                                                backend_status=canonical_c_append_function_with_numeric_contracts_header_selection_destructors(
+                                                    source,body,backend_callable_headers,type_descriptors,numeric_type_descriptors,sources,
+                                                    ownership_records,destructor_descriptors,contracts,contract_locals,cfg,placements,
+                                                    backend_prototypes,backend_bodies,
+                                                    backend_declarations,backend_features,emit_public_header
+                                                );
+                                            }
                                             if(backend_status!=0){
                                                 function_status=native_driver_backend_function_failure_status(backend_status);
                                             }else{

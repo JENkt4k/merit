@@ -2104,6 +2104,50 @@ fn canonical_c_owned_return_entry_copy(
 }
 
 fn canonical_c_aggregate_invalid_record_status()->i32{return 120;}
+
+// The serialized owned-enum descriptor uses i64 storage for a payload-free
+// variant. Validate absence against the source catalog before C emission so a
+// missing payload from a payload-bearing constructor still fails closed.
+pub fn canonical_c_validate_owned_enum_constructor_catalog(
+    borrow records:Vec<MirFunctionRecord>,borrow variants:Vec<EnumVariantCatalogEntry>
+)->i32
+{
+    var record_index:i64=0;
+    while(record_index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+        if(function_mir_kind(record)==function_mir_kind_enum_construct()){
+            let type_code:i32=function_mir_type_code(record);
+            if(function_mir_type_is_owned_payload_enum(type_code)!=0){
+                let enum_id:i32=function_mir_owned_payload_enum_id(type_code);
+                let variant:i32=function_mir_symbol_code(record);
+                var matches:i32=0;
+                var variant_index:i64=0;
+                var catalog_enum:i32=-1;
+                var catalog_variant:i32=0;
+                while(variant_index<vec_len<EnumVariantCatalogEntry>(variants)){
+                    let entry:EnumVariantCatalogEntry=vec_get<EnumVariantCatalogEntry>(variants,variant_index);
+                    if(entry.ordinal==0){catalog_enum=checked_add(catalog_enum,1);catalog_variant=0;}
+                    if(catalog_enum==enum_id){
+                        if(catalog_variant==variant){
+                            matches=checked_add(matches,1);
+                            let no_payload:i32=enum_variant_payload_type_code(entry)==function_mir_unresolved_type_code();
+                            if(no_payload!=0){
+                                if(function_mir_left(record)>=0){return canonical_c_aggregate_invalid_record_status();}
+                            }else{
+                                if(function_mir_left(record)<0){return canonical_c_aggregate_invalid_record_status();}
+                            }
+                        }
+                    }
+                    catalog_variant=checked_add(catalog_variant,1);
+                    variant_index=checked_add(variant_index,1);
+                }
+                if(matches!=1){return canonical_c_aggregate_invalid_record_status();}
+            }
+        }
+        record_index=checked_add(record_index,1);
+    }
+    return 0;
+}
 fn canonical_c_aggregate_unsupported_field_status()->i32{return 121;}
 fn canonical_c_aggregate_replace_requires_cleanup_status()->i32{return 122;}
 fn canonical_c_recursive_drop_unsupported_type_status()->i32{return 1;}
@@ -4580,7 +4624,11 @@ requires_caps [allocate]
                             if(payload_count==0){payload_type=function_mir_i64_type_code();}
                             if(canonical_c_scalar_local_type(records,payload_local)!=payload_type){return canonical_c_aggregate_invalid_record_status();}
                         }
-                        if(owned_enum!=0){if(payload_local<0){return canonical_c_aggregate_invalid_record_status();}}
+                        if(owned_enum!=0){if(payload_local<0){
+                            if(canonical_c_recursive_enum_payload_type_i32(enum_type,variant,type_descriptors)!=function_mir_i64_type_code()){
+                                return canonical_c_aggregate_invalid_record_status();
+                            }
+                        }}
                         canonical_mir_append_text(bodies,"    m");canonical_mir_append_i64(bodies,result_local);
                         canonical_mir_append_text(bodies," = (");
                         if(canonical_c_append_type_with_catalog(bodies,enum_type,type_descriptors)!=0){return canonical_c_aggregate_invalid_record_status();}

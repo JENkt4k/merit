@@ -22,6 +22,7 @@ from merit.bootstrap.mir_to_c import (
     _FILESYSTEM_RESULT_ERROR_TAG,
     _FILESYSTEM_RESULT_OK_TAG,
     _filesystem_runtime,
+    _instruction,
     emit_c_header,
     emit_c_module,
 )
@@ -398,6 +399,17 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     assert "m3 = m1.payload;" in generated
     run = compile_and_run(tmp_path, module, "int main(void) { return payload() == 7 ? 0 : 1; }")
     assert run.returncode == 0
+
+
+def test_owned_enum_payload_free_construct_uses_inert_storage_and_rejects_wrong_type():
+    empty = MirInstruction(0, "construct", result=0, symbol="variant_1", ownership="owned")
+    represented = MirType("enum_owned_payload_0", (MirType("Buffer"), I64))
+    assert _instruction(empty, {}, {0: represented}) == [
+        "m0 = (merit_enum_owned_payload_0) { .tag = INT64_C(1), .payload = {0} };"
+    ]
+    malformed = MirType("enum_owned_payload_0", (MirType("Buffer"), MirType("Buffer")))
+    with pytest.raises(MirToCError, match="outside represented storage"):
+        _instruction(empty, {}, {0: malformed})
 
 
 def test_emits_typed_copy_payload_union_and_switches_on_tag(tmp_path):

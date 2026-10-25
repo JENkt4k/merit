@@ -541,13 +541,18 @@ def _instruction(
             raise MirToCError("aggregate construction requires a resolved result type")
         result_type = local_types[instruction.result]
         if not operands:
-            if _copy_payload_enum_identity(result_type) is None:
-                raise MirToCError("payload-free construction requires a Copy-payload enum result")
+            recursive = _recursive_owned_payload_enum_identity(result_type)
+            if _copy_payload_enum_identity(result_type) is None and recursive is None:
+                raise MirToCError("payload-free construction requires a represented enum result")
             if not instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
                 raise MirToCError("payload-free enum construction has an invalid variant symbol")
             ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
             if not ordinal or not ordinal.isdecimal():
                 raise MirToCError("payload-free enum construction has an invalid variant ordinal")
+            if recursive is not None:
+                ordinal_value = int(ordinal)
+                if ordinal_value >= len(recursive[1]) or recursive[1][ordinal_value].name != "i64":
+                    raise MirToCError("payload-free owned enum constructor is outside represented storage")
             payload_initializer = "{0}" if result_type.arguments else "0"
             return [
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
