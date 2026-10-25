@@ -203,21 +203,67 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
                     reason="C compiler unavailable")
-def test_native_nested_owned_vector_cleanup_matches_alpha2_oracle(
-    compiler_paths: tuple[Path, Path], tmp_path: Path,
+@pytest.mark.parametrize(
+    "resource_kind", (
+        "nested-vector", "owned-enum-vector", "empty-enum-vector", "replaced-enum-vector",
+    )
+)
+def test_native_owned_vector_cleanup_matches_alpha2_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path, resource_kind: str,
 ) -> None:
-    source = (
+    declarations = (
         "module nested_vector_cleanup\ncapability allocate;\n"
         'stable("marker-v1") struct Marker { number:i32; }\n'
         "destructor Marker { print(self.number); }\n"
-        "fn main()->i32 { with capability allocate { "
-        "let allocator:Allocator=system_allocator(); "
-        "var inner:Vec<Marker>=vec_new<Marker>(allocator,1); "
-        "let marker:Marker=Marker{number:53}; vec_push<Marker>(inner,marker); "
-        "var outer:Vec<Vec<Marker>>=vec_new<Vec<Marker>>(allocator,1); "
-        "vec_push<Vec<Marker>>(outer,inner); "
-        "} return 0; }\n"
+    )
+    if resource_kind == "nested-vector":
+        body = (
+            "var inner:Vec<Marker>=vec_new<Marker>(allocator,1); "
+            "let marker:Marker=Marker{number:53}; vec_push<Marker>(inner,marker); "
+            "var outer:Vec<Vec<Marker>>=vec_new<Vec<Marker>>(allocator,1); "
+            "vec_push<Vec<Marker>>(outer,inner); "
+        )
+        expected_output = b"53\n"
+    else:
+        declarations += "enum MaybeMarker { SomeMarker(Marker), NoMarker }\n"
+        if resource_kind == "owned-enum-vector":
+            payload = "let marker:Marker=Marker{number:61}; let wrapped:MaybeMarker=SomeMarker(marker); "
+            expected_output = b"61\n"
+        elif resource_kind == "replaced-enum-vector":
+            payload = (
+                "let first:Marker=Marker{number:61}; "
+                "let wrapped:MaybeMarker=SomeMarker(first); "
+                "vec_push<MaybeMarker>(values,wrapped); "
+                "let second:Marker=Marker{number:67}; "
+                "let replacement:MaybeMarker=SomeMarker(second); "
+                "vec_replace<MaybeMarker>(values,0,replacement); "
+            )
+            expected_output = b"61\n67\n"
+        else:
+            payload = "let wrapped:MaybeMarker=NoMarker(); "
+            expected_output = b""
+        body = (
+            "var values:Vec<MaybeMarker>=vec_new<MaybeMarker>(allocator,1); "
+            + payload
+        )
+        if resource_kind != "replaced-enum-vector":
+            body += "vec_push<MaybeMarker>(values,wrapped); "
+    source = (
+        declarations + "fn main()->i32 { with capability allocate { "
+        "let allocator:Allocator=system_allocator(); " + body
+        + "} return 0; }\n"
     ).encode("utf-8")
+    reference_root = tmp_path / "reference-project"
+    (reference_root / "src").mkdir(parents=True)
+    (reference_root / "Merit.toml").write_text(
+        '[package]\nname = "nested_vector_cleanup"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (reference_root / "src/main.mrt").write_bytes(source)
+    _, _, reference = build(load_project(reference_root / "Merit.toml"), tmp_path / "reference-program")
+    expected = subprocess.run([str(reference)], capture_output=True)
+    assert expected.returncode == 0, expected.stderr
+    assert expected.stdout.replace(b"\r\n", b"\n") == expected_output
     request = encode_project_request(ProjectRequest(
         "nested_vector_cleanup", "src/main.mrt",
         (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
@@ -257,17 +303,8 @@ def test_native_nested_owned_vector_cleanup_matches_alpha2_oracle(
     assert linked.returncode == 0, linked.stderr
     actual = subprocess.run([str(executable)], capture_output=True)
     assert actual.returncode == 0, actual.stderr
-    reference_root = tmp_path / "reference-project"
-    (reference_root / "src").mkdir(parents=True)
-    (reference_root / "Merit.toml").write_text(
-        '[package]\nname = "nested_vector_cleanup"\nentry = "src/main.mrt"\n'
-        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
-    )
-    (reference_root / "src/main.mrt").write_bytes(source)
-    _, _, reference = build(load_project(reference_root / "Merit.toml"), tmp_path / "reference-program")
-    expected = subprocess.run([str(reference)], capture_output=True)
     assert (actual.returncode, actual.stdout) == (expected.returncode, expected.stdout)
-    assert actual.stdout.replace(b"\r\n", b"\n") == b"53\n"
+    assert actual.stdout.replace(b"\r\n", b"\n") == expected_output
 
 
 @pytest.mark.parametrize("constructor", ["SomeMarker()", "NoMarker(7)"])

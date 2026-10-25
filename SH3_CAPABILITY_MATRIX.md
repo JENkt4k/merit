@@ -1315,6 +1315,13 @@ and both payload-free owned-enum cases passed together (`11 passed in
 resource/project topologies or final-tree gates. The short canonical `pr`
 gate passed on this candidate tree in 152.394 seconds
 (`MERIT_GATE_RESULT=PASS`).
+The same native-v4 artifact boundary now also covers vectors of owned enums:
+`SomeMarker(Marker)` performs one payload-destructor call, while `NoMarker()`
+performs none. Replacing an owned enum element drops the old payload before
+the new one drops at scope exit. Together with the nested `Vec<Vec<Marker>>`
+case, all four Alpha.2-accepted resource shapes match independent MIR/C/header
+bytes and reference/GCC runtime output (`4 passed in 42.12s`). Other nested
+resource and project combinations remain unproven.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
