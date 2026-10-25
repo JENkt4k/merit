@@ -125,6 +125,73 @@ def test_native_acceptance_project_matches_oracle(
         ).read_bytes()
 
 
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_payload_free_enum_storage_matches_alpha2_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    (source_root / "src").mkdir(parents=True)
+    (source_root / "Merit.toml").write_text(
+        '[package]\nname = "probe"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (source_root / "src/main.mrt").write_text(
+        "module probe\nstruct Marker { number:i32; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "enum Maybe { SomeMarker(Marker), NoMarker }\n"
+        "pub fn main()->i32 { let marker:Marker=Marker{number:23}; "
+        "let value:Maybe=SomeMarker(marker); return 7; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    project = load_project(source_root / "Merit.toml")
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, legacy_compiler = compiler_paths
+    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert native_response.returncode == 0, native_response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in native_response.stdout.splitlines()
+    )
+    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
+    assert legacy_response.returncode == 0, legacy_response.stderr.decode("utf-8", errors="replace")
+    bundle = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_response.stdout.splitlines()
+    )
+    oracle = build_replacement_project_artifact((
+        ReplacementFunctionInput.from_values(
+            source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+            module_name=bundle.module_name, snapshot_values=values,
+            capability_names={index: name for index, name in enumerate(bundle.capability_names)},
+        ) for values in bundle.encoded_snapshots
+    ), module_name=bundle.module_name)
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    module = parse_mir(json.loads(artifact.canonical_mir_bytes))
+    assert any(
+        len(local.type.arguments) == 2 and local.type.arguments[1].name == "i64"
+        for function in module.functions for local in function.locals
+        if local.type.name.startswith("enum_owned_payload_")
+    )
+    c_source = artifact.c_source_bytes.decode("utf-8")
+    assert c_source == oracle.c_source
+    assert "int64_t variant_1;" in c_source
+    generated = tmp_path / "native.c"
+    generated.write_bytes(artifact.c_source_bytes)
+    harness = tmp_path / "harness.c"
+    harness.write_text('#include "native.c"\nint main(void) { return merit_main(); }\n',
+                       encoding="utf-8", newline="\n")
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    executable = tmp_path / "native.exe"
+    subprocess.run([compiler, "-std=c11", str(harness), "-o", str(executable)],
+                   check=True, capture_output=True, text=True)
+    _, _, reference = build(project, tmp_path / "reference" / "program")
+    native_run = subprocess.run([str(executable)], capture_output=True)
+    reference_run = subprocess.run([str(reference)], capture_output=True)
+    assert native_run.returncode == reference_run.returncode == 7
+    assert native_run.stdout == reference_run.stdout
+    assert native_run.stdout.replace(b"\r\n", b"\n") == b"23\n"
+
+
 def test_native_compiler_project_emits_deterministic_complete_artifact(
     compiler_paths: tuple[Path, Path],
 ) -> None:
