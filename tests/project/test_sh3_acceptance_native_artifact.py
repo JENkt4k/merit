@@ -201,6 +201,75 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
     assert native_run.stdout.replace(b"\r\n", b"\n") == expected_output
 
 
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_nested_owned_vector_cleanup_matches_alpha2_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    source = (
+        "module nested_vector_cleanup\ncapability allocate;\n"
+        'stable("marker-v1") struct Marker { number:i32; }\n'
+        "destructor Marker { print(self.number); }\n"
+        "fn main()->i32 { with capability allocate { "
+        "let allocator:Allocator=system_allocator(); "
+        "var inner:Vec<Marker>=vec_new<Marker>(allocator,1); "
+        "let marker:Marker=Marker{number:53}; vec_push<Marker>(inner,marker); "
+        "var outer:Vec<Vec<Marker>>=vec_new<Vec<Marker>>(allocator,1); "
+        "vec_push<Vec<Marker>>(outer,inner); "
+        "} return 0; }\n"
+    ).encode("utf-8")
+    request = encode_project_request(ProjectRequest(
+        "nested_vector_cleanup", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
+    ))
+    native_compiler, legacy_compiler = compiler_paths
+    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert native_response.returncode == 0, native_response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in native_response.stdout.splitlines()
+    )
+    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
+    assert legacy_response.returncode == 0, legacy_response.stderr.decode("utf-8", errors="replace")
+    bundle = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_response.stdout.splitlines()
+    )
+    oracle = build_replacement_project_artifact((
+        ReplacementFunctionInput.from_values(
+            source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+            module_name=bundle.module_name, snapshot_values=values,
+            capability_names={index: name for index, name in enumerate(bundle.capability_names)},
+        ) for values in bundle.encoded_snapshots
+    ), module_name=bundle.module_name)
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    assert artifact.c_source_bytes.decode("utf-8") == oracle.c_source
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        oracle.module, exported_names=frozenset()
+    )
+    generated = tmp_path / "nested-owned-vector.c"
+    generated.write_bytes(artifact.c_source_bytes)
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    executable = tmp_path / "nested-owned-vector.exe"
+    linked = subprocess.run(
+        [compiler, "-std=c11", str(generated), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert linked.returncode == 0, linked.stderr
+    actual = subprocess.run([str(executable)], capture_output=True)
+    assert actual.returncode == 0, actual.stderr
+    reference_root = tmp_path / "reference-project"
+    (reference_root / "src").mkdir(parents=True)
+    (reference_root / "Merit.toml").write_text(
+        '[package]\nname = "nested_vector_cleanup"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (reference_root / "src/main.mrt").write_bytes(source)
+    _, _, reference = build(load_project(reference_root / "Merit.toml"), tmp_path / "reference-program")
+    expected = subprocess.run([str(reference)], capture_output=True)
+    assert (actual.returncode, actual.stdout) == (expected.returncode, expected.stdout)
+    assert actual.stdout.replace(b"\r\n", b"\n") == b"53\n"
+
+
 @pytest.mark.parametrize("constructor", ["SomeMarker()", "NoMarker(7)"])
 def test_native_owned_enum_constructor_rejects_wrong_payload_shape(
     compiler_paths: tuple[Path, Path], tmp_path: Path, constructor: str,

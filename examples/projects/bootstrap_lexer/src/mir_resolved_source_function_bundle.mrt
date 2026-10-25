@@ -1485,7 +1485,8 @@ requires_caps [allocate]
 // entrypoint fail-closed for owned elements until the owned path is selected.
 fn canonical_c_append_vector_runtime_with_source(
     borrow source:Buffer,type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
-    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,allow_owned:i32,borrow_mut output:Buffer
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,allow_owned:i32,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -1508,10 +1509,11 @@ requires_caps [allocate]
     if(owned!=allow_owned){return 7;}
     if(child==function_mir_unit_type_code()){return 7;}
     var element_type:Buffer=buffer_new(allocator,32);
-    if(canonical_c_append_type_with_catalog(element_type,child,descriptors)!=0){
+    if(canonical_c_append_type_with_complete_source_catalog(
+        source,element_type,child,descriptors,numeric_descriptors
+    )!=0){
         return 7;
     }
-    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
     var suffix:Buffer=buffer_new(allocator,64);
     let prefix_length:i64=string_len("merit_Vec_");
     bootstrap_buffer_append(suffix,vector_type,prefix_length,checked_sub(buffer_len(vector_type),prefix_length));
@@ -1565,7 +1567,7 @@ requires_caps [allocate]
         bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
         canonical_mir_append_text(element_at," *)value->data)[index]");
         if(canonical_c_append_recursive_resource_drop_with_destructors(
-            source,element_at,child,descriptors,numeric_descriptors,no_destructors,4,0,output
+            source,element_at,child,descriptors,numeric_descriptors,destructor_catalog,4,0,output
         )!=0){return 7;}
         drop(element_at);
     }else{
@@ -1595,7 +1597,7 @@ requires_caps [allocate]
         bootstrap_buffer_append(element_at,element_type,0,buffer_len(element_type));
         canonical_mir_append_text(element_at," *)value->data)[index]");
         if(canonical_c_append_recursive_resource_drop_with_destructors(
-            source,element_at,child,descriptors,numeric_descriptors,no_destructors,8,0,output
+            source,element_at,child,descriptors,numeric_descriptors,destructor_catalog,8,0,output
         )!=0){return 7;}
         drop(element_at);
     }else{
@@ -1612,7 +1614,7 @@ requires_caps [allocate]
     buffer_push(output,40);bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *destination, ");bootstrap_buffer_append(output,vector_type,0,buffer_len(vector_type));
     canonical_mir_append_text(output," *source) {\n    if (destination == source) { fprintf(stderr, \"Merit vector transfer aliases itself\\n\"); exit(90); }\n    if (!merit_allocator_compatible(destination->allocator, source->allocator)) { fprintf(stderr, \"Merit incompatible vector allocators\\n\"); exit(90); }\n    if (destination->len) { fprintf(stderr, \"Merit vector transfer destination is not empty\\n\"); exit(90); }\n    free(destination->data); destination->data = source->data; destination->len = source->len; destination->capacity = source->capacity;\n    source->data = NULL; source->len = 0; source->capacity = 0;\n}\n");
-    drop(no_destructors);drop(suffix);drop(element_type);drop(vector_type);
+    drop(suffix);drop(element_type);drop(vector_type);
     return 0;
 }
 
@@ -1623,10 +1625,11 @@ requires_caps [allocate]
 {
     var empty_source:Buffer=buffer_new(system_allocator(),0);
     var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    var empty_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_vector_runtime_with_source(
-        empty_source,type_code,descriptors,empty_numeric,0,output
+        empty_source,type_code,descriptors,empty_numeric,empty_destructors,0,output
     );
-    drop(empty_numeric);drop(empty_source);return status;
+    drop(empty_destructors);drop(empty_numeric);drop(empty_source);return status;
 }
 
 pub fn canonical_c_append_owned_vector_runtime(
@@ -1636,10 +1639,11 @@ requires_caps [allocate]
 {
     var empty_source:Buffer=buffer_new(system_allocator(),0);
     var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
+    var empty_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_vector_runtime_with_source(
-        empty_source,type_code,descriptors,empty_numeric,1,output
+        empty_source,type_code,descriptors,empty_numeric,empty_destructors,1,output
     );
-    drop(empty_numeric);drop(empty_source);return status;
+    drop(empty_destructors);drop(empty_numeric);drop(empty_source);return status;
 }
 
 fn canonical_c_append_scalar_prototype(
@@ -6425,7 +6429,8 @@ fn canonical_c_finish_module_with_copy_vectors(
     borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
     borrow legacy_destructor_codes:Vec<i32>,
     borrow numeric_type_codes:Vec<i32>,borrow descriptors:Vec<MirTypeDescriptor>,
-    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,borrow_mut output:Buffer
+    borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -6472,14 +6477,34 @@ requires_caps [allocate]
         vec_push<i32>(sorted_codes,best_code);
         selected_count=checked_add(selected_count,1);
     }
-    var sorted_index:i64=0;
-    while(sorted_index<vec_len<i32>(sorted_codes)){
-        let vector_type_code:i32=vec_get<i32>(sorted_codes,sorted_index);
+    // The frozen oracle orders typedefs by type mangle, then runtime helpers
+    // by vector depth and mangle. Keep these two orders separate.
+    var typedef_codes:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(vector_type_codes));
+    while(vec_len<i32>(typedef_codes)<vec_len<i32>(vector_type_codes)){
+        var best_typedef_code:i32=function_mir_unresolved_type_code();
+        var candidate_index:i64=0;
+        while(candidate_index<vec_len<i32>(vector_type_codes)){
+            let candidate_code:i32=vec_get<i32>(vector_type_codes,candidate_index);
+            if(canonical_c_vector_code_selected(candidate_code,typedef_codes)==0){
+                var candidate_name:Buffer=buffer_new(allocator,64);
+                if(canonical_c_append_vector_type_name_with_source(source,candidate_code,descriptors,candidate_name)!=0){return 6;}
+                if(best_typedef_code==function_mir_unresolved_type_code()){
+                    best_typedef_code=candidate_code;
+                }else{
+                    var best_name:Buffer=buffer_new(allocator,64);
+                    if(canonical_c_append_vector_type_name_with_source(source,best_typedef_code,descriptors,best_name)!=0){return 6;}
+                    if(canonical_c_buffer_compare(candidate_name,best_name)<0){best_typedef_code=candidate_code;}
+                    drop(best_name);
+                }
+                drop(candidate_name);
+            }
+            candidate_index=checked_add(candidate_index,1);
+        }
+        if(best_typedef_code==function_mir_unresolved_type_code()){return 6;}
         var vector_name:Buffer=buffer_new(allocator,64);
-        let name_status:i32=canonical_c_append_vector_type_name_with_source(source,vector_type_code,descriptors,vector_name);
-        if(name_status!=0){return name_status;}
-        if(sorted_index>0){
-            let prior_code:i32=vec_get<i32>(sorted_codes,checked_sub(sorted_index,1));
+        if(canonical_c_append_vector_type_name_with_source(source,best_typedef_code,descriptors,vector_name)!=0){return 6;}
+        if(vec_len<i32>(typedef_codes)>0){
+            let prior_code:i32=vec_get<i32>(typedef_codes,checked_sub(vec_len<i32>(typedef_codes),1));
             var prior_name:Buffer=buffer_new(allocator,64);
             if(canonical_c_append_vector_type_name_with_source(source,prior_code,descriptors,prior_name)!=0){return 6;}
             if(canonical_c_buffer_compare(vector_name,prior_name)==0){return 6;}
@@ -6488,6 +6513,15 @@ requires_caps [allocate]
         canonical_mir_append_text(vector_typedefs,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
         bootstrap_buffer_append(vector_typedefs,vector_name,0,buffer_len(vector_name));
         canonical_mir_append_text(vector_typedefs,";\n");
+        vec_push<i32>(typedef_codes,best_typedef_code);
+        drop(vector_name);
+    }
+    var sorted_index:i64=0;
+    while(sorted_index<vec_len<i32>(sorted_codes)){
+        let vector_type_code:i32=vec_get<i32>(sorted_codes,sorted_index);
+        var vector_name:Buffer=buffer_new(allocator,64);
+        let name_status:i32=canonical_c_append_vector_type_name_with_source(source,vector_type_code,descriptors,vector_name);
+        if(name_status!=0){return name_status;}
         var element_code:i32=function_mir_unresolved_type_code();
         var descriptor_index:i64=0;
         while(descriptor_index<vec_len<MirTypeDescriptor>(descriptors)){
@@ -6501,7 +6535,8 @@ requires_caps [allocate]
         var owned_element:i32=function_mir_type_uses_ownership_transfer(element_code);
         if(canonical_c_copy_aggregate_field_count(element_code,descriptors,numeric_descriptors)>0){owned_element=0;}
         runtime_status=canonical_c_append_vector_runtime_with_source(
-            source,vector_type_code,descriptors,numeric_descriptors,owned_element,vector_runtime
+            source,vector_type_code,descriptors,numeric_descriptors,
+            destructor_catalog,owned_element,vector_runtime
         );
         if(runtime_status!=0){return runtime_status;}
         drop(vector_name);
@@ -6745,7 +6780,7 @@ requires_caps [allocate]
     if(emitted_runtime!=0){buffer_push(output,10);}
     bootstrap_buffer_append(output,bodies,0,buffer_len(bodies));buffer_push(output,10);
     drop(filesystem_write_codes);drop(filesystem_read_codes);
-    drop(vector_runtime);drop(vector_typedefs);drop(sorted_codes);
+    drop(vector_runtime);drop(vector_typedefs);drop(typedef_codes);drop(sorted_codes);
     return 0;
 }
 
@@ -6762,12 +6797,13 @@ requires_caps [allocate]
     var no_numeric_codes:Vec<i32>=vec_new<i32>(allocator,0);
     var no_legacy_destructors:Vec<i32>=vec_new<i32>(allocator,0);
     var no_numeric_descriptors:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(allocator,0);
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(allocator,0);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
         empty_source,prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,no_legacy_destructors,
-        no_numeric_codes,descriptors,no_numeric_descriptors,output
+        no_numeric_codes,descriptors,no_numeric_descriptors,no_destructors,output
     );
-    drop(no_numeric_descriptors);drop(no_legacy_destructors);drop(no_numeric_codes);drop(empty_source);
+    drop(no_destructors);drop(no_numeric_descriptors);drop(no_legacy_destructors);drop(no_numeric_codes);drop(empty_source);
     return status;
 }
 
@@ -6878,13 +6914,14 @@ pub fn canonical_c_finish_owned_aggregate_vector_numeric_catalog_module(
 requires_caps [allocate]
 {
     var no_legacy_destructors:Vec<i32>=vec_new<i32>(system_allocator(),0);
+    var no_destructors:Vec<MirDestructorDescriptor>=vec_new<MirDestructorDescriptor>(system_allocator(),0);
     var empty_source:Buffer=buffer_new(system_allocator(),0);
     let status:i32=canonical_c_finish_module_with_copy_vectors(
         empty_source,prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,no_legacy_destructors,
-        numeric_type_codes,descriptors,numeric_descriptors,output
+        numeric_type_codes,descriptors,numeric_descriptors,no_destructors,output
     );
-    drop(no_legacy_destructors);drop(empty_source);
+    drop(no_destructors);drop(no_legacy_destructors);drop(empty_source);
     return status;
 }
 
@@ -6894,14 +6931,14 @@ pub fn canonical_c_finish_owned_aggregate_vector_numeric_destructor_catalog_modu
     borrow owned_field_codes:Vec<i32>,borrow owned_enum_codes:Vec<i32>,
     borrow legacy_destructor_codes:Vec<i32>,borrow numeric_type_codes:Vec<i32>,
     borrow descriptors:Vec<MirTypeDescriptor>,borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
-    borrow_mut output:Buffer
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
     return canonical_c_finish_module_with_copy_vectors(
         source,prototypes,bodies,features,vector_type_codes,aggregate_type_codes,enum_type_codes,
         owned_field_codes,owned_enum_codes,legacy_destructor_codes,
-        numeric_type_codes,descriptors,numeric_descriptors,output
+        numeric_type_codes,descriptors,numeric_descriptors,destructor_catalog,output
     );
 }
 

@@ -1300,6 +1300,22 @@ Python-oracle C/header bytes, and GCC compilation (`32 passed in 659.66s` on
 Windows). The prior sampled-module qualification for this particular F5
 mechanism is superseded. This does not cover other F5 instruction families.
 
+The next F3/F4 vector-resource boundary exposed a real native-v4 `4507`
+failure for the Alpha.2-accepted `Vec<Vec<Marker>>` cleanup shape with a
+source-defined `Marker` destructor. The module emitter now carries the
+validated source and destructor catalogs into vector-runtime element spelling
+and recursive drop, and keeps the oracle's lexical typedef order separate
+from its depth-ordered helper definitions. Complete native/Python MIR, C,
+and header bytes now match; GCC execution matches a reference project build
+and prints the owned `Marker` destructor exactly once (`1 passed in 42.04s`).
+Five adjacent vector ordering, owned-element drop, and malformed-catalog
+cases passed in 194.32 seconds; all nine acceptance artifact differentials
+and both payload-free owned-enum cases passed together (`11 passed in
+45.08s`). This closes the nested owned-vector cleanup mechanism, not all
+resource/project topologies or final-tree gates. The short canonical `pr`
+gate passed on this candidate tree in 152.394 seconds
+(`MERIT_GATE_RESULT=PASS`).
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial; committed candidate.** Catalog type fixtures cover builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded extremes, malformed cycles, and invalid decimal. The complete 46-module compiler MIR now matches independent Python materialization on `740425c`; nine non-compiler acceptance applications have focused native/Python differential evidence. The earlier `4129` seven-project failure sweep predates this candidate and is not a current result. Broader malformed catalogs and final-tree gate evidence remain open. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |

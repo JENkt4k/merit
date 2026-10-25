@@ -1078,7 +1078,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 backend_vector_types,backend_aggregate_types,backend_copy_enum_types,
                 backend_owned_field_types,backend_owned_enum_types,backend_legacy_destructor_types,
                 backend_numeric_types,
-                type_descriptors,numeric_type_descriptors,backend_source
+                type_descriptors,numeric_type_descriptors,destructor_descriptors,backend_source
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
             let public_status:i32=canonical_c_finish_public_header_from_catalog_selected(
