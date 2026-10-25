@@ -4734,6 +4734,73 @@ def test_merit_switch_c_backend_groups_interleaved_cfg_rows(tmp_path: Path) -> N
     assert outputs[0] == outputs[1]
 
 
+def test_merit_switch_c_backend_preserves_sparse_canonical_block_ids(tmp_path: Path) -> None:
+    true_block = 5
+    false_block = 9
+    probe = CANONICAL_C_SWITCH_PROBE.replace(
+        "cfg_block(1,1)", f"cfg_block({true_block},1)",
+    ).replace(
+        "cfg_block(2,2)", f"cfg_block({false_block},2)",
+    ).replace(
+        "cfg_return(1,0)", f"cfg_return({true_block},0)",
+    ).replace(
+        "cfg_return(2,1)", f"cfg_return({false_block},1)",
+    ).replace(
+        "cfg_switch_case(0,0,2,1,0)",
+        f"cfg_switch_case(0,0,2,{true_block},0)",
+    ).replace(
+        "cfg_switch_default(0,0,2,1)",
+        f"cfg_switch_default(0,0,{false_block},1)",
+    )
+    assert probe != CANONICAL_C_SWITCH_PROBE
+    root = _project(tmp_path, probe)
+    project = load_project(root / "Merit.toml")
+    interpreted = interpret(project)
+    _, _, executable = build(project, root / "build" / "sparse-switch")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert native == interpreted
+    values = [int(value) for value in native.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "compute", MirType("i64"), (
+            MirLocal(0, "_t0", MirType("i64")), MirLocal(1, "_t1", MirType("i64")),
+            MirLocal(2, "_t2", MirType("bool")),
+        ), (
+            MirBlock(0, (
+                MirInstruction(0, "const", result=0, value=2, ownership="value"),
+                MirInstruction(1, "const", result=1, value=3, ownership="value"),
+                MirInstruction(2, "binary", result=2, operands=(0, 1), symbol="==", numeric_policy="exact"),
+                MirInstruction(3, "print", operands=(2,)),
+            ), MirTerminator("switch", operands=(0,), targets=(true_block, false_block), cases=(2,))),
+            MirBlock(true_block, (), MirTerminator("return", operands=(0,))),
+            MirBlock(false_block, (), MirTerminator("return", operands=(1,))),
+        ), 0, exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
+    generated_c = tmp_path / "sparse-switch.c"
+    generated_h = tmp_path / "sparse-switch.h"
+    driver_c = tmp_path / "sparse-switch-driver.c"
+    generated_c.write_text(c_source, encoding="utf-8", newline="\n")
+    generated_h.write_text(c_header, encoding="utf-8", newline="\n")
+    driver_c.write_text(
+        '#include "sparse-switch.h"\nint main(void) { return merit_compute() == 2 ? 0 : 1; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    cc = shutil.which("cc") or shutil.which("gcc")
+    assert cc is not None
+    program = tmp_path / "sparse-switch-program"
+    subprocess.run(
+        [cc, "-std=c11", str(generated_c), str(driver_c), "-o", str(program)],
+        check=True, text=True, capture_output=True,
+    )
+    result = subprocess.run([str(program)], check=True, text=True, capture_output=True)
+    assert result.stdout == "0\n"
+
+
 @pytest.mark.parametrize(
     ("probe", "status"),
     [
@@ -4775,6 +4842,16 @@ def test_merit_switch_c_backend_groups_interleaved_cfg_rows(tmp_path: Path) -> N
                 "vec_push<MirCfgRecord>(cfg,cfg_switch_default(0,0,2,2));",
             ),
             94,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace("cfg_block(2,2)", "cfg_block(1,2)"),
+            6,
+        ),
+        (
+            CANONICAL_C_SWITCH_PROBE.replace(
+                "cfg_switch_default(0,0,2,1)", "cfg_switch_default(0,0,4,1)",
+            ),
+            27,
         ),
     ],
 )

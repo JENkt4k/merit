@@ -3690,16 +3690,24 @@ requires_caps [allocate]
         let block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
         if(cfg_kind(block)!=cfg_block_kind()){cfg_index=cfg_record_count;}
         else{
-        if(cfg_block_id(block)!=cfg_block_count){return 6;}
+        if(cfg_block_id(block)<0){return 6;}
         if(cfg_ordinal(block)!=cfg_block_count){return 6;}
+        var prior_block_index:i64=0;
+        while(prior_block_index<cfg_block_count){
+            let prior_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,prior_block_index);
+            if(cfg_block_id(prior_block)==cfg_block_id(block)){return 6;}
+            prior_block_index=checked_add(prior_block_index,1);
+        }
         cfg_block_count=checked_add(cfg_block_count,1);
         cfg_index=checked_add(cfg_index,1);
         }
     }
     if(cfg_block_count==0){return 5;}
     cfg_index=cfg_block_count;
-    var terminator_block_id:i64=0;
-    while(terminator_block_id<cfg_block_count){
+    var terminator_block_ordinal:i64=0;
+    while(terminator_block_ordinal<cfg_block_count){
+        let ordered_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,terminator_block_ordinal);
+        let terminator_block_id:i64=cfg_block_id(ordered_block);
         if(cfg_index>=cfg_record_count){return 4;}
         let terminator:MirCfgRecord=vec_get<MirCfgRecord>(cfg,cfg_index);
         if(cfg_block_id(terminator)!=terminator_block_id){return 8;}
@@ -3750,7 +3758,7 @@ requires_caps [allocate]
             }
             cfg_index=checked_add(cfg_index,1);
         }
-        terminator_block_id=checked_add(terminator_block_id,1);
+        terminator_block_ordinal=checked_add(terminator_block_ordinal,1);
     }
     if(cfg_index!=cfg_record_count){return 7;}
     var local_count:i64=0;
@@ -4058,7 +4066,7 @@ requires_caps [allocate]
     while(placement_scan<vec_len<MirPlacementRecord>(placements)){
         let placement:MirPlacementRecord=vec_get<MirPlacementRecord>(placements,placement_scan);
         if(placement_block_id(placement)<0){return 87;}
-        if(placement_block_id(placement)>=cfg_block_count){return 87;}
+        if(canonical_mir_cfg_block_exists(cfg,placement_block_id(placement))==0){return 87;}
         var matching_placements:i64=0;
         var duplicate_scan:i64=0;
         while(duplicate_scan<vec_len<MirPlacementRecord>(placements)){
@@ -4083,7 +4091,7 @@ requires_caps [allocate]
                 if(condition_type!=function_mir_i32_type_code()){return 86;}
             }
             if(cfg_target_b(terminator)<0){return 80;}
-            if(cfg_target_b(terminator)>=cfg_block_count){return 80;}
+            if(canonical_mir_cfg_block_exists(cfg,cfg_target_b(terminator))==0){return 80;}
         }
         if(term_kind==cfg_return_kind()){
             if(return_type_code!=function_mir_unit_type_code()){
@@ -4135,7 +4143,7 @@ requires_caps [allocate]
         if(term_kind==cfg_switch_default_kind()){has_target=1;}
         if(has_target!=0){
             if(cfg_target_a(terminator)<0){return 27;}
-            if(cfg_target_a(terminator)>=cfg_block_count){return 27;}
+            if(canonical_mir_cfg_block_exists(cfg,cfg_target_a(terminator))==0){return 27;}
         }
         cfg_index=checked_add(cfg_index,1);
     }
@@ -4282,12 +4290,13 @@ requires_caps [allocate]
     if(destructor_type_code!=0){canonical_mir_append_text(bodies,"    goto b_destructor_0;\n");}
     else{canonical_mir_append_text(bodies,"    goto b0;\n");}
     var emitted_placements:i64=0;
-    var active_block_id:i64=0;
+    var active_block_ordinal:i64=0;
     var cfg_emit_index:i64=cfg_block_count;
-    while(active_block_id<cfg_block_count){
-        let active_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,active_block_id);
+    while(active_block_ordinal<cfg_block_count){
+        let active_block:MirCfgRecord=vec_get<MirCfgRecord>(cfg,active_block_ordinal);
+        let active_block_id:i64=cfg_block_id(active_block);
         if(cfg_kind(active_block)!=cfg_block_kind()){return 5;}
-        if(cfg_block_id(active_block)!=active_block_id){return 6;}
+        if(cfg_ordinal(active_block)!=active_block_ordinal){return 6;}
         var c_block_reachable:i32=0;
         var c_reachable_index:i64=0;
         while(c_reachable_index<vec_len<i64>(c_reachable)){
@@ -5336,7 +5345,7 @@ requires_caps [allocate]
                 }
             }
         }
-        active_block_id=checked_add(active_block_id,1);
+        active_block_ordinal=checked_add(active_block_ordinal,1);
     }
     var reachable_placement_count:i64=0;
     var counted_placement_index:i64=0;
@@ -5392,8 +5401,15 @@ requires_caps [allocate]
         while(index<vec_len<MirCfgRecord>(cfg)){
             let record:MirCfgRecord=vec_get<MirCfgRecord>(cfg,index);
             if(cfg_kind(record)==cfg_block_kind()){
-                if(cfg_block_id(record)==block_count){
+                if(cfg_ordinal(record)==block_count){
                     if(found!=0){return 6;}
+                    if(cfg_block_id(record)<0){return 6;}
+                    var prior_index:i64=0;
+                    while(prior_index<block_count){
+                        let prior:MirCfgRecord=vec_get<MirCfgRecord>(ordered,prior_index);
+                        if(cfg_block_id(prior)==cfg_block_id(record)){return 6;}
+                        prior_index=checked_add(prior_index,1);
+                    }
                     vec_push<MirCfgRecord>(ordered,vec_get<MirCfgRecord>(cfg,index));found=1;
                 }
             }
@@ -5403,8 +5419,10 @@ requires_caps [allocate]
         else{block_count=checked_add(block_count,1);}
     }
     if(block_count==0){return 5;}
-    var block_id:i64=0;
-    while(block_id<block_count){
+    var block_ordinal:i64=0;
+    while(block_ordinal<block_count){
+        let ordered_block:MirCfgRecord=vec_get<MirCfgRecord>(ordered,block_ordinal);
+        let block_id:i64=cfg_block_id(ordered_block);
         var switch_rows:i64=0;
         var direct_rows:i64=0;
         var index:i64=0;
@@ -5454,7 +5472,7 @@ requires_caps [allocate]
                 index=checked_add(index,1);
             }
         }
-        block_id=checked_add(block_id,1);
+        block_ordinal=checked_add(block_ordinal,1);
     }
     if(vec_len<MirCfgRecord>(ordered)!=vec_len<MirCfgRecord>(cfg)){return 7;}
     let status:i32=canonical_c_append_function_core_ordered(
