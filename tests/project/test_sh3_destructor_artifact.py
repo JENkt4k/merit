@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from merit.compiler import CompileError
 from merit.bootstrap.mir_contract import canonical_mir_json, parse_mir
 from merit.bootstrap.mir_to_c import _destructor_c_name, _type, emit_c_header, emit_c_module
 from merit.bootstrap.replacement_project import (
@@ -17,6 +18,7 @@ from merit.bootstrap.replacement_project import (
 )
 from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
 from merit.bootstrap.resolved_source_function_bundle import (
+    ResolvedSourceFunctionBundleError,
     decode_native_project_artifact_transport,
     decode_resolved_source_function_bundle,
 )
@@ -238,9 +240,7 @@ def test_native_source_destructor_catalog_fails_closed(
     assert completed.stderr.strip() == f"replacement driver status {expected_status}".encode("ascii")
 
 
-@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
-                    reason="C compiler unavailable")
-def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -> None:
+def test_native_cross_module_conflicting_destructor_rejects(tmp_path: Path) -> None:
     repository = Path(__file__).resolve().parents[2]
     compiler_root = tmp_path / "compiler"
     shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
@@ -253,6 +253,68 @@ def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -
         encoding="utf-8", newline="\n",
     )
     _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    helper_source = (
+        "module helper\npub struct Marker { number:i64; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "pub fn get()->i32 { return 1; }\n"
+    )
+    main_source = (
+        "module probe\nimport helper;\n"
+        "destructor Marker { print(self.number); }\n"
+        "pub fn main()->i32 { return helper.get(); }\n"
+    )
+    source_root = tmp_path / "input"
+    (source_root / "src").mkdir(parents=True)
+    (source_root / "Merit.toml").write_text(
+        '[package]\nname = "probe"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (source_root / "src/helper.mrt").write_text(helper_source, encoding="utf-8", newline="\n")
+    (source_root / "src/main.mrt").write_text(main_source, encoding="utf-8", newline="\n")
+    with pytest.raises(CompileError, match="M5500: duplicate destructor"):
+        load_project(source_root / "Merit.toml")
+    request = encode_project_request(ProjectRequest(
+        package="probe", entry="src/main.mrt",
+        units=(
+            ProjectRequestUnit(path="src/helper.mrt", source=helper_source.encode("utf-8")),
+            ProjectRequestUnit(path="src/main.mrt", source=main_source.encode("utf-8")),
+        ),
+    ))
+    completed = subprocess.run([str(executable)], input=request, capture_output=True)
+    assert completed.returncode == 971, completed.stderr.decode("utf-8", errors="replace")
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="missing metadata"):
+        decode_native_project_artifact_transport(int(line) for line in completed.stdout.splitlines())
+    assert completed.stderr.strip() == b"replacement driver status 971"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+@pytest.mark.parametrize("local_destructor", (False, True), ids=("imported-only", "two-modules"))
+def test_native_multimodule_destructor_artifact_matches_oracle(
+    tmp_path: Path, local_destructor: bool,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    compiler_root = tmp_path / "compiler"
+    shutil.copytree(repository / "examples/projects/bootstrap_lexer", compiler_root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    manifest = compiler_root / "Merit.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + '\n[executable]\nadapter = "stdin-string-i32"\n'
+        + 'entry = "emit_native_project_artifacts"\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, executable = build(load_project(manifest), tmp_path / "build" / "compiler")
+    local_declarations = (
+        "struct Local { number:i64; }\n"
+        "destructor Local { print(self.number); }\n"
+        if local_destructor else ""
+    )
+    main_body = (
+        "let marker:Marker=Marker{number:23}; "
+        + ("let local:Local=Local{number:5}; " if local_destructor else "")
+        + "return helper.get();"
+    )
     request = encode_project_request(ProjectRequest(
         package="probe", entry="src/main.mrt",
         units=(
@@ -268,8 +330,8 @@ def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -
                 path="src/main.mrt",
                 source=(
                     "module probe\nimport helper;\n"
-                    "pub fn main()->i32 { let marker:Marker=Marker{number:23}; "
-                    "return helper.get(); }\n"
+                    + local_declarations
+                    + f"pub fn main()->i32 {{ {main_body} }}\n"
                 ).encode("utf-8"),
             ),
         ),
@@ -304,7 +366,7 @@ def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -
     assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
     module = parse_mir(json.loads(artifact.canonical_mir_bytes))
     assert len(module.functions) == 2
-    assert len(module.destructors) == 1
+    assert len(module.destructors) == 1 + int(local_destructor)
     assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
     assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
     c_path = tmp_path / "multimodule.c"
@@ -319,7 +381,7 @@ def test_native_multimodule_destructor_artifact_matches_oracle(tmp_path: Path) -
     assert linked.returncode == 0, linked.stderr
     executed = subprocess.run([str(tmp_path / "multimodule.exe")], capture_output=True, text=True)
     assert executed.returncode == 1, executed.stderr
-    assert executed.stdout == "23\n"
+    assert executed.stdout == ("5\n23\n" if local_destructor else "23\n")
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
