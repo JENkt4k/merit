@@ -173,6 +173,9 @@ def test_native_payload_free_enum_storage_matches_alpha2_oracle(
     )
     c_source = artifact.c_source_bytes.decode("utf-8")
     assert c_source == oracle.c_source
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        oracle.module, exported_names=frozenset()
+    )
     assert "int64_t variant_1;" in c_source
     generated = tmp_path / "native.c"
     generated.write_bytes(artifact.c_source_bytes)

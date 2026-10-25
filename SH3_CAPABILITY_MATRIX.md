@@ -1260,12 +1260,15 @@ conflict/ordering evidence gap, not all possible project topologies.
 
 F3 payload-free enum storage has a focused frozen-Alpha.2 oracle/runtime
 regression. An owned-payload enum with a second payload-free variant produces
-byte-identical native/Python canonical MIR and C; the established placeholder
+byte-identical native/Python canonical MIR, C, and public header; the established placeholder
 for that variant is `i64` in the enum type graph and `int64_t` in emitted C.
 The generated C compiles with GCC, and its destructor output and exit status
-match the reference executable (`1 passed in 43.18s` on native Windows).
-This proves this specific representation boundary without changing its schema
-or claiming all enum/ownership combinations are closed.
+match the reference executable (`1 passed in 42.67s` on native Windows).
+This proves the declared payload-free variant's storage representation, not
+construction of that variant: `Maybe::NoMarker` is invalid expression syntax
+and bare `NoMarker` is rejected by the Alpha.2 reference checker (`M3003`).
+No SH3 semantic extension was made. Other enum/ownership combinations remain
+open.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
