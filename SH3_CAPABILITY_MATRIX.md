@@ -1330,6 +1330,28 @@ which emits no complete artifact. The six accepted and one rejected cases
 pass together (`7 passed in 42.61s`); no ownership or vector API semantics
 were expanded.
 
+On `1053519`, the focused F1 native/Python type-catalog boundary passed both
+valid nested graph materialization and malformed owned-field/enum/vector,
+duplicate, cycle, unit-child, and numeric-policy probes (`2 passed in
+78.77s`). The public F6/F7 boundary also passed selected and explicitly empty
+exports, shared-library entry rejection, and stable-struct ABI cases through
+the normal project path (`5 passed in 21.61s`). These refresh focused evidence;
+they do not substitute for final-tree subsystem/full or the compiler C/header
+comparison.
+The complete 46-module compiler C/header comparison then passed on the same
+source tree (`1 passed in 137.18s`): native bytes equal the independent Python
+MIR-to-C emitter for the native MIR, GCC accepts and links the generated C,
+and the executable's `main` agrees with the reference-built compiler. This
+is current-tree backend evidence, not a new independent MIR comparison or a
+full-gate pass.
+The full focused SH3 acceptance-artifact file, excluding only its separately
+run 40-minute MIR-oracle test, then passed as one boundary (`29 passed, 1
+deselected in 399.08s`). This jointly exercises the compiler artifact and
+protocol probes, nine application differentials, resource/coercion cases,
+accepted/rejected owned-vector lifecycle, and fail-closed filesystem inputs.
+The current compiler-source change still needs final-tree independent MIR,
+subsystem, full, and hosted evidence before PR readiness.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial; committed candidate.** Catalog type fixtures cover builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded extremes, malformed cycles, and invalid decimal. The complete 46-module compiler MIR now matches independent Python materialization on `740425c`; nine non-compiler acceptance applications have focused native/Python differential evidence. The earlier `4129` seven-project failure sweep predates this candidate and is not a current result. Broader malformed catalogs and final-tree gate evidence remain open. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |
