@@ -353,6 +353,83 @@ def test_native_owned_enum_vector_get_rejects_implicit_copy(
         decode_native_project_artifact_transport(int(line) for line in response.stdout.splitlines())
 
 
+@pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None,
+                    reason="C compiler unavailable")
+def test_native_imported_owned_enum_vector_cleanup_matches_oracle(
+    compiler_paths: tuple[Path, Path], tmp_path: Path,
+) -> None:
+    helper_source = (
+        "module helper\n"
+        "pub struct Marker { number:i32; }\n"
+        "destructor Marker { print(self.number); }\n"
+        "pub enum MaybeMarker { SomeMarker(Marker), NoMarker }\n"
+    ).encode("utf-8")
+    main_source = (
+        "module probe\nimport helper;\ncapability allocate;\n"
+        "pub fn main()->i32 { with capability allocate { "
+        "let allocator:Allocator=system_allocator(); "
+        "var values:Vec<MaybeMarker>=vec_new<MaybeMarker>(allocator,1); "
+        "let marker:Marker=Marker{number:71}; "
+        "let wrapped:MaybeMarker=SomeMarker(marker); "
+        "vec_push<MaybeMarker>(values,wrapped); "
+        "} return 0; }\n"
+    ).encode("utf-8")
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "Merit.toml").write_text(
+        '[package]\nname = "probe"\nentry = "src/main.mrt"\n'
+        'sources = ["src/**/*.mrt"]\n', encoding="utf-8", newline="\n",
+    )
+    (project_root / "src/helper.mrt").write_bytes(helper_source)
+    (project_root / "src/main.mrt").write_bytes(main_source)
+    project = load_project(project_root / "Merit.toml")
+    _, _, reference = build(project, tmp_path / "reference-program")
+    expected = subprocess.run([str(reference)], capture_output=True)
+    assert expected.returncode == 0, expected.stderr
+    assert expected.stdout.replace(b"\r\n", b"\n") == b"71\n"
+    request = encode_loaded_project_request(project, header_exports=())
+    native_compiler, legacy_compiler = compiler_paths
+    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
+    assert native_response.returncode == 0, native_response.stderr.decode("utf-8", errors="replace")
+    artifact = decode_native_project_artifact_transport(
+        int(line) for line in native_response.stdout.splitlines()
+    )
+    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
+    assert legacy_response.returncode == 0, legacy_response.stderr.decode("utf-8", errors="replace")
+    bundle = decode_resolved_source_function_bundle(
+        int(line) for line in legacy_response.stdout.splitlines()
+    )
+    oracle = build_replacement_project_artifact((
+        ReplacementFunctionInput.from_values(
+            source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+            module_name=bundle.module_name, snapshot_values=values,
+            capability_names={index + 1: name for index, name in enumerate(bundle.capability_names)},
+        ) for values in bundle.encoded_snapshots
+    ), module_name=bundle.module_name)
+    assert artifact.canonical_mir_bytes == canonical_mir_json(oracle.module).encode("utf-8")
+    assert artifact.c_source_bytes.decode("utf-8") == oracle.c_source
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        oracle.module, exported_names=frozenset()
+    )
+    generated = tmp_path / "imported-owned-vector.c"
+    generated.write_bytes(artifact.c_source_bytes)
+    harness = tmp_path / "imported-owned-vector-harness.c"
+    harness.write_text(
+        '#include "imported-owned-vector.c"\nint main(void) { return merit_main(); }\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    executable = tmp_path / "imported-owned-vector.exe"
+    linked = subprocess.run(
+        [compiler, "-std=c11", str(harness), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert linked.returncode == 0, linked.stderr
+    actual = subprocess.run([str(executable)], capture_output=True)
+    assert (actual.returncode, actual.stdout) == (expected.returncode, expected.stdout)
+
+
 @pytest.mark.parametrize("constructor", ["SomeMarker()", "NoMarker(7)"])
 def test_native_owned_enum_constructor_rejects_wrong_payload_shape(
     compiler_paths: tuple[Path, Path], tmp_path: Path, constructor: str,

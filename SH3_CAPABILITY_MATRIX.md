@@ -1351,6 +1351,18 @@ protocol probes, nine application differentials, resource/coercion cases,
 accepted/rejected owned-vector lifecycle, and fail-closed filesystem inputs.
 The current compiler-source change still needs final-tree independent MIR,
 subsystem, full, and hosted evidence before PR readiness.
+The current native-v4 Alpha.1 accepted/rejected corpus and malformed import,
+duplicate-module, and cross-module catalog cases also pass together
+(`28 passed in 24.88s` on `f51fbf4`).
+The F3 composition boundary now includes an imported public owned enum whose
+payload has a source-defined destructor and whose value is held in a vector
+in the entry module. Reference project acceptance, exact native/Python
+MIR/C/header bytes, GCC execution, and exactly-once cleanup pass beside the
+existing imported-only and two-module destructor cases (`3 passed in
+123.04s`). The first probe's direct C link lacked the required multi-module
+`main` harness; adding the same harness used by existing topology tests
+resolved that test error without a compiler change. More project/resource
+combinations and final-tree broad gates remain open.
 
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
