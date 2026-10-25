@@ -1364,6 +1364,19 @@ existing imported-only and two-module destructor cases (`3 passed in
 resolved that test error without a compiler change. More project/resource
 combinations and final-tree broad gates remain open.
 
+PR scope preflight on `6617591` (2026-10-25): a fresh `origin/main` fetch
+still identifies `d12b947`, the merge of SH2 PR #130, as this branch's
+merge base. The SH3 branch is synchronized with `origin`, and the repository
+had no open PRs at inspection. The 55-file diff is concentrated in the
+Merit-native MIR/C backend, versioned v4 host handoff, bounded Python-oracle
+defect repairs recorded in `SELF_HOSTING.md`, tests, and the short-PR versus
+manual-long gate split. `git -c core.whitespace=cr-at-eol diff --check
+origin/main...HEAD` is clean; two pre-existing mixed/CRLF Python files are
+left in their original line-ending style rather than normalized wholesale.
+The untracked Alpha.3 resource-model design is user-owned and excluded from
+SH3 commits. This is a scope review, not a substitute for final-tree gates
+or hosted PR checks.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial; committed candidate.** Catalog type fixtures cover builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded extremes, malformed cycles, and invalid decimal. The complete 46-module compiler MIR now matches independent Python materialization on `740425c`; nine non-compiler acceptance applications have focused native/Python differential evidence. The earlier `4129` seven-project failure sweep predates this candidate and is not a current result. Broader malformed catalogs and final-tree gate evidence remain open. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |
