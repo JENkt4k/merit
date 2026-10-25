@@ -1270,6 +1270,25 @@ and bare `NoMarker` is rejected by the Alpha.2 reference checker (`M3003`).
 No SH3 semantic extension was made. Other enum/ownership combinations remain
 open.
 
+A separate accepted Alpha.2 constructor exposes the remaining F3/F5 boundary:
+adding `let empty:Maybe=NoMarker();` to that fixture compiles and links through
+the reference project build, but the native-v4 response stops with backend
+status `4520`. The legacy bundle producer returns successfully; its snapshot
+contains a no-operand `variant_1` construct and the frozen owned-enum type
+descriptor records the payload-free variant with an `i64` storage placeholder.
+The independent Python MIR assembler reaches the same construct but its C
+emitter raises `MirToCError: payload-free construction requires a Copy-payload
+enum result`. Temporary distinct native statuses at the two literal
+`return 20` checks in the function C writer did not change `4520`, so those
+checks are not the source of this failure; the diagnostic edits were reverted.
+This is a **known accepted-source divergence**, not evidence that Alpha.2
+rejects `NoMarker()`. Close it without changing serialized MIR/ABI: validate
+the no-payload variant against the source catalog before permitting an absent
+operand, then emit inert storage for the owned enum in both native and
+independent Python backends. Add accepted oracle-byte/runtime and malformed
+payload-required-without-operand rejection tests. Do not mark F3/F5/F8 closed
+until this case passes.
+
 | ID | Shared implementation mechanism and remaining dependency | Current evidence/status | Completion evidence before closing row |
 | --- | --- | --- | --- |
 | F1 | **Canonical type graph.** Reconstruct the exact Alpha.2 `MirType` JSON for builtin, aggregate/stable-ABI structs, copy/owned payload enums, nested `Vec`, decimal, and bounded types from native type/numeric descriptors. Validate child graph, order, identity, source spans, policy, and cycles. Use the same catalog for function return, parameters, locals, instructions, and destructors. | **Partial; committed candidate.** Catalog type fixtures cover builtin, nested vector, copy/owned-payload enum, owned-field struct, stable-ABI aggregate, decimal, bounded extremes, malformed cycles, and invalid decimal. The complete 46-module compiler MIR now matches independent Python materialization on `740425c`; nine non-compiler acceptance applications have focused native/Python differential evidence. The earlier `4129` seven-project failure sweep predates this candidate and is not a current result. Broader malformed catalogs and final-tree gate evidence remain open. | Focused valid/malformed descriptor cases; byte-identical canonical MIR against independent Python materialization for each type family and nested combination; accepted projects advance without type failure; no schema/ABI reinterpretation. |
