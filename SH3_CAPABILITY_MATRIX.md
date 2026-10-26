@@ -1349,8 +1349,18 @@ run 40-minute MIR-oracle test, then passed as one boundary (`29 passed, 1
 deselected in 399.08s`). This jointly exercises the compiler artifact and
 protocol probes, nine application differentials, resource/coercion cases,
 accepted/rejected owned-vector lifecycle, and fail-closed filesystem inputs.
-The current compiler-source change still needs final-tree independent MIR,
-subsystem, full, and hosted evidence before PR readiness.
+The independent 46-module compiler MIR comparison passed again on `aabd6a6`
+(`1 passed in 2436.89s`, exit code 0): the native v4 artifact's canonical
+MIR bytes equal independently materialized Python-oracle MIR for the complete
+compiler source closure. The external Windows test log is
+`D:\Temp\merit-tests\sh3-compiler-mir-oracle-aabd6a6.log`. The final-tree
+Windows subsystem gate then passed on the same compiler/test tree (`930 passed
+in 23724.74s`, `MERIT_GATE_RESULT=PASS`, exit code 0); its external log is
+`D:\Temp\merit-tests\sh3-subsystem-rerun.log`. The initial attempt stopped
+before collection because pytest could not access the default Windows temp
+directory; rerunning after Windows development activation corrected that
+environment failure. Full and hosted evidence remain required before PR
+readiness.
 The current native-v4 Alpha.1 accepted/rejected corpus and malformed import,
 duplicate-module, and cross-module catalog cases also pass together
 (`28 passed in 24.88s` on `f51fbf4`).
