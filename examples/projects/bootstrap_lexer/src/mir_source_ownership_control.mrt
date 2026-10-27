@@ -442,7 +442,7 @@ requires_caps [allocate]
     if (kind == statement_record_var_kind()) { return source_control_initialize_binding(callable_signatures,callable_parameters,source,tokens,statement,operands,metadata,starts,lengths,allocator,1,counters,direct,events); }
     if (kind == statement_record_return_kind()) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (result < 0) { return source_control_invalid_return_expression_status(); }
+        if (result < 0) { if (result != sfr_unit_expression_result()) { return source_control_invalid_return_expression_status(); } }
         var return_consumed:i64=0;
         while(return_consumed<vec_len<i64>(direct)){
             let binding_id:i64=vec_get<i64>(direct,return_consumed);
@@ -456,7 +456,9 @@ requires_caps [allocate]
             }
             return_consumed=checked_add(return_consumed,1);
         }
-        vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); return 0;
+        if (result == sfr_unit_expression_result()) { vec_push<MirOwnershipEvent>(events, ownership_event_return(-1)); }
+        else { vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); }
+        return 0;
     }
     if (kind == statement_record_print_kind()) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);

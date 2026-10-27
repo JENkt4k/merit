@@ -2367,6 +2367,8 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             ]
         if kind=='return':
             prelude,value=self.ordered_expr(node.expression,env,self.current_return,p)
+            if self.current_return=='void':
+                return prelude+[f'{p}(void)({value});',f'{p}goto _merit_epilogue;']
             return prelude+[f'{p}_merit_result = {self.checked(self.current_return,value)};',f'{p}goto _merit_epilogue;']
         if kind=='print':
             t=self.etype(node.expression,env);prelude,x=self.ordered_expr(node.expression,env,t,p)

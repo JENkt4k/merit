@@ -1669,12 +1669,15 @@ source-function boundary to append the implicit unit return. An empty
 `void` function consuming an owned parameter matches the reference and
 drops it exactly once (`1 passed in 25.93s`); seven adjacent source,
 ownership, statement, and resolved-pipeline tests passed in 248.87s.
-An additional `return effect()` probe for a `void` function passed reference
-checking but the reference C build failed (`_merit_result` undeclared and
-assignment from a `void` expression). This is a pre-existing Python-oracle
-codegen defect, not differential evidence for the SH3 production path; it
-needs a separate focused oracle repair before that spelling can be included
-in accepted parity tests.
+The additional `return effect()` probe for a `void` function exposed a
+pre-existing Python-oracle C defect (`_merit_result` undeclared and assignment
+from a `void` expression). The oracle now evaluates that call once and jumps
+to the existing epilogue. Native source, statement, and ownership lowering
+retain the validated unit-call sentinel until emitting the canonical absent
+return local. The focused reference/native MIR, C, and runtime parity case
+passes; together with adjacent implicit-fallthrough and owned-parameter
+cleanup cases, the focused selection passed 4 tests in 23.72s. This evidence
+does not replace the final-tree subsystem or full gate.
 
 ## Execution order and boundary rule
 

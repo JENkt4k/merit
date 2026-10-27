@@ -141,6 +141,37 @@ def test_sh3_v4_empty_void_body_drops_owned_parameter_once(
     assert native_result[2] == reference_result[2] == b""
 
 
+def test_sh3_v4_explicit_void_call_return_matches_reference(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "explicit-void-return"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="explicit_void_return"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module explicit_void_return\n'
+        'fn effect()->void { print(7); }\n'
+        'fn relay()->void { return effect(); }\n'
+        'fn main()->i32 { relay(); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    _, _, reference = build(load_project(root / "Merit.toml"), tmp_path / "reference")
+    native = tmp_path / "native"
+    assert project_cli_main([
+        "build", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(native),
+    ]) == 0
+    native_executable = native.with_suffix(".exe") if os.name == "nt" else native
+    native_result = _result(native_executable)
+    reference_result = _result(reference)
+    assert native_result[0] == reference_result[0] == 0
+    assert native_result[1].splitlines() == reference_result[1].splitlines() == [b"7"]
+    assert native_result[2] == reference_result[2] == b""
+
+
 
 
 @pytest.mark.parametrize("case", CORPUS["accepted"], ids=lambda case: case["id"])

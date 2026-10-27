@@ -4007,9 +4007,15 @@ pub fn lower_source_function_body_records_from_catalog(
                     let result_local: i64 = sfr_emit_expression(source, tokens, binding_starts, binding_lengths,
                         statement_operand_start(expression), statement_operand_length(expression),
                         result_type_code, enum_catalog, struct_catalog, function_signatures, function_parameters, allocator, records, counters);
-                    if (result_local < 0) { return sfr_expression_failure_status(result_local); }
+                    var return_local:i64=result_local;
+                    if(result_local==sfr_unit_expression_result()){
+                        if(result_type_code!=function_mir_unit_type_code()){return sfr_invalid_return_expression_status();}
+                        return_local=-1;
+                    }else{
+                        if(result_local<0){return sfr_expression_failure_status(result_local);}
+                    }
                     vec_push<MirFunctionRecord>(records, function_mir_return(
-                        statement_record_start(statement), statement_record_length(statement), result_local, vec_get<i64>(counters, 2)
+                        statement_record_start(statement), statement_record_length(statement), return_local, vec_get<i64>(counters, 2)
                     ));
                     vec_set<i64>(counters, 2, checked_add(vec_get<i64>(counters, 2), 1));
                 } else {
@@ -4335,11 +4341,18 @@ pub fn lower_source_function_body_records_from_catalog(
         if(status==0){
             if(destructor_body==0){
                 if(result_type_code==function_mir_unit_type_code()){
+                    var append_implicit_return:i32=1;
+                    if(vec_len<MirLowerEvent>(events)>0){
+                        let last_event:MirLowerEvent=vec_get<MirLowerEvent>(events,checked_sub(vec_len<MirLowerEvent>(events),1));
+                        if(lower_event_kind(last_event)==mir_event_return_kind()){append_implicit_return=0;}
+                    }
+                    if(append_implicit_return!=0){
                     let return_ordinal:i64=vec_get<i64>(counters,2);
                     vec_push<MirFunctionRecord>(records,function_mir_return(
                         token_start(name_token),token_length(name_token),-1,return_ordinal
                     ));
                     vec_push<MirLowerEvent>(events,mir_event_return(-1));
+                    }
                 }
             }
         }
