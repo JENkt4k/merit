@@ -8478,17 +8478,33 @@ def test_merit_byte_slice_generated_c_preserves_bytes_and_bounds(tmp_path: Path)
     assert "Merit slice index out of bounds" in out_of_bounds.stderr
 
 
-def test_merit_byte_slice_backend_rejects_public_abi(tmp_path: Path) -> None:
+def test_merit_byte_slice_backend_emits_public_abi_matching_oracle(tmp_path: Path) -> None:
     probe = CANONICAL_C_SLICE_LEN_PROBE.replace(
         "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
     )
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
-    assert interpret(project) == ""
+    interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-slice-public-rejected")
     native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 9
-    assert native.stdout == ""
+    assert native.returncode == 0, native.stderr
+    assert native.stdout == interpreted
+    values = [int(value) for value in native.stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "measure", MirType("i64"), (
+            MirLocal(0, "value", MirType("ByteSlice")),
+            MirLocal(1, "result", MirType("i64")),
+        ), (MirBlock(0, (MirInstruction(
+            0, "call", result=1, operands=(0,), symbol="slice_len",
+        ),), MirTerminator("return", operands=(1,))),), 0,
+        parameters=(MirParameter(0),), exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
 
 
 def test_merit_string_byte_generated_c_preserves_utf8_and_bounds(tmp_path: Path) -> None:
@@ -8656,18 +8672,31 @@ def test_merit_allocator_builtin_call_backend_fails_closed(
     assert native.stdout == ""
 
 
-def test_merit_allocator_value_backend_rejects_public_abi(tmp_path: Path) -> None:
+def test_merit_allocator_value_backend_emits_public_abi_matching_oracle(tmp_path: Path) -> None:
     probe = CANONICAL_C_ALLOCATOR_VALUE_PROBE.replace(
         "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
     )
     assert probe != CANONICAL_C_ALLOCATOR_VALUE_PROBE
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
-    assert interpret(project) == ""
+    interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-public-allocator-rejected")
     native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 3
-    assert native.stdout == ""
+    assert native.returncode == 0, native.stderr
+    assert native.stdout == interpreted
+    values = [int(value) for value in native.stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "identity", MirType("Allocator"),
+        (MirLocal(0, "value", MirType("Allocator")),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+        parameters=(MirParameter(0),), exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == emit_c_header(module)
 
 
 def test_merit_allocator_value_generated_c_preserves_identity(tmp_path: Path) -> None:

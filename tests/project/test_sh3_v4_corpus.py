@@ -12,8 +12,10 @@ import sys
 
 import pytest
 
+from merit.bootstrap.mir_contract import parse_mir
+from merit.bootstrap.mir_to_c import emit_c_header
 from merit.compiler import CompileError
-from merit.project.build import build, check
+from merit.project.build import build, build_shared, check
 from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.project_request import ProjectRequest, ProjectRequestUnit, encode_project_request
@@ -413,3 +415,145 @@ def test_sh3_v4_public_shared_build_preserves_stable_struct_abi(
     point_sum.argtypes = [Point]
     point_sum.restype = ctypes.c_int32
     assert point_sum(Point(19, 23)) == 42
+
+
+def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "ledger_app"
+    shutil.copytree(ROOT / "examples/projects/ledger_app", root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    project = load_project(root / "Merit.toml")
+    _, oracle_header, _ = build_shared(project, tmp_path / "reference-ledger")
+
+    output = tmp_path / "native-ledger"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    header = output.with_suffix(".h").read_bytes()
+    reference_header = oracle_header.read_bytes()
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert header == emit_c_header(module).encode("utf-8")
+    for contract in (
+        b"sizeof(merit_Account) == 16",
+        b"__builtin_offsetof(merit_Account, balance) == 8",
+        b"int64_t merit_deposit(merit_Account *account, int64_t amount);",
+        b"int64_t merit_account_balance(const merit_Account *account);",
+    ):
+        assert contract in reference_header
+    for contract in (
+        b"sizeof(merit_Account) == 16",
+        b"offsetof(merit_Account, balance) == 8",
+        b"int64_t merit_deposit(merit_Account * m0, int64_t m1);",
+        b"int64_t merit_account_balance(const merit_Account * m0);",
+    ):
+        assert contract in header
+
+    class Account(ctypes.Structure):
+        _fields_ = [("id", ctypes.c_uint64), ("balance", ctypes.c_int64)]
+
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    library = ctypes.CDLL(str(output.with_suffix(suffix)))
+    library.merit_deposit.argtypes = [ctypes.POINTER(Account), ctypes.c_int64]
+    library.merit_deposit.restype = ctypes.c_int64
+    library.merit_account_balance.argtypes = [ctypes.POINTER(Account)]
+    library.merit_account_balance.restype = ctypes.c_int64
+    account = Account(1001, 100_000)
+    assert library.merit_deposit(ctypes.byref(account), 12_550) == 112_550
+    assert library.merit_account_balance(ctypes.byref(account)) == 112_550
+    assert account.balance == 112_550
+
+    consumer = tmp_path / "ledger-reference-consumer.c"
+    consumer.write_text(
+        '#include "reference-ledger.h"\n'
+        'int main(void) {\n'
+        '    merit_Account account = {1001, 100000};\n'
+        '    if (merit_deposit(&account, 12550) != 112550) return 1;\n'
+        '    if (merit_account_balance(&account) != 112550) return 2;\n'
+        '    merit_LedgerResult result = merit_withdraw_checked(&account, 2525);\n'
+        '    if (result.tag != merit_LedgerResult_Applied) return 3;\n'
+        '    if (result.data.Applied != 110025) return 4;\n'
+        '    return 0;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    consumer_executable = tmp_path / ("ledger-reference-consumer.exe" if os.name == "nt" else "ledger-reference-consumer")
+    compiled = subprocess.run(
+        [compiler, "-std=c11", "-I", str(oracle_header.parent), str(consumer),
+         str(output.with_suffix(suffix)), "-o", str(consumer_executable)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    environment = os.environ.copy()
+    library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
+    consumed = subprocess.run([str(consumer_executable)], capture_output=True, env=environment)
+    assert consumed.returncode == 0, consumed.stderr
+
+
+def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "resource_abi"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="resource_abi"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        "module resource_abi\n"
+        "pub fn same_allocator(value:Allocator)->Allocator { return value; }\n"
+        "pub fn slice_size(value:ByteSlice)->i64 { return slice_len(value); }\n"
+        "pub fn buffer_size(borrow value:Buffer)->i64 { return buffer_len(value); }\n"
+        "fn main()->i32 { return 0; }\n",
+        encoding="utf-8", newline="\n",
+    )
+    output = tmp_path / "resource_abi"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    header = output.with_suffix(".h").read_bytes()
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert header == emit_c_header(module).encode("utf-8")
+    assert b"merit_Allocator merit_same_allocator(merit_Allocator m0);" in header
+    assert b"int64_t merit_slice_size(merit_ByteSlice m0);" in header
+    assert b"int64_t merit_buffer_size(const merit_Buffer * m0);" in header
+
+    class Allocator(ctypes.Structure):
+        _fields_ = [("identity", ctypes.c_int32)]
+
+    class ByteSlice(ctypes.Structure):
+        _fields_ = [("data", ctypes.POINTER(ctypes.c_uint8)), ("len", ctypes.c_size_t)]
+
+    class Buffer(ctypes.Structure):
+        _fields_ = [
+            ("data", ctypes.POINTER(ctypes.c_uint8)),
+            ("len", ctypes.c_size_t),
+            ("capacity", ctypes.c_size_t),
+            ("allocator", Allocator),
+        ]
+
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    library = ctypes.CDLL(str(output.with_suffix(suffix)))
+    library.merit_same_allocator.argtypes = [Allocator]
+    library.merit_same_allocator.restype = Allocator
+    assert library.merit_same_allocator(Allocator(1)).identity == 1
+    library.merit_slice_size.argtypes = [ByteSlice]
+    library.merit_slice_size.restype = ctypes.c_int64
+    data = (ctypes.c_uint8 * 3)(4, 5, 6)
+    assert library.merit_slice_size(ByteSlice(data, 3)) == 3
+    library.merit_buffer_size.argtypes = [ctypes.POINTER(Buffer)]
+    library.merit_buffer_size.restype = ctypes.c_int64
+    value = Buffer(data, 3, 3, Allocator(1))
+    assert library.merit_buffer_size(ctypes.byref(value)) == 3

@@ -1450,6 +1450,49 @@ instruction dispatch; determine whether any accepted Alpha.2 producer can
 emit it before treating it as an SH3 parity requirement. Do not add semantics
 to make that unused contract spelling executable.
 
+#### F6 first uncovered public-ABI failure
+
+The focused `ledger_app` shared-library probe through the public native-v4
+command fails before header publication with native status `4409` (backend
+function status `9`), while the historical reference `build_shared` succeeds.
+Status `9` maps to the native C function emitter's exported-parameter/type
+guard, not a timeout or a header-byte comparison; the public `write_audit`
+function has an `Allocator` parameter that this guard currently rejects.
+The reference header exposes `merit_Allocator` and
+`merit_FileWriteResult` as well as the stable `Account` and exact-decimal
+functions. The generic Python MIR header oracle and native v4 header backend
+currently cover a narrower public type set than that Alpha.2 reference ABI.
+`tests/project/test_sh3_v4_corpus.py::test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi`
+is the currently failing reproducer (`D:\Temp\merit-tests\sh3-ledger-abi.log`).
+
+This is an F6 implementation/evidence gap, not a reason to narrow the
+all-public no-adapter shared-build policy or change Alpha.2 exports. Audit
+the full reference public type family and versioned native type descriptors,
+then make the Python MIR oracle and Merit-native C/header path agree with the
+frozen reference ABI. Keep unsupported public types fail-closed until the
+corresponding layout and foreign-call behavior are proved.
+
+The first coherent repair now admits the existing `Allocator`, `ByteSlice`,
+and borrowed `Buffer` C layouts to the native/MIR-oracle public header, with
+exact header bytes and foreign-call execution (`1 passed`). The ledger
+all-public probe then advanced to header status `4602`, revealing that its
+declared decimal fields and nested Copy-payload enums also needed public
+type-catalog traversal. With that traversal and numeric-descriptor validation,
+the native-v4 public shared build succeeds. Its header matches the independent
+MIR-header oracle byte-for-byte, and a C consumer compiled against the
+historical Alpha.2 reference header can call `deposit`, `account_balance`,
+and `withdraw_checked` (including the nested enum return) in the native
+library (`1 passed`). The two header texts intentionally use their established
+different spelling; this test proves binary interoperability, not textual
+identity with the source-level reference header. Wider public type families
+and both-platform evidence remain to be audited before closing F6. The
+coherent Windows F6 boundary, including 53 MIR-header cases, public shared
+builds, exact oracle headers, the historical-header C consumer, selected and
+invalid exports, the now-positive direct `Allocator`/`ByteSlice` probes, and
+an owned-Buffer missing-effect rejection, passed `60` tests in `128.53s`
+(`D:\Temp\merit-tests\sh3-f6-boundary.log`). No full gate has been run for
+this follow-up tree.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using

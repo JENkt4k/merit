@@ -1021,6 +1021,18 @@ def emit_c_header(
         "uint8_t", "uint16_t", "uint32_t", "uint64_t", "__int128",
     }
     builtin_abi_types = {
+        "Allocator": (
+            "merit_Allocator",
+            "typedef struct { int32_t identity; } merit_Allocator;",
+        ),
+        "ByteSlice": (
+            "merit_ByteSlice",
+            "typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;",
+        ),
+        "Buffer": (
+            "merit_Buffer",
+            "typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;",
+        ),
         "String": (
             "merit_String",
             "typedef struct { const uint8_t *data; size_t len; } merit_String;",
@@ -1041,6 +1053,8 @@ def emit_c_header(
                     f"replacement public ABI type {name!r} must be public and stable"
                 )
             return f"merit_{_identifier(name)}"
+        if _copy_payload_enum_identity(type_) is not None:
+            return _type(type_)
         builtin = builtin_abi_types.get(type_.name) if not type_.arguments else None
         if builtin is not None:
             return builtin[0]
@@ -1052,9 +1066,24 @@ def emit_c_header(
         return rendered
 
     layouts: dict[str, MirType] = {}
+    copy_enums: dict[str, MirType] = {}
+    required_builtin_names: set[str] = set()
     def collect(type_: MirType) -> None:
+        enum_identity = _copy_payload_enum_identity(type_)
+        if enum_identity is not None:
+            previous_enum = copy_enums.get(enum_identity)
+            if previous_enum is not None and previous_enum != type_:
+                raise MirToCError(f"conflicting replacement public enum layout: {enum_identity}")
+            if previous_enum is None:
+                copy_enums[enum_identity] = type_
+                for payload in type_.arguments:
+                    header_type(payload)
+                    collect(payload)
+            return
         abi = _aggregate_struct_abi(type_)
         if abi is None:
+            if not type_.arguments and type_.name in builtin_abi_types:
+                required_builtin_names.add(type_.name)
             return
         _, name, _ = abi
         previous = layouts.get(name)
@@ -1072,11 +1101,13 @@ def emit_c_header(
         "#pragma once", "#include <stdbool.h>", "#include <stddef.h>",
         "#include <stdint.h>", "",
     ]
-    represented_builtin_names = {
-        type_.name for type_ in represented
-        if not type_.arguments and type_.name in builtin_abi_types
-    }
-    for name in sorted(represented_builtin_names):
+    represented_builtin_names = required_builtin_names
+    for name in ("String", "ByteSlice", "Allocator", "Buffer"):
+        if name == "Allocator" and "Buffer" in represented_builtin_names:
+            lines.append(builtin_abi_types[name][1])
+            continue
+        if name not in represented_builtin_names:
+            continue
         lines.append(builtin_abi_types[name][1])
     if represented_builtin_names:
         lines.append("")
@@ -1148,6 +1179,41 @@ def emit_c_header(
         if not progressed:
             raise MirToCError("replacement public ABI layout graph is cyclic")
     if layouts:
+        lines.append("")
+
+    emitted_enums: set[str] = set()
+    pending_enums = dict(copy_enums)
+    while pending_enums:
+        progressed = False
+        for identity, type_ in sorted(pending_enums.items(), key=lambda item: int(item[0])):
+            dependencies = {
+                dependency
+                for payload in type_.arguments
+                if (dependency := _copy_payload_enum_identity(payload)) is not None
+            }
+            if not dependencies <= emitted_enums:
+                continue
+            if type_.arguments:
+                fields = " ".join(
+                    f"{header_type(payload)} variant_{ordinal};"
+                    for ordinal, payload in enumerate(type_.arguments)
+                )
+                lines.append(
+                    f"typedef struct {{ int64_t tag; union {{ {fields} }} payload; }} "
+                    f"merit_enum_copy_payload_{identity};"
+                )
+            else:
+                lines.append(
+                    f"typedef struct {{ int64_t tag; int64_t payload; }} "
+                    f"merit_enum_copy_payload_{identity};"
+                )
+            emitted_enums.add(identity)
+            del pending_enums[identity]
+            progressed = True
+            break
+        if not progressed:
+            raise MirToCError("replacement public enum type graph is cyclic")
+    if copy_enums:
         lines.append("")
 
     def parameter_list(function: MirFunction) -> str:

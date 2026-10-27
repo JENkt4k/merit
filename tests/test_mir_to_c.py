@@ -190,6 +190,44 @@ def test_public_header_emits_canonical_string_abi() -> None:
     assert "int32_t merit_consume(merit_String m0);" in header
 
 
+def test_public_header_emits_builtin_resource_abi_in_dependency_order() -> None:
+    function = MirFunction(
+        "inspect", UNIT,
+        (
+            MirLocal(0, "allocator", MirType("Allocator")),
+            MirLocal(1, "slice", MirType("ByteSlice")),
+            MirLocal(2, "buffer", MirType("Buffer"), ownership="borrowed"),
+        ),
+        (MirBlock(0, (), MirTerminator("return")),),
+        0,
+        parameters=(MirParameter(0), MirParameter(1), MirParameter(2, "borrowed")),
+        exported=True,
+    )
+
+    header = emit_c_header(MirModule("example", (function,)))
+
+    assert header.index("} merit_ByteSlice;") < header.index("} merit_Allocator;")
+    assert header.index("} merit_Allocator;") < header.index("} merit_Buffer;")
+    assert "void merit_inspect(merit_Allocator m0, merit_ByteSlice m1, const merit_Buffer * m2);" in header
+
+
+def test_public_header_orders_nested_copy_enum_layouts() -> None:
+    inner = MirType("enum_copy_payload_0")
+    outer = MirType("enum_copy_payload_1", (I64, inner))
+    function = MirFunction(
+        "outcome", outer,
+        (MirLocal(0, "result", outer),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),),
+        0, exported=True,
+    )
+
+    header = emit_c_header(MirModule("example", (function,)))
+
+    assert header.index("} merit_enum_copy_payload_0;") < header.index("} merit_enum_copy_payload_1;")
+    assert "merit_enum_copy_payload_0 variant_1;" in header
+    assert "merit_enum_copy_payload_1 merit_outcome(void);" in header
+
+
 def test_emits_and_runs_ordered_arithmetic(tmp_path):
     function = binary_function("answer", 20, 22, "+", policy="exact")
     generated = emit_c_module(scalar_module(function))
