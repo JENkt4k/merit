@@ -6,6 +6,7 @@ import ctypes
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -735,15 +736,36 @@ def test_sh3_v4_compiler_all_public_shared_abi_matches_mir_oracle(
     assert {"CapabilityCatalogEntry", "ParseCursor", "ProjectRequestUnitSpan", "SfrNumericMagnitude"} <= public_structs
     for name in sorted(public_structs):
         assert f"}} merit_{name};".encode("utf-8") in native_header
+    exported_functions = {
+        function.name for function in project.program.functions
+        if function.name in project.program.exports and function.name != "main"
+    }
+    native_functions = set(re.findall(
+        r"\bmerit_([A-Za-z_][A-Za-z0-9_]*)\s*\(", native_header.decode("utf-8"),
+    ))
+    assert native_functions == exported_functions
+    reference_functions = set(re.findall(
+        r"\bmerit_([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        reference_header.read_text(encoding="utf-8"),
+    ))
+    assert exported_functions <= reference_functions
     consumer = tmp_path / "compiler-reference-consumer.c"
     consumer.write_text(
         '#include "reference-compiler-shared.h"\n'
+        '#include <stdlib.h>\n'
         'int main(void) {\n'
         '    merit_HirExpressionRecord node = {0};\n'
         '    node.kind = 17; node.type_code = 2;\n'
         '    if (merit_hir_kind(&node) != 17) return 1;\n'
         '    merit_HirExpressionRecord changed = merit_hir_with_type(&node, 42);\n'
         '    if (changed.kind != 17 || changed.type_code != 42) return 2;\n'
+        '    uint8_t bytes[] = "fn x(){}";\n'
+        '    merit_Buffer source = {.data = bytes, .len = sizeof(bytes) - 1,\n'
+        '                           .cap = sizeof(bytes) - 1, .allocator = {0}};\n'
+        '    merit_Vec__Token tokens = merit_lex(&source, source.allocator);\n'
+        '    if (tokens.len < 2 || tokens.data[0].kind != merit_token_identifier_kind()\n'
+        '        || tokens.data[0].start != 0 || tokens.data[0].length != 2) return 3;\n'
+        '    free(tokens.data);\n'
         '    return 0;\n'
         '}\n',
         encoding="utf-8", newline="\n",

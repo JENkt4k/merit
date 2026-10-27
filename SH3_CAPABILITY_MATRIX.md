@@ -1593,6 +1593,18 @@ private incomplete declarations; those names are not yet claimed byte-equal
 to the MIR header. No conclusion about that remaining header availability
 surface or the entire F6 row follows from callable ABI parity alone.
 
+The compiler all-public ABI regression now also inventories every exported
+callable name: all 1,522 native C prototypes equal the project export set,
+and each exists in the historical reference header. The reference header has
+seven additional inline constructors for built-in filesystem enums; those
+are not exported project functions. A C consumer compiled against the
+historical header calls both `hir_with_type` (non-stable struct by value) and
+`lex` (`Buffer`/`Allocator` input, `Vec<Token>` return), checks the first
+token, and frees its vector data. The focused compiler test passes in
+136.20s (`D:\Temp\merit-tests\sh3-f6-compiler-lex-abi.log`). This proves
+representative binary interop for those signature families, not all
+possible public types or the still-unrun final-tree broad gates.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
