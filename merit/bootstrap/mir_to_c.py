@@ -1144,6 +1144,7 @@ def emit_c_header(
         collect(type_)
         header_type(type_)
     if exported_names is None:
+        required_builtin_names.update(builtin_abi_types)
         pending_types = [local.type for function in module.functions for local in function.locals]
         seen_types: set[MirType] = set()
         while pending_types:
@@ -1172,6 +1173,32 @@ def emit_c_header(
         lines.append(builtin_abi_types[name][1])
     if represented_builtin_names:
         lines.append("")
+    if exported_names is None:
+        lines.extend([
+            "typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;",
+            "",
+            "typedef enum { merit_FsError_FsNotFound = 0, merit_FsError_FsPermissionDenied = 1, merit_FsError_FsIoError = 2 } merit_FsError_tag;",
+            "typedef struct { merit_FsError_tag tag; } merit_FsError;",
+            "_Static_assert(offsetof(merit_FsError, tag) == 0, \"Merit enum layout mismatch: FsError.tag\");",
+            "static inline merit_FsError merit_make_FsError_FsNotFound(void) { return (merit_FsError){.tag=merit_FsError_FsNotFound}; }",
+            "static inline merit_FsError merit_make_FsError_FsPermissionDenied(void) { return (merit_FsError){.tag=merit_FsError_FsPermissionDenied}; }",
+            "static inline merit_FsError merit_make_FsError_FsIoError(void) { return (merit_FsError){.tag=merit_FsError_FsIoError}; }",
+            "",
+            "typedef enum { merit_FileReadResult_ReadOk = 0, merit_FileReadResult_ReadErr = 1 } merit_FileReadResult_tag;",
+            "typedef struct { merit_FileReadResult_tag tag; union { merit_Buffer ReadOk; merit_FsError ReadErr; } data; } merit_FileReadResult;",
+            "_Static_assert(offsetof(merit_FileReadResult, tag) == 0, \"Merit enum layout mismatch: FileReadResult.tag\");",
+            "_Static_assert(offsetof(merit_FileReadResult, data) >= sizeof(merit_FileReadResult_tag), \"Merit enum layout mismatch: FileReadResult.data\");",
+            "static inline merit_FileReadResult merit_make_FileReadResult_ReadOk(merit_Buffer value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadOk,.data.ReadOk=value}; }",
+            "static inline merit_FileReadResult merit_make_FileReadResult_ReadErr(merit_FsError value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadErr,.data.ReadErr=value}; }",
+            "",
+            "typedef enum { merit_FileWriteResult_WriteOk = 0, merit_FileWriteResult_WriteErr = 1 } merit_FileWriteResult_tag;",
+            "typedef struct { merit_FileWriteResult_tag tag; union { int64_t WriteOk; merit_FsError WriteErr; } data; } merit_FileWriteResult;",
+            "_Static_assert(offsetof(merit_FileWriteResult, tag) == 0, \"Merit enum layout mismatch: FileWriteResult.tag\");",
+            "_Static_assert(offsetof(merit_FileWriteResult, data) >= sizeof(merit_FileWriteResult_tag), \"Merit enum layout mismatch: FileWriteResult.data\");",
+            "static inline merit_FileWriteResult merit_make_FileWriteResult_WriteOk(int64_t value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteOk,.data.WriteOk=value}; }",
+            "static inline merit_FileWriteResult merit_make_FileWriteResult_WriteErr(merit_FsError value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteErr,.data.WriteErr=value}; }",
+            "",
+        ])
     for name in sorted(public_vectors):
         lines.append(
             f"typedef struct {{ void *data; size_t len; size_t capacity; merit_Allocator allocator; }} {name};"

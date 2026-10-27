@@ -127,7 +127,14 @@ def test_public_nonstable_aggregate_header_preserves_private_boundary() -> None:
 
     header = emit_c_header(MirModule("example", (function,)))
     assert "typedef struct { int32_t x; } merit_Point;" in header
-    assert "_Static_assert" not in header
+    assert "_Static_assert(sizeof(merit_Point)" not in header
+    assert "merit_I64Vec;" in header
+    assert "merit_make_FileReadResult_ReadOk" in header
+    selected_header = emit_c_header(
+        MirModule("example", (function,)), exported_names=frozenset({"read_point"}),
+    )
+    assert "merit_I64Vec;" not in selected_header
+    assert "merit_make_FileReadResult_ReadOk" not in selected_header
 
     private_point = MirType(
         "struct_aggregate_0_destructor_-1__abi_0_506f696e74_78",

@@ -592,7 +592,10 @@ def test_sh3_v4_all_acceptance_public_shared_headers_match_mir_oracle(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
     module = parse_mir(json.loads(mir_path.read_bytes()))
-    assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
+    native_header = output.with_suffix(".h").read_bytes()
+    assert native_header == emit_c_header(module).encode("utf-8")
+    for name in (b"merit_I64Vec;", b"merit_FsError;", b"merit_FileReadResult;", b"merit_FileWriteResult;"):
+        assert name in native_header
 
 def test_sh3_v4_public_owned_enum_with_resource_payload_fails_closed(
     tmp_path: Path, native_v4_driver: NativeReplacementDriver,
@@ -693,6 +696,21 @@ def test_sh3_v4_public_shared_vector_abi_matches_reference(
     )
     compiler = shutil.which("cc") or shutil.which("gcc")
     assert compiler is not None
+    native_consumer = tmp_path / "vector-native-header-consumer.c"
+    native_consumer.write_text(
+        '#include "native-vector.h"\n'
+        'int main(void) {\n'
+        '    merit_FsError error = merit_make_FsError_FsIoError();\n'
+        '    merit_FileWriteResult result = merit_make_FileWriteResult_WriteErr(error);\n'
+        '    return result.tag != merit_FileWriteResult_WriteErr;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    native_compiled = subprocess.run(
+        [compiler, "-std=c11", "-fsyntax-only", "-I", str(tmp_path), str(native_consumer)],
+        capture_output=True, text=True,
+    )
+    assert native_compiled.returncode == 0, native_compiled.stderr
     suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
     executable = tmp_path / ("vector-reference-consumer.exe" if os.name == "nt" else "vector-reference-consumer")
     compiled = subprocess.run(
@@ -743,12 +761,12 @@ def test_sh3_v4_compiler_all_public_shared_abi_matches_mir_oracle(
     native_functions = set(re.findall(
         r"\bmerit_([A-Za-z_][A-Za-z0-9_]*)\s*\(", native_header.decode("utf-8"),
     ))
-    assert native_functions == exported_functions
     reference_functions = set(re.findall(
         r"\bmerit_([A-Za-z_][A-Za-z0-9_]*)\s*\(",
         reference_header.read_text(encoding="utf-8"),
     ))
-    assert exported_functions <= reference_functions
+    assert native_functions == reference_functions
+    assert exported_functions <= native_functions
     consumer = tmp_path / "compiler-reference-consumer.c"
     consumer.write_text(
         '#include "reference-compiler-shared.h"\n'

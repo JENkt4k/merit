@@ -7725,6 +7725,31 @@ pub fn canonical_c_header_name_selected(
     return 0;
 }
 
+fn canonical_c_append_all_public_legacy_types(borrow_mut output:Buffer)->i32
+requires_caps [allocate]
+{
+    canonical_mir_append_text(output,"typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;\n\n");
+    canonical_mir_append_text(output,"typedef enum { merit_FsError_FsNotFound = 0, merit_FsError_FsPermissionDenied = 1, merit_FsError_FsIoError = 2 } merit_FsError_tag;\n");
+    canonical_mir_append_text(output,"typedef struct { merit_FsError_tag tag; } merit_FsError;\n");
+    canonical_mir_append_text(output,"_Static_assert(offsetof(merit_FsError, tag) == 0, \"Merit enum layout mismatch: FsError.tag\");\n");
+    canonical_mir_append_text(output,"static inline merit_FsError merit_make_FsError_FsNotFound(void) { return (merit_FsError){.tag=merit_FsError_FsNotFound}; }\n");
+    canonical_mir_append_text(output,"static inline merit_FsError merit_make_FsError_FsPermissionDenied(void) { return (merit_FsError){.tag=merit_FsError_FsPermissionDenied}; }\n");
+    canonical_mir_append_text(output,"static inline merit_FsError merit_make_FsError_FsIoError(void) { return (merit_FsError){.tag=merit_FsError_FsIoError}; }\n\n");
+    canonical_mir_append_text(output,"typedef enum { merit_FileReadResult_ReadOk = 0, merit_FileReadResult_ReadErr = 1 } merit_FileReadResult_tag;\n");
+    canonical_mir_append_text(output,"typedef struct { merit_FileReadResult_tag tag; union { merit_Buffer ReadOk; merit_FsError ReadErr; } data; } merit_FileReadResult;\n");
+    canonical_mir_append_text(output,"_Static_assert(offsetof(merit_FileReadResult, tag) == 0, \"Merit enum layout mismatch: FileReadResult.tag\");\n");
+    canonical_mir_append_text(output,"_Static_assert(offsetof(merit_FileReadResult, data) >= sizeof(merit_FileReadResult_tag), \"Merit enum layout mismatch: FileReadResult.data\");\n");
+    canonical_mir_append_text(output,"static inline merit_FileReadResult merit_make_FileReadResult_ReadOk(merit_Buffer value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadOk,.data.ReadOk=value}; }\n");
+    canonical_mir_append_text(output,"static inline merit_FileReadResult merit_make_FileReadResult_ReadErr(merit_FsError value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadErr,.data.ReadErr=value}; }\n\n");
+    canonical_mir_append_text(output,"typedef enum { merit_FileWriteResult_WriteOk = 0, merit_FileWriteResult_WriteErr = 1 } merit_FileWriteResult_tag;\n");
+    canonical_mir_append_text(output,"typedef struct { merit_FileWriteResult_tag tag; union { int64_t WriteOk; merit_FsError WriteErr; } data; } merit_FileWriteResult;\n");
+    canonical_mir_append_text(output,"_Static_assert(offsetof(merit_FileWriteResult, tag) == 0, \"Merit enum layout mismatch: FileWriteResult.tag\");\n");
+    canonical_mir_append_text(output,"_Static_assert(offsetof(merit_FileWriteResult, data) >= sizeof(merit_FileWriteResult_tag), \"Merit enum layout mismatch: FileWriteResult.data\");\n");
+    canonical_mir_append_text(output,"static inline merit_FileWriteResult merit_make_FileWriteResult_WriteOk(int64_t value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteOk,.data.WriteOk=value}; }\n");
+    canonical_mir_append_text(output,"static inline merit_FileWriteResult merit_make_FileWriteResult_WriteErr(merit_FsError value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteErr,.data.WriteErr=value}; }\n\n");
+    return 0;
+}
+
 pub fn canonical_c_finish_public_header_from_catalog_selected(
     borrow source:Buffer,borrow headers:Vec<MirFunctionRecord>,
     borrow descriptors:Vec<MirTypeDescriptor>,
@@ -7775,7 +7800,9 @@ requires_caps [allocate]
     var public_owned_enums:Vec<i32>=vec_new<i32>(allocator,4);
     var public_vectors:Vec<i32>=vec_new<i32>(allocator,4);
     var public_slice:i32=0;var public_allocator:i32=0;var public_buffer:i32=0;
+    var public_string:i32=canonical_c_has_feature(canonical_c_public_string_feature(),features);
     if(selection_mode==0){
+        public_string=1;public_slice=1;public_allocator=1;public_buffer=1;
         var type_index:i64=0;
         while(type_index<vec_len<MirTypeDescriptor>(descriptors)){
             let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,type_index);
@@ -7832,7 +7859,7 @@ requires_caps [allocate]
         header_index=checked_add(header_index,checked_add(parameter_count,1));
     }
     canonical_mir_append_text(output,"#pragma once\n#include <stdbool.h>\n#include <stddef.h>\n#include <stdint.h>\n\n");
-    if(canonical_c_has_feature(canonical_c_public_string_feature(),features)!=0){
+    if(public_string!=0){
         canonical_mir_append_text(output,"typedef struct { const uint8_t *data; size_t len; } merit_String;\n");
     }
     if(public_slice!=0){
@@ -7848,11 +7875,14 @@ requires_caps [allocate]
     if(public_buffer!=0){
         canonical_mir_append_text(output,"typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;\n");
     }
-    if(canonical_c_has_feature(canonical_c_public_string_feature(),features)!=0){buffer_push(output,10);}
+    if(public_string!=0){buffer_push(output,10);}
     else{if(public_slice!=0){buffer_push(output,10);}
     else{if(public_allocator!=0){buffer_push(output,10);}
     else{if(public_buffer!=0){buffer_push(output,10);}
     else{if(vec_len<i32>(public_vectors)>0){buffer_push(output,10);}}}}}
+    if(selection_mode==0){
+        if(canonical_c_append_all_public_legacy_types(output)!=0){return 7;}
+    }
     var emitted_vectors:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(public_vectors));
     while(vec_len<i32>(emitted_vectors)<vec_len<i32>(public_vectors)){
         var best_vector:i32=function_mir_unresolved_type_code();var vector_index:i64=0;

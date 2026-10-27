@@ -1646,6 +1646,21 @@ token, and frees its vector data. The focused compiler test passes in
 representative binary interop for those signature families, not all
 possible public types or the still-unrun final-tree broad gates.
 
+The historical all-public reference header also exposes public built-in
+types without requiring a function signature to mention them. The native
+and Python MIR header emitters now retain `String`, `ByteSlice`, `Allocator`,
+`Buffer`, legacy `I64Vec`, and the `FsError`/`FileReadResult`/
+`FileWriteResult` enum declarations and inline constructors in all-public
+mode only; selected-export mode remains dependency-scoped. A native C
+consumer compiles against those declarations, and the complete compiler
+all-public build, nine acceptance all-public headers, and the Python MIR
+header oracle agree. The affected test files passed `115` tests in 166.67s
+(`D:\Temp\merit-tests\sh3-f6-legacy-final.log`). This is header availability
+and representative ABI evidence; an exported `I64Vec` callable and every
+foreign type combination are not yet proven. The compiler source helper uses
+an explicit result after an initial implicit-`void` shape caused native CFG
+status `5006`; that source-assembly seam is separately audited in F5.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
