@@ -1399,6 +1399,57 @@ or hosted PR checks.
 | F8 | **Compiler project and complete accepted/rejected evidence.** Compile all 46 required compiler modules, ten acceptance applications, and the complete accepted/rejected corpus through the v4 path; compare interpreter/native, protocol, diagnostics, MIR, C, and header bytes without weakening tests. | **Partial; independent compiler MIR and current-tree full/M7 passes.** All 22 accepted/rejected Alpha.1 corpus cases pass through native-v4 preparation/build with deterministic artifacts or native rejection. Nine non-compiler acceptance applications pass exact native/Python MIR, C/header, GCC/runtime/output comparison and now build through the public v4 path with reference runtime/side-effect parity. The 46-module compiler emits deterministic v4 MIR/C/header; its MIR matches independent Python materialization byte-for-byte on `740425c` (`1 passed in 2157.91s`), its C/header match the Python emitter for that MIR, GCC compiles it, and focused `main`/adapter protocol behavior matches stage 0. The legacy M7 replacement gate passed all ten projects within the `d1aff3e` full gate (`11 passed`, `M7_ACCEPTANCE_RESULT=PASS`); that gate is not itself a native-v4 differential. Compiler-to-compiler public build belongs to SH4. Wider SH3-specific accepted/rejected evidence remains open. | Complete wider accepted/rejected evidence and an uninterrupted compiler-project run with artifact hashes and fail-closed cases; do not infer these from the fixed Alpha.1 corpus or legacy M7 gate alone. |
 | F9 | **SH3 validation and PR handoff.** Confirm the final tree's focused family evidence, affected subsystem gate, clean full gate, hosted authorities, scope/representation audit, and one PR for manual merge review. | **Partial.** The native-Windows subsystem gate passed on `8ebf24a` (`909 passed`); the canonical Windows full gate, including M7 and all ten acceptance projects, passed on `d1aff3e` as recorded above. Wider SH3-specific evidence, hosted checks, and the SH3 PR remain open. | `SELF_HOSTING.md` per-PR evidence items 1–10, terminal gate markers/results for the final tree, canonical hosted checks, PR link; never auto-merge. SH4–SH6 self-hosting gates are not redefined as SH3 completion. |
 
+### Post-merge evidence reconciliation (PR #131)
+
+PR [#131](https://github.com/JENkt4k/merit/pull/131) merged as `f36a57d`.
+Its merge tree equals the PR head `057e050`. The F1–F9 statuses above are
+the pre-merge burn-down snapshot, not a claim that those checks are still
+unrun. The later evidence is:
+
+| Evidence | Result and limit |
+| --- | --- |
+| Independent complete-compiler MIR oracle | The 46-module comparison passed on `aabd6a6` (`1 passed in 2436.89s`); `D:\Temp\merit-tests\sh3-compiler-mir-oracle-aabd6a6.log`. This compares MIR bytes, not every malformed descriptor or runtime behavior. |
+| Windows subsystem | `930 passed`, `MERIT_GATE_RESULT=PASS` on the then-current SH3 compiler/test tree; `D:\Temp\merit-tests\sh3-subsystem-rerun.log`. |
+| Windows full gate | `MERIT_GATE_RESULT=PASS`, `1679` pytest tests, M7 replacement acceptance `11 passed`, and `10/10` applications on `34fa7cc`; `D:\Temp\merit-tests\sh3-full-final-34fa7cc.log`. |
+| Test-only PR repair | `057e050` changed four test files so native process statuses are asserted portably on POSIX. No production compiler code changed. Focused tests and the local `pr` gate passed; hosted Ubuntu and Windows short `pr` checks passed on this head. The full gate was **not** repeated after this commit; the owner explicitly accepted and recorded that evidence exception on PR #131. |
+| Hosted long gates | Not run for this PR under the owner's short-automatic/long-manual validation split. Short `pr` checks do not prove full Ubuntu or Windows gate coverage. |
+
+This reconciliation does not close SH3. F1–F6 and F8 still contain explicitly
+unproven breadth (notably malformed catalogs/source records, complete
+instruction/call/cleanup differential coverage, wider ABI combinations, and
+the wider SH3 accepted/rejected corpus). F7's normal-path authority has focused
+evidence but not the full hosted authority listed in F9. Before checking the
+SH3 box, assign each gap to its existing family, establish a bounded final
+test/evidence set, and either prove it or record a specific justified scope
+correction. Do not infer all-family closure from the successful full gate or
+from the merge alone; do not begin SH4 while SH3 remains open.
+
+#### F5 dispatch audit after merge
+
+The native backend does not dispatch directly on canonical JSON instruction
+names. Its validated function-record body dispatch currently recognizes
+`const`, `copy_to_binding`, `binary`, `print`, `call`, struct
+construct/load/store, and enum construct/tag/payload load in
+`mir_resolved_source_function_bundle.mrt`. Placement dispatch separately
+emits contract records and explicit ownership records; the latter accepts
+move, replace-move, drop, replace-drop, and implicit-drop. The same backend
+has dedicated vector and filesystem call lowering and return/jump/branch/
+switch/unreachable CFG lowering. Thus the older F5 phrase "limited
+binary/print/call" understates implementation, but dispatch presence is
+not differential proof for every represented operation.
+
+The next bounded F5 evidence set must map each accepted Alpha.2 producer
+shape to its canonical MIR and native record path, then compare complete
+MIR/C/header bytes and execution (or diagnostic rejection) to the Python
+oracle. In particular, trace `convert` from `hir_to_mir.py` through the
+native record producer; verify borrowed/mutable-borrow forwarding, each
+vector/filesystem builtin family, contract/capability checks, and cleanup
+across early returns and aggregate replacement. `allocate` is admitted by
+the generic MIR contract but is not implemented by the Python C emitter's
+instruction dispatch; determine whether any accepted Alpha.2 producer can
+emit it before treating it as an SH3 parity requirement. Do not add semantics
+to make that unused contract spelling executable.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
