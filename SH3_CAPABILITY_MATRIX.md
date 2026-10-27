@@ -1658,8 +1658,23 @@ header oracle agree. The affected test files passed `115` tests in 166.67s
 (`D:\Temp\merit-tests\sh3-f6-legacy-final.log`). This is header availability
 and representative ABI evidence; an exported `I64Vec` callable and every
 foreign type combination are not yet proven. The compiler source helper uses
-an explicit result after an initial implicit-`void` shape caused native CFG
-status `5006`; that source-assembly seam is separately audited in F5.
+an explicit result after an initial implicit-`void` shape caused native
+status `5006`. The focused source-path audit decoded this as a nested
+missing-return status, not a CFG status. Native `void` type resolution and
+fallthrough-return lowering now pass the side-effecting and empty-body
+reference/native cases (`2 passed in 43.80s`). The empty-body path retains
+the existing statement-lowerer rejection for other return types while
+allowing the ownership traversal to process zero statements and the
+source-function boundary to append the implicit unit return. An empty
+`void` function consuming an owned parameter matches the reference and
+drops it exactly once (`1 passed in 25.93s`); seven adjacent source,
+ownership, statement, and resolved-pipeline tests passed in 248.87s.
+An additional `return effect()` probe for a `void` function passed reference
+checking but the reference C build failed (`_merit_result` undeclared and
+assignment from a `void` expression). This is a pre-existing Python-oracle
+codegen defect, not differential evidence for the SH3 production path; it
+needs a separate focused oracle repair before that spelling can be included
+in accepted parity tests.
 
 ## Execution order and boundary rule
 

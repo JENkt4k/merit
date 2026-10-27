@@ -734,7 +734,6 @@ fn source_control_lower_impl(
 ) -> i32
 requires_caps [allocate]
 {
-    if (vec_len<StatementRecord>(statements) == 0) { return 1; }
     var starts: Vec<i64> = vec_new<i64>(allocator, 8); var lengths: Vec<i64> = vec_new<i64>(allocator, 8);
     let parameter_status:i32=collect_source_parameter_spans(source,tokens,starts,lengths);
     let parameter_count:i64=vec_len<i64>(starts);

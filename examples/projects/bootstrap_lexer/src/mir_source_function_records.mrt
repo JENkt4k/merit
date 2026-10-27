@@ -7,6 +7,7 @@ import bootstrap_expression_spans;
 import bootstrap_hir;
 import bootstrap_mir_functions;
 import bootstrap_mir_statement_lowering;
+import bootstrap_mir_structured_lowering;
 import bootstrap_mir_ownership_flow;
 import bootstrap_statement_semantics;
 
@@ -1287,6 +1288,17 @@ fn sfr_integer_type_code(borrow source: Buffer, start: i64, length: i64) -> i32 
 pub fn sfr_builtin_type_code(borrow source: Buffer, start: i64, length: i64) -> i32 {
     let integer_type_code: i32 = sfr_integer_type_code(source, start, length);
     if (integer_type_code != function_mir_unresolved_type_code()) { return integer_type_code; }
+    if(length==4){
+        if(buffer_get(source,start)==sfr_ascii_v()){
+            if(buffer_get(source,checked_add(start,1))==sfr_ascii_o()){
+                if(buffer_get(source,checked_add(start,2))==sfr_ascii_i()){
+                    if(buffer_get(source,checked_add(start,3))==sfr_ascii_d()){
+                        return function_mir_unit_type_code();
+                    }
+                }
+            }
+        }
+    }
     if (length == 6) {
         if (buffer_get(source, start) == sfr_ascii_upper_s()) {
             if (buffer_get(source, checked_add(start, 1)) == sfr_ascii_t()) {
@@ -4308,10 +4320,29 @@ pub fn lower_source_function_body_records_from_catalog(
             }
             unit_signature_index=checked_add(unit_signature_index,1);
         }
-        status = lower_typed_statements_with_bindings_and_unit_calls_to_mir_events(
-            source, tokens, event_statements, operands,
-            event_binding_starts,event_binding_lengths,unit_call_starts,unit_call_lengths,allocator,events
-        );
+        var lower_events:i32=1;
+        if(vec_len<StatementRecord>(event_statements)==0){
+            if(result_type_code==function_mir_unit_type_code()){
+                if(destructor_body==0){lower_events=0;}
+            }
+        }
+        if(lower_events!=0){
+            status = lower_typed_statements_with_bindings_and_unit_calls_to_mir_events(
+                source, tokens, event_statements, operands,
+                event_binding_starts,event_binding_lengths,unit_call_starts,unit_call_lengths,allocator,events
+            );
+        }
+        if(status==0){
+            if(destructor_body==0){
+                if(result_type_code==function_mir_unit_type_code()){
+                    let return_ordinal:i64=vec_get<i64>(counters,2);
+                    vec_push<MirFunctionRecord>(records,function_mir_return(
+                        token_start(name_token),token_length(name_token),-1,return_ordinal
+                    ));
+                    vec_push<MirLowerEvent>(events,mir_event_return(-1));
+                }
+            }
+        }
         drop(unit_call_lengths);drop(unit_call_starts);
         drop(event_binding_lengths);drop(event_binding_starts);
     }

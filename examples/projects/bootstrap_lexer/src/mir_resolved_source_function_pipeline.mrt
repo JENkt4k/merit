@@ -545,6 +545,11 @@ requires_caps [allocate]
     );
     if (ownership_source_status != 0) { return resolved_pipeline_ownership_source_failure_status(ownership_source_status); }
 
+    let body_header:MirFunctionRecord=vec_get<MirFunctionRecord>(body_records,0);
+    if(function_mir_type_code(body_header)==function_mir_unit_type_code()){
+        vec_push<MirOwnershipEvent>(ownership_events,ownership_event_return(-1));
+    }
+
     // Non-Copy binding ownership does not imply a destruction obligation.
     // Refine scope exits with the resolved local type before state lowering.
     var scope_event_index:i64=0;
