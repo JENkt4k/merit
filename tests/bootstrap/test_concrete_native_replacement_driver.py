@@ -1109,7 +1109,7 @@ def test_native_project_request_rejects_unsupported_version_without_cleanup_fail
     )
 
     assert completed.returncode != 0
-    assert completed.returncode == 4606
+    assert completed.returncode == (4606 if sys.platform.startswith("win") else 4606 & 0xff)
     assert b"replacement driver status 4606" in completed.stderr
 
 

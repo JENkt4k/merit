@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -579,7 +580,8 @@ def test_native_compiler_artifact_adapter_matches_stage_zero_protocol(
         if probe is not accepted_probe:
             assert expected.returncode != 0, expected.stdout
         if probe is unsupported_version_probe:
-            assert expected.returncode == 4606, expected.stderr
+            assert expected.returncode == (4606 if os.name == "nt" else 4606 & 0xff), expected.stderr
+            assert expected.stderr.strip() == b"replacement driver status 4606"
         assert (actual.returncode, actual.stdout, actual.stderr) == (
             expected.returncode, expected.stdout, expected.stderr,
         )

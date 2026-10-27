@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -150,7 +151,10 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
             ),
             capture_output=True,
         )
-        assert rejected.returncode == 4606, (rejected.returncode, rejected.stderr)
+        assert rejected.returncode == (4606 if os.name == "nt" else 4606 & 0xff), (
+            rejected.returncode, rejected.stderr
+        )
+        assert rejected.stderr.strip() == b"replacement driver status 4606"
     empty_completed = subprocess.run(
         [str(executable)],
         input=encode_loaded_project_request(selected_project, header_exports=frozenset()),
@@ -170,7 +174,10 @@ def test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder(tmp_p
         malformed_request = ordered_request.replace(b"bravo", malformed_name, 1)
         assert malformed_request != ordered_request
         malformed = subprocess.run([str(executable)], input=malformed_request, capture_output=True)
-        assert malformed.returncode == 4606, (malformed.stdout, malformed.stderr)
+        assert malformed.returncode == (4606 if os.name == "nt" else 4606 & 0xff), (
+            malformed.stdout, malformed.stderr
+        )
+        assert malformed.stderr.strip() == b"replacement driver status 4606"
 
     selected_root = tmp_path / "selected-project"
     (selected_root / "src").mkdir(parents=True)

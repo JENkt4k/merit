@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -236,7 +237,9 @@ def test_native_source_destructor_catalog_fails_closed(
         units=(ProjectRequestUnit(path="src/main.mrt", source=source),),
     ))
     completed = subprocess.run([str(executable)], input=request, capture_output=True)
-    assert completed.returncode == expected_status, completed.stderr.decode("utf-8", errors="replace")
+    assert completed.returncode == (
+        expected_status if os.name == "nt" else expected_status & 0xff
+    ), completed.stderr.decode("utf-8", errors="replace")
     assert completed.stderr.strip() == f"replacement driver status {expected_status}".encode("ascii")
 
 
@@ -281,7 +284,9 @@ def test_native_cross_module_conflicting_destructor_rejects(tmp_path: Path) -> N
         ),
     ))
     completed = subprocess.run([str(executable)], input=request, capture_output=True)
-    assert completed.returncode == 971, completed.stderr.decode("utf-8", errors="replace")
+    assert completed.returncode == (971 if os.name == "nt" else 971 & 0xff), (
+        completed.stderr.decode("utf-8", errors="replace")
+    )
     with pytest.raises(ResolvedSourceFunctionBundleError, match="missing metadata"):
         decode_native_project_artifact_transport(int(line) for line in completed.stdout.splitlines())
     assert completed.stderr.strip() == b"replacement driver status 971"
