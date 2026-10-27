@@ -1450,6 +1450,47 @@ instruction dispatch; determine whether any accepted Alpha.2 producer can
 emit it before treating it as an SH3 parity requirement. Do not add semantics
 to make that unused contract spelling executable.
 
+The source-producer trace found no accepted-source `convert` or `allocate`
+instruction producer. `hir_to_mir.py` can lower a manually supplied HIR
+`conversion` node, and the Python MIR C emitter can render `convert`, but the
+source-backed native record producer writes `conversion_policy:"none"` for
+its instructions and does not construct a conversion node. `allocate` is a
+recognized MIR-contract/ownership spelling without a corresponding Python
+C-emitter instruction branch or source-backed producer. These remain
+fail-closed non-source contract shapes, not missing Alpha.2 source semantics;
+the conclusion must be revisited if an accepted source producer is added.
+On the F6 audit branch, `ledger_app` also passed the independent native-v4
+versus Python project-artifact test (`1 passed in 41.85s`,
+`D:\Temp\merit-tests\sh3-ledger-oracle.log`), covering complete MIR/C/header,
+native/reference runtime, and the generated ledger side-effect file. The
+focused resource/coercion-flow oracle group passed all four cases in 41.63s
+(`D:\Temp\merit-tests\sh3-resource-coercion.log`). These are current-tree
+F1/F2/F5 examples, not proof of the full malformed-record or instruction
+matrix.
+
+For F8, the checked-in fixed accepted/rejected corpus is
+`tests/project/alpha1_corpus_v1.json`: ten accepted and twelve rejected
+programs covering its declared 26 required surfaces. The native-v4 corpus
+test checks deterministic artifact publication and reference/native execution
+for accepted cases; rejected cases check repeatable fail-closed preparation
+and absence of a published manifest. This is the finite corpus named by the
+existing convergence contract, not a reason to invent an unbounded second
+corpus. F8 still needs final-tree evidence for that complete test file and
+the independent compiler project, while F1-F6 retain their separate
+mechanism-specific malformed and differential checks. SH5 later requires
+stage-to-stage structured diagnostic bytes for the fixed rejected probes;
+SH3's rejection test does not prove that future stage-equivalence condition.
+
+The bounded F3-F5 acceptance-artifact file passed on this branch with
+`30 passed, 1 deselected in 401.42s` (`TEST_EXIT_CODE=0`,
+`D:\Temp\merit-tests\sh3-acceptance-boundary.log`). The sole deselection is
+`test_native_compiler_project_mir_matches_independent_oracle`, the separately
+tracked approximately 40-minute complete-compiler MIR comparison. This run
+jointly covers nine native-v4 application differentials, compiler C/protocol
+artifacts, owned/vector/enum cleanup, resource/coercion flow, and rejected
+filesystem/ownership shapes. It is not a substitute for the excluded MIR
+oracle, subsystem gate, or full gate on this tree.
+
 #### F6 first uncovered public-ABI failure
 
 The focused `ledger_app` shared-library probe through the public native-v4
