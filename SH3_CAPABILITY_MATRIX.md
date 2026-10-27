@@ -1536,6 +1536,18 @@ historical reference `build_shared` succeeds with a 227,540-byte header
 Its normal selected/empty-header compiler path has separate passing evidence;
 that does not prove the all-public C ABI. Classify this as the remaining F6
 compiler-public-surface boundary before claiming full ABI compatibility.
+The normal native-v4 compiler build also succeeds and reports `1,522` exported
+MIR functions. Source inspection finds at least ten public functions returning
+`Vec<T>`, a type family the native all-public function guard explicitly
+rejects for export; 88 inventoried exported aggregate-return records carry
+non-stable `abi_1` metadata, which the current stable-only public-header path
+also cannot expose. The first exact `4403` function was not identified by the
+inventory, so these are classified mechanisms, not a claim about its precise
+execution order (`D:\Temp\merit-tests\sh3-f6-compiler-export-types.log`).
+Do not broaden the frozen vector/aggregate ABI or silently exempt the compiler
+project; either prove the historical foreign-call contract with a coherent
+native/header implementation, or record an explicitly approved SH3 scope
+correction before closing F6.
 
 ## Execution order and boundary rule
 
