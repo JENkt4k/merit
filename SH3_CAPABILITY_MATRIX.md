@@ -1656,8 +1656,29 @@ consumer compiles against those declarations, and the complete compiler
 all-public build, nine acceptance all-public headers, and the Python MIR
 header oracle agree. The affected test files passed `115` tests in 166.67s
 (`D:\Temp\merit-tests\sh3-f6-legacy-final.log`). This is header availability
-and representative ABI evidence; an exported `I64Vec` callable and every
-foreign type combination are not yet proven. The compiler source helper uses
+and representative ABI evidence; every foreign type combination is not yet
+proven. A focused exported `I64Vec` callable now passes a foreign call through
+the native shared library and a C consumer compiled against the historical
+reference header. A value-mode `I64Vec` parameter returned directly also
+passes by-value ABI execution against that historical header; native C bytes
+match the Python MIR emitter (`1 passed in 23.00s` for the combined focused
+case). The native backend now admits this exact return provenance only when
+the returned local is a matching value-mode parameter; unrelated missing
+resource effects still fail closed. MPRQ source preparation rewrites
+legacy `I64Vec` to `Vec<i64>` before canonical MIR, so the native header names
+that parameter `merit_Vec_693634` while the historical header names it
+`merit_I64Vec`. This proves binary layout/call compatibility, not identical
+header spelling or source-level interchangeability. Retain that distinction
+in the final F6 ABI audit. Before the provenance repair, that owned-by-value
+probe failed at backend status `110` (`4510` at the driver); temporary
+diagnostic edits were reverted. The focused built-in resource ABI, generic
+vector ABI, and multiblock owned-return selection passed `3` tests in 69.01s.
+The multiblock test's header oracle now uses the request's explicit empty
+export selection; MIR/C and runtime assertions remain unchanged. No broad
+gate was run. The canonical short Windows `pr` gate passed on this candidate:
+112 short tests, 212 reference tests, and 23 Alpha.1 convergence cases;
+`MERIT_GATE_RESULT=PASS` in 164.172s. This is not a subsystem or full-gate
+result. The compiler source helper uses
 an explicit result after an initial implicit-`void` shape caused native
 status `5006`. The focused source-path audit decoded this as a nested
 missing-return status, not a CFG status. Native `void` type resolution and

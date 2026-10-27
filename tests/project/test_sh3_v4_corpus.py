@@ -14,7 +14,7 @@ import sys
 import pytest
 
 from merit.bootstrap.mir_contract import parse_mir
-from merit.bootstrap.mir_to_c import MirToCError, emit_c_header
+from merit.bootstrap.mir_to_c import MirToCError, emit_c_header, emit_c_module
 from merit.compiler import CompileError
 from merit.project.build import build, build_shared, check
 from merit.project.cli import main as project_cli_main
@@ -921,10 +921,18 @@ def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
         "pub fn same_allocator(value:Allocator)->Allocator { return value; }\n"
         "pub fn slice_size(value:ByteSlice)->i64 { return slice_len(value); }\n"
         "pub fn buffer_size(borrow value:Buffer)->i64 { return buffer_len(value); }\n"
+        "pub fn vector_score(borrow value:I64Vec)->i64 {\n"
+        "    return checked_add(i64vec_len(value),i64vec_get(value,0));\n"
+        "}\n"
+        "pub fn pass_vector(value:I64Vec)->I64Vec { return value; }\n"
         "fn main()->i32 { return 0; }\n",
         encoding="utf-8", newline="\n",
     )
     output = tmp_path / "resource_abi"
+    project = load_project(root / "Merit.toml")
+    _, reference_header, _ = build_shared(project, tmp_path / "resource_abi_reference")
+    assert b"int64_t merit_vector_score(const merit_I64Vec *" in reference_header.read_bytes()
+    assert b"merit_I64Vec merit_pass_vector(merit_I64Vec" in reference_header.read_bytes()
     assert project_cli_main([
         "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
         "-o", str(output),
@@ -936,8 +944,12 @@ def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
     module = parse_mir(json.loads(mir_path.read_bytes()))
     assert header == emit_c_header(module).encode("utf-8")
     assert b"merit_Allocator merit_same_allocator(merit_Allocator m0);" in header
+    c_path = manifest_path.parent / manifest["native_artifacts"]["c_source"]["path"]
+    assert c_path.read_bytes() == emit_c_module(module).encode("utf-8")
     assert b"int64_t merit_slice_size(merit_ByteSlice m0);" in header
     assert b"int64_t merit_buffer_size(const merit_Buffer * m0);" in header
+    assert b"int64_t merit_vector_score(const merit_Vec_693634 * m0);" in header
+    assert b"merit_Vec_693634 merit_pass_vector(merit_Vec_693634 m0);" in header
 
     class Allocator(ctypes.Structure):
         _fields_ = [("identity", ctypes.c_int32)]
@@ -950,6 +962,14 @@ def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
             ("data", ctypes.POINTER(ctypes.c_uint8)),
             ("len", ctypes.c_size_t),
             ("capacity", ctypes.c_size_t),
+            ("allocator", Allocator),
+        ]
+
+    class I64Vec(ctypes.Structure):
+        _fields_ = [
+            ("data", ctypes.POINTER(ctypes.c_int64)),
+            ("len", ctypes.c_size_t),
+            ("cap", ctypes.c_size_t),
             ("allocator", Allocator),
         ]
 
@@ -966,3 +986,37 @@ def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
     library.merit_buffer_size.restype = ctypes.c_int64
     value = Buffer(data, 3, 3, Allocator(1))
     assert library.merit_buffer_size(ctypes.byref(value)) == 3
+    library.merit_vector_score.argtypes = [ctypes.POINTER(I64Vec)]
+    library.merit_vector_score.restype = ctypes.c_int64
+    elements = (ctypes.c_int64 * 2)(40, 99)
+    vector = I64Vec(elements, 2, 2, Allocator(1))
+    assert library.merit_vector_score(ctypes.byref(vector)) == 42
+
+    consumer = tmp_path / "legacy-vector-consumer.c"
+    consumer.write_text(
+        '#include "resource_abi_reference.h"\n'
+        'int main(void) {\n'
+        '    int64_t elements[] = {40, 99};\n'
+        '    merit_I64Vec values = {.data = elements, .len = 2, .cap = 2,\n'
+        '                           .allocator = {.kind = 1}};\n'
+        '    if (merit_vector_score(&values) != 42) return 1;\n'
+        '    merit_I64Vec passed = merit_pass_vector(values);\n'
+        '    if (passed.data != elements || passed.len != 2 || passed.cap != 2) return 2;\n'
+        '    return merit_vector_score(&passed) != 42;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    executable = tmp_path / ("legacy-vector-consumer.exe" if os.name == "nt" else "legacy-vector-consumer")
+    compiled = subprocess.run(
+        [compiler, "-std=c11", "-I", str(reference_header.parent), str(consumer),
+         str(output.with_suffix(suffix)), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    environment = os.environ.copy()
+    library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
+    consumed = subprocess.run([str(executable)], capture_output=True, env=environment)
+    assert consumed.returncode == 0, consumed.stderr

@@ -2039,6 +2039,29 @@ fn canonical_c_entry_body_ordinal(
     return ordinal;
 }
 
+// Returning a value-mode owned parameter transfers its existing storage;
+// no synthetic move or copy instruction is required for that same local.
+fn canonical_c_owned_return_value_parameter(
+    borrow records:Vec<MirFunctionRecord>,return_local:i64,return_type:i32
+)->i32
+{
+    var matches:i32=0;
+    var index:i64=1;
+    while(index<vec_len<MirFunctionRecord>(records)){
+        let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
+        if(function_mir_kind(record)==function_mir_kind_parameter()){
+            if(function_mir_id(record)==return_local){
+                if(function_mir_type_code(record)!=return_type){return 0;}
+                if(function_mir_symbol_code(record)!=function_mir_mode_value()){return 0;}
+                matches=checked_add(matches,1);
+            }
+        }
+        index=checked_add(index,1);
+    }
+    if(matches==1){return 1;}
+    return 0;
+}
+
 // Alpha.2 source lowering may initialize one owned binding from a fresh
 // temporary in entry, then return that binding after a loop. This is a
 // transfer of the binding, not permission to copy an owned source binding.
@@ -4101,7 +4124,11 @@ requires_caps [allocate]
                         if(move_matches!=1){if(constructed!=1){
                             if(canonical_c_owned_return_entry_copy(
                                 records,sources,placements,cfg_operand(return_record),return_type_code
-                            )==0){return canonical_c_resource_missing_effect_status();}
+                            )==0){
+                                if(canonical_c_owned_return_value_parameter(
+                                    records,cfg_operand(return_record),return_type_code
+                                )==0){return canonical_c_resource_missing_effect_status();}
+                            }
                         }}
                         return_count=checked_add(return_count,1);
                     }
