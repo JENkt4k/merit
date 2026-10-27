@@ -228,6 +228,23 @@ def test_public_header_orders_nested_copy_enum_layouts() -> None:
     assert "merit_enum_copy_payload_1 merit_outcome(void);" in header
 
 
+def test_public_owned_enum_header_rejects_stable_payload_with_destructor() -> None:
+    receipt = MirType(
+        "struct_aggregate_0_destructor_0__abi_3_52656365697074_76616c7565",
+        (I64,),
+    )
+    result = MirType("enum_owned_payload_0", (receipt, MirType("enum_copy_payload_0")))
+    function = MirFunction(
+        "outcome", result,
+        (MirLocal(0, "result", result),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),),
+        0, exported=True,
+    )
+
+    with pytest.raises(MirToCError, match="requires stable aggregate or Copy-enum payloads"):
+        emit_c_header(MirModule("example", (function,)))
+
+
 def test_emits_and_runs_ordered_arithmetic(tmp_path):
     function = binary_function("answer", 20, 22, "+", policy="exact")
     generated = emit_c_module(scalar_module(function))

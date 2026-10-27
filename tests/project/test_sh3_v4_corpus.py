@@ -13,7 +13,7 @@ import sys
 import pytest
 
 from merit.bootstrap.mir_contract import parse_mir
-from merit.bootstrap.mir_to_c import emit_c_header
+from merit.bootstrap.mir_to_c import MirToCError, emit_c_header
 from merit.compiler import CompileError
 from merit.project.build import build, build_shared, check
 from merit.project.cli import main as project_cli_main
@@ -495,6 +495,117 @@ def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
     environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
     consumed = subprocess.run([str(consumer_executable)], capture_output=True, env=environment)
     assert consumed.returncode == 0, consumed.stderr
+
+
+def test_sh3_v4_public_shared_build_preserves_cobol_finance_abi(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "cobol_finance_modernization"
+    shutil.copytree(ROOT / "examples/projects/cobol_finance_modernization", root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    project = load_project(root / "Merit.toml")
+    _, oracle_header, _ = build_shared(project, tmp_path / "reference-cobol")
+    assert b"merit_TransferResult merit_apply_transfer" in oracle_header.read_bytes()
+
+    # Both ordinary compilation and the all-public foreign-call path must
+    # represent the same decimal, stable aggregate, and enum behavior.
+    executable = tmp_path / "native-cobol-executable"
+    assert project_cli_main([
+        "build", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(executable),
+    ]) == 0
+    assert _result(executable.with_suffix(".exe" if os.name == "nt" else ""))[0] == 0
+
+    output = tmp_path / "native-cobol-shared"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    header = output.with_suffix(".h").read_bytes()
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert header == emit_c_header(module).encode("utf-8")
+
+    consumer = tmp_path / "cobol-reference-consumer.c"
+    consumer.write_text(
+        '#include "reference-cobol.h"\n'
+        'int main(void) {\n'
+        '    merit_Account debit = merit_import_account((merit_CobolAccountRecord){1001001, 125000, 40});\n'
+        '    merit_Account credit = merit_import_account((merit_CobolAccountRecord){2002002, 7525, 40});\n'
+        '    merit_TransferPosting posting = merit_import_transfer(\n'
+        '        (merit_CobolTransferRecord){1001001, 2002002, 12550, 41});\n'
+        '    merit_TransferResult result = merit_apply_transfer(&debit, &credit, posting);\n'
+        '    if (result.tag != merit_TransferResult_Committed) return 1;\n'
+        '    if (result.data.Committed.debit_balance != 112450) return 2;\n'
+        '    if (result.data.Committed.credit_balance != 20075) return 3;\n'
+        '    if (result.data.Committed.sequence != 41) return 4;\n'
+        '    merit_CobolAccountRecord exported = merit_export_account(&debit);\n'
+        '    if (exported.balance != 112450 || exported.last_sequence != 41) return 5;\n'
+        '    result = merit_apply_transfer(&debit, &credit, posting);\n'
+        '    if (result.tag != merit_TransferResult_Rejected) return 6;\n'
+        '    if (result.data.Rejected.tag != merit_TransferError_DuplicateOrOutOfOrder) return 7;\n'
+        '    return 0;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    consumer_executable = tmp_path / ("cobol-reference-consumer.exe" if os.name == "nt" else "cobol-reference-consumer")
+    compiled = subprocess.run(
+        [compiler, "-std=c11", "-I", str(oracle_header.parent), str(consumer),
+         str(output.with_suffix(suffix)), "-o", str(consumer_executable)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    environment = os.environ.copy()
+    library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
+    consumed = subprocess.run([str(consumer_executable)], capture_output=True, env=environment)
+    assert consumed.returncode == 0, consumed.stderr
+
+
+def test_sh3_v4_public_owned_enum_with_resource_payload_fails_closed(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "resource_enum_abi"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="resource_enum_abi"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module resource_enum_abi\n'
+        'pub stable("receipt-v1") struct Receipt { value:i64; other:i64; }\n'
+        'pub enum Choice { HasBuffer(Buffer), Empty(Receipt) }\n'
+        'pub fn choose(selector:i64)->Choice {\n'
+        '    if (selector > 0) { return Empty(Receipt { value:1, other:3 }); }\n'
+        '    else { return Empty(Receipt { value:2, other:4 }); }\n'
+        '}\n'
+        'fn main()->i32 { return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    executable = tmp_path / "resource_enum_executable"
+    assert project_cli_main([
+        "build", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(executable),
+    ]) == 0
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    with pytest.raises(MirToCError, match="requires stable aggregate or Copy-enum payloads"):
+        emit_c_header(module)
+
+    shared = tmp_path / "resource_enum_shared"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(shared),
+    ]) != 0
+    assert not shared.with_suffix(".h").exists()
 
 
 def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(

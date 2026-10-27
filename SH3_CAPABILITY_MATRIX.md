@@ -1493,6 +1493,37 @@ an owned-Buffer missing-effect rejection, passed `60` tests in `128.53s`
 (`D:\Temp\merit-tests\sh3-f6-boundary.log`). No full gate has been run for
 this follow-up tree.
 
+The pushed F6 branch `adf8fbf` also passed the short canonical PR gate:
+`MERIT_GATE_RESULT=PASS`, 111 short tests, 212 independent reference-authority
+cases, and 23 corpus-convergence cases in `152.384s`
+(`D:\Temp\merit-tests\sh3-f6-pr-gate.log`). This is not a subsystem or full
+gate for the follow-up tree.
+
+The next F6 differential used the complete `cobol_finance_modernization`
+acceptance project. Its ordinary native-v4 executable build passes, but its
+all-public shared build initially returned `4403`: exported `TransferResult`
+is a recursive owned-payload enum containing stable `TransferReceipt` and
+Copy `TransferError`. That return was rejected by the backend's broad owned
+export guard even though its C body and canonical MIR were already emitted.
+The bounded repair admits a public owned-payload enum only when every variant
+payload is a public stable aggregate or Copy enum. Both the Merit-native header
+and the independent Python MIR-header oracle emit the same ordered declarations.
+A C consumer compiled against the historical Alpha.2 reference header links
+to the native-v4 shared library and exercises `import_account`,
+`import_transfer`, `apply_transfer` (committed and rejected results), and
+`export_account`, checking exact decimal and bounded values. A separate
+resource-bearing owned enum with a `Buffer` variant continues to reject the
+all-public export without publishing a shared header. The paired focused
+Windows tests passed (`2 passed`, each under 40s; logs
+`D:\Temp\merit-tests\sh3-f6-cobol-owned-enum.log` and
+`D:\Temp\merit-tests\sh3-f6-resource-enum.log`). This does not generalize
+foreign ownership transfer or close every F6 type family; wider regression
+and final-tree gates remain required.
+The complete affected Python MIR-emitter and native-v4 corpus/project files
+then passed together (`97 passed in 58.30s`,
+`D:\Temp\merit-tests\sh3-f6-final-focused.log`); a separate direct
+destructor-bearing payload rejection test passed after that run.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using

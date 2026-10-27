@@ -1055,6 +1055,8 @@ def emit_c_header(
             return f"merit_{_identifier(name)}"
         if _copy_payload_enum_identity(type_) is not None:
             return _type(type_)
+        if _recursive_owned_payload_enum_identity(type_) is not None:
+            return _type(type_)
         builtin = builtin_abi_types.get(type_.name) if not type_.arguments else None
         if builtin is not None:
             return builtin[0]
@@ -1067,8 +1069,44 @@ def emit_c_header(
 
     layouts: dict[str, MirType] = {}
     copy_enums: dict[str, MirType] = {}
+    public_owned_enums: dict[str, MirType] = {}
     required_builtin_names: set[str] = set()
+    def resource_free_public_payload(type_: MirType) -> bool:
+        aggregate = _aggregate_struct_identity(type_)
+        if aggregate is not None:
+            abi = _aggregate_struct_abi(type_)
+            return (
+                aggregate[2] is None and abi is not None and abi[0] == 3
+                and all(resource_free_public_payload(field) for field in type_.arguments)
+            )
+        if _copy_payload_enum_identity(type_) is not None:
+            return all(resource_free_public_payload(payload) for payload in type_.arguments)
+        return _type(type_) in primitive_c_types
+
     def collect(type_: MirType) -> None:
+        owned = _recursive_owned_payload_enum_identity(type_)
+        if owned is not None:
+            identity, payloads = owned
+            previous_owned = public_owned_enums.get(identity)
+            if previous_owned is not None and previous_owned != type_:
+                raise MirToCError(f"conflicting replacement public owned enum layout: {identity}")
+            if previous_owned is None:
+                if not payloads or any(
+                    (
+                        _aggregate_struct_abi(payload) is None
+                        and _copy_payload_enum_identity(payload) is None
+                    )
+                    or not resource_free_public_payload(payload)
+                    for payload in payloads
+                ):
+                    raise MirToCError(
+                        f"replacement public owned enum {identity} requires stable aggregate or Copy-enum payloads"
+                    )
+                public_owned_enums[identity] = type_
+                for payload in payloads:
+                    header_type(payload)
+                    collect(payload)
+            return
         enum_identity = _copy_payload_enum_identity(type_)
         if enum_identity is not None:
             previous_enum = copy_enums.get(enum_identity)
@@ -1214,6 +1252,20 @@ def emit_c_header(
         if not progressed:
             raise MirToCError("replacement public enum type graph is cyclic")
     if copy_enums:
+        lines.append("")
+
+    for identity, type_ in sorted(public_owned_enums.items(), key=lambda item: int(item[0])):
+        owned = _recursive_owned_payload_enum_identity(type_)
+        assert owned is not None
+        fields = " ".join(
+            f"{header_type(payload)} variant_{ordinal};"
+            for ordinal, payload in enumerate(owned[1])
+        )
+        lines.append(
+            f"typedef struct {{ int64_t tag; union {{ {fields} }} payload; }} "
+            f"merit_enum_owned_payload_{identity};"
+        )
+    if public_owned_enums:
         lines.append("")
 
     def parameter_list(function: MirFunction) -> str:
