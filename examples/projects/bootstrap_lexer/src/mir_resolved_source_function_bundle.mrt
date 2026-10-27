@@ -7775,6 +7775,25 @@ requires_caps [allocate]
     var public_owned_enums:Vec<i32>=vec_new<i32>(allocator,4);
     var public_vectors:Vec<i32>=vec_new<i32>(allocator,4);
     var public_slice:i32=0;var public_allocator:i32=0;var public_buffer:i32=0;
+    if(selection_mode==0){
+        var type_index:i64=0;
+        while(type_index<vec_len<MirTypeDescriptor>(descriptors)){
+            let descriptor:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,type_index);
+            if(function_mir_type_descriptor_kind(descriptor)==function_mir_type_descriptor_aggregate_struct_kind()){
+                let flags:i32=function_mir_type_descriptor_abi_flags(descriptor);
+                var is_public:i32=0;
+                if(flags==canonical_c_public_abi_flags()){is_public=1;}
+                if(flags==canonical_c_public_stable_abi_flags()){is_public=1;}
+                if(is_public!=0){
+                    if(canonical_c_collect_public_type(
+                        function_mir_type_descriptor_code(descriptor),descriptors,numeric_descriptors,
+                        public_types,public_enums,public_owned_enums,public_vectors,0
+                    )!=0){return 2;}
+                }
+            }
+            type_index=checked_add(type_index,1);
+        }
+    }
     var header_index:i64=0;
     while(header_index<vec_len<MirFunctionRecord>(headers)){
         let header:MirFunctionRecord=vec_get<MirFunctionRecord>(headers,header_index);

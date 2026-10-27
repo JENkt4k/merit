@@ -1143,6 +1143,20 @@ def emit_c_header(
     for type_ in represented:
         collect(type_)
         header_type(type_)
+    if exported_names is None:
+        pending_types = [local.type for function in module.functions for local in function.locals]
+        seen_types: set[MirType] = set()
+        while pending_types:
+            type_ = pending_types.pop()
+            if type_ in seen_types:
+                continue
+            seen_types.add(type_)
+            abi = _aggregate_struct_abi(type_)
+            if abi is not None and abi[0] in (
+                _PUBLIC_AGGREGATE_ABI_FLAGS, _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS,
+            ):
+                collect(type_)
+            pending_types.extend(type_.arguments)
 
     lines = [
         "#pragma once", "#include <stdbool.h>", "#include <stddef.h>",

@@ -1576,6 +1576,23 @@ coherent all-public compiler-header mechanism, but not the whole F6 contract:
 other exported resource/aggregate relationships and final-tree broad gates
 still need evidence. Do not claim SH3 closure from this focused result.
 
+Commit `9d92895` passed the canonical short Windows `pr` gate: 112 short
+tests, 212 reference tests, and 23 Alpha.1 convergence cases;
+`MERIT_GATE_RESULT=PASS` in 157.483s
+(`D:\Temp\merit-tests\sh3-f6-pr-9d92895.log`). This is not a subsystem or
+full-gate result. A further inventory found that the compiler MIR already
+contains all 52 exported aggregate names, but the all-public native header
+collected only types reachable from exported function signatures. All-public
+mode now collects every public `abi_1`/`abi_3` aggregate from the existing
+catalog while selected-export mode stays narrow. The compiler test asserts
+all exported struct declarations and still compiles/runs the historical
+reference-header C consumer. The affected files pass `115` tests in
+`161.11s` (`D:\Temp\merit-tests\sh3-f6-public-types-family.log`). Reference
+headers additionally publish always-present built-in typedefs/enums and
+private incomplete declarations; those names are not yet claimed byte-equal
+to the MIR header. No conclusion about that remaining header availability
+surface or the entire F6 row follows from callable ABI parity alone.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using

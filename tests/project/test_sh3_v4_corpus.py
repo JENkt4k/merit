@@ -724,11 +724,17 @@ def test_sh3_v4_compiler_all_public_shared_abi_matches_mir_oracle(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
     module = parse_mir(json.loads(mir_path.read_bytes()))
-    assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
+    native_header = output.with_suffix(".h").read_bytes()
+    assert native_header == emit_c_header(module).encode("utf-8")
 
+    project = load_project(root / "Merit.toml")
     _, reference_header, _ = build_shared(
-        load_project(root / "Merit.toml"), tmp_path / "reference-compiler-shared",
+        project, tmp_path / "reference-compiler-shared",
     )
+    public_structs = project.program.exports & project.program.structs.keys()
+    assert {"CapabilityCatalogEntry", "ParseCursor", "ProjectRequestUnitSpan", "SfrNumericMagnitude"} <= public_structs
+    for name in sorted(public_structs):
+        assert f"}} merit_{name};".encode("utf-8") in native_header
     consumer = tmp_path / "compiler-reference-consumer.c"
     consumer.write_text(
         '#include "reference-compiler-shared.h"\n'
