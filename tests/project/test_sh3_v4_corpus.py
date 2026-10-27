@@ -567,6 +567,33 @@ def test_sh3_v4_public_shared_build_preserves_cobol_finance_abi(
     assert consumed.returncode == 0, consumed.stderr
 
 
+@pytest.mark.parametrize("name", [
+    "text_pipeline", "binary_packet", "generic_result", "trait_bounds",
+    "generic_collections", "borrowed_views", "cobol_finance_modernization",
+    "filesystem_capabilities", "ledger_app",
+])
+def test_sh3_v4_all_acceptance_public_shared_headers_match_mir_oracle(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver, name: str,
+) -> None:
+    root = tmp_path / name
+    shutil.copytree(ROOT / "examples/projects" / name, root,
+                    ignore=shutil.ignore_patterns("build", ".merit"))
+    project = load_project(root / "Merit.toml")
+    _, reference_header, _ = build_shared(project, tmp_path / "reference")
+    assert reference_header.exists()
+
+    output = tmp_path / "native-shared"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
+
+
 def test_sh3_v4_public_owned_enum_with_resource_payload_fails_closed(
     tmp_path: Path, native_v4_driver: NativeReplacementDriver,
 ) -> None:

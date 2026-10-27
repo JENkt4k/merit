@@ -1524,6 +1524,19 @@ then passed together (`97 passed in 58.30s`,
 `D:\Temp\merit-tests\sh3-f6-final-focused.log`); a separate direct
 destructor-bearing payload rejection test passed after that run.
 
+The finite all-public acceptance inventory now distinguishes the ten projects:
+all nine non-compiler applications pass native-v4 `build-shared` on temporary
+copies; each also passes the historical reference shared build and has a
+native header byte-identical to the independent Python MIR-header oracle
+(`9 passed in 25.58s`, `D:\Temp\merit-tests\sh3-f6-all-acceptance-shared.log`).
+The tenth, 45-module `bootstrap_lexer` compiler project is different:
+historical reference `build_shared` succeeds with a 227,540-byte header
+(38.96s), but native-v4 all-public `build-shared` fails at backend status
+`4403` (44.02s; `D:\Temp\merit-tests\sh3-f6-compiler-public-inventory.log`).
+Its normal selected/empty-header compiler path has separate passing evidence;
+that does not prove the all-public C ABI. Classify this as the remaining F6
+compiler-public-surface boundary before claiming full ABI compatibility.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
