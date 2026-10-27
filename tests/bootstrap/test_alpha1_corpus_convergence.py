@@ -15,7 +15,7 @@ from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     REPLACEMENT_MANIFEST,
     ReplacementProjectError,
-    build_replacement_project,
+    build_legacy_oracle_project as build_replacement_project,
 )
 from merit.project.replacement_prepare import (
     NativeReplacementDriver,

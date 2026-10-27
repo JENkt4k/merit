@@ -16,17 +16,22 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from typing import TYPE_CHECKING
 
-from merit.bootstrap.resolved_source_function_bundle import (
-    ResolvedSourceFunctionBundleError,
-    decode_resolved_source_function_bundle,
-)
-from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
-from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, ReplacementProjectError
+from merit.project.replacement import (
+    REPLACEMENT_MANIFEST,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2,
+    REPLACEMENT_SCHEMA,
+    ReplacementProjectError,
+)
 from merit.project.project_request import (
     encode_loaded_project_request,
 )
+
+if TYPE_CHECKING:
+    from merit.project.loader import LoadedProject
 
 DRIVER_PROTOCOL = "merit-project-request-v1/resolved-source-function-bundle-v3"
 # Bounded per-unit ceiling, not evidence of acceptable compiler throughput.
@@ -60,6 +65,7 @@ class NativeReplacementDriver:
 class PreparedReplacementArtifacts:
     manifest_path: Path
     snapshot_paths: tuple[Path, ...]
+    project_artifact_paths: tuple[Path, ...] = ()
 
 
 def _source_digest(source: str) -> str:
@@ -132,8 +138,19 @@ def _run_driver(
         raise ReplacementProjectError(
             f"replacement driver emitted no bundle for project {project_name!r}"
         )
+    from merit.bootstrap.resolved_source_function_bundle import (
+        PROJECT_ARTIFACT_BUNDLE_VERSION,
+        ResolvedSourceFunctionBundleError,
+        decode_native_project_artifact_transport,
+        decode_resolved_source_function_bundle,
+    )
+
     try:
-        bundle = decode_resolved_source_function_bundle(values)
+        bundle = (
+            decode_native_project_artifact_transport(values)
+            if len(values) > 1 and values[1] == PROJECT_ARTIFACT_BUNDLE_VERSION
+            else decode_resolved_source_function_bundle(values)
+        )
     except ResolvedSourceFunctionBundleError as exc:
         raise ReplacementProjectError(
             f"replacement driver emitted invalid bundle for project {project_name!r}: {exc}"
@@ -157,60 +174,122 @@ def _atomic_write_text(path: Path, content: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def prepare_replacement_artifacts(
     project: LoadedProject | ReplacementLoadedProject,
     driver: NativeReplacementDriver,
+    *,
+    header_exports: frozenset[str] | None = None,
 ) -> PreparedReplacementArtifacts:
-    """Run the native replacement driver and publish all resolved functions atomically."""
+    """Run the native replacement driver and publish its versioned artifacts."""
+
+    from merit.bootstrap.resolved_source_function_bundle import NativeProjectArtifactTransport
 
     artifact_dir = project.manifest.root / ".merit"
     staged: list[tuple[Path, str]] = []
     manifest_functions: list[dict[str, object]] = []
     snapshot_paths: list[Path] = []
+    project_artifact_paths: list[Path] = []
 
-    request = encode_loaded_project_request(project)
+    if header_exports is None and project.manifest.executable_adapter is not None:
+        header_exports = frozenset({project.manifest.executable_entry or ""})
+    request = encode_loaded_project_request(project, header_exports=header_exports)
     bundle = _run_driver(
         driver,
         request,
         project_name=project.manifest.name,
         source_path=project.manifest.entry_path,
     )
-    try:
-        project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
-    except (IndexError, UnicodeDecodeError) as exc:
-        raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
-    digest = _source_digest(project_source)
-    capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}
-    for function_index, values in enumerate(bundle.encoded_snapshots):
-        filename = f"replacement-{bundle.module_name}-{function_index}.snapshot"
-        path = artifact_dir / filename
-        staged.append((path, "\n".join(str(value) for value in values) + "\n"))
-        snapshot_paths.append(path)
-        manifest_functions.append(
-            {
-                "module": bundle.module_name,
-                "function_index": function_index,
-                "snapshot": filename,
-                "source_sha256": digest,
-                "capability_names": capability_names,
-                "project_source": "replacement-project.source",
-                "request_sha256": hashlib.sha256(request).hexdigest(),
-            }
-        )
+    if not isinstance(bundle, NativeProjectArtifactTransport):
+        try:
+            project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+        except (IndexError, UnicodeDecodeError) as exc:
+            raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
+        digest = _source_digest(project_source)
+        capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}
+        for function_index, values in enumerate(bundle.encoded_snapshots):
+            filename = f"replacement-{bundle.module_name}-{function_index}.snapshot"
+            path = artifact_dir / filename
+            staged.append((path, "\n".join(str(value) for value in values) + "\n"))
+            snapshot_paths.append(path)
+            manifest_functions.append(
+                {
+                    "module": bundle.module_name,
+                    "function_index": function_index,
+                    "snapshot": filename,
+                    "source_sha256": digest,
+                    "capability_names": capability_names,
+                    "project_source": "replacement-project.source",
+                    "request_sha256": hashlib.sha256(request).hexdigest(),
+                }
+            )
+        staged.append((artifact_dir / "replacement-project.source", project_source))
 
-    staged.append((artifact_dir / "replacement-project.source", project_source))
+    producer_protocol = DRIVER_PROTOCOL
+    native_artifacts: dict[str, dict[str, str]] | None = None
+    if isinstance(bundle, NativeProjectArtifactTransport):
+        if not (bundle.canonical_mir_bytes and bundle.c_source_bytes and bundle.c_header_bytes):
+            raise ReplacementProjectError(
+                "replacement driver response has an incomplete native project artifact set"
+            )
+        try:
+            bundle.canonical_mir_bytes.decode("utf-8")
+            bundle.c_source_bytes.decode("utf-8")
+            bundle.c_header_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ReplacementProjectError(
+                "replacement driver response has non-UTF-8 native project artifacts"
+            ) from exc
+        artifact_payloads = {
+            "canonical_mir": ("mir.json", bundle.canonical_mir_bytes),
+            "c_source": ("c", bundle.c_source_bytes),
+            "c_header": ("h", bundle.c_header_bytes),
+        }
+        native_artifacts = {}
+        for label, (extension, content) in artifact_payloads.items():
+            digest = hashlib.sha256(content).hexdigest()
+            filename = f"replacement-project-{digest}.{extension}"
+            path = artifact_dir / filename
+            _atomic_write_bytes(path, content)
+            project_artifact_paths.append(path)
+            native_artifacts[label] = {
+                "path": filename,
+                "sha256": digest,
+            }
+        producer_protocol = (
+            REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+            if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+        )
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,
-        "producer_protocol": DRIVER_PROTOCOL,
+        "producer_protocol": producer_protocol,
+        "request_sha256": hashlib.sha256(request).hexdigest(),
         "functions": manifest_functions,
     }
+    if native_artifacts is not None:
+        payload["native_artifacts"] = native_artifacts
     manifest_path = artifact_dir / REPLACEMENT_MANIFEST
 
-    # Publish snapshots first and the manifest last. Readers either see the old
-    # complete generation or the new complete generation; the manifest is the
-    # commit point for a prepared replacement build.
+    # V4 artifacts have content-addressed paths, so old manifests remain valid
+    # while the next generation is written. The manifest is published last.
+    # The legacy snapshot path retains its historical fixed-name publication.
     for path, content in staged:
         _atomic_write_text(path, content)
     _atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    return PreparedReplacementArtifacts(manifest_path, tuple(snapshot_paths))
+    return PreparedReplacementArtifacts(
+        manifest_path, tuple(snapshot_paths), tuple(project_artifact_paths)
+    )

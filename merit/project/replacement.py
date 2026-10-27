@@ -1,9 +1,8 @@
 """Fail-closed production project boundary for replacement compiler artifacts.
 
-Normal project tooling can use this module once a Merit-native frontend has
-published resolved-source-function snapshots beside project sources. Python is
-only a transport/materialization layer here: it does not parse, check, infer,
-or silently fall back to the reference compiler.
+Normal project tooling consumes only complete Merit-native v4 MIR/C/header
+artifacts. Historical snapshot materialization remains available through
+explicitly named oracle helpers, never as a production fallback.
 """
 
 from __future__ import annotations
@@ -12,29 +11,43 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
-from merit.bootstrap.mir_contract import MirType
-from merit.bootstrap.resolved_source_function_snapshot import (
-    decode_resolved_source_function_snapshot,
-)
 from merit.bootstrap.replacement_build import (
+    ReplacementBuildArtifact,
     ReplacementBuildError,
     compile_replacement_artifact,
     compile_replacement_shared_artifact,
 )
-from merit.bootstrap.replacement_project import ReplacementFunctionInput, build_replacement_project_artifact
-from merit.project.loader import LoadedProject
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.project_request import encode_loaded_project_request
+
+if TYPE_CHECKING:
+    from merit.bootstrap.mir_contract import MirType
+    from merit.bootstrap.replacement_project import ReplacementFunctionInput
+    from merit.project.loader import LoadedProject
 
 REPLACEMENT_MANIFEST = "replacement-build-v1.json"
 REPLACEMENT_SCHEMA = "merit-replacement-build-v1"
 REPLACEMENT_BUNDLE_PROTOCOL = "resolved-source-function-bundle-v2"
+REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL = (
+    "merit-project-request-v1/resolved-source-function-bundle-v4"
+)
+REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2 = (
+    "merit-project-request-v2/resolved-source-function-bundle-v4"
+)
 
 
 class ReplacementProjectError(ReplacementBuildError):
     """Raised when a project cannot be built through the replacement path."""
+
+
+def _manifest_header_exports(
+    project: LoadedProject | ReplacementLoadedProject,
+) -> frozenset[str] | None:
+    if project.manifest.executable_adapter is None:
+        return None
+    return frozenset({project.manifest.executable_entry or ""})
 
 
 @dataclass(frozen=True)
@@ -50,7 +63,104 @@ class ReplacementSharedProjectArtifact:
     library: Path
 
 
+def _load_native_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    *,
+    header_exports: frozenset[str] | None = None,
+    require_all_public: bool = False,
+) -> ReplacementBuildArtifact | None:
+    """Load a complete native backend artifact without interpreting its MIR."""
+
+    manifest_path = project.manifest.root / ".merit" / REPLACEMENT_MANIFEST
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReplacementProjectError(f"invalid replacement build manifest: {manifest_path}") from exc
+    if not isinstance(payload, dict) or payload.get("schema") != REPLACEMENT_SCHEMA:
+        raise ReplacementProjectError(f"unsupported replacement build manifest schema: {manifest_path}")
+    if header_exports is None:
+        header_exports = _manifest_header_exports(project)
+        # Ordinary v4 executable builds request no public C exports explicitly.
+        # Retain historical v1 artifacts only when the manifest says v1.
+        if (not require_all_public and header_exports is None and
+                payload.get("producer_protocol") == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2):
+            header_exports = frozenset()
+    expected_protocol = (
+        REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+        if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+    )
+    if payload.get("producer_protocol") != expected_protocol:
+        return None
+    expected_request_digest = payload.get("request_sha256")
+    actual_request_digest = hashlib.sha256(encode_loaded_project_request(
+        project, header_exports=header_exports,
+    )).hexdigest()
+    if expected_request_digest != actual_request_digest:
+        raise ReplacementProjectError(
+            "native replacement project artifacts are stale after source changes; "
+            "run prepare-replacement again"
+        )
+    raw_artifacts = payload.get("native_artifacts")
+    expected = {"canonical_mir", "c_source", "c_header"}
+    if not isinstance(raw_artifacts, dict) or set(raw_artifacts) != expected:
+        raise ReplacementProjectError("native replacement artifact manifest is incomplete")
+    contents: dict[str, bytes] = {}
+    artifact_root = manifest_path.parent.resolve()
+    for label in sorted(expected):
+        metadata = raw_artifacts[label]
+        if not isinstance(metadata, dict):
+            raise ReplacementProjectError(f"native replacement {label} metadata is invalid")
+        relative = metadata.get("path")
+        expected_digest = metadata.get("sha256")
+        if not isinstance(relative, str) or not relative:
+            raise ReplacementProjectError(f"native replacement {label} path is invalid")
+        if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+            raise ReplacementProjectError(f"native replacement {label} digest is invalid")
+        path = (artifact_root / relative).resolve()
+        try:
+            path.relative_to(artifact_root)
+            content = path.read_bytes()
+        except (ValueError, OSError) as exc:
+            raise ReplacementProjectError(f"invalid native replacement {label}: {path}") from exc
+        if not content:
+            raise ReplacementProjectError(f"native replacement {label} is empty")
+        if hashlib.sha256(content).hexdigest() != expected_digest:
+            raise ReplacementProjectError(f"native replacement {label} digest does not match")
+        contents[label] = content
+    try:
+        contents["canonical_mir"].decode("utf-8")
+        c_source = contents["c_source"].decode("utf-8")
+        c_header = contents["c_header"].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReplacementProjectError("native replacement project artifacts must be UTF-8") from exc
+    return ReplacementBuildArtifact(module=None, c_source=c_source, c_header=c_header)
+
+
+def require_native_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    *,
+    header_exports: frozenset[str] | None = None,
+    require_all_public: bool = False,
+) -> ReplacementBuildArtifact:
+    """Require a complete, current v4 artifact for a production project action."""
+
+    artifact = _load_native_project_artifact(
+        project, header_exports=header_exports, require_all_public=require_all_public,
+    )
+    if artifact is None:
+        raise ReplacementProjectError(
+            "native frontend artifacts are missing or incompatible with v4; "
+            "run prepare-replacement with a v4 compiler; refusing to fall back "
+            "to Python snapshot materialization"
+        )
+    return artifact
+
+
 def _type_names(raw: object) -> Mapping[int, MirType] | None:
+    from merit.bootstrap.mir_contract import MirType
+
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -110,6 +220,8 @@ def _validate_bundle_indices(functions: list[object]) -> None:
 
 def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -> tuple[ReplacementFunctionInput, ...]:
     """Load native-produced replacement snapshots without semantic fallback."""
+
+    from merit.bootstrap.replacement_project import ReplacementFunctionInput
 
     manifest_path = project.manifest.root / ".merit" / REPLACEMENT_MANIFEST
     if not manifest_path.is_file():
@@ -175,7 +287,9 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
                     ) from exc
             source = canonical_project_source
             expected_request_digest = item.get("request_sha256")
-            actual_request_digest = hashlib.sha256(encode_loaded_project_request(project)).hexdigest()
+            actual_request_digest = hashlib.sha256(encode_loaded_project_request(
+                project, header_exports=_manifest_header_exports(project),
+            )).hexdigest()
             if expected_request_digest != actual_request_digest:
                 raise ReplacementProjectError(
                     "replacement project request is stale after source changes; "
@@ -196,6 +310,10 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
         materialization_source = source
         if payload.get("producer_protocol") == REPLACEMENT_BUNDLE_PROTOCOL:
             try:
+                from merit.bootstrap.resolved_source_function_snapshot import (
+                    decode_resolved_source_function_snapshot,
+                )
+
                 decoded_snapshot = decode_resolved_source_function_snapshot(snapshot_values)
                 if decoded_snapshot.effective_source_bytes:
                     materialization_source = bytes(
@@ -220,11 +338,11 @@ def load_replacement_inputs(project: LoadedProject | ReplacementLoadedProject) -
     return tuple(resolved)
 
 
-def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
-    """Build only from native-resolved snapshots; never invoke reference semantics."""
-
-    inputs = load_replacement_inputs(project)
-    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+def _compile_project_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    artifact: ReplacementBuildArtifact,
+) -> ReplacementProjectArtifact:
     if project.manifest.executable_adapter is not None:
         from merit.project.executable_adapter import link_executable_adapter
 
@@ -250,16 +368,32 @@ def build_replacement_project(project: LoadedProject | ReplacementLoadedProject,
     return ReplacementProjectArtifact(c_path=c_path, executable=executable)
 
 
-def build_replacement_shared(
-    project: LoadedProject | ReplacementLoadedProject,
-    output: Path,
-    *,
-    header_exports: frozenset[str] | None = None,
-) -> ReplacementSharedProjectArtifact:
-    """Build a shared library solely from native-resolved replacement artifacts."""
+def build_replacement_project(project: LoadedProject | ReplacementLoadedProject, output: Path) -> ReplacementProjectArtifact:
+    """Build only from complete Merit-native v4 artifacts."""
+
+    artifact = require_native_project_artifact(project)
+    return _compile_project_artifact(project, output, artifact)
+
+
+def build_legacy_oracle_project(
+    project: LoadedProject | ReplacementLoadedProject, output: Path,
+) -> ReplacementProjectArtifact:
+    """Compile historical snapshots explicitly for independent oracle tests."""
+
+    from merit.bootstrap.replacement_project import build_replacement_project_artifact
 
     inputs = load_replacement_inputs(project)
     artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    return _compile_project_artifact(project, output, artifact)
+
+
+def _compile_shared_artifact(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    artifact: ReplacementBuildArtifact,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementSharedProjectArtifact:
     c_path, header_path, library = compile_replacement_shared_artifact(
         artifact,
         output,
@@ -267,3 +401,37 @@ def build_replacement_shared(
         c_flags=project.manifest.c_flags,
     )
     return ReplacementSharedProjectArtifact(c_path, header_path, library)
+
+
+def build_replacement_shared(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementSharedProjectArtifact:
+    """Build a shared library only from complete Merit-native v4 artifacts."""
+
+    artifact = require_native_project_artifact(
+        project, header_exports=header_exports,
+        require_all_public=(header_exports is None and project.manifest.executable_adapter is None),
+    )
+    return _compile_shared_artifact(
+        project, output, artifact, header_exports=header_exports,
+    )
+
+
+def build_legacy_oracle_shared(
+    project: LoadedProject | ReplacementLoadedProject,
+    output: Path,
+    *,
+    header_exports: frozenset[str] | None = None,
+) -> ReplacementSharedProjectArtifact:
+    """Compile historical snapshot headers explicitly for oracle tests."""
+
+    from merit.bootstrap.replacement_project import build_replacement_project_artifact
+
+    inputs = load_replacement_inputs(project)
+    artifact = build_replacement_project_artifact(inputs, module_name=project.manifest.name)
+    return _compile_shared_artifact(
+        project, output, artifact, header_exports=header_exports,
+    )

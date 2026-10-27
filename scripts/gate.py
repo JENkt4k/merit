@@ -35,6 +35,14 @@ FAST_TESTS = (
     "tests/test_bootstrap_hir_contract.py",
 )
 
+PR_INTEGRATION_TESTS = (
+    "tests/test_gate.py",
+    "tests/test_release_docs.py",
+    "tests/bootstrap/test_replacement_prepare.py::test_v4_preparation_never_imports_python_snapshot_semantics",
+    "tests/project/test_native_artifact_entry.py::test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder",
+    "tests/project/test_sh3_v4_corpus.py::test_sh3_v4_rejects_missing_import_without_python_loader",
+)
+
 SMOKE_TESTS = (
     "tests/test_alpha2.py",
     "tests/test_binding_ids.py",
@@ -151,6 +159,15 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
     elif name == "fast":
         with group("pytest: fast"):
             pytest(FAST_TESTS, durations=durations, fail_fast=fail_fast)
+    elif name == "pr":
+        with group("pytest: short pull-request gate"):
+            pytest(
+                [*FAST_TESTS, *PR_INTEGRATION_TESTS],
+                durations=durations,
+                fail_fast=fail_fast,
+                workers=PARALLEL_TEST_WORKERS,
+            )
+        run_corpus()
     elif name == "subsystem":
         with group("pytest: bootstrap/project subsystem"):
             pytest(
@@ -188,7 +205,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         "python": sys.version.split()[0],
         "platform": sys.platform,
         "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full"} else 0,
-        "corpus_convergence": name == "corpus",
+        "corpus_convergence": name in {"corpus", "pr"},
         "replacement_acceptance": name in {"acceptance-replacement", "full"},
         "stage_reproducibility": name == "reproducibility",
     }
@@ -207,7 +224,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Canonical cross-platform Merit validation gates.")
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "full"),
+        choices=("smoke", "fast", "pr", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "full"),
         help="validation level to run",
     )
     parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")

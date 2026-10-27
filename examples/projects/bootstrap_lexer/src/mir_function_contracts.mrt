@@ -36,6 +36,7 @@ pub fn function_contract_call_kind()->i32{return 5;}
 pub fn function_contract_result_capture_kind()->i32{return 6;}
 pub fn function_contract_field_load_kind()->i32{return 7;}
 pub fn function_contract_old_snapshot_kind()->i32{return 8;}
+pub fn function_contract_slice_len_symbol()->i32{return 13;}
 pub fn function_contract_missing_ast_status()->i32{return 20;}
 pub fn function_contract_invalid_binding_status()->i32{return 21;}
 pub fn function_contract_invalid_hir_status()->i32{return 22;}

@@ -434,6 +434,40 @@ def _mangle_generic(name: str, args: list[str]) -> str:
         return re.sub(r'[^A-Za-z0-9_]', '_', x)
     return name + '__' + '__'.join(clean(a) for a in args)
 
+def _mask_string_literals(source: str) -> str:
+    """Preserve source offsets while hiding quoted contents from regex scans."""
+    chars=list(source); quote=None; escaped=False
+    for index,ch in enumerate(source):
+        if quote is None:
+            if ch=='"':quote=ch;chars[index]=' '
+        else:
+            if ch!='\n':chars[index]=' '
+            if escaped:escaped=False
+            elif ch=='\\':escaped=True
+            elif ch==quote:quote=None
+    return ''.join(chars)
+
+def _sub_code(pattern, replacement, source: str, count: int=0) -> str:
+    matches=list(re.finditer(pattern,_mask_string_literals(source)))
+    if count:matches=matches[:count]
+    for match in reversed(matches):
+        value=replacement(match) if callable(replacement) else match.expand(replacement)
+        source=source[:match.start()]+value+source[match.end():]
+    return source
+
+def _matching_code_brace(source: str, brace: int) -> int | None:
+    masked=_mask_string_literals(source);depth=0
+    for index in range(brace,len(source)):
+        if masked[index]=='{':depth+=1
+        elif masked[index]=='}':
+            depth-=1
+            if depth==0:return index+1
+    return None
+
+def _c_utf8_bytes(value: str) -> tuple[str,int]:
+    encoded=value.encode('utf-8')
+    return '"'+''.join(f'\\{byte:03o}' for byte in encoded)+'"',len(encoded)
+
 def _replace_builtin_vec_types(source: str) -> str:
     changed=True
     while changed:
@@ -442,7 +476,7 @@ def _replace_builtin_vec_types(source: str) -> str:
             nonlocal changed
             changed=True
             return _mangle_generic('Vec',[m.group(1).strip()])
-        source=re.sub(r'\bVec<([^<>]+)>', repl, source)
+        source=_sub_code(r'\bVec<([^<>]+)>', repl, source)
     return source
 
 def _extract_generic_templates(source: str):
@@ -450,16 +484,11 @@ def _extract_generic_templates(source: str):
     header=re.compile(r'\b(enum|struct|fn)\s+([A-Za-z_]\w*)\s*<([^>{}]+)>')
     pos=0
     while True:
-        m=header.search(source,pos)
+        m=header.search(_mask_string_literals(source),pos)
         if not m: break
-        brace=source.find('{',m.end())
+        brace=_mask_string_literals(source).find('{',m.end())
         if brace<0: break
-        depth=0; end=None
-        for i in range(brace,len(source)):
-            if source[i]=='{': depth+=1
-            elif source[i]=='}':
-                depth-=1
-                if depth==0: end=i+1; break
+        end=_matching_code_brace(source,brace)
         if end is None: raise CompileError(f'M7000: unterminated generic {m.group(1)} {m.group(2)}')
         params=[]; bounds={}
         for raw in _split_generic_args(m.group(3)):
@@ -470,7 +499,7 @@ def _extract_generic_templates(source: str):
     for a,b in reversed(spans): source=source[:a]+''.join('\n' if ch=='\n' else ' ' for ch in source[a:b])+source[b:]
     return source,templates
 
-def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]], request_lines=None, base_line=1) -> str:
+def _replace_applications(text: str, templates: dict, requested: set[tuple[str,tuple[str,...]]], request_lines=None, base_line=1, preserve_request=False) -> str:
     # Qualified enum variants are rewritten before ordinary applications.
     changed=True
     while changed:
@@ -482,9 +511,10 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                 args=_split_generic_args(m.group(1)); key=(name,tuple(args));requested.add(key);changed=True
                 if request_lines is not None:
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
-                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
+                    site=(line,m.start()-line_start+1,m.end()-line_start+1)
+                    if key not in request_lines or (not preserve_request and site<request_lines[key]):request_lines[key]=site
                 return _mangle_generic(name,args)+'__'+m.group(2)
-            text=pat.sub(qrepl,text)
+            text=_sub_code(pat,qrepl,text)
         for name in templates:
             pat=re.compile(r'\b'+re.escape(name)+r'<([^<>]+)>')
             def repl(m):
@@ -492,9 +522,10 @@ def _replace_applications(text: str, templates: dict, requested: set[tuple[str,t
                 args=_split_generic_args(m.group(1));key=(name,tuple(args));requested.add(key);changed=True
                 if request_lines is not None:
                     line=base_line+text.count('\n',0,m.start());line_start=text.rfind('\n',0,m.start())+1
-                    request_lines.setdefault(key,(line,m.start()-line_start+1,m.end()-line_start+1))
+                    site=(line,m.start()-line_start+1,m.end()-line_start+1)
+                    if key not in request_lines or (not preserve_request and site<request_lines[key]):request_lines[key]=site
                 return _mangle_generic(name,args)
-            text=pat.sub(repl,text)
+            text=_sub_code(pat,repl,text)
     return text
 
 def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
@@ -503,14 +534,9 @@ def _extract_trait_impl_registry(source: str) -> set[tuple[str,str]]:
 def _extract_trait_methods(source: str) -> dict[str,set[str]]:
     methods={}; header=re.compile(r'\btrait\s+([A-Za-z_]\w*)\s*\{'); pos=0
     while True:
-        m=header.search(source,pos)
+        m=header.search(_mask_string_literals(source),pos)
         if not m: break
-        depth=0; end=None
-        for i in range(m.end()-1,len(source)):
-            if source[i]=='{': depth+=1
-            elif source[i]=='}':
-                depth-=1
-                if depth==0: end=i+1; break
+        end=_matching_code_brace(source,m.end()-1)
         if end is None: raise CompileError(f'M7102: unterminated trait {m.group(1)}')
         body=source[m.end():end-1]
         methods[m.group(1)]={x.group(1) for x in re.finditer(r'\bfn\s+([A-Za-z_]\w*)\s*\(', body)}
@@ -544,7 +570,7 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
             notes=(DiagnosticNote('generic instantiated here',SourceSpan(request[0],request[1],request[0],request[2],source_name)),)
         raise CompileError(text,primary,notes)
     while True:
-        pending=[x for x in requested if x not in done]
+        pending=sorted(x for x in requested if x not in done)
         if not pending: break
         name,args=pending[0]; done.add((name,args)); t=templates[name]
         if len(args)!=len(t['params']): expansion_error(f'M7001: {name} expects {len(t["params"])} type arguments',name,args)
@@ -553,8 +579,8 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
                 if not _generic_trait_satisfied(arg,trait,trait_impls): expansion_error(f'M7002: type {arg} does not satisfy generic bound {trait} for {name}.{param}',name,args)
         text=t['text']
         # Rewrite declaration header and substitute type parameters token-wise.
-        text=re.sub(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
-        for param,arg in zip(t['params'],args): text=re.sub(r'\b'+re.escape(param)+r'\b',arg,text)
+        text=_sub_code(r'\b'+re.escape(t['kind'])+r'\s+'+re.escape(name)+r'\s*<[^>{}]+>', t['kind']+' '+_mangle_generic(name,list(args)), text, count=1)
+        for param,arg in zip(t['params'],args): text=_sub_code(r'\b'+re.escape(param)+r'\b',arg,text)
         if t['kind']=='fn':
             rewrite_targets={}
             for param,arg in zip(t['params'],args):
@@ -566,14 +592,14 @@ def expand_generics(source: str, with_source_map: bool=False, source_name=None):
                             expansion_error(f'M7003: ambiguous trait method {method} in generic {name}',name,args,True)
                         rewrite_targets[method]=target
             for method,target in rewrite_targets.items():
-                text=re.sub(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
+                text=_sub_code(r'\b'+re.escape(method)+r'\s*\(', target+'(', text)
         if t['kind']=='enum':
             # Constructor names are nominally scoped by the instantiated enum.
             head_end=text.find('{'); body=text[head_end+1:text.rfind('}')]
             variants=re.findall(r'\b([A-Za-z_]\w*)\s*(?:\(|,|\})', body+',')
             for variant in sorted(set(variants),key=len,reverse=True):
-                text=re.sub(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
-        text=_replace_applications(text,templates,requested,request_lines,t['line'])
+                text=_sub_code(r'\b'+re.escape(variant)+r'\b',_mangle_generic(name,list(args))+'__'+variant,text)
+        text=_replace_applications(text,templates,requested,request_lines,t['line'],True)
         generated.append(text);generated_origins.append(t['line']);generated_requests.append(request_lines.get((name,args)))
     expanded=_replace_builtin_vec_types(source+'\n'+'\n'.join(generated)+'\n')
     if not with_source_map:return expanded
@@ -986,7 +1012,7 @@ class Checker:
     def check(self):
         if 'main' not in self.fn:raise CompileError('M0001: program requires fn main')
         for d in self.p.decimals.values():
-            if d.precision<1 or d.scale<0 or d.scale>d.precision:self.fail(f'M1001: invalid decimal {d.name}',d)
+            if d.precision<1 or d.precision>18 or d.scale<0 or d.scale>d.precision:self.fail(f'M1001: invalid decimal {d.name}; precision must be 1..18 and scale must be 0..precision',d)
             if d.rounding not in ROUNDING:self.fail(f'M1002: unsupported rounding policy {d.rounding}',d)
         for b in self.p.bounded.values():
             lo,hi=INT_RANGES[b.base]
@@ -1590,7 +1616,7 @@ class LayoutEngine:
         return sorted(found,key=lambda name:(name.count('Vec__'),name))
     def size_align(self,t):
         if t in self.SIZES:return self.SIZES[t]
-        if t in self.p.decimals:return (8,8) if self.p.decimals[t].precision<=18 else (16,16)
+        if t in self.p.decimals:return (8,8)
         if t in self.p.bounded:return self.size_align(self.p.bounded[t].base)
         if t in ('String','ByteSlice'): return (16,8)
         if t=='Buffer': return (32,8)
@@ -2343,7 +2369,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             temp=f'_merit_print_{self.temp_counter}';self.temp_counter+=1
             lines=prelude+[f'{p}{self.ctype(t)} {temp} = {x};']
             if t=='String':
-                lines.append(f'{p}printf("%.*s\\n",(int){temp}.len,{temp}.data);')
+                lines.append(f"{p}fwrite({temp}.data,1,{temp}.len,stdout); fputc('\\n',stdout);")
             elif t=='Buffer':
                 lines.append(f"{p}fwrite({temp}.data,1,{temp}.len,stdout); fputc('\\n',stdout);")
             elif t in self.p.enums:
@@ -2430,7 +2456,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         if id(e) in self._expr_overrides:return self._expr_overrides[id(e)]
         node=self.p.node(e);kind=node.kind
         if kind=='string':
-            raw=json.dumps(node.atom_value); return f'(merit_String){{{raw}, sizeof({raw})-1}}'
+            raw,length=_c_utf8_bytes(node.atom_value);return f'(merit_String){{{raw}, {length}}}'
         if kind=='number':
             value=int(Decimal(node.atom_value)*(10**self.p.decimals[expected].scale)) if expected in self.p.decimals else int(Decimal(node.atom_value))
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
@@ -2637,7 +2663,7 @@ def mir(p):
 
 
 def compile_file(path,out=None):
-    p=parse(path.read_text(),str(path));ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate());hpath.write_text(cg.header());subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
+    p=parse(path.read_text(encoding='utf-8'),str(path));ch=Checker(p).check();cg=CGenerator(p);exe=out or path.with_suffix('');cpath=exe.with_suffix('.c');hpath=exe.with_suffix('.h');cpath.write_text(cg.generate(),encoding='utf-8',newline='\n');hpath.write_text(cg.header(),encoding='utf-8',newline='\n');subprocess.run([os.environ.get('CC','cc'),'-std=c11','-O2','-Wall','-Wextra',str(cpath),'-o',str(exe)],check=True);return ch,cpath,hpath,exe
 
 PROGRAM_TEMPLATE = """module {module}
 
@@ -2654,7 +2680,7 @@ def _create_project(target: Path, name: str | None = None) -> Path:
         module = 'merit_' + module
     target.mkdir(parents=True, exist_ok=False)
     (target / 'src').mkdir()
-    (target / 'src' / 'main.mrt').write_text(PROGRAM_TEMPLATE.format(module=module))
+    (target / 'src' / 'main.mrt').write_text(PROGRAM_TEMPLATE.format(module=module),encoding='utf-8',newline='\n')
     (target / 'README.md').write_text(
         f'# {module}\n\n'
         'Build and run:\n\n'
@@ -2663,7 +2689,7 @@ def _create_project(target: Path, name: str | None = None) -> Path:
         'merit verify src/main.mrt\n'
         'merit exec src/main.mrt\n'
         '```\n'
-    )
+    ,encoding='utf-8',newline='\n')
     return target / 'src' / 'main.mrt'
 
 def main(argv=None):
@@ -2687,7 +2713,7 @@ def main(argv=None):
             return 0
         path=Path(ns.source)
         if not path.exists(): raise FileNotFoundError(path)
-        p=parse(path.read_text(),str(path));ch=Checker(p).check()
+        source_text=path.read_text(encoding='utf-8');p=parse(source_text,str(path));ch=Checker(p).check()
         if ns.cmd=='check':print(f'ok: {p.module} ({len(p.functions)} functions, {len(p.structs)} structs)')
         elif ns.cmd=='run':Interpreter(p).run()
         elif ns.cmd=='verify':
@@ -2715,14 +2741,14 @@ def main(argv=None):
                 return completed.returncode
     except CompileError as e:
         from merit.diagnostics import diagnostic_from_exception,render_exception
-        if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text()).to_dict()),file=sys.stderr)
-        else:print(render_exception(e,path,path.read_text()),file=sys.stderr)
+        if getattr(ns,'diagnostic_format','text')=='json':print(json.dumps(diagnostic_from_exception(e,path,path.read_text(encoding='utf-8')).to_dict()),file=sys.stderr)
+        else:print(render_exception(e,path,path.read_text(encoding='utf-8')),file=sys.stderr)
         return 1
     except Exception as e:
         if getattr(ns,'diagnostic_format','text')=='json':
             from merit.diagnostics import diagnostic_from_exception
             diagnostic_path=locals().get('path',Path(getattr(ns,'source','<unknown>')))
-            source=diagnostic_path.read_text() if diagnostic_path.is_file() else ''
+            source=diagnostic_path.read_text(encoding='utf-8') if diagnostic_path.is_file() else ''
             print(json.dumps(diagnostic_from_exception(e,diagnostic_path,source).to_dict()),file=sys.stderr)
         else:print(f'error: {e}',file=sys.stderr)
         return 1

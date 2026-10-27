@@ -21,8 +21,8 @@ from merit.project.cli import main as project_cli_main
 from merit.project.loader import ProjectError, load_project
 from merit.project.replacement import (
     ReplacementProjectError,
-    build_replacement_project,
-    build_replacement_shared,
+    build_legacy_oracle_project as build_replacement_project,
+    build_legacy_oracle_shared as build_replacement_shared,
     load_replacement_inputs,
 )
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
@@ -1104,12 +1104,13 @@ def test_native_project_request_rejects_unsupported_version_without_cleanup_fail
 ) -> None:
     completed = subprocess.run(
         [str(driver.executable)],
-        input=b"MPRQ" + (2).to_bytes(4, "big"),
+        input=b"MPRQ" + (3).to_bytes(4, "big"),
         capture_output=True,
     )
 
     assert completed.returncode != 0
-    assert b"replacement driver status 7101" in completed.stderr
+    assert completed.returncode == (4606 if sys.platform.startswith("win") else 4606 & 0xff)
+    assert b"replacement driver status 4606" in completed.stderr
 
 
 def test_native_project_request_desugars_legacy_i64vec_without_python_rewrite(
@@ -1127,8 +1128,8 @@ def test_native_project_request_desugars_legacy_i64vec_without_python_rewrite(
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
-def test_project_cli_defaults_to_fresh_native_replacement_compilation(
-    tmp_path: Path, driver: NativeReplacementDriver,
+def test_project_cli_rejects_legacy_bundle_as_production_artifact(
+    tmp_path: Path, driver: NativeReplacementDriver, capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = _project(tmp_path)
     output = root / "build" / "production-default"
@@ -1138,9 +1139,15 @@ def test_project_cli_defaults_to_fresh_native_replacement_compilation(
     ])
 
     expected_output = output.with_suffix(".exe") if sys.platform.startswith("win") else output
-    assert status == 0
-    assert expected_output.is_file()
-    assert subprocess.run([str(expected_output)]).returncode == 7
+    assert status == 1
+    assert "incompatible with v4" in capsys.readouterr().err
+    assert not expected_output.exists()
+
+    check_status = project_cli_main([
+        "check", str(root), "--replacement-driver", str(driver.executable),
+    ])
+    assert check_status == 1
+    assert "incompatible with v4" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")
@@ -1154,14 +1161,11 @@ def test_concrete_native_driver_compiles_qualified_multimodule_project_as_one_bu
         [str(reference_executable)], text=True, capture_output=True, check=True,
     )
 
-    replacement_output = root / "build" / "replacement"
-    assert project_cli_main([
-        "build", str(root), "--replacement-driver", str(driver.executable),
-        "-o", str(replacement_output),
-    ]) == 0
+    prepare_replacement_artifacts(project, driver)
+    replacement_artifact = build_replacement_project(project, root / "build" / "replacement")
     assert len(load_replacement_inputs(project)) == 4
     replacement = subprocess.run(
-        [str(replacement_output)], text=True, capture_output=True, check=True,
+        [str(replacement_artifact.executable)], text=True, capture_output=True, check=True,
     )
 
     assert (replacement.returncode, replacement.stdout, replacement.stderr) == (
@@ -1768,12 +1772,16 @@ def test_concrete_native_driver_executes_utf8_string_surface(
     root = _project(tmp_path, STRING_SURFACE_SOURCE)
     project = load_project(root / "Merit.toml")
     _, _, reference_executable = build(project, root / "build" / "reference")
-    reference = subprocess.run([str(reference_executable)], text=True, capture_output=True)
+    reference = subprocess.run(
+        [str(reference_executable)], text=True, encoding="utf-8", errors="strict", capture_output=True,
+    )
     prepare_replacement_artifacts(project, driver)
     artifact = build_replacement_project(project, root / "build" / "replacement")
-    replacement = subprocess.run([str(artifact.executable)], text=True, capture_output=True)
+    replacement = subprocess.run(
+        [str(artifact.executable)], text=True, encoding="utf-8", errors="strict", capture_output=True,
+    )
     assert (replacement.returncode, replacement.stdout) == (reference.returncode, reference.stdout)
-    assert replacement.stdout == "Aé\n3\n65\n195\n169\n0\n"
+    assert replacement.stdout == "A\u00e9\n3\n65\n195\n169\n0\n"
 
 
 @pytest.mark.skipif(shutil.which("cc") is None and shutil.which("gcc") is None and shutil.which("clang") is None, reason="C compiler unavailable")

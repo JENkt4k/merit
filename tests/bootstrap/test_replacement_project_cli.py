@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import hashlib
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +18,16 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 from merit.project.cli import _replacement_driver_path, main
 from merit.project.loader import load_project
 from merit.project.project_request import encode_loaded_project_request
-from merit.project.replacement import REPLACEMENT_MANIFEST, REPLACEMENT_SCHEMA, load_replacement_inputs
+from merit.project.replacement import (
+    REPLACEMENT_MANIFEST,
+    REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+    REPLACEMENT_SCHEMA,
+    ReplacementProjectError,
+    _load_native_project_artifact,
+    build_replacement_project,
+    build_replacement_shared,
+    load_replacement_inputs,
+)
 
 
 def _project(tmp_path: Path) -> Path:
@@ -75,6 +86,122 @@ def test_replacement_manifest_loads_snapshot_transport_without_reference_semanti
     assert isinstance(inputs[0], ReplacementFunctionInput)
     assert inputs[0].module_name == "main"
     assert inputs[0].snapshot_values == tuple(values)
+    with pytest.raises(ReplacementProjectError, match="incompatible with v4"):
+        build_replacement_project(project, root / "build" / "legacy")
+    with pytest.raises(ReplacementProjectError, match="incompatible with v4"):
+        build_replacement_shared(project, root / "build" / "legacy-shared")
+
+
+def test_replacement_manifest_loads_native_backend_artifacts_without_mir_materialization(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    artifact_dir = root / ".merit"
+    artifact_dir.mkdir()
+    contents = {
+        "canonical_mir": ("replacement-project.mir.json", b'{"schema":"bootstrap-mir-v1"}\n'),
+        "c_source": ("replacement-project.c", b"int merit_main(void) { return 0; }\n"),
+        "c_header": ("replacement-project.h", b"int merit_main(void);\n"),
+    }
+    native_artifacts = {}
+    for label, (filename, content) in contents.items():
+        (artifact_dir / filename).write_bytes(content)
+        native_artifacts[label] = {
+            "path": filename,
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+    (artifact_dir / REPLACEMENT_MANIFEST).write_text(
+        json.dumps(
+            {
+                "schema": REPLACEMENT_SCHEMA,
+                "producer_protocol": REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+                "request_sha256": hashlib.sha256(
+                    encode_loaded_project_request(project)
+                ).hexdigest(),
+                "functions": [],
+                "native_artifacts": native_artifacts,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    artifact = _load_native_project_artifact(project)
+
+    assert artifact is not None
+    assert artifact.module is None
+    assert artifact.c_source == contents["c_source"][1].decode("utf-8")
+    assert artifact.c_header == contents["c_header"][1].decode("utf-8")
+
+    (artifact_dir / "replacement-project.c").write_bytes(b"tampered\n")
+    with pytest.raises(ReplacementProjectError, match="digest does not match"):
+        _load_native_project_artifact(project)
+
+
+def test_v4_manifest_load_never_imports_python_semantic_backend(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    artifact_dir = root / ".merit"
+    artifact_dir.mkdir()
+    contents = {
+        "canonical_mir": ("replacement-project.mir.json", b'{"schema":"bootstrap-mir-v1"}\n'),
+        "c_source": ("replacement-project.c", b"int main(void) { return 0; }\n"),
+        "c_header": ("replacement-project.h", b"int main(void);\n"),
+    }
+    native_artifacts = {}
+    for label, (filename, content) in contents.items():
+        (artifact_dir / filename).write_bytes(content)
+        native_artifacts[label] = {
+            "path": filename,
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+    (artifact_dir / REPLACEMENT_MANIFEST).write_text(
+        json.dumps({
+            "schema": REPLACEMENT_SCHEMA,
+            "producer_protocol": REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+            "request_sha256": hashlib.sha256(encode_loaded_project_request(project)).hexdigest(),
+            "functions": [],
+            "native_artifacts": native_artifacts,
+        }),
+        encoding="utf-8",
+    )
+    script = """
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+class DenySemanticImports:
+    blocked = {
+        "merit.compiler", "merit.project.loader", "merit.bootstrap.mir_contract",
+        "merit.bootstrap.mir_to_c", "merit.bootstrap.resolved_source_function_snapshot",
+        "merit.bootstrap.replacement_project",
+    }
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in self.blocked:
+            raise AssertionError(f"v4 artifact load imported Python semantics: {fullname}")
+        return None
+
+sys.meta_path.insert(0, DenySemanticImports())
+from merit.project.replacement_loader import load_replacement_project
+from merit.project.replacement import _load_native_project_artifact, build_replacement_project
+from merit.project.cli import main as project_main
+project = load_replacement_project(Path(sys.argv[1]) / "Merit.toml")
+artifact = _load_native_project_artifact(project)
+assert artifact is not None and artifact.module is None
+assert artifact.c_source == "int main(void) { return 0; }\\n"
+if any(shutil.which(name) for name in ("cc", "gcc", "clang")):
+    built = build_replacement_project(project, Path(sys.argv[1]) / "build" / "native-v4")
+    subprocess.run([str(built.executable)], check=True, capture_output=True)
+    assert project_main(["build", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-v4")]) == 0
+    assert project_main(["run", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-run-v4")]) == 0
+    assert project_main(["build-shared", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-shared-v4")]) == 0
+"""
+    subprocess.run(
+        [sys.executable, "-c", script, str(root)],
+        check=True, text=True, capture_output=True,
+    )
 
 
 def test_replacement_cli_rejects_reference_only_commands(tmp_path: Path, capsys) -> None:
@@ -124,17 +251,13 @@ def test_default_build_prepares_with_configured_native_driver_without_reference_
     executable = root / "build" / "replacement_project"
     observed: list[str] = []
 
-    def fail_reference_load(_path: Path):
-        raise AssertionError("default production build invoked the Python reference loader")
-
-    def fake_prepare(project, configured_driver):
-        observed.append(f"prepare:{configured_driver.executable}")
+    def fake_prepare(project, configured_driver, *, header_exports):
+        observed.append(f"prepare:{configured_driver.executable}:{sorted(header_exports)}")
 
     def fake_build(project, output: Path):
         observed.append(f"build:{output}")
         return SimpleNamespace(executable=executable)
 
-    monkeypatch.setattr("merit.project.cli.load_project", fail_reference_load)
     monkeypatch.setattr("merit.project.cli.prepare_replacement_artifacts", fake_prepare)
     monkeypatch.setattr("merit.project.cli.build_replacement_project", fake_build)
 
@@ -142,7 +265,7 @@ def test_default_build_prepares_with_configured_native_driver_without_reference_
 
     assert status == 0
     assert observed == [
-        f"prepare:{driver}",
+        f"prepare:{driver}:[]",
         f"build:{root / 'build' / 'replacement_project'}",
     ]
     assert capsys.readouterr().out.strip() == str(executable)
@@ -172,11 +295,13 @@ def test_default_check_runs_native_frontend_preparation(
     manifest = root / ".merit" / REPLACEMENT_MANIFEST
     observed: list[Path] = []
 
-    def fake_prepare(_project, configured_driver):
+    def fake_prepare(_project, configured_driver, *, header_exports):
+        assert header_exports == frozenset()
         observed.append(configured_driver.executable)
         return SimpleNamespace(manifest_path=manifest)
 
     monkeypatch.setattr("merit.project.cli.prepare_replacement_artifacts", fake_prepare)
+    monkeypatch.setattr("merit.project.cli.require_native_project_artifact", lambda _project: object())
     assert main(["check", str(root), "--replacement-driver", str(driver)]) == 0
     assert observed == [driver]
     assert "native replacement frontend" in capsys.readouterr().out

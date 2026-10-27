@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("smoke", "fast", "subsystem", "acceptance", "full")]
+    [ValidateSet("smoke", "fast", "pr", "subsystem", "acceptance", "full")]
     [string]$Gate = "full",
     [switch]$StopOnFirstFailure,
     [switch]$SkipActivation,

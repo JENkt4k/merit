@@ -207,6 +207,19 @@ pub fn ownership_state_live() -> i32 { return 1; }
 pub fn ownership_state_moved() -> i32 { return 2; }
 pub fn ownership_state_dropped() -> i32 { return 3; }
 
+// Canonical flat-record constructor. The numeric states and kinds remain the
+// versioned Alpha.2 ownership contract; consumers should use this symbolic
+// boundary rather than constructing representation fields independently.
+pub fn ownership_record(
+    kind:i32,instruction:i64,binding:i64,other:i64,local:i64,
+    implicit:i32,before:i32,after:i32
+)->MirOwnershipRecord {
+    return MirOwnershipRecord{
+        kind:kind,instruction_id:instruction,binding_id:binding,other_binding_id:other,
+        operand_local:local,implicit:implicit,state_before:before,state_after:after
+    };
+}
+
 fn ownership_if_frame_kind() -> i32 { return 20; }
 fn ownership_while_frame_kind() -> i32 { return 30; }
 fn ownership_match_frame_kind() -> i32 { return 40; }
@@ -294,10 +307,9 @@ fn append_record(
 ) -> i32
 requires_caps [allocate]
 {
-    vec_push<MirOwnershipRecord>(records, MirOwnershipRecord {
-        kind: kind, instruction_id: instruction, binding_id: binding, other_binding_id: other,
-        operand_local: local, implicit: implicit, state_before: before, state_after: after
-    });
+    vec_push<MirOwnershipRecord>(records,ownership_record(
+        kind,instruction,binding,other,local,implicit,before,after
+    ));
     return 0;
 }
 

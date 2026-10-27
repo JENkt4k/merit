@@ -36,6 +36,7 @@ All platforms use the same entry point:
 ```text
 python scripts/gate.py smoke
 python scripts/gate.py fast
+python scripts/gate.py pr
 python scripts/gate.py subsystem
 python scripts/gate.py acceptance
 python scripts/gate.py corpus
@@ -50,6 +51,7 @@ The gates have distinct purposes:
 | --- | --- | --- |
 | `smoke` | Small compiler/core sanity check | environment and very early edits |
 | `fast` | Curated cross-platform development regression | normal local/agent iteration |
+| `pr` | Fast tests, representative native-v4 artifact and fail-closed probes, and Alpha.1 corpus convergence | automatic Ubuntu/Windows pull-request feedback |
 | `subsystem` | Bootstrap and project integration suites | coherent compiler/runtime changes |
 | `acceptance` | Ten interpreter/native acceptance projects | acceptance-only verification |
 | `corpus` | Alpha.1 accepted/rejected reference/replacement convergence | semantic convergence evidence |
@@ -58,7 +60,12 @@ The gates have distinct purposes:
 | `full` | Entire pytest suite plus all acceptance projects | PR readiness / merge authority |
 
 A feature change should still run its directly affected pytest file or test names.
-The `fast` gate is deliberately not a substitute for feature-specific evidence.
+The `fast` and `pr` gates are deliberately not substitutes for feature-specific,
+subsystem, full, replacement-acceptance, or reproducibility evidence. The `pr`
+gate is intentionally bounded; it does not run the 46-module independent MIR
+oracle or every acceptance application.
+On native Windows, `./scripts/test-windows.ps1 -Gate pr` is a convenience
+wrapper for the same gate.
 
 Use `--fail-fast` when diagnosing the first meaningful failure:
 
@@ -134,11 +141,20 @@ full gate is stale and must be rerun.
 
 ## GitHub Actions
 
-The Local Gate workflow runs canonical corpus, replacement-acceptance,
-reproducibility, and full gates on the platforms assigned by the release
-contract. Full and reproducibility gates run on Ubuntu and native Windows.
-Platform-specific workflow steps provision dependencies only; they do not
-implement separate semantic test policies.
+Pull requests automatically run only `python scripts/gate.py pr` on Ubuntu and
+native Windows. This gives prompt cross-platform feedback without starting the
+multi-hour full suite on every PR update. A green short PR check is not merge
+authority for a compiler milestone.
+
+The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
+`full`, `reproducibility`, `acceptance-replacement`, and `corpus`. Selecting
+`full` runs the unchanged canonical full gate on Ubuntu and native Windows;
+the other choices run only their named gate. The local `python scripts/gate.py
+full --durations 50` and native Windows wrapper remain available for manual
+milestone validation. Record the exact commit and terminal result for each
+long run, and do not infer a pass from the short PR check. Platform-specific
+workflow steps provision dependencies only; semantic test selection remains in
+`scripts/gate.py`.
 
 The objective is one validation contract across local humans, WSL, native
 Windows, GitHub-hosted runners, remote Codex, and local Jan agents.

@@ -60,3 +60,4 @@ pub fn cfg_return_unit(block_id: i64) -> MirCfgRecord {
 pub fn cfg_unreachable(block_id: i64) -> MirCfgRecord {
     return MirCfgRecord { kind: cfg_unreachable_kind(), block_id: block_id, operand: -1, target_a: -1, target_b: -1, case_value: 0, ordinal: 0 };
 }
+pub fn cfg_entry_block_id()->i64{return 0;}

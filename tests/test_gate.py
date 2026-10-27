@@ -87,6 +87,37 @@ def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
     ]
 
 
+def test_pr_gate_runs_bounded_native_checks_and_corpus_not_full(monkeypatch) -> None:
+    events: list[tuple[str, Any]] = []
+
+    def record_pytest(paths, **kwargs) -> None:
+        events.append(("pytest", (tuple(paths), kwargs)))
+
+    monkeypatch.setattr(gate, "pytest", record_pytest)
+    monkeypatch.setattr(gate, "run_corpus", lambda: events.append(("corpus", None)))
+    monkeypatch.setattr(
+        gate, "run_acceptance_replacement",
+        lambda: events.append(("replacement", None)),
+    )
+    monkeypatch.setattr(gate, "run_acceptance", lambda: events.append(("acceptance", None)))
+
+    result = gate.run_gate("pr", 10, fail_fast=True)
+
+    assert events == [
+        (
+            "pytest",
+            (
+                (*gate.FAST_TESTS, *gate.PR_INTEGRATION_TESTS),
+                {"durations": 10, "fail_fast": True, "workers": 2},
+            ),
+        ),
+        ("corpus", None),
+    ]
+    assert result["corpus_convergence"] is True
+    assert result["replacement_acceptance"] is False
+    assert result["acceptance_projects"] == 0
+
+
 def test_reproducibility_gate_runs_stage_report_once(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setattr(gate, "run", lambda command: calls.append(command))

@@ -253,6 +253,97 @@ milestone before its prerequisite is confirmed merged on current `main`.
   smoke test produces a directly executable compiler, and a valid Merit source
   probe emits the established versioned replacement bundle through stdout.
 
+### SH3 implementation audit
+
+SH3 moves one vertical production boundary. It is not satisfied by wrapping
+the existing Python backend or by adding another host-side snapshot adapter.
+The current authorities and required final dispositions are:
+
+| Current production authority | Audited surface | SH3 disposition |
+|---|---:|---|
+| `resolved_source_function_snapshot.py` | 634 lines; snapshot decoding, type reconstruction, canonical MIR materialization | Retain only as an independent oracle; normal builds consume a Merit-produced canonical artifact without calling its decoder/materializer |
+| `replacement_project.py` | 173 lines; cross-function assembly, destructor merging, payloadless-enum normalization, call-target validation | Move project assembly and normalization into Merit; retain Python assembly only for differential evidence |
+| `mir_to_c.py` | 1,777 lines; 43 definitions covering types, runtime support, instructions, terminators, functions, destructors, C module, and public header | Implement the established deterministic emission contract in Merit and compare C/header bytes against this independent oracle |
+| `replacement_build.py` | 159 lines; current semantic artifact handoff plus permitted C compiler/linker launch | Remove semantic materialization/emission from the production call path; retain only generic artifact publication and external toolchain invocation |
+| `project/replacement.py` | Production reader currently imports the Python snapshot decoder, project assembler, and backend transitively | Cut over to versioned native C/header artifacts, validate framing/digests, publish atomically, then invoke only the generic C toolchain bridge |
+
+### SH3 resource-effect audit
+
+The pre-SH3 representation audit was repeated against the frozen Alpha.2
+ownership specification and the proposed post-SH6 resource-model design. The
+proposal is design input only: it does not authorize new relationships, syntax,
+runtime mechanisms, or observable behavior in SH3-SH6.
+
+The current canonical path already carries the Alpha.2 resource effects
+explicitly. `MirOwnershipRecord` records activation, move, explicit drop,
+replacement drop/move, implicit cleanup, and nested transfer with stable binding
+identity and before/after state. Canonical MIR retains explicit `move`, `borrow`,
+`drop`, allocation, and deallocation instructions. Allocator identity is retained
+by the buffer/vector runtime and is not treated as semantic ownership, while MIR
+itself makes no address-stability or pinning guarantee. No representation change
+is required to preserve those properties during the SH3 backend migration.
+
+The following seams are deliberately deferred to post-SH6 RM0 because changing
+them now would expand SH3 or alter a versioned Alpha.2 contract:
+
+| Audited seam | Present Alpha.2 assumption | Deferred redesign point |
+|---|---|---|
+| `MirOwnershipBinding` and lifecycle catalogs | Boolean exclusive ownership, mutability, and cleanup facts describe the accepted Alpha.2 subset | Shared/weak/foreign/region relationships require a versioned resource-authority model rather than widening these booleans ad hoc |
+| Function `borrowed_origin` and parameter/local modes | An ephemeral returned borrow maps to one borrowed parameter; ordinary loans are call-scoped | Stored borrows require explicit loan/place/lifetime relationships and cannot be approximated by another local mode |
+| C emitter local representation | Alpha.2 borrowed locals lower to C pointers and owned/value locals lower to values or addresses selected at use sites | A future backend must keep access relationship, mutation authority, storage representation, and address stability orthogonal; pinning must not be inferred from ownership |
+| Drop/type lowering | Current concrete Alpha.2 types select deterministic recursive cleanup and allocator-aware buffer/vector routines | Shared ownership accounting, weak acquisition, foreign release, and region cleanup require separately frozen semantics and versioned MIR effects |
+| Serialized snapshot/bundle rows | Stable Alpha.2 ownership records intentionally encode only the current state machine | New resource relationships require a new schema/version and differential migration evidence, not reinterpretation of existing discriminants |
+
+SH3 therefore preserves the existing rows and semantics byte-for-byte. The new
+Merit backend must consume the explicit effects it receives, must not infer that
+all future resources are exclusively owned, and must keep C pointer/address
+choices inside backend lowering rather than making them canonical MIR meaning.
+Any cheap implementation-local helper used while porting the emitter must remain
+unserialized and behavior-neutral. Substantial changes wait for the Alpha.3 RM0
+semantic-design/freeze milestone after SH6.
+
+The target response extends the existing versioned native compiler protocol;
+it carries canonical MIR identity plus complete deterministic C and public-header
+bytes. Host Python may validate lengths, hashes, paths, and UTF-8 framing, but
+must not reconstruct MIR, choose C representations, patch emitted C, or derive
+header exports. Historical snapshot/bundle versions remain readable only by
+oracle and compatibility tests, not by the final SH3 production build path.
+
+### SH3 Python-oracle defect audit
+
+SH3 differential evidence depends on the Python reference compiler remaining a
+deterministic and faithful oracle. A focused audit of `merit/compiler.py` found
+the following pre-existing defects. These are repairs to the Alpha.2 contract,
+not new language features or authority for a general oracle refactor.
+
+| Finding | Audit result | SH3 handling and completion evidence |
+|---|---|---|
+| Generic specialization order depends on set iteration | Confirmed: eight fresh processes with distinct `PYTHONHASHSEED` values produced eight expanded-source hashes and specialization orders | Repair immediately by selecting a canonical order. Add a subprocess regression comparing expanded source and generated C across hash seeds. |
+| Generic templates are scanned and substituted as undifferentiated text | Confirmed: substituting `T` changed `"T marks the type"`, and `}` inside a string truncated the template | Repair immediately with string-aware template extent and token-aware substitution that leaves literals unchanged. Cover both reproductions plus existing generic diagnostics/source maps. |
+| Merit strings use JSON escaping at the C boundary | Confirmed by inspection: JSON `\u` escapes are not C byte escapes, non-BMP JSON surrogate pairs are not valid C scalar escapes, and printable trigraph sequences remain exposed | Repair immediately with deterministic byte-oriented C escaping and explicit byte lengths. Cover controls, NUL, non-ASCII/non-BMP UTF-8, quotes, slashes, and trigraph spelling with interpreter/native parity. |
+| Compiler source and generated artifacts use platform-default text encoding/newlines | Confirmed during the string regression: a UTF-8 source reread through the Windows default code page changed `é` and emoji before code generation | Repair immediately by making compiler source reads UTF-8 and canonical textual artifacts UTF-8 with LF newlines. Cover non-ASCII source through the native compiler path. |
+| Decimal precision above 18 has incompatible layout and codegen | Confirmed: `decimal Huge(19,0,...)` passed checking, reported `(16,16)` layout, but emitted `int64_t` and `9999999999999999999LL` guards | Fail closed above precision 18, matching the existing signed-64-bit Alpha.2 runtime and all release evidence; document the bound and keep decimal layout at `(8,8)`. True wider decimals require a separately designed ABI after self-hosting. Cover precision 18 acceptance, precision 19 rejection, layout, interpreter/native, and generated-C behavior. |
+| Bounded-only MIR C emission omits `<stdio.h>` despite emitting `fprintf` in its range-failure helper | Confirmed by compiling the Python oracle's bounded-only C output: the generated helper uses `fprintf` and `stderr`, but the prelude previously enabled `<stdio.h>` only for decimals and other unrelated features | The oracle now includes `<stdio.h>` whenever either declared numeric family needs the exact-numeric runtime. A bounded-only native/Python byte-parity and GCC execution test covers the repair; this changes no Merit semantics. |
+
+The following review observations remain bounded audit leads rather than
+confirmed SH3 defects: unbounded recursively growing generic instantiation,
+trait-method rewrite collisions, `verify` trap comparison, and the documented
+GCC/Clang extension dependency.
+The sourced body-catalog audit also found and repaired an internal mismatch:
+the source lowering and Python canonical adapter both represent payloadless enum
+construction with the stable absent-local sentinel, while the flat Merit record
+validator previously rejected that sentinel. The validator now accepts absence
+only for construction records and retains nonnegative receiver requirements for
+tag and payload loads; focused canonical parity covers the payloadless form.
+Investigate them with focused reproductions only when they affect the current
+SH3 evidence path; otherwise record them for the post-SH6 maintenance/RM0
+queue. Readability and typing improvements to the monolithic Python oracle are
+not SH3 scope by themselves.
+
+After these oracle repairs, resume the already planned SH3 source-local
+ownership-binding integration into the canonical MIR writer. Preserve all
+completed SH3 work and the frozen Alpha.2 observable semantics.
+
 ## Per-PR evidence
 
 Every implementation PR must record:

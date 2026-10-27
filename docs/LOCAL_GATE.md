@@ -18,10 +18,17 @@ compares compiler stages.
 
 ## GitHub workflow scope
 
-`.github/workflows/local-gate.yml` runs the canonical Alpha.1 corpus, M7
-replacement acceptance, M9 reproducibility, and full-gate contracts. Full and
-reproducibility jobs run on both standard Ubuntu and native Windows/MSYS2
-UCRT64 environments with Python 3.11.
+`.github/workflows/local-gate.yml` runs the bounded canonical `pr` gate on
+each pull request, on both Ubuntu and native Windows/MSYS2 UCRT64 with Python
+3.11. That gate includes fast tests, Alpha.1 corpus convergence, and selected
+native-v4 artifact/fail-closed probes. It is feedback, not the full release or
+milestone authority.
+
+`workflow_dispatch` deliberately selects one long gate family: `full`,
+`reproducibility`, `acceptance-replacement`, or `corpus`. The canonical `full`
+choice runs the unchanged full gate on both Ubuntu and Windows. Local/WSL
+manual full-gate commands remain available and must record their commit,
+terminal marker, and result JSON.
 
 It runs only for:
 
@@ -30,7 +37,8 @@ It runs only for:
 
 It deliberately does not run on every push.
 
-Concurrency cancellation stops an obsolete run when a newer commit is pushed to the same pull request.
+The workflow sets `cancel-in-progress: false`; a newer event does not cancel an
+already-running job in its concurrency group.
 
 ## Deliberate non-goals
 
@@ -56,7 +64,9 @@ python -m pip install --no-build-isolation -e ".[dev]"
 bash scripts/ci.sh
 ```
 
-The gate should be debugged through the failing command shown in its output. Do not weaken or bypass an existing test to make the hosted runner green.
+The gate should be debugged through the failing command shown in its output.
+Do not weaken or bypass an existing test to make the hosted runner green, and
+do not treat a short PR pass as evidence that a manual full gate passed.
 
 ## Maintenance rule
 

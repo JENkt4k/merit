@@ -11,7 +11,7 @@ import pytest
 from merit.bootstrap.native_frontend_driver import build_native_replacement_driver
 from merit.project.build import build
 from merit.project.loader import load_project
-from merit.project.replacement import REPLACEMENT_MANIFEST, build_replacement_project
+from merit.project.replacement import REPLACEMENT_MANIFEST, build_legacy_oracle_project
 from merit.project.replacement_prepare import NativeReplacementDriver, prepare_replacement_artifacts
 from scripts.m7_acceptance_inventory import ACCEPTANCE_PROJECTS
 
@@ -123,7 +123,7 @@ def test_acceptance_project_converges_through_replacement(
     second_generation = _generation_bytes(replacement_root)
     assert second_generation == first_generation, name
 
-    replacement_artifact = build_replacement_project(
+    replacement_artifact = build_legacy_oracle_project(
         replacement_project,
         tmp_path / f"replacement-{name}",
     )

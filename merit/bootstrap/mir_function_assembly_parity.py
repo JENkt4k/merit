@@ -328,7 +328,8 @@ def lower_native_whole_function_assembly(
                 if type_code >= _COPY_PAYLOAD_ENUM_TYPE_CODE_BASE and left == MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     body_instructions[rid] = MirInstruction(
                         rid, "construct", result=result, operands=(), symbol=f"variant_{symbol_code}",
-                        span=instruction_span, ownership="value",
+                        span=instruction_span,
+                        ownership="owned" if type_code >= _OWNED_PAYLOAD_ENUM_TYPE_CODE_BASE else "value",
                     )
                 elif type_code == _I64_TYPE_CODE and left == MIR_FUNCTION_ABSENT_RECORD_VALUE:
                     body_instructions[rid] = MirInstruction(

@@ -541,13 +541,18 @@ def _instruction(
             raise MirToCError("aggregate construction requires a resolved result type")
         result_type = local_types[instruction.result]
         if not operands:
-            if _copy_payload_enum_identity(result_type) is None:
-                raise MirToCError("payload-free construction requires a Copy-payload enum result")
+            recursive = _recursive_owned_payload_enum_identity(result_type)
+            if _copy_payload_enum_identity(result_type) is None and recursive is None:
+                raise MirToCError("payload-free construction requires a represented enum result")
             if not instruction.symbol.startswith(_ENUM_VARIANT_PREFIX):
                 raise MirToCError("payload-free enum construction has an invalid variant symbol")
             ordinal = instruction.symbol[len(_ENUM_VARIANT_PREFIX):]
             if not ordinal or not ordinal.isdecimal():
                 raise MirToCError("payload-free enum construction has an invalid variant ordinal")
+            if recursive is not None:
+                ordinal_value = int(ordinal)
+                if ordinal_value >= len(recursive[1]) or recursive[1][ordinal_value].name != "i64":
+                    raise MirToCError("payload-free owned enum constructor is outside represented storage")
             payload_initializer = "{0}" if result_type.arguments else "0"
             return [
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
@@ -798,11 +803,15 @@ def _instruction(
         if instruction.symbol == "string_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("string_len requires one String argument and one result")
-            return [f"{result} = merit_string_len({operands[0]});"]
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = f"*{operands[0]}" if ownership in {"borrowed", "mutable_borrow"} else operands[0]
+            return [f"{result} = merit_string_len({argument});"]
         if instruction.symbol == "string_byte":
             if len(operands) != 2 or result is None:
                 raise MirToCError("string_byte requires String, index, and one result")
-            return [f"{result} = merit_string_byte({operands[0]}, {operands[1]});"]
+            ownership = local_ownership.get(instruction.operands[0], "value")
+            argument = f"*{operands[0]}" if ownership in {"borrowed", "mutable_borrow"} else operands[0]
+            return [f"{result} = merit_string_byte({argument}, {operands[1]});"]
         if instruction.symbol == "slice_len":
             if len(operands) != 1 or result is None:
                 raise MirToCError("slice_len requires one ByteSlice and one result")
@@ -1473,7 +1482,13 @@ def emit_c_module(module: MirModule) -> str:
         for type_ in all_types
     )
     needs_text_runtime=any(type_.name in {"String","ByteSlice"} and not type_.arguments for type_ in all_types)
+    needs_slice_runtime = not needs_buffer_runtime and any(
+        type_.name == "ByteSlice" and not type_.arguments for type_ in all_types
+    )
     needs_decimal_runtime = any(_decimal_type(type_) is not None for type_ in all_types)
+    needs_exact_numeric_runtime = needs_decimal_runtime or any(
+        _bounded_type(type_) is not None for type_ in all_types
+    )
     filesystem_read_types: set[MirType] = set()
     filesystem_write_types: set[MirType] = set()
     for function in module.functions:
@@ -1492,7 +1507,7 @@ def emit_c_module(module: MirModule) -> str:
         "#include <stdbool.h>",
         *(["#include <stddef.h>"] if needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdint.h>",
-        *(["#include <stdio.h>"] if needs_print or checked_operations or needs_decimal_runtime or needs_buffer_runtime or needs_text_runtime else []),
+        *(["#include <stdio.h>"] if needs_print or checked_operations or needs_exact_numeric_runtime or needs_buffer_runtime or needs_text_runtime else []),
         "#include <stdlib.h>",
         *(["#include <string.h>"] if needs_buffer_runtime else []),
         *(["#include <sys/stat.h>"] if needs_filesystem_runtime else []),
@@ -1554,6 +1569,14 @@ def emit_c_module(module: MirModule) -> str:
             "static inline void merit_buffer_drop(merit_Buffer *value) { free(value->data); value->data = NULL; value->len = 0; value->capacity = 0; }",
             "",
         ] if needs_buffer_runtime else []),
+        *([
+            "static inline int64_t merit_slice_len(merit_ByteSlice value) { return (int64_t)value.len; }",
+            "static inline int64_t merit_slice_get(merit_ByteSlice value, int64_t index) {",
+            '    if (index < 0 || (size_t)index >= value.len) { fprintf(stderr, "Merit slice index out of bounds\\n"); exit(85); }',
+            "    return (int64_t)value.data[index];",
+            "}",
+            "",
+        ] if needs_slice_runtime else []),
         *([
             "static void merit_print_u128(unsigned __int128 value) {",
             "    char digits[40]; int count = 0;",

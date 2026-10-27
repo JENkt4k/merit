@@ -68,6 +68,7 @@ pub fn function_mir_numeric_descriptor_upper_low(borrow value: MirNumericTypeDes
 pub fn function_mir_numeric_descriptor_policy(borrow value: MirNumericTypeDescriptor) -> i32 { return value.policy; }
 pub fn function_mir_numeric_descriptor_decimal_kind() -> i32 { return 1; }
 pub fn function_mir_numeric_descriptor_bounded_kind() -> i32 { return 2; }
+pub fn function_mir_numeric_descriptor_limb_base() -> i64 { return 1000000000; }
 pub fn function_mir_decimal_type_code(identity: i32) -> i32 { return checked_add(1300000, identity); }
 pub fn function_mir_bounded_type_code(identity: i32) -> i32 { return checked_add(1400000, identity); }
 pub fn function_mir_type_is_declared_numeric(type_code:i32)->i32{
@@ -229,6 +230,13 @@ pub fn function_mir_binary_add_symbol() -> i32 { return 1; }
 pub fn function_mir_binary_subtract_symbol() -> i32 { return 2; }
 pub fn function_mir_binary_multiply_symbol() -> i32 { return 3; }
 pub fn function_mir_binary_divide_symbol() -> i32 { return 4; }
+pub fn function_mir_binary_equal_symbol() -> i32 { return 5; }
+pub fn function_mir_binary_not_equal_symbol() -> i32 { return 6; }
+pub fn function_mir_binary_greater_equal_symbol() -> i32 { return 7; }
+pub fn function_mir_binary_less_equal_symbol() -> i32 { return 8; }
+pub fn function_mir_binary_greater_symbol() -> i32 { return 9; }
+pub fn function_mir_binary_less_symbol() -> i32 { return 10; }
+pub fn function_mir_exact_numeric_policy() -> i32 { return 1; }
 pub fn function_mir_checked_numeric_policy() -> i32 { return 2; }
 pub fn function_mir_field_store_initialize_policy() -> i32 { return 0; }
 pub fn function_mir_field_store_replace_policy() -> i32 { return 1; }
@@ -265,6 +273,7 @@ pub fn function_mir_copy_payload_enum_type_code(enum_id: i32) -> i32 {
     return checked_add(1000, enum_id);
 }
 pub fn function_mir_i64_type_code() -> i32 { return 1; }
+pub fn function_mir_bool_type_code() -> i32 { return 2; }
 // Canonical bootstrap-MIR builtin type identities. These explicit values are
 // part of the bootstrap-function-mir-v1 record ABI.
 pub fn function_mir_allocator_type_code() -> i32 { return 3; }
@@ -547,7 +556,9 @@ pub fn function_mir_struct_field_replace(start: i64, length: i64, instruction_id
 // Stable structural validation. Semantic local availability is checked by the
 // canonical adapter because a flat stream interleaves local declarations with
 // instruction records while canonical MIR stores locals separately.
-pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+fn validate_function_mir_records_with_cfg_returns(
+    borrow nodes: Vec<MirFunctionRecord>,cfg_returns:i32,allow_implicit_return:i32
+) -> i32 {
     if (vec_len<MirFunctionRecord>(nodes) < 2) { return function_mir_too_few_records_status(); }
     let header: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, 0);
     if (header.kind != function_mir_kind_function()) { return function_mir_invalid_header_kind_status(); }
@@ -572,7 +583,9 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
     var index: i64 = 1;
     while (index < vec_len<MirFunctionRecord>(nodes)) {
         let node: MirFunctionRecord = vec_get<MirFunctionRecord>(nodes, index);
-        if (saw_return != 0) { return function_mir_record_after_return_status(); }
+        if (saw_return != 0) {
+            if (cfg_returns == 0) { return function_mir_record_after_return_status(); }
+        }
         if (node.kind == function_mir_kind_source_local()) {
             if (node.id != next_local) { return function_mir_invalid_source_local_id_status(); }
             if (node.start < 0) { return function_mir_invalid_source_local_span_status(); }
@@ -644,11 +657,13 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
                                     if (function_mir_is_enum_instruction(node) != 0) {
                                         if (node.id != next_instruction) { return function_mir_invalid_enum_id_status(); }
                                         if (node.result < 0) { return function_mir_invalid_enum_operand_status(); }
-                                        if (node.left < 0) { return function_mir_invalid_enum_operand_status(); }
                                         if (node.hir_node_id < 0) { return function_mir_invalid_enum_hir_status(); }
                                         if (function_mir_is_construct(node) != 0) {
                                             if (node.type_code < function_mir_copy_payload_enum_type_code(0)) { return function_mir_invalid_enum_type_status(); }
                                             if (node.symbol_code < 0) { return function_mir_invalid_enum_symbol_status(); }
+                                            if (node.left < function_mir_absent_record_value()) { return function_mir_invalid_enum_operand_status(); }
+                                        } else {
+                                            if (node.left < 0) { return function_mir_invalid_enum_operand_status(); }
                                         }
                                         next_instruction = checked_add(next_instruction, 1);
                                     } else {
@@ -700,7 +715,23 @@ pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i3
         }
         index = checked_add(index, 1);
     }
-    if (saw_return == 0) { return function_mir_missing_return_status(); }
+    if (saw_return == 0) {
+        if (allow_implicit_return == 0) { return function_mir_missing_return_status(); }
+    }
     if (next_parameter != header.ordinal) { return function_mir_parameter_count_mismatch_status(); }
     return 0;
+}
+
+pub fn validate_function_mir_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+    return validate_function_mir_records_with_cfg_returns(nodes,0,0);
+}
+
+pub fn validate_function_mir_cfg_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+    return validate_function_mir_records_with_cfg_returns(nodes,1,0);
+}
+
+// Destructor bodies may end at their closing brace: the canonical CFG owns
+// the implicit unit return. Ordinary function-body contracts remain strict.
+pub fn validate_function_mir_destructor_cfg_records(borrow nodes: Vec<MirFunctionRecord>) -> i32 {
+    return validate_function_mir_records_with_cfg_returns(nodes,1,1);
 }
