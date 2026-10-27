@@ -1020,3 +1020,26 @@ def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(
     environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
     consumed = subprocess.run([str(executable)], capture_output=True, env=environment)
     assert consumed.returncode == 0, consumed.stderr
+
+
+@pytest.mark.parametrize("signature,body", [
+    ("value:I64Vec", "drop(value); return value;"),
+    ("borrow value:I64Vec", "return value;"),
+])
+def test_sh3_v4_rejects_invalid_owned_vector_parameter_return(
+    native_v4_driver: NativeReplacementDriver, signature: str, body: str,
+) -> None:
+    source = (
+        "module invalid_vector_return\n"
+        f"pub fn invalid({signature})->I64Vec {{ {body} }}\n"
+        "fn main()->i32 { return 0; }\n"
+    ).encode("utf-8")
+    request = encode_project_request(ProjectRequest(
+        "invalid_vector_return", "src/main.mrt",
+        (ProjectRequestUnit("src/main.mrt", source),), header_exports=(),
+    ))
+    response = subprocess.run(
+        [str(native_v4_driver.executable)], input=request, capture_output=True,
+    )
+    assert response.returncode != 0
+    assert b"replacement driver status" in response.stderr

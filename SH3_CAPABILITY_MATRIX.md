@@ -1678,7 +1678,13 @@ export selection; MIR/C and runtime assertions remain unchanged. No broad
 gate was run. The canonical short Windows `pr` gate passed on this candidate:
 112 short tests, 212 reference tests, and 23 Alpha.1 convergence cases;
 `MERIT_GATE_RESULT=PASS` in 164.172s. This is not a subsystem or full-gate
-result. The compiler source helper uses
+result. Two raw native-request negatives (return after explicit drop and
+borrowed-to-owned return) still reject (`2 passed in 23.67s`), so the new
+direct-parameter allowance does not admit those invalid source programs.
+The fixed 22-case native-v4 Alpha.1 accepted/rejected corpus passes on this
+owned-return tree (`22 passed in 26.78s`,
+`C:\Temp\merit-tests\sh3-owned-vector-alpha1-corpus.log`).
+The compiler source helper uses
 an explicit result after an initial implicit-`void` shape caused native
 status `5006`. The focused source-path audit decoded this as a nested
 missing-return status, not a CFG status. Native `void` type resolution and
