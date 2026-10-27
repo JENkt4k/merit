@@ -3719,7 +3719,6 @@ requires_caps [allocate]
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
     if(return_type_code>=function_mir_vector_type_code(0)){
-        if(exported!=0){return 3;}
         if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 3;}
         canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
     }
@@ -3837,7 +3836,6 @@ requires_caps [allocate]
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
             }
             if(function_mir_type_code(record)>=function_mir_vector_type_code(0)){
-                if(exported!=0){return 9;}
                 if(vec_len<MirOwnershipRecord>(ownership_records)==0){return 9;}
                 canonical_c_require_feature(canonical_c_buffer_runtime_feature(),features);
             }
@@ -7251,6 +7249,7 @@ requires_caps [allocate]
 }
 
 struct CanonicalPublicLayout { size:i64; alignment:i64; }
+fn canonical_c_public_abi_flags()->i32{return 1;}
 fn canonical_c_public_stable_abi_flags()->i32{return 3;}
 fn canonical_c_invalid_public_layout()->CanonicalPublicLayout {
     return CanonicalPublicLayout{size:-1,alignment:-1};
@@ -7336,6 +7335,9 @@ requires_caps [allocate]
     if(function_mir_type_is_declared_numeric(type_code)!=0){
         return canonical_c_append_numeric_type_with_catalog(output,type_code,numeric_descriptors);
     }
+    if(type_code>=function_mir_vector_type_code(0)){
+        return canonical_c_append_vector_type_name_with_source(source,type_code,descriptors,output);
+    }
     if(type_code>=function_mir_copy_payload_enum_type_code(0)){
         if(type_code<function_mir_i64_struct_type_code(0)){
             return canonical_c_append_type_with_catalog(output,type_code,descriptors);
@@ -7352,7 +7354,10 @@ requires_caps [allocate]
         if(first_index<0){return 1;}
         let first:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,first_index);
         if(function_mir_type_descriptor_kind(first)!=function_mir_type_descriptor_aggregate_struct_kind()){return 1;}
-        if(function_mir_type_descriptor_abi_flags(first)!=canonical_c_public_stable_abi_flags()){return 1;}
+        let abi_flags:i32=function_mir_type_descriptor_abi_flags(first);
+        if(abi_flags!=canonical_c_public_abi_flags()){
+            if(abi_flags!=canonical_c_public_stable_abi_flags()){return 1;}
+        }
         let start:i64=function_mir_type_descriptor_name_start(first);
         let length:i64=function_mir_type_descriptor_name_length(first);
         if(start<0){return 1;}if(length<=0){return 1;}
@@ -7375,7 +7380,7 @@ fn canonical_c_collect_public_type(
     type_code:i32,borrow descriptors:Vec<MirTypeDescriptor>,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
     borrow_mut codes:Vec<i32>,borrow_mut enum_codes:Vec<i32>,
-    borrow_mut owned_enum_codes:Vec<i32>,depth:i32
+    borrow_mut owned_enum_codes:Vec<i32>,borrow_mut vector_codes:Vec<i32>,depth:i32
 )->i32
 requires_caps [allocate]
 {
@@ -7383,6 +7388,11 @@ requires_caps [allocate]
     if(function_mir_type_is_declared_numeric(type_code)!=0){
         let numeric_layout:CanonicalPublicLayout=canonical_c_public_layout(type_code,descriptors,numeric_descriptors,0);
         if(numeric_layout.size<0){return 1;}
+        return 0;
+    }
+    if(type_code>=function_mir_vector_type_code(0)){
+        if(canonical_c_vector_catalog_depth(type_code,descriptors)<0){return 1;}
+        if(canonical_c_vector_code_selected(type_code,vector_codes)==0){vec_push<i32>(vector_codes,type_code);}
         return 0;
     }
     if(type_code>=function_mir_copy_payload_enum_type_code(0)){
@@ -7399,7 +7409,7 @@ requires_caps [allocate]
                     let child:i32=function_mir_type_descriptor_child(item);
                     if(child<=0){return 1;}
                     if(canonical_c_collect_public_type(
-                        child,descriptors,numeric_descriptors,codes,enum_codes,owned_enum_codes,checked_add(depth,1)
+                        child,descriptors,numeric_descriptors,codes,enum_codes,owned_enum_codes,vector_codes,checked_add(depth,1)
                     )!=0){return 1;}
                     ordinal=checked_add(ordinal,1);
                 }
@@ -7434,7 +7444,7 @@ requires_caps [allocate]
                         if(canonical_c_copy_aggregate_field_count(child,descriptors,numeric_descriptors)==0){return 1;}
                     }
                     if(canonical_c_collect_public_type(
-                        child,descriptors,numeric_descriptors,codes,enum_codes,owned_enum_codes,checked_add(depth,1)
+                        child,descriptors,numeric_descriptors,codes,enum_codes,owned_enum_codes,vector_codes,checked_add(depth,1)
                     )!=0){return 1;}
                     ordinal=checked_add(ordinal,1);
                 }
@@ -7458,8 +7468,17 @@ requires_caps [allocate]
     if(type_code>=function_mir_decimal_type_code(0)){return 1;}
     if(depth>=canonical_c_max_trivial_aggregate_depth()){return 1;}
     if(canonical_c_vector_code_selected(type_code,codes)!=0){return 0;}
-    let layout:CanonicalPublicLayout=canonical_c_public_layout(type_code,descriptors,numeric_descriptors,0);
-    if(layout.size<0){return 1;}
+    let first_index:i64=canonical_c_public_first_descriptor(type_code,descriptors);
+    if(first_index<0){return 1;}
+    let first:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,first_index);
+    let abi_flags:i32=function_mir_type_descriptor_abi_flags(first);
+    if(abi_flags!=canonical_c_public_abi_flags()){
+        if(abi_flags!=canonical_c_public_stable_abi_flags()){return 1;}
+    }
+    if(abi_flags==canonical_c_public_stable_abi_flags()){
+        let stable_layout:CanonicalPublicLayout=canonical_c_public_layout(type_code,descriptors,numeric_descriptors,0);
+        if(stable_layout.size<0){return 1;}
+    }
     vec_push<i32>(codes,type_code);
     var index:i64=0;
     while(index<vec_len<MirTypeDescriptor>(descriptors)){
@@ -7467,7 +7486,7 @@ requires_caps [allocate]
         if(function_mir_type_descriptor_code(field)==type_code){
             if(canonical_c_collect_public_type(
                 function_mir_type_descriptor_child(field),descriptors,numeric_descriptors,
-                codes,enum_codes,owned_enum_codes,checked_add(depth,1)
+                codes,enum_codes,owned_enum_codes,vector_codes,checked_add(depth,1)
             )!=0){return 1;}
         }
         index=checked_add(index,1);
@@ -7512,14 +7531,17 @@ requires_caps [allocate]
     let first:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,first_index);
     let name_start:i64=function_mir_type_descriptor_name_start(first);
     let name_length:i64=function_mir_type_descriptor_name_length(first);
-    let layout:CanonicalPublicLayout=canonical_c_public_layout(type_code,descriptors,numeric_descriptors,0);
-    if(layout.size<0){return 1;}
+    let abi_flags:i32=function_mir_type_descriptor_abi_flags(first);
+    if(abi_flags!=canonical_c_public_abi_flags()){
+        if(abi_flags!=canonical_c_public_stable_abi_flags()){return 1;}
+    }
     canonical_mir_append_text(output,"typedef struct { ");
     var ordinal:i32=0;var index:i64=0;
     while(index<vec_len<MirTypeDescriptor>(descriptors)){
         let field:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);
         if(function_mir_type_descriptor_code(field)==type_code){
             if(function_mir_type_descriptor_ordinal(field)!=ordinal){return 2;}
+            if(function_mir_type_descriptor_abi_flags(field)!=abi_flags){return 2;}
             if(function_mir_type_descriptor_name_start(field)!=name_start){return 2;}
             if(function_mir_type_descriptor_name_length(field)!=name_length){return 2;}
             if(canonical_c_append_public_type(
@@ -7539,6 +7561,11 @@ requires_caps [allocate]
     if(ordinal==0){return 2;}
     canonical_mir_append_text(output,"} merit_");
     bootstrap_buffer_append(output,source,name_start,name_length);
+    if(abi_flags==canonical_c_public_abi_flags()){
+        canonical_mir_append_text(output,";\n");return 0;
+    }
+    let layout:CanonicalPublicLayout=canonical_c_public_layout(type_code,descriptors,numeric_descriptors,0);
+    if(layout.size<0){return 2;}
     canonical_mir_append_text(output,";\n_Static_assert(sizeof(merit_");
     bootstrap_buffer_append(output,source,name_start,name_length);
     canonical_mir_append_text(output,") == ");
@@ -7746,6 +7773,7 @@ requires_caps [allocate]
     var public_types:Vec<i32>=vec_new<i32>(allocator,4);
     var public_enums:Vec<i32>=vec_new<i32>(allocator,4);
     var public_owned_enums:Vec<i32>=vec_new<i32>(allocator,4);
+    var public_vectors:Vec<i32>=vec_new<i32>(allocator,4);
     var public_slice:i32=0;var public_allocator:i32=0;var public_buffer:i32=0;
     var header_index:i64=0;
     while(header_index<vec_len<MirFunctionRecord>(headers)){
@@ -7763,7 +7791,7 @@ requires_caps [allocate]
             if(function_mir_type_code(header)==function_mir_buffer_type_code()){public_buffer=1;}
             if(canonical_c_collect_public_type(
                 function_mir_type_code(header),descriptors,numeric_descriptors,
-                public_types,public_enums,public_owned_enums,0
+                public_types,public_enums,public_owned_enums,public_vectors,0
             )!=0){return 2;}
             var ordinal:i64=0;
             while(ordinal<parameter_count){
@@ -7777,7 +7805,7 @@ requires_caps [allocate]
                 if(function_mir_type_code(parameter)==function_mir_buffer_type_code()){public_buffer=1;}
                 if(canonical_c_collect_public_type(
                     function_mir_type_code(parameter),descriptors,numeric_descriptors,
-                    public_types,public_enums,public_owned_enums,0
+                    public_types,public_enums,public_owned_enums,public_vectors,0
                 )!=0){return 2;}
                 ordinal=checked_add(ordinal,1);
             }
@@ -7795,14 +7823,43 @@ requires_caps [allocate]
         canonical_mir_append_text(output,"typedef struct { int32_t identity; } merit_Allocator;\n");
     }else{if(public_buffer!=0){
         canonical_mir_append_text(output,"typedef struct { int32_t identity; } merit_Allocator;\n");
-    }}
+    }else{if(vec_len<i32>(public_vectors)>0){
+        canonical_mir_append_text(output,"typedef struct { int32_t identity; } merit_Allocator;\n");
+    }}}
     if(public_buffer!=0){
         canonical_mir_append_text(output,"typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;\n");
     }
     if(canonical_c_has_feature(canonical_c_public_string_feature(),features)!=0){buffer_push(output,10);}
     else{if(public_slice!=0){buffer_push(output,10);}
     else{if(public_allocator!=0){buffer_push(output,10);}
-    else{if(public_buffer!=0){buffer_push(output,10);}}}}
+    else{if(public_buffer!=0){buffer_push(output,10);}
+    else{if(vec_len<i32>(public_vectors)>0){buffer_push(output,10);}}}}}
+    var emitted_vectors:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(public_vectors));
+    while(vec_len<i32>(emitted_vectors)<vec_len<i32>(public_vectors)){
+        var best_vector:i32=function_mir_unresolved_type_code();var vector_index:i64=0;
+        while(vector_index<vec_len<i32>(public_vectors)){
+            let candidate:i32=vec_get<i32>(public_vectors,vector_index);
+            if(canonical_c_vector_code_selected(candidate,emitted_vectors)==0){
+                if(best_vector==function_mir_unresolved_type_code()){best_vector=candidate;}
+                else{
+                    var candidate_name:Buffer=buffer_new(allocator,64);
+                    var best_name:Buffer=buffer_new(allocator,64);
+                    if(canonical_c_append_vector_type_name_with_source(source,candidate,descriptors,candidate_name)!=0){return 2;}
+                    if(canonical_c_append_vector_type_name_with_source(source,best_vector,descriptors,best_name)!=0){return 2;}
+                    if(canonical_c_buffer_compare(candidate_name,best_name)<0){best_vector=candidate;}
+                    drop(candidate_name);drop(best_name);
+                }
+            }
+            vector_index=checked_add(vector_index,1);
+        }
+        if(best_vector==function_mir_unresolved_type_code()){return 2;}
+        canonical_mir_append_text(output,"typedef struct { void *data; size_t len; size_t capacity; merit_Allocator allocator; } ");
+        if(canonical_c_append_vector_type_name_with_source(source,best_vector,descriptors,output)!=0){return 2;}
+        canonical_mir_append_text(output,";\n");
+        vec_push<i32>(emitted_vectors,best_vector);
+    }
+    if(vec_len<i32>(emitted_vectors)>0){buffer_push(output,10);}
+    drop(emitted_vectors);
     var emitted:Vec<i32>=vec_new<i32>(allocator,vec_len<i32>(public_types));
     while(vec_len<i32>(emitted)<vec_len<i32>(public_types)){
         var best:i32=function_mir_unresolved_type_code();var index:i64=0;
@@ -7886,7 +7943,7 @@ requires_caps [allocate]
         }
         header_index=checked_add(header_index,checked_add(function_mir_ordinal(header),1));
     }
-    drop(emitted);drop(public_owned_enums);drop(public_enums);drop(public_types);
+    drop(emitted);drop(public_vectors);drop(public_owned_enums);drop(public_enums);drop(public_types);
     return 0;
 }
 

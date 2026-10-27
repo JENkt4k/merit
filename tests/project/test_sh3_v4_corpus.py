@@ -593,7 +593,6 @@ def test_sh3_v4_all_acceptance_public_shared_headers_match_mir_oracle(
     module = parse_mir(json.loads(mir_path.read_bytes()))
     assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
 
-
 def test_sh3_v4_public_owned_enum_with_resource_payload_fails_closed(
     tmp_path: Path, native_v4_driver: NativeReplacementDriver,
 ) -> None:
@@ -633,6 +632,131 @@ def test_sh3_v4_public_owned_enum_with_resource_payload_fails_closed(
         "-o", str(shared),
     ]) != 0
     assert not shared.with_suffix(".h").exists()
+
+
+def test_sh3_v4_public_shared_vector_abi_matches_reference(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "vector_abi"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="vector_abi"\nentry="src/main.mrt"\n'
+        'sources=["src/**/*.mrt"]\n',
+        encoding="utf-8", newline="\n",
+    )
+    (root / "src/main.mrt").write_text(
+        'module vector_abi\n'
+        'capability allocate;\n'
+        'pub fn make_values(allocator:Allocator)->Vec<i64>\n'
+        'requires_caps [allocate]\n'
+        '{\n'
+        '    var values:Vec<i64>=vec_new<i64>(allocator,2);\n'
+        '    vec_push<i64>(values,4);\n'
+        '    vec_push<i64>(values,5);\n'
+        '    return values;\n'
+        '}\n'
+        'pub fn sum_values(borrow values:Vec<i64>)->i64 {\n'
+        '    return checked_add(vec_get<i64>(values,0),vec_get<i64>(values,1));\n'
+        '}\n'
+        'pub fn consume_values(values:Vec<i64>)->i32 { drop(values); return 0; }\n'
+        'fn main()->i32 { return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    project = load_project(root / "Merit.toml")
+    _, reference_header, _ = build_shared(project, tmp_path / "reference-vector")
+    assert b"merit_Vec__i64 merit_make_values" in reference_header.read_bytes()
+
+    output = tmp_path / "native-vector"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
+
+    consumer = tmp_path / "vector-reference-consumer.c"
+    consumer.write_text(
+        '#include "reference-vector.h"\n'
+        'int main(void) {\n'
+        '    merit_Allocator allocator = {0};\n'
+        '    merit_Vec__i64 values = merit_make_values(allocator);\n'
+        '    if (values.len != 2 || values.data[0] != 4 || values.data[1] != 5) return 1;\n'
+        '    if (merit_sum_values(&values) != 9) return 2;\n'
+        '    if (merit_consume_values(values) != 0) return 3;\n'
+        '    return 0;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    executable = tmp_path / ("vector-reference-consumer.exe" if os.name == "nt" else "vector-reference-consumer")
+    compiled = subprocess.run(
+        [compiler, "-std=c11", "-I", str(reference_header.parent), str(consumer),
+         str(output.with_suffix(suffix)), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    environment = os.environ.copy()
+    library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
+    consumed = subprocess.run([str(executable)], capture_output=True, env=environment)
+    assert consumed.returncode == 0, consumed.stderr
+
+
+def test_sh3_v4_compiler_all_public_shared_abi_matches_mir_oracle(
+    tmp_path: Path, native_v4_driver: NativeReplacementDriver,
+) -> None:
+    root = tmp_path / "compiler"
+    shutil.copytree(
+        ROOT / "examples/projects/bootstrap_lexer", root,
+        ignore=shutil.ignore_patterns("build", ".merit"),
+    )
+    output = tmp_path / "native-compiler-shared"
+    assert project_cli_main([
+        "build-shared", str(root), "--compiler-path", str(native_v4_driver.executable),
+        "-o", str(output),
+    ]) == 0
+    manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mir_path = manifest_path.parent / manifest["native_artifacts"]["canonical_mir"]["path"]
+    module = parse_mir(json.loads(mir_path.read_bytes()))
+    assert output.with_suffix(".h").read_bytes() == emit_c_header(module).encode("utf-8")
+
+    _, reference_header, _ = build_shared(
+        load_project(root / "Merit.toml"), tmp_path / "reference-compiler-shared",
+    )
+    consumer = tmp_path / "compiler-reference-consumer.c"
+    consumer.write_text(
+        '#include "reference-compiler-shared.h"\n'
+        'int main(void) {\n'
+        '    merit_HirExpressionRecord node = {0};\n'
+        '    node.kind = 17; node.type_code = 2;\n'
+        '    if (merit_hir_kind(&node) != 17) return 1;\n'
+        '    merit_HirExpressionRecord changed = merit_hir_with_type(&node, 42);\n'
+        '    if (changed.kind != 17 || changed.type_code != 42) return 2;\n'
+        '    return 0;\n'
+        '}\n',
+        encoding="utf-8", newline="\n",
+    )
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    assert compiler is not None
+    suffix = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
+    executable = tmp_path / ("compiler-reference-consumer.exe" if os.name == "nt" else "compiler-reference-consumer")
+    compiled = subprocess.run(
+        [compiler, "-std=c11", "-I", str(reference_header.parent), str(consumer),
+         str(output.with_suffix(suffix)), "-o", str(executable)],
+        capture_output=True, text=True,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    environment = os.environ.copy()
+    library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
+    consumed = subprocess.run([str(executable)], capture_output=True, env=environment)
+    assert consumed.returncode == 0, consumed.stderr
 
 
 def test_sh3_v4_public_shared_builtin_resource_abi_matches_oracle(

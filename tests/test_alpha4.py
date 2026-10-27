@@ -1,4 +1,4 @@
-import contextlib, io, subprocess, tempfile
+import contextlib, io, shutil, subprocess, tempfile
 from pathlib import Path
 import pytest
 from merit.compiler import parse, Checker, Interpreter, CGenerator, compile_file, CompileError
@@ -31,6 +31,24 @@ def test_stable_struct_gets_static_asserts():
     h=CGenerator(p).header()
     assert '_Static_assert(sizeof(merit_Account) == 16' in h
     assert '__builtin_offsetof(merit_Account, balance) == 8' in h
+
+def test_public_vector_header_forward_declares_private_element():
+    p=program('''module private_vector
+struct Hidden { value:i64; }
+fn count(borrow values:Vec<Hidden>)->i64 { return vec_len<Hidden>(values); }
+fn main()->i32 { return 0; }
+''')
+    p.exports={'count'}
+    header=CGenerator(p).header()
+    assert 'typedef struct merit_Hidden merit_Hidden;' in header
+    assert 'struct merit_Hidden {' not in header
+    compiler=shutil.which('cc') or shutil.which('gcc')
+    if compiler is None: pytest.skip('C compiler unavailable')
+    with tempfile.TemporaryDirectory() as temporary:
+        source=Path(temporary)/'header-consumer.c'
+        source.write_text(header+'\nint main(void) { return 0; }\n',encoding='utf-8')
+        compiled=subprocess.run([compiler,'-std=c11','-fsyntax-only',str(source)],capture_output=True,text=True)
+        assert compiled.returncode==0,compiled.stderr
 
 def test_branch_consumption_is_conservative():
     src='''module x

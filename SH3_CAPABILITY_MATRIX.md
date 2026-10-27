@@ -1549,6 +1549,33 @@ project; either prove the historical foreign-call contract with a coherent
 native/header implementation, or record an explicitly approved SH3 scope
 correction before closing F6.
 
+The next F6 slice adds public `Vec<T>` return/parameter admission and a
+matching vector typedef to the native and Python MIR header emitters. A
+`Vec<i64>` shared-library regression builds through native v4, matches the
+independent MIR header oracle byte-for-byte, and is called successfully by a
+C consumer compiled against the historical reference header (`1 passed in
+41.22s`, `D:\Temp\merit-tests\sh3-f6-vector-abi.log`). The first compiler
+all-public probe advanced from `4403` to header status `4602` because its
+ordinary public aggregates carry non-stable `abi_1` metadata. Native and MIR
+header emission now expose those public fields without pretending they have
+stable-layout assertions; private `abi_0` aggregates remain rejected. The
+complete compiler all-public native-v4 shared build and its byte-identical
+Python MIR header comparison passed (`1 passed in 135.30s`).
+
+A C consumer initially could not compile against the historical reference
+compiler header: public vector typedefs used pointers to seven private
+aggregate types without forward declarations. The reference emitter now adds
+only the needed incomplete declarations, without publishing private struct
+bodies or changing runtime behavior. A focused private-vector header compile
+test and a compiler C consumer borrowing and returning `HirExpressionRecord`
+both pass (`D:\Temp\merit-tests\sh3-f6-compiler-consumer.log`). The affected
+MIR emitter, reference-header, and native-v4 corpus files pass together on
+the final ABI-flag tree (`115 passed in 240.12s`,
+`D:\Temp\merit-tests\sh3-f6-aggregate-final.log`). This completes a
+coherent all-public compiler-header mechanism, but not the whole F6 contract:
+other exported resource/aggregate relationships and final-tree broad gates
+still need evidence. Do not claim SH3 closure from this focused result.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using

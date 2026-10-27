@@ -46,6 +46,8 @@ _DESTRUCTOR_I64_STRUCT_PREFIX = "struct_i64_destructor_"
 _OWNED_PAYLOAD_ENUM_PREFIX = "enum_owned_payload_"
 _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
 _AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
+_PUBLIC_AGGREGATE_ABI_FLAGS = 1
+_PUBLIC_STABLE_AGGREGATE_ABI_FLAGS = 3
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
 _FILESYSTEM_RESULT_OK_TAG = 0
@@ -1045,12 +1047,14 @@ def emit_c_header(
         represented.extend(locals_by_id[parameter.local_id].type for parameter in function.parameters)
 
     def header_type(type_: MirType) -> str:
+        if _vector_type(type_) is not None:
+            return _vector_c_name(type_)
         abi = _aggregate_struct_abi(type_)
         if abi is not None:
             flags, name, _ = abi
-            if flags != 3:
+            if flags not in (_PUBLIC_AGGREGATE_ABI_FLAGS, _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS):
                 raise MirToCError(
-                    f"replacement public ABI type {name!r} must be public and stable"
+                    f"replacement public ABI type {name!r} must be public"
                 )
             return f"merit_{_identifier(name)}"
         if _copy_payload_enum_identity(type_) is not None:
@@ -1070,13 +1074,14 @@ def emit_c_header(
     layouts: dict[str, MirType] = {}
     copy_enums: dict[str, MirType] = {}
     public_owned_enums: dict[str, MirType] = {}
+    public_vectors: dict[str, MirType] = {}
     required_builtin_names: set[str] = set()
     def resource_free_public_payload(type_: MirType) -> bool:
         aggregate = _aggregate_struct_identity(type_)
         if aggregate is not None:
             abi = _aggregate_struct_abi(type_)
             return (
-                aggregate[2] is None and abi is not None and abi[0] == 3
+                aggregate[2] is None and abi is not None and abi[0] == _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS
                 and all(resource_free_public_payload(field) for field in type_.arguments)
             )
         if _copy_payload_enum_identity(type_) is not None:
@@ -1084,6 +1089,10 @@ def emit_c_header(
         return _type(type_) in primitive_c_types
 
     def collect(type_: MirType) -> None:
+        if _vector_type(type_) is not None:
+            public_vectors[_vector_c_name(type_)] = type_
+            required_builtin_names.add("Allocator")
+            return
         owned = _recursive_owned_payload_enum_identity(type_)
         if owned is not None:
             identity, payloads = owned
@@ -1149,6 +1158,12 @@ def emit_c_header(
         lines.append(builtin_abi_types[name][1])
     if represented_builtin_names:
         lines.append("")
+    for name in sorted(public_vectors):
+        lines.append(
+            f"typedef struct {{ void *data; size_t len; size_t capacity; merit_Allocator allocator; }} {name};"
+        )
+    if public_vectors:
+        lines.append("")
     emitted: set[str] = set()
     pending = dict(layouts)
     layout_metrics: dict[str, tuple[int, int, tuple[int, ...]]] = {}
@@ -1177,7 +1192,7 @@ def emit_c_header(
         for name, type_ in sorted(pending.items()):
             abi = _aggregate_struct_abi(type_)
             assert abi is not None
-            _, _, member_names = abi
+            flags, _, member_names = abi
             dependencies = {
                 child_abi[1]
                 for field in type_.arguments
@@ -1190,6 +1205,11 @@ def emit_c_header(
                 for field, member in zip(type_.arguments, member_names)
             )
             lines.append(f"typedef struct {{ {fields} }} merit_{_identifier(name)};")
+            if flags != _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS:
+                emitted.add(name)
+                del pending[name]
+                progressed = True
+                break
             offset = 0
             alignment = 1
             offsets: list[int] = []

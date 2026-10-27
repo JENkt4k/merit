@@ -110,7 +110,7 @@ def typed_binary_function(name, type_name, left, right, operator):
     )
 
 
-def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
+def test_public_nonstable_aggregate_header_preserves_private_boundary() -> None:
     point = MirType(
         "struct_aggregate_0_destructor_-1__abi_1_506f696e74_78",
         (MirType("i32"),),
@@ -125,8 +125,21 @@ def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
         0, parameters=(MirParameter(0),), exported=True,
     )
 
-    with pytest.raises(MirToCError, match="must be public and stable"):
-        emit_c_header(MirModule("example", (function,)))
+    header = emit_c_header(MirModule("example", (function,)))
+    assert "typedef struct { int32_t x; } merit_Point;" in header
+    assert "_Static_assert" not in header
+
+    private_point = MirType(
+        "struct_aggregate_0_destructor_-1__abi_0_506f696e74_78",
+        (MirType("i32"),),
+    )
+    private_function = MirFunction(
+        "read_point", MirType("i32"),
+        (MirLocal(0, "point", private_point), MirLocal(1, "result", MirType("i32"))),
+        function.blocks, 0, parameters=(MirParameter(0),), exported=True,
+    )
+    with pytest.raises(MirToCError, match="must be public"):
+        emit_c_header(MirModule("example", (private_function,)))
 
 
 def test_selected_public_header_ignores_non_abi_module_exports() -> None:
