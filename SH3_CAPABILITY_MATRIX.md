@@ -1751,6 +1751,15 @@ tree: `112` short tests, `212` reference tests, `23` corpus-convergence tests,
 `MERIT_GATE_RESULT=PASS` in 172.264 seconds
 (`C:\Temp\merit-tests\sh3-header-repair-pr-gate.log`).
 
+The final-tree native-Windows `subsystem` rerun passed on `f0478a0`:
+`951 passed`, `MERIT_GATE_RESULT=PASS`, exit code `0`, and
+`duration_seconds=36214.811` (10h03m34s). The terminal output and
+`.merit/gates/subsystem/result.json` agree. The single black-box native
+artifact-entry test accounted for 29130.71 seconds (8h05m31s); the
+46-module compiler MIR-oracle test accounted for 2318 seconds. This closes
+the previously failed subsystem rerun, not the final-tree full gate or
+hosted authority. Do not interpret the old 116 failures as current defects.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
