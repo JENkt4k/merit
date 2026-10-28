@@ -6787,8 +6787,15 @@ def test_merit_owned_vector_source_local_requires_resource_effect_catalog(
     assert native.stdout == ''
 
 
-def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_VECTOR_RETURN_PROBE)
+@pytest.mark.parametrize('exported', [False, True])
+def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: Path, exported: bool) -> None:
+    probe = CANONICAL_C_VECTOR_RETURN_PROBE
+    if exported:
+        probe = probe.replace(
+            'function_mir_mode_value(),-1,1,0)',
+            'function_mir_mode_value(),-1,1,1)',
+        )
+    root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
     interpreted = interpret(project)
     _, _, emitter = build(project, root / 'build' / 'canonical-vector-return')
@@ -6806,19 +6813,23 @@ def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: P
         ), (MirBlock(0, (
             MirInstruction(0, 'move', result=1, operands=(0,), ownership='owned'),
         ), MirTerminator('return', operands=(1,))),), 0,
-        parameters=(MirParameter(0),),
+        parameters=(MirParameter(0),), exported=exported,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    if exported:
+        assert 'merit_Vec_693634 merit_consume(merit_Vec_693634 m0);' in c_header
+    else:
+        assert c_header == emit_c_header(module, exported_names=frozenset())
 
     generated = tmp_path / 'vector_return.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
     driver = tmp_path / 'vector_return_driver.c'
+    callee = 'merit_consume' if exported else 'consume'
     driver.write_text(
         '#include "vector_return.c"\n'
         'int main(void) { merit_Vec_693634 value = merit_vec_new_693634(merit_system_allocator(), 1); '
-        'merit_vec_push_693634(&value, 42); merit_Vec_693634 result = consume(value); '
+        f'merit_vec_push_693634(&value, 42); merit_Vec_693634 result = {callee}(value); '
         'int ok = merit_vec_pop_693634(&result) == 42; '
         'merit_vec_drop_693634(&result); return ok ? 0 : 1; }\n',
         encoding='utf-8', newline='\n',
@@ -6832,10 +6843,6 @@ def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: P
 
 
 @pytest.mark.parametrize(('probe', 'status'), [
-    (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
-        'function_mir_mode_value(),-1,1,0)',
-        'function_mir_mode_value(),-1,1,1)',
-    ), 3),
     (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
         'ownership_record_kind_move(),0,0,1,0,0,',
         'ownership_record_kind_drop(),0,0,1,0,0,',

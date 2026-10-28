@@ -1706,6 +1706,21 @@ passes; together with adjacent implicit-fallthrough and owned-parameter
 cleanup cases, the focused selection passed 4 tests in 23.72s. This evidence
 does not replace the final-tree subsystem or full gate.
 
+The F5 owned-return/CFG/contract cross-section selected 19 cases and took
+998.46s, substantially longer than the 2–4-minute estimate
+(`C:\Temp\merit-tests\sh3-f5-return-matrix.log`). Seventeen passed; two
+failed at stale test expectations, not at a generated-C or runtime mismatch.
+The private vector-return test compared an explicitly empty native header
+selection against Python's all-public header, and a former negative case
+expected exported vector return to be unsupported despite the completed F6
+export path. The tests now compare the private empty header exactly, exercise
+the exported prototype and C/runtime path positively, and retain both
+malformed effect/layout negatives. That final four-case selection passed in
+95.54s (`C:\Temp\merit-tests\sh3-vector-return-oracle-final.log`). The
+other 17 cases were not rerun after the test-only correction. Do not repeat
+the 19-case selection as a routine focused check; it exceeds the owner's
+seven-minute manual-help threshold.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
