@@ -1721,6 +1721,36 @@ other 17 cases were not rerun after the test-only correction. Do not repeat
 the 19-case selection as a routine focused check; it exceeds the owner's
 seven-minute manual-help threshold.
 
+### Windows subsystem failure and selected-header oracle repair
+
+The Windows subsystem gate on `41ce216` ended with `116 failed, 835 passed`
+after 15040.83 seconds (`C:\Temp\merit-tests\sh3-subsystem-41ce216.log`;
+`.merit/gates/subsystem/result.json` records failure). This is not SH3
+completion evidence. The first failure and 113 other cases compared a
+selected-function or explicitly empty native C header against the Python
+oracle's default **all-public** header. The difference arose when F6 added
+historical built-in resource declarations to the all-public header; the
+generated C and native behavior were not the root failure. One further test
+still expected a borrowed `Buffer` C export to reject, and another expected
+an owned `Buffer` return export to reject, although both are now admitted by
+the F6 ABI contract.
+
+The repair passes each probe's explicit export selection to the independent
+Python header oracle. The two obsolete rejection cases now check selected
+header bytes and, for the owned return, a compiled C consumer and runtime
+transfer. The missing-move rejection remains intact. Focused evidence:
+scalar selection passed, borrowed-Buffer selection passed after repair,
+and the selected owned-Buffer variant passed; the missing-move negative
+also passed. The empty-export acceptance artifacts passed `3/3`, and
+arithmetic, scalar-copy, string, and buffer-header samples passed `4/4`.
+The external logs are under `C:\Temp\merit-tests\sh3-*`.
+These focused results identify and repair the fan-out root; they do not
+replace a final-tree subsystem rerun or full/hosted evidence.
+The canonical short Windows `pr` gate then passed on the repaired working
+tree: `112` short tests, `212` reference tests, `23` corpus-convergence tests,
+`MERIT_GATE_RESULT=PASS` in 172.264 seconds
+(`C:\Temp\merit-tests\sh3-header-repair-pr-gate.log`).
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using

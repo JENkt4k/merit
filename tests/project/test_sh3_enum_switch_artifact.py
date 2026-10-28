@@ -52,7 +52,9 @@ def test_native_nested_copy_enum_switch_uses_tag(tmp_path: Path) -> None:
     )
     module = parse_mir(json.loads(artifact.canonical_mir_bytes))
     assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
-    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
     generated = tmp_path / "nested-enum.c"
     generated.write_bytes(artifact.c_source_bytes)
     compiler = shutil.which("cc") or shutil.which("gcc")

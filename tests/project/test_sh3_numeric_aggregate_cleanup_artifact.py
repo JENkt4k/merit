@@ -51,7 +51,9 @@ def test_native_numeric_aggregate_cleanup_matches_oracle(tmp_path: Path) -> None
     )
     module = parse_mir(json.loads(artifact.canonical_mir_bytes))
     assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
-    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
     generated = tmp_path / "numeric-aggregate.c"
     generated.write_bytes(artifact.c_source_bytes)
     compiler = shutil.which("cc") or shutil.which("gcc")
@@ -94,7 +96,9 @@ def test_native_numeric_aggregate_cleanup_matches_oracle(tmp_path: Path) -> None
     )
     contract_module = parse_mir(json.loads(contract_artifact.canonical_mir_bytes))
     assert contract_artifact.c_source_bytes.decode("utf-8") == emit_c_module(contract_module)
-    assert contract_artifact.c_header_bytes.decode("utf-8") == emit_c_header(contract_module)
+    assert contract_artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        contract_module, exported_names=frozenset()
+    )
     contract_c = tmp_path / "numeric-contract.c"
     contract_c.write_bytes(contract_artifact.c_source_bytes)
     contract_executable = tmp_path / "numeric-contract.exe"

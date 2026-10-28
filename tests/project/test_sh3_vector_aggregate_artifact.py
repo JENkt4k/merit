@@ -44,7 +44,9 @@ def test_native_generic_collections_vector_aggregate_artifact(tmp_path: Path) ->
     )
     module = parse_mir(json.loads(artifact.canonical_mir_bytes))
     assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
-    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
     source = tmp_path / "generic-collections.c"
     source.write_bytes(artifact.c_source_bytes)
     compiler = shutil.which("cc") or shutil.which("gcc")
