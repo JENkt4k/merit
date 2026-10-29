@@ -11,6 +11,7 @@ from merit.project.project_request import (
     ProjectRequestError,
     ProjectRequestUnit,
     decode_project_request,
+    encode_loaded_project_request,
     encode_project_request,
 )
 from merit.project.replacement_loader import load_replacement_project
@@ -30,6 +31,37 @@ def test_replacement_loader_transports_bytes_without_source_discovery(tmp_path: 
 
     assert len(project.units) == 1
     assert project.units[0].source == raw
+
+
+def test_loaded_project_request_preserves_in_root_paths(tmp_path: Path) -> None:
+    root = tmp_path / "ordinary"
+    (root / "src").mkdir(parents=True)
+    (root / "Merit.toml").write_text(
+        '[package]\nname="ordinary"\nentry="src/main.mrt"\nsources=["src/**/*.mrt"]\n',
+        encoding="utf-8",
+    )
+    source = b"module main\nfn main()->i32 { return 0; }\n"
+    (root / "src" / "main.mrt").write_bytes(source)
+    project = load_replacement_project(root / "Merit.toml")
+    assert encode_loaded_project_request(project) == encode_project_request(ProjectRequest(
+        "ordinary", "src/main.mrt", (ProjectRequestUnit("src/main.mrt", source),),
+    ))
+
+
+def test_loaded_project_request_canonicalizes_sibling_source_tree(tmp_path: Path) -> None:
+    root = tmp_path / "compiler"
+    source = tmp_path / "shared" / "src" / "main.mrt"
+    source.parent.mkdir(parents=True)
+    root.mkdir()
+    (root / "Merit.toml").write_text(
+        '[package]\nname="compiler"\nentry="../shared/src/main.mrt"\n'
+        'sources=["../shared/src/**/*.mrt"]\n', encoding="utf-8",
+    )
+    source.write_bytes(b"module main\n")
+    project = load_replacement_project(root / "Merit.toml")
+    request = decode_project_request(encode_loaded_project_request(project))
+    assert request.entry == "shared/src/main.mrt"
+    assert request.units == (ProjectRequestUnit("shared/src/main.mrt", b"module main\n"),)
 
 
 def test_project_request_round_trips_ordered_utf8_metadata_and_arbitrary_source() -> None:

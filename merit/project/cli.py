@@ -132,15 +132,19 @@ def main(argv: list[str] | None = None) -> int:
         output = Path(args.output) if args.output else project.manifest.root / "build" / project.manifest.name
         if args.compiler == "replacement" and args.command in {"build", "build-shared", "run"}:
             driver_path = _replacement_driver_path(args.replacement_driver)
-            if driver_path is not None:
-                prepare_replacement_artifacts(
-                    project, NativeReplacementDriver(driver_path),
-                    header_exports=(
-                        _shared_header_exports(project)
-                        if args.command == "build-shared"
-                        else _production_header_exports(project)
-                    ),
+            if driver_path is None:
+                raise ReplacementBuildError(
+                    "replacement frontend is not configured; use --compiler-path, "
+                    "MERIT_REPLACEMENT_DRIVER, or install merit-replacement-frontend on PATH"
                 )
+            prepare_replacement_artifacts(
+                project, NativeReplacementDriver(driver_path),
+                header_exports=(
+                    _shared_header_exports(project)
+                    if args.command == "build-shared"
+                    else _production_header_exports(project)
+                ),
+            )
             if args.command == "build-shared":
                 replacement_shared = build_replacement_shared(project, output)
                 print(replacement_shared.library)

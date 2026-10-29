@@ -281,6 +281,46 @@ assert project_main(['check', sys.argv[1], '--replacement-driver', sys.argv[2]])
     assert completed.returncode == 0, completed.stderr
 
 
+def test_public_v4_build_never_imports_python_semantic_backend(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    driver = _native_artifact_driver(
+        tmp_path,
+        c_source=(
+            b"#include <stdint.h>\nint32_t merit_main(void) { return 0; }\n"
+            b"int main(void) { return merit_main(); }\n"
+        ),
+    )
+    output = tmp_path / "public-build"
+    probe = """
+import importlib.abc
+import sys
+
+class RejectSemanticImports(importlib.abc.MetaPathFinder):
+    blocked = (
+        'merit.compiler',
+        'merit.project.loader',
+        'merit.bootstrap.resolved_source_function_snapshot',
+        'merit.bootstrap.mir_contract',
+        'merit.bootstrap.mir_to_c',
+        'merit.bootstrap.replacement_project',
+    )
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in self.blocked:
+            raise AssertionError(f'Python semantic import in public v4 build: {fullname}')
+        return None
+
+sys.meta_path.insert(0, RejectSemanticImports())
+from merit.project.cli import main
+assert main(['build', sys.argv[1], '--compiler-path', sys.argv[2], '-o', sys.argv[3]]) == 0
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", probe, str(root), str(driver), str(output)],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert (output.with_suffix(".exe") if sys.platform.startswith("win") else output).is_file()
+
+
 def test_prepare_replacement_labels_capabilities_in_declaration_order(tmp_path: Path) -> None:
     root = _project(tmp_path)
     source_path = root / "src" / "main.mrt"

@@ -92,7 +92,7 @@ versioned protocol, not in a privileged manifest kind.
 The canonical compiler project is `compiler/Merit.toml`. Its ordinary source
 glob references the same complete 46-module source closure under
 `examples/projects/bootstrap_lexer/src`. The executable contract names the
-exported `emit_replacement_bundle(String)` function in
+exported `emit_native_project_artifacts(String)` function in
 `src/native_replacement_driver.mrt`. The historical bootstrap manifest remains
 the corpus/probe project; it is not the documented compiler target.
 
@@ -125,16 +125,16 @@ is a privileged Python assembly path rather than the normal project UX.
 | Capability labels | Bundle v3 carries module and capability names emitted from the native catalogs | Merit-native semantic metadata | Closed in SH2; Python publishes native metadata without source scanning |
 | Driver execution | `replacement_prepare.py` launches one executable with bounded input/output and timeout | Permitted host work | Retain as generic protocol transport, with structured request/response framing |
 | Bundle framing validation | `resolved_source_function_bundle.py` validates the versioned integer transport | Representation adapter | May remain for oracle/testing; production self-hosted build must not depend on Python to create the next compiler artifact |
-| Snapshot decoding | `resolved_source_function_snapshot.py` decodes native records | Representation adapter | Python copy remains oracle evidence; production decoding/materialization moves behind the compiler artifact |
-| Canonical MIR materialization | `resolved_source_function_snapshot.py` and `replacement_project.py` construct Python `MirModule` data from native records | Compiler/backend work | Must migrate out of the production self-hosted path |
-| MIR contract implementation | `merit/bootstrap/mir_contract.py` defines Python canonical MIR objects and validation | Oracle plus current production adapter | Retain as independent oracle; next-stage production must consume Merit-owned canonical MIR |
-| Deterministic C/header emission | `merit/bootstrap/mir_to_c.py` emits production C and headers | Backend semantic work | Must migrate behind the Merit compiler executable with byte-stable comparison evidence |
+| Snapshot decoding | `resolved_source_function_snapshot.py` decodes native records for independent comparisons | Oracle representation adapter | Normal v4 production builds do not decode snapshots in Python; retain the oracle for differential tests |
+| Canonical MIR materialization | The Merit-native compiler emits canonical project MIR in its v4 artifact | Merit-owned compiler/backend work | SH3 candidate is covered by independent Python MIR comparisons, including the complete compiler project; SH4 must build the next stage through the public command |
+| MIR contract implementation | `merit/bootstrap/mir_contract.py` defines the independent Python canonical MIR oracle | Oracle | Retain as comparison evidence; normal v4 production consumes Merit-owned canonical MIR |
+| Deterministic C/header emission | The Merit-native compiler emits v4 C and selected/all-public headers; `merit/bootstrap/mir_to_c.py` remains the independent oracle | Merit-owned backend plus oracle | SH3 candidate has byte-stable native/oracle comparisons across projects, compiler source, and public ABI probes |
 | C compilation and linking | `replacement_build.py` invokes the external C11 compiler/linker | Permitted host/toolchain work | May remain generic and non-semantic; commands and failures must be deterministic and recorded |
 | Compiler process host | `merit/project/executable_adapter.py` provides the manifest-selected, generic `stdin-string-i32` process/ABI adapter; `native_frontend_driver.py` delegates to it | Permitted generic runtime/ABI bridge | Closed for SH1; keep semantic interpretation out of the adapter |
-| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the historical stage helper still calls `build_replacement_shared` | Bootstrap-only stage path remains | Eliminate the remaining private stage helper during SH4; public project build already produces a usable executable |
+| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the Alpha.2 M9 historical helper still calls `build_replacement_shared` | Historical trust-gate path only | SH4's stage-1/stage-2 production path invokes only the installed public `merit-project build` command; retain the private helper solely for unchanged Alpha.2 M9 evidence until SH5 supersedes it |
 | Source isolation | `native_frontend_driver.py` copies the compiler project while excluding `.merit`, build, and bytecode state | Trust orchestration | Retain and generalize in the reproducibility gate |
 | Stage comparison | `reproducibility.py` builds stages and compares C, header, and fixed probe output | Trust orchestration | Retain, then extend to invoke only the public project command and the self-hosting result schema |
-| CLI compiler discovery | `merit/project/cli.py` selects argument, environment, or `PATH` driver | Public UX with historical naming | Introduce `--compiler-path`, preserve deterministic discovery, and fail closed |
+| CLI compiler discovery | `merit/project/cli.py` selects explicit `--compiler-path`, environment, then `PATH` driver | Public UX with historical alias | SH4 candidate rejects `build`, `build-shared`, and `run` without a compiler even when cached artifacts exist; `--replacement-driver` remains an alias |
 
 The external C compiler, platform linker, filesystem, and process launcher are
 not required to be written in Merit. They are toolchain dependencies and may
@@ -149,15 +149,15 @@ needed to produce the next usable compiler must be classified.
 | Requirement | Current state | Closure evidence |
 |---|---|---|
 | All 46 Merit modules are present in the manifest source closure | Proven by manifest glob and M9 isolated stage builds; SH2 adds the reviewed project-request module | Automated exact-inventory test rejects accidental omission/addition until deliberately reviewed |
-| Compiler semantic entry is Merit-native | `emit_replacement_bundle(String)` is Merit source | Direct interpreter/native and prior-stage execution parity |
-| Compiler artifact has an ordinary executable entry | `compiler/Merit.toml` declares `stdin-string-i32` and `emit_replacement_bundle`; ordinary project build links the fixed generic adapter | Public project-build and native-driver tests produce and execute the compiler without bespoke host generation |
+| Compiler semantic entry is Merit-native | `emit_native_project_artifacts(String)` is Merit source; the historical bundle-only entry remains for Alpha.2 evidence | Direct interpreter/native and prior-stage execution parity |
+| Compiler artifact has an ordinary executable entry | `compiler/Merit.toml` declares `stdin-string-i32` and `emit_native_project_artifacts`; ordinary project build links the fixed generic adapter | Public project-build and native-driver tests produce and execute the compiler without bespoke host generation |
 | Project/module request is representable without Python source rewriting | Closed in SH2 by `MPRQ` v1 and native bundle metadata v3 | Host framing oracle, malformed-request rejection, Windows binary transport, single/multi-module execution parity, and legacy Alpha.1 vector evidence |
-| Complete canonical MIR is materialized by Merit | Missing in the production path | Native MIR artifact comparison against the independent Python materializer |
-| Deterministic C and public header are emitted by Merit | Missing | Byte comparison with the established canonical emitter over the complete accepted corpus and compiler project |
-| Diagnostics and failures are represented without Python semantic guessing | Partial; Python currently infers source hints from wrapped statuses | Structured native diagnostics compared with the oracle contract |
+| Complete canonical MIR is materialized by Merit | SH3 native-v4 candidate emits canonical project MIR; Python is an independent oracle | Native MIR artifact comparison against the independent Python materializer, including all 46 compiler modules |
+| Deterministic C and public header are emitted by Merit | SH3 native-v4 candidate emits C and selected/all-public headers | Byte comparisons with the independent canonical emitter over the accepted corpus, applications, compiler project, and C ABI probes |
+| Diagnostics and failures are represented without Python semantic guessing | SH2 native request validation and SH3 fail-closed v4 artifact statuses are in the production path; stage-to-stage structured diagnostic-byte comparison remains SH5 | Native rejection, deterministic statuses, no fallback, and later SH5 diagnostic equivalence |
 | Required filesystem/process authority is explicit | Not yet applicable to the compiler executable boundary | Capability inventory and negative tests for missing authority |
 | The resulting artifact can compile the same complete source closure | Proven only through the private M9 stage helper | Stage 1 and stage 2 built solely by the public command |
-| Python is absent from production semantic authority | True for frontend lowering, false for materialization/backend | Import/process guard proves the stage build cannot reach prohibited Python semantic modules |
+| Python is absent from production semantic authority | SH3 native-v4 normal project path has no Python MIR/C/header semantic authority; Python remains an oracle | Fresh-process import/process guard for public build/check/shared/run; SH4 extends this to the next-stage public build |
 
 ## Scope rules
 
@@ -193,10 +193,12 @@ needed to produce the next usable compiler must be classified.
   source flattening/desugaring, capability labeling, and diagnostic guessing
   with a versioned project request consumed and validated by the Merit compiler.
   Preserve multi-module source identity and fail closed on malformed requests.
-- [ ] **SH3 — Merit-owned canonical MIR and backend**: move production snapshot
+- [x] **SH3 — Merit-owned canonical MIR and backend**: move production snapshot
   decoding/materialization, canonical project MIR assembly, deterministic C
   emission, and public-header emission behind the Merit compiler executable.
-  Keep Python implementations as independent comparison oracles.
+  Keep Python implementations as independent comparison oracles. Merged in PR
+  #132; the owner accepted final-tree Windows full-gate evidence across the
+  documentation-only closure commit.
 - [ ] **SH4 — Normal build cutover**: make the documented
   `merit-project build ... --compiler-path ...` command produce a directly usable
   next-stage compiler. Remove the private stage-build API from production use and
@@ -235,7 +237,8 @@ milestone before its prerequisite is confirmed merged on current `main`.
 
 - `compiler/Merit.toml` is the canonical ordinary compiler target and resolves
   the exact 45-module source closure while selecting the Merit-native
-  `emit_replacement_bundle(String) -> i32` entry.
+  historical `emit_replacement_bundle(String) -> i32` entry; SH4 selects
+  `emit_native_project_artifacts(String) -> i32` for the normal compiler artifact.
 - `[executable] adapter = "stdin-string-i32"` is a general manifest contract;
   both reference and replacement project builds use the same fixed transport
   adapter, which reads bytes, constructs the stable `String` ABI value, invokes
@@ -252,6 +255,28 @@ milestone before its prerequisite is confirmed merged on current `main`.
 - A black-box `merit-project build compiler --compiler reference -o <path>`
   smoke test produces a directly executable compiler, and a valid Merit source
   probe emits the established versioned replacement bundle through stdout.
+
+### SH4 candidate evidence
+
+- The canonical `compiler/Merit.toml` now selects the existing Merit-native v4
+  artifact entry. The historical bundle-only entry remains available to the
+  Alpha.2 M9 oracle helper without changing that gate's schema or comparisons.
+- The host request encoder uses a common filesystem ancestor when the manifest
+  references sibling source files, as this compiler manifest does. Ordinary
+  in-root projects retain byte-identical request framing; the request remains
+  canonical and contains all 46 compiler modules.
+- A black-box test invokes the installed `merit-project build` command twice
+  from separate fresh 46-module source trees: stage 0 produces a directly
+  executable stage 1, and stage 1 produces stage 2. Windows result:
+  `1 passed in 253.75s`; log is outside the repository on D:.
+- A fresh-process public-build test rejects Python compiler, loader, MIR,
+  snapshot, and C-emitter imports. The public CLI rejects missing compiler
+  selection instead of accepting a previously prepared artifact.
+- Directly affected request, CLI, adapter, historical-gate, and documentation
+  tests pass (`63 passed`). The Windows short PR gate passes (`212 passed`,
+  Alpha.1 accepted/rejected corpus `23 passed`, `MERIT_GATE_RESULT=PASS`).
+- This is implementation evidence, not SH4 closure. Affected subsystem and
+  final-tree full-gate evidence remain required before PR readiness.
 
 ### SH3 implementation audit
 

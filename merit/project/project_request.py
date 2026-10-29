@@ -8,7 +8,8 @@ semantics. Those remain the native compiler's responsibility.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 
@@ -159,7 +160,15 @@ def encode_loaded_project_request(
     """Encode a loaded project's paths and bytes without inspecting source text."""
 
     manifest = project.manifest
-    root = manifest.root.resolve()
+    paths = (manifest.root.resolve(), manifest.entry_path.resolve(), *(
+        unit.path.resolve() for unit in project.units
+    ))
+    try:
+        root = Path(os.path.commonpath(paths))
+    except ValueError as exc:
+        raise ProjectRequestError(
+            "project request source paths must share a filesystem root"
+        ) from exc
     units = tuple(
         ProjectRequestUnit(
             unit.path.resolve().relative_to(root).as_posix(),

@@ -5,7 +5,7 @@ sources = ["../examples/projects/bootstrap_lexer/src/**/*.mrt"]
 
 [executable]
 adapter = "stdin-string-i32"
-entry = "emit_replacement_bundle"
+entry = "emit_native_project_artifacts"
 
 [build]
 c_flags = ["-O2"]
