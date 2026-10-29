@@ -1760,6 +1760,35 @@ artifact-entry test accounted for 29130.71 seconds (8h05m31s); the
 the previously failed subsystem rerun, not the final-tree full gate or
 hosted authority. Do not interpret the old 116 failures as current defects.
 
+### SH3 candidate-tree full-gate and family reconciliation
+
+The native-Windows canonical `full` gate passed on `c0816af` without a
+source or test edit after the subsystem run: `1704 passed` in 9017.00s,
+the M7 replacement suite `11 passed` in 3842.05s,
+`M7_ACCEPTANCE_RESULT=PASS`, all ten acceptance applications verified,
+and `MERIT_GATE_RESULT=PASS` in 12908.635s. The external log is
+`C:\Temp\merit-tests\sh3-full-c0816af.log`; `.merit/gates/full/result.json`
+records `status=passed`, `acceptance_projects=10`, and
+`replacement_acceptance=true`. The intentionally trapping short-packet
+negative raised a Windows crash dialog; closing it let the expected
+nonzero-result assertion and the gate complete. The dialog is a test-runner
+UX issue, not evidence of an accepted-program compiler mismatch.
+
+| Family | Current candidate evidence covered by the passing full gate | Remaining qualification |
+| --- | --- | --- |
+| F1-F2 | Native-v4 type/CFG/effect records, malformed source/catalog probes, and the independent 46-module compiler MIR comparison; accepted applications exercise complete project graphs. | Preserve the existing fail-closed boundary; do not extrapolate to future resource relationships. |
+| F3 | Destructor catalog rejection, multi-module ordering, payload-free storage, explicit/implicit cleanup, owned-child replacement, and native/oracle artifact/runtime tests. | No Alpha.3 resource kinds are claimed. |
+| F4-F5 | Native-v4 C/header oracle comparisons, numeric/vector/filesystem/runtime fixtures, accepted/rejected corpus, application differentials, and compiler C/protocol compilation. Source-producer audit found no accepted-source `convert` or `allocate` producer. | Unproduced MIR spellings are not new Alpha.2 source obligations; retain fail-closed behavior. |
+| F6 | Selected and all-public headers, invalid export rejection, all nine application shared builds, complete compiler all-public header/prototype inventory, and historical-reference-header C consumers for aggregate, decimal, vector, and resource ABI families. | Representative ABI probes do not assert every hypothetical foreign type combination. |
+| F7 | Public build/check/shared/run native-v4 artifact path, framing/digest and atomic-publication negatives, and fresh-process guards against Python semantic/backend authority. | SH4 public-command next-stage build is not claimed here. |
+| F8 | All 22 fixed accepted/rejected corpus cases; nine application native-v4 differential/build cases plus the 46-module compiler artifact, MIR, C/header, and protocol checks. | SH5 stage-to-stage diagnostics and SH6 cross-platform qualification remain separate milestones. |
+| F9 | Windows subsystem and full gate passed; one draft SH3 PR opened. | Hosted short checks and explicit owner review remain pending. Long hosted gates were not automatically dispatched. |
+
+This is the latest evidence reconciliation for the F1-F9 rows above, whose
+earlier `Partial` labels describe the pre-final-gate state. It does not yet
+check the SH3 milestone box, make the draft PR ready for review, or waive
+the unchanged-tree rule for this documentation-only ledger update.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
