@@ -275,8 +275,11 @@ milestone before its prerequisite is confirmed merged on current `main`.
 - Directly affected request, CLI, adapter, historical-gate, and documentation
   tests pass (`63 passed`). The Windows short PR gate passes (`212 passed`,
   Alpha.1 accepted/rejected corpus `23 passed`, `MERIT_GATE_RESULT=PASS`).
-- This is implementation evidence, not SH4 closure. Affected subsystem and
-  final-tree full-gate evidence remain required before PR readiness.
+- The native-Windows subsystem gate passes on `1f63fff`: `959 passed in
+  15134.84s` (4h12m14s), `MERIT_GATE_RESULT=PASS`. Its log and scratch data
+  reside on D: outside the repository.
+- This is implementation evidence, not SH4 closure. Final-tree full-gate
+  evidence remains required before PR readiness.
 
 ### SH3 implementation audit
 
