@@ -2037,7 +2037,11 @@ class CGenerator:
         o=['#pragma once','#include <stdint.h>','#include <stddef.h>','', 'typedef struct { const char *data; size_t len; } merit_String;', 'typedef struct { int kind; } merit_Allocator;', 'typedef struct { uint8_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_Buffer;', 'typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;', 'typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;', '']
         composite_order=self.composite_order()
         visible_composites=[name for name in composite_order if include_private or not self.p.exports or name in self.p.exports or name in FS_BUILTIN_ENUMS]
-        for name in visible_composites:o.append(f'typedef struct merit_{name} merit_{name};')
+        # A public vector may hold a private composite. Its data pointer still
+        # needs the composite's incomplete C type to be declared in the header.
+        vector_elements={vec_elem_type(vt) for vt in self.vec_types()}
+        forward_composites=[name for name in composite_order if name in visible_composites or name in vector_elements]
+        for name in forward_composites:o.append(f'typedef struct merit_{name} merit_{name};')
         for vt in self.vec_types():o.append(f'typedef struct merit_{vt} merit_{vt};')
         if visible_composites or self.vec_types():o.append('')
         for vt in self.vec_types():o.extend(self.vec_typedef_lines(vt))
@@ -2363,6 +2367,8 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             ]
         if kind=='return':
             prelude,value=self.ordered_expr(node.expression,env,self.current_return,p)
+            if self.current_return=='void':
+                return prelude+[f'{p}(void)({value});',f'{p}goto _merit_epilogue;']
             return prelude+[f'{p}_merit_result = {self.checked(self.current_return,value)};',f'{p}goto _merit_epilogue;']
         if kind=='print':
             t=self.etype(node.expression,env);prelude,x=self.ordered_expr(node.expression,env,t,p)

@@ -27,6 +27,7 @@ from merit.bootstrap.mir_contract import (
     canonical_mir_json,
 )
 from merit.bootstrap.mir_to_c import _type as oracle_c_type
+from merit.bootstrap.mir_to_c import emit_c_header as _oracle_emit_c_header
 from merit.bootstrap.mir_function_assembly_parity import (
     NativeWholeFunctionMirError, _materialize_literal,
 )
@@ -35,6 +36,17 @@ from merit.project.loader import load_project
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
+
+
+def _selected_c_header(module: MirModule) -> str:
+    """Compare a probe's selected public functions, not the legacy all-public ABI."""
+
+    return _oracle_emit_c_header(
+        module,
+        exported_names=frozenset(
+            function.name for function in module.functions if function.exported
+        ),
+    )
 
 PROBE = r'''module resolved_source_function_bundle_probe
 import bootstrap_mir_functions;
@@ -3833,7 +3845,7 @@ def test_merit_scalar_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> N
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_public_function_can_be_omitted_from_selected_c_header(tmp_path: Path) -> None:
@@ -3928,7 +3940,7 @@ fn main()->i32 {
 
 
 def test_merit_public_borrowed_buffer_helper_is_not_implicitly_a_c_export(tmp_path: Path) -> None:
-    from merit.bootstrap.mir_to_c import MirToCError, emit_c_header, emit_c_module
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
 
     module = MirModule("demo", (MirFunction(
         "checksum", MirType("i64"), (
@@ -3937,8 +3949,8 @@ def test_merit_public_borrowed_buffer_helper_is_not_implicitly_a_c_export(tmp_pa
         ), (MirBlock(0, (), MirTerminator("return", operands=(1,))),), 0,
         parameters=(MirParameter(0, "borrowed"), MirParameter(1)), exported=True,
     ),))
-    with pytest.raises(MirToCError, match="requires native layout metadata"):
-        emit_c_header(module)
+    assert "merit_checksum" not in emit_c_header(module, exported_names=frozenset())
+    assert "merit_checksum" in emit_c_header(module)
 
     root = _project(tmp_path, PUBLIC_BORROWED_BUFFER_HEADER_PROBE)
     project = load_project(root / "Merit.toml")
@@ -3961,9 +3973,15 @@ def test_merit_public_borrowed_buffer_helper_is_not_implicitly_a_c_export(tmp_pa
     _, _, selected_executable = build(
         selected_project, selected_root / "build" / "borrowed-buffer-selected",
     )
-    rejected = subprocess.run([str(selected_executable)], text=True, capture_output=True)
-    assert rejected.returncode == 9
-    assert rejected.stdout == ""
+    selected_run = subprocess.run(
+        [str(selected_executable)], text=True, capture_output=True, check=True,
+    )
+    selected_values = [int(value) for value in selected_run.stdout.splitlines()]
+    selected_c_length = selected_values[0]
+    selected_c_header = bytes(selected_values[2 + selected_c_length:]).decode("utf-8")
+    assert selected_c_header == emit_c_header(
+        module, exported_names=frozenset({"checksum"})
+    )
 
 
 @pytest.mark.parametrize(
@@ -4000,7 +4018,7 @@ def test_merit_multifunction_c_backend_matches_python_oracle_bytes(
     ))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -4031,7 +4049,7 @@ def test_merit_scalar_jump_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_scalar_jump_target_body_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -4066,7 +4084,7 @@ def test_merit_scalar_jump_target_body_c_backend_matches_python_oracle_bytes(tmp
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_scalar_unreachable_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -4099,7 +4117,7 @@ def test_merit_scalar_unreachable_c_backend_matches_python_oracle_bytes(tmp_path
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -4156,7 +4174,7 @@ def test_merit_scalar_call_c_backend_matches_python_oracle_bytes(
     ))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
     generated_c = tmp_path / "call.c"
     generated_h = tmp_path / "call.h"
     driver_c = tmp_path / "call_driver.c"
@@ -4284,7 +4302,7 @@ def test_merit_bool_comparison_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_bool_ordering_c_backend_fails_closed(tmp_path: Path) -> None:
@@ -4334,7 +4352,7 @@ def test_merit_textual_bool_constant_c_backend_matches_oracle(
     ))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -4387,7 +4405,7 @@ def test_merit_scalar_comparison_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
     generated = tmp_path / "integer_comparison.c"
     generated.write_text(c_source, encoding="utf-8", newline="\n")
     driver = tmp_path / "integer_comparison_driver.c"
@@ -4511,7 +4529,7 @@ def test_merit_scalar_branch_c_backend_matches_python_oracle_bytes(tmp_path: Pat
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize("arm", (1, 2))
@@ -4550,7 +4568,7 @@ def test_merit_scalar_branch_arm_body_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -4602,7 +4620,7 @@ def test_merit_scalar_four_block_join_c_backend_matches_python_oracle_bytes(tmp_
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -4659,7 +4677,7 @@ def test_merit_scalar_backedge_c_backend_matches_python_oracle_bytes(tmp_path: P
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -4735,7 +4753,7 @@ def test_merit_scalar_switch_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
     generated_c = tmp_path / "switch.c"
@@ -4827,7 +4845,7 @@ def test_merit_switch_c_backend_preserves_sparse_canonical_block_ids(tmp_path: P
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
     generated_c = tmp_path / "sparse-switch.c"
     generated_h = tmp_path / "sparse-switch.h"
     driver_c = tmp_path / "sparse-switch-driver.c"
@@ -4956,7 +4974,7 @@ def test_merit_checked_scalar_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
     generated = tmp_path / "checked_integer.c"
     generated.write_text(c_source, encoding="utf-8", newline="\n")
     cc = shutil.which("cc") or shutil.which("gcc")
@@ -5801,7 +5819,7 @@ def test_merit_scalar_copy_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize('general_entry', [False, True])
@@ -5856,7 +5874,7 @@ def test_merit_unit_call_c_backend_matches_python_oracle_bytes(
     ))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_unit_call_generated_c_executes(tmp_path: Path) -> None:
@@ -5906,7 +5924,7 @@ def test_merit_string_value_c_backend_matches_python_oracle_bytes(tmp_path: Path
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_string_value_generated_c_executes(tmp_path: Path) -> None:
@@ -5987,7 +6005,7 @@ def test_merit_string_constant_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize("literal", [r'"bad\q"', r'"\ud800"'])
@@ -6055,7 +6073,7 @@ def test_merit_allocator_value_c_backend_matches_python_oracle_bytes(tmp_path: P
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize("allocator_name", ["system_allocator", "portable_allocator"])
@@ -6082,7 +6100,7 @@ def test_merit_allocator_builtin_call_c_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_allocator_compatible_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -6110,7 +6128,7 @@ def test_merit_allocator_compatible_c_backend_matches_python_oracle_bytes(tmp_pa
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_string_len_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -6136,7 +6154,7 @@ def test_merit_string_len_c_backend_matches_python_oracle_bytes(tmp_path: Path) 
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_string_byte_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -6164,7 +6182,7 @@ def test_merit_string_byte_c_backend_matches_python_oracle_bytes(tmp_path: Path)
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -6200,7 +6218,7 @@ def test_merit_byte_slice_backend_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize("move_kind", [
@@ -6560,7 +6578,7 @@ def test_merit_placed_buffer_drop_c_backend_matches_python_oracle_bytes(tmp_path
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_placed_vector_drop_c_backend_matches_python_oracle_bytes(tmp_path: Path) -> None:
@@ -6585,7 +6603,7 @@ def test_merit_placed_vector_drop_c_backend_matches_python_oracle_bytes(tmp_path
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'vector_drop.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -6628,7 +6646,7 @@ def test_merit_placed_vector_len_c_backend_matches_python_oracle_bytes(tmp_path:
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'vector_len.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -6700,7 +6718,7 @@ def test_merit_vector_new_push_len_and_drop_match_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'vector_build.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -6746,7 +6764,7 @@ def test_merit_owned_vector_source_local_matches_python_oracle_bytes(tmp_path: P
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'vector_source_local.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -6787,8 +6805,15 @@ def test_merit_owned_vector_source_local_requires_resource_effect_catalog(
     assert native.stdout == ''
 
 
-def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: Path) -> None:
-    root = _project(tmp_path, CANONICAL_C_VECTOR_RETURN_PROBE)
+@pytest.mark.parametrize('exported', [False, True])
+def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: Path, exported: bool) -> None:
+    probe = CANONICAL_C_VECTOR_RETURN_PROBE
+    if exported:
+        probe = probe.replace(
+            'function_mir_mode_value(),-1,1,0)',
+            'function_mir_mode_value(),-1,1,1)',
+        )
+    root = _project(tmp_path, probe)
     project = load_project(root / 'Merit.toml')
     interpreted = interpret(project)
     _, _, emitter = build(project, root / 'build' / 'canonical-vector-return')
@@ -6806,19 +6831,23 @@ def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: P
         ), (MirBlock(0, (
             MirInstruction(0, 'move', result=1, operands=(0,), ownership='owned'),
         ), MirTerminator('return', operands=(1,))),), 0,
-        parameters=(MirParameter(0),),
+        parameters=(MirParameter(0),), exported=exported,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    if exported:
+        assert 'merit_Vec_693634 merit_consume(merit_Vec_693634 m0);' in c_header
+    else:
+        assert c_header == emit_c_header(module, exported_names=frozenset())
 
     generated = tmp_path / 'vector_return.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
     driver = tmp_path / 'vector_return_driver.c'
+    callee = 'merit_consume' if exported else 'consume'
     driver.write_text(
         '#include "vector_return.c"\n'
         'int main(void) { merit_Vec_693634 value = merit_vec_new_693634(merit_system_allocator(), 1); '
-        'merit_vec_push_693634(&value, 42); merit_Vec_693634 result = consume(value); '
+        f'merit_vec_push_693634(&value, 42); merit_Vec_693634 result = {callee}(value); '
         'int ok = merit_vec_pop_693634(&result) == 42; '
         'merit_vec_drop_693634(&result); return ok ? 0 : 1; }\n',
         encoding='utf-8', newline='\n',
@@ -6832,10 +6861,6 @@ def test_merit_owned_vector_return_matches_oracle_and_transfers_once(tmp_path: P
 
 
 @pytest.mark.parametrize(('probe', 'status'), [
-    (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
-        'function_mir_mode_value(),-1,1,0)',
-        'function_mir_mode_value(),-1,1,1)',
-    ), 3),
     (CANONICAL_C_VECTOR_RETURN_PROBE.replace(
         'ownership_record_kind_move(),0,0,1,0,0,',
         'ownership_record_kind_drop(),0,0,1,0,0,',
@@ -6919,7 +6944,7 @@ def test_merit_copy_vector_operations_match_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'vector_operations.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -7121,7 +7146,7 @@ def test_merit_placed_owned_element_vector_drop_matches_oracle_and_executes(tmp_
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / 'owned_element_vector_drop.c'
     generated.write_text(c_source, encoding='utf-8', newline='\n')
@@ -7143,8 +7168,20 @@ def test_merit_placed_owned_element_vector_drop_matches_oracle_and_executes(tmp_
     subprocess.run([str(program)], check=True, capture_output=True)
 
 
-@pytest.mark.parametrize("probe", (CANONICAL_C_BUFFER_RETURN_PROBE, CANONICAL_C_TYPED_BUFFER_RETURN_PROBE))
-def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(tmp_path: Path, probe: str) -> None:
+@pytest.mark.parametrize(
+    ("probe", "exported"),
+    (
+        (CANONICAL_C_BUFFER_RETURN_PROBE, False),
+        (CANONICAL_C_TYPED_BUFFER_RETURN_PROBE, False),
+        (CANONICAL_C_BUFFER_RETURN_PROBE.replace(
+            'function_mir_mode_value(),-1,1,0)',
+            'function_mir_mode_value(),-1,1,1)',
+        ), True),
+    ),
+)
+def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(
+    tmp_path: Path, probe: str, exported: bool,
+) -> None:
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     interpreted = interpret(project)
@@ -7162,18 +7199,20 @@ def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(tmp_path: P
         ), (MirBlock(0, (
             MirInstruction(0, "move", result=1, operands=(0,), ownership="owned"),
         ), MirTerminator("return", operands=(1,))),), 0,
-        parameters=(MirParameter(0),),
+        parameters=(MirParameter(0),), exported=exported,
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
     generated = tmp_path / "buffer_return.c"
     generated.write_text(c_source, encoding="utf-8", newline="\n")
     driver = tmp_path / "buffer_return_driver.c"
+    call_name = "merit_consume" if exported else "consume"
     driver.write_text(
         '#include "buffer_return.c"\n'
-        'int main(void) { merit_Buffer result = consume(merit_buffer_new(merit_system_allocator(), 4)); '
+        'int main(void) { merit_Buffer result = ' + call_name
+        + '(merit_buffer_new(merit_system_allocator(), 4)); '
         'merit_buffer_push(&result, 42); '
         'int ok = result.len == 1 && result.data[0] == 42; '
         'merit_buffer_drop(&result); return ok ? 0 : 1; }\n',
@@ -7187,27 +7226,18 @@ def test_merit_owned_buffer_return_matches_oracle_and_transfers_once(tmp_path: P
     subprocess.run([str(program)], check=True, capture_output=True)
 
 
-@pytest.mark.parametrize(
-    ("probe", "status"),
-    [
-        (CANONICAL_C_BUFFER_RETURN_PROBE.replace(
-            'function_mir_mode_value(),-1,1,0)',
-            'function_mir_mode_value(),-1,1,1)',
-        ), 3),
-        (CANONICAL_C_BUFFER_RETURN_PROBE.replace(
-            'ownership_record_kind_move(),0,0,1,0,0,',
-            'ownership_record_kind_drop(),0,0,1,0,0,',
-        ), 110),
-    ],
-)
-def test_merit_owned_buffer_return_fails_closed_without_private_explicit_move(
-    tmp_path: Path, probe: str, status: int,
+def test_merit_owned_buffer_return_fails_closed_without_explicit_move(
+    tmp_path: Path,
 ) -> None:
+    probe = CANONICAL_C_BUFFER_RETURN_PROBE.replace(
+        'ownership_record_kind_move(),0,0,1,0,0,',
+        'ownership_record_kind_drop(),0,0,1,0,0,',
+    )
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
     _, _, executable = build(project, root / "build" / "canonical-buffer-return-rejected")
     native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == status
+    assert native.returncode == 110
     assert native.stdout == ""
 
 
@@ -7701,7 +7731,7 @@ def test_merit_placed_buffer_push_matches_python_oracle_bytes(tmp_path: Path) ->
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_placed_buffer_push_generated_c_mutates_once(tmp_path: Path) -> None:
@@ -7823,7 +7853,7 @@ def test_merit_placed_bootstrap_buffer_append_matches_python_oracle_bytes(tmp_pa
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_placed_bootstrap_buffer_append_generated_c_executes(tmp_path: Path) -> None:
@@ -7995,7 +8025,7 @@ def test_merit_placed_buffer_slice_matches_python_oracle_bytes(tmp_path: Path) -
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_placed_buffer_slice_generated_c_reads_view(tmp_path: Path) -> None:
@@ -8120,7 +8150,7 @@ def test_merit_placed_buffer_get_matches_python_oracle_bytes(tmp_path: Path) -> 
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -8158,7 +8188,7 @@ def test_merit_placed_buffer_read_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -8292,7 +8322,7 @@ def test_merit_placed_buffer_construction_matches_python_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(
@@ -8478,17 +8508,33 @@ def test_merit_byte_slice_generated_c_preserves_bytes_and_bounds(tmp_path: Path)
     assert "Merit slice index out of bounds" in out_of_bounds.stderr
 
 
-def test_merit_byte_slice_backend_rejects_public_abi(tmp_path: Path) -> None:
+def test_merit_byte_slice_backend_emits_public_abi_matching_oracle(tmp_path: Path) -> None:
     probe = CANONICAL_C_SLICE_LEN_PROBE.replace(
         "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
     )
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
-    assert interpret(project) == ""
+    interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-slice-public-rejected")
     native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 9
-    assert native.stdout == ""
+    assert native.returncode == 0, native.stderr
+    assert native.stdout == interpreted
+    values = [int(value) for value in native.stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "measure", MirType("i64"), (
+            MirLocal(0, "value", MirType("ByteSlice")),
+            MirLocal(1, "result", MirType("i64")),
+        ), (MirBlock(0, (MirInstruction(
+            0, "call", result=1, operands=(0,), symbol="slice_len",
+        ),), MirTerminator("return", operands=(1,))),), 0,
+        parameters=(MirParameter(0),), exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_string_byte_generated_c_preserves_utf8_and_bounds(tmp_path: Path) -> None:
@@ -8656,18 +8702,31 @@ def test_merit_allocator_builtin_call_backend_fails_closed(
     assert native.stdout == ""
 
 
-def test_merit_allocator_value_backend_rejects_public_abi(tmp_path: Path) -> None:
+def test_merit_allocator_value_backend_emits_public_abi_matching_oracle(tmp_path: Path) -> None:
     probe = CANONICAL_C_ALLOCATOR_VALUE_PROBE.replace(
         "function_mir_mode_value(),-1,1,0)", "function_mir_mode_value(),-1,1,1)",
     )
     assert probe != CANONICAL_C_ALLOCATOR_VALUE_PROBE
     root = _project(tmp_path, probe)
     project = load_project(root / "Merit.toml")
-    assert interpret(project) == ""
+    interpreted = interpret(project)
     _, _, executable = build(project, root / "build" / "canonical-c-public-allocator-rejected")
     native = subprocess.run([str(executable)], text=True, capture_output=True)
-    assert native.returncode == 3
-    assert native.stdout == ""
+    assert native.returncode == 0, native.stderr
+    assert native.stdout == interpreted
+    values = [int(value) for value in native.stdout.splitlines()]
+    c_length = values[0]
+    c_source = bytes(values[1:1 + c_length]).decode("utf-8")
+    c_header = bytes(values[2 + c_length:]).decode("utf-8")
+    module = MirModule("demo", (MirFunction(
+        "identity", MirType("Allocator"),
+        (MirLocal(0, "value", MirType("Allocator")),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),), 0,
+        parameters=(MirParameter(0),), exported=True,
+    ),))
+    from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
+    assert c_source == emit_c_module(module)
+    assert c_header == _selected_c_header(module)
 
 
 def test_merit_allocator_value_generated_c_preserves_identity(tmp_path: Path) -> None:
@@ -8773,7 +8832,7 @@ def test_merit_scalar_integer_literal_c_backend_matches_oracle_bytes(
     ),))
     from merit.bootstrap.mir_to_c import emit_c_header, emit_c_module
     assert c_source == emit_c_module(module)
-    assert c_header == emit_c_header(module)
+    assert c_header == _selected_c_header(module)
 
 
 @pytest.mark.parametrize(

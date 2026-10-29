@@ -62,7 +62,9 @@ def test_native_multiblock_owned_return_matches_oracle(tmp_path: Path) -> None:
     assert len(selected.blocks) > 1
     assert sum(block.terminator.kind == "return" for block in selected.blocks) >= 2
     assert artifact.c_source_bytes.decode("utf-8") == emit_c_module(module)
-    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(module)
+    assert artifact.c_header_bytes.decode("utf-8") == emit_c_header(
+        module, exported_names=frozenset()
+    )
     generated = tmp_path / "multiblock-owned-return.c"
     generated.write_bytes(artifact.c_source_bytes)
     c_compiler = shutil.which("cc") or shutil.which("gcc")

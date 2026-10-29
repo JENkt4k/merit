@@ -110,7 +110,7 @@ def typed_binary_function(name, type_name, left, right, operator):
     )
 
 
-def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
+def test_public_nonstable_aggregate_header_preserves_private_boundary() -> None:
     point = MirType(
         "struct_aggregate_0_destructor_-1__abi_1_506f696e74_78",
         (MirType("i32"),),
@@ -125,8 +125,28 @@ def test_public_aggregate_header_fails_closed_without_stable_abi() -> None:
         0, parameters=(MirParameter(0),), exported=True,
     )
 
-    with pytest.raises(MirToCError, match="must be public and stable"):
-        emit_c_header(MirModule("example", (function,)))
+    header = emit_c_header(MirModule("example", (function,)))
+    assert "typedef struct { int32_t x; } merit_Point;" in header
+    assert "_Static_assert(sizeof(merit_Point)" not in header
+    assert "merit_I64Vec;" in header
+    assert "merit_make_FileReadResult_ReadOk" in header
+    selected_header = emit_c_header(
+        MirModule("example", (function,)), exported_names=frozenset({"read_point"}),
+    )
+    assert "merit_I64Vec;" not in selected_header
+    assert "merit_make_FileReadResult_ReadOk" not in selected_header
+
+    private_point = MirType(
+        "struct_aggregate_0_destructor_-1__abi_0_506f696e74_78",
+        (MirType("i32"),),
+    )
+    private_function = MirFunction(
+        "read_point", MirType("i32"),
+        (MirLocal(0, "point", private_point), MirLocal(1, "result", MirType("i32"))),
+        function.blocks, 0, parameters=(MirParameter(0),), exported=True,
+    )
+    with pytest.raises(MirToCError, match="must be public"):
+        emit_c_header(MirModule("example", (private_function,)))
 
 
 def test_selected_public_header_ignores_non_abi_module_exports() -> None:
@@ -188,6 +208,61 @@ def test_public_header_emits_canonical_string_abi() -> None:
 
     assert "typedef struct { const uint8_t *data; size_t len; } merit_String;" in header
     assert "int32_t merit_consume(merit_String m0);" in header
+
+
+def test_public_header_emits_builtin_resource_abi_in_dependency_order() -> None:
+    function = MirFunction(
+        "inspect", UNIT,
+        (
+            MirLocal(0, "allocator", MirType("Allocator")),
+            MirLocal(1, "slice", MirType("ByteSlice")),
+            MirLocal(2, "buffer", MirType("Buffer"), ownership="borrowed"),
+        ),
+        (MirBlock(0, (), MirTerminator("return")),),
+        0,
+        parameters=(MirParameter(0), MirParameter(1), MirParameter(2, "borrowed")),
+        exported=True,
+    )
+
+    header = emit_c_header(MirModule("example", (function,)))
+
+    assert header.index("} merit_ByteSlice;") < header.index("} merit_Allocator;")
+    assert header.index("} merit_Allocator;") < header.index("} merit_Buffer;")
+    assert "void merit_inspect(merit_Allocator m0, merit_ByteSlice m1, const merit_Buffer * m2);" in header
+
+
+def test_public_header_orders_nested_copy_enum_layouts() -> None:
+    inner = MirType("enum_copy_payload_0")
+    outer = MirType("enum_copy_payload_1", (I64, inner))
+    function = MirFunction(
+        "outcome", outer,
+        (MirLocal(0, "result", outer),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),),
+        0, exported=True,
+    )
+
+    header = emit_c_header(MirModule("example", (function,)))
+
+    assert header.index("} merit_enum_copy_payload_0;") < header.index("} merit_enum_copy_payload_1;")
+    assert "merit_enum_copy_payload_0 variant_1;" in header
+    assert "merit_enum_copy_payload_1 merit_outcome(void);" in header
+
+
+def test_public_owned_enum_header_rejects_stable_payload_with_destructor() -> None:
+    receipt = MirType(
+        "struct_aggregate_0_destructor_0__abi_3_52656365697074_76616c7565",
+        (I64,),
+    )
+    result = MirType("enum_owned_payload_0", (receipt, MirType("enum_copy_payload_0")))
+    function = MirFunction(
+        "outcome", result,
+        (MirLocal(0, "result", result),),
+        (MirBlock(0, (), MirTerminator("return", operands=(0,))),),
+        0, exported=True,
+    )
+
+    with pytest.raises(MirToCError, match="requires stable aggregate or Copy-enum payloads"):
+        emit_c_header(MirModule("example", (function,)))
 
 
 def test_emits_and_runs_ordered_arithmetic(tmp_path):

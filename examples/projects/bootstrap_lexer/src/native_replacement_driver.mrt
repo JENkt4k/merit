@@ -1082,7 +1082,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
             );
             if(module_status!=0){return native_driver_backend_module_failure_status(module_status);}
             let public_status:i32=canonical_c_finish_public_header_from_catalog_selected(
-                source,backend_callable_headers,type_descriptors,backend_features,
+                source,backend_callable_headers,type_descriptors,numeric_type_descriptors,backend_features,
                 header_selection_mode,header_selections,backend_header
             );
             if(public_status!=0){return native_driver_backend_header_failure_status(public_status);}

@@ -46,6 +46,8 @@ _DESTRUCTOR_I64_STRUCT_PREFIX = "struct_i64_destructor_"
 _OWNED_PAYLOAD_ENUM_PREFIX = "enum_owned_payload_"
 _OWNED_FIELD_STRUCT_PREFIX = "struct_owned_field_"
 _AGGREGATE_STRUCT_PREFIX = "struct_aggregate_"
+_PUBLIC_AGGREGATE_ABI_FLAGS = 1
+_PUBLIC_STABLE_AGGREGATE_ABI_FLAGS = 3
 _ENUM_VARIANT_PREFIX = "variant_"
 _STRUCT_FIELD_PREFIX = "field_"
 _FILESYSTEM_RESULT_OK_TAG = 0
@@ -1021,6 +1023,18 @@ def emit_c_header(
         "uint8_t", "uint16_t", "uint32_t", "uint64_t", "__int128",
     }
     builtin_abi_types = {
+        "Allocator": (
+            "merit_Allocator",
+            "typedef struct { int32_t identity; } merit_Allocator;",
+        ),
+        "ByteSlice": (
+            "merit_ByteSlice",
+            "typedef struct { const uint8_t *data; size_t len; } merit_ByteSlice;",
+        ),
+        "Buffer": (
+            "merit_Buffer",
+            "typedef struct { uint8_t *data; size_t len; size_t capacity; merit_Allocator allocator; } merit_Buffer;",
+        ),
         "String": (
             "merit_String",
             "typedef struct { const uint8_t *data; size_t len; } merit_String;",
@@ -1033,14 +1047,20 @@ def emit_c_header(
         represented.extend(locals_by_id[parameter.local_id].type for parameter in function.parameters)
 
     def header_type(type_: MirType) -> str:
+        if _vector_type(type_) is not None:
+            return _vector_c_name(type_)
         abi = _aggregate_struct_abi(type_)
         if abi is not None:
             flags, name, _ = abi
-            if flags != 3:
+            if flags not in (_PUBLIC_AGGREGATE_ABI_FLAGS, _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS):
                 raise MirToCError(
-                    f"replacement public ABI type {name!r} must be public and stable"
+                    f"replacement public ABI type {name!r} must be public"
                 )
             return f"merit_{_identifier(name)}"
+        if _copy_payload_enum_identity(type_) is not None:
+            return _type(type_)
+        if _recursive_owned_payload_enum_identity(type_) is not None:
+            return _type(type_)
         builtin = builtin_abi_types.get(type_.name) if not type_.arguments else None
         if builtin is not None:
             return builtin[0]
@@ -1052,9 +1072,65 @@ def emit_c_header(
         return rendered
 
     layouts: dict[str, MirType] = {}
+    copy_enums: dict[str, MirType] = {}
+    public_owned_enums: dict[str, MirType] = {}
+    public_vectors: dict[str, MirType] = {}
+    required_builtin_names: set[str] = set()
+    def resource_free_public_payload(type_: MirType) -> bool:
+        aggregate = _aggregate_struct_identity(type_)
+        if aggregate is not None:
+            abi = _aggregate_struct_abi(type_)
+            return (
+                aggregate[2] is None and abi is not None and abi[0] == _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS
+                and all(resource_free_public_payload(field) for field in type_.arguments)
+            )
+        if _copy_payload_enum_identity(type_) is not None:
+            return all(resource_free_public_payload(payload) for payload in type_.arguments)
+        return _type(type_) in primitive_c_types
+
     def collect(type_: MirType) -> None:
+        if _vector_type(type_) is not None:
+            public_vectors[_vector_c_name(type_)] = type_
+            required_builtin_names.add("Allocator")
+            return
+        owned = _recursive_owned_payload_enum_identity(type_)
+        if owned is not None:
+            identity, payloads = owned
+            previous_owned = public_owned_enums.get(identity)
+            if previous_owned is not None and previous_owned != type_:
+                raise MirToCError(f"conflicting replacement public owned enum layout: {identity}")
+            if previous_owned is None:
+                if not payloads or any(
+                    (
+                        _aggregate_struct_abi(payload) is None
+                        and _copy_payload_enum_identity(payload) is None
+                    )
+                    or not resource_free_public_payload(payload)
+                    for payload in payloads
+                ):
+                    raise MirToCError(
+                        f"replacement public owned enum {identity} requires stable aggregate or Copy-enum payloads"
+                    )
+                public_owned_enums[identity] = type_
+                for payload in payloads:
+                    header_type(payload)
+                    collect(payload)
+            return
+        enum_identity = _copy_payload_enum_identity(type_)
+        if enum_identity is not None:
+            previous_enum = copy_enums.get(enum_identity)
+            if previous_enum is not None and previous_enum != type_:
+                raise MirToCError(f"conflicting replacement public enum layout: {enum_identity}")
+            if previous_enum is None:
+                copy_enums[enum_identity] = type_
+                for payload in type_.arguments:
+                    header_type(payload)
+                    collect(payload)
+            return
         abi = _aggregate_struct_abi(type_)
         if abi is None:
+            if not type_.arguments and type_.name in builtin_abi_types:
+                required_builtin_names.add(type_.name)
             return
         _, name, _ = abi
         previous = layouts.get(name)
@@ -1067,18 +1143,67 @@ def emit_c_header(
     for type_ in represented:
         collect(type_)
         header_type(type_)
+    if exported_names is None:
+        required_builtin_names.update(builtin_abi_types)
+        pending_types = [local.type for function in module.functions for local in function.locals]
+        seen_types: set[MirType] = set()
+        while pending_types:
+            type_ = pending_types.pop()
+            if type_ in seen_types:
+                continue
+            seen_types.add(type_)
+            abi = _aggregate_struct_abi(type_)
+            if abi is not None and abi[0] in (
+                _PUBLIC_AGGREGATE_ABI_FLAGS, _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS,
+            ):
+                collect(type_)
+            pending_types.extend(type_.arguments)
 
     lines = [
         "#pragma once", "#include <stdbool.h>", "#include <stddef.h>",
         "#include <stdint.h>", "",
     ]
-    represented_builtin_names = {
-        type_.name for type_ in represented
-        if not type_.arguments and type_.name in builtin_abi_types
-    }
-    for name in sorted(represented_builtin_names):
+    represented_builtin_names = required_builtin_names
+    for name in ("String", "ByteSlice", "Allocator", "Buffer"):
+        if name == "Allocator" and "Buffer" in represented_builtin_names:
+            lines.append(builtin_abi_types[name][1])
+            continue
+        if name not in represented_builtin_names:
+            continue
         lines.append(builtin_abi_types[name][1])
     if represented_builtin_names:
+        lines.append("")
+    if exported_names is None:
+        lines.extend([
+            "typedef struct { int64_t *data; size_t len; size_t cap; merit_Allocator allocator; } merit_I64Vec;",
+            "",
+            "typedef enum { merit_FsError_FsNotFound = 0, merit_FsError_FsPermissionDenied = 1, merit_FsError_FsIoError = 2 } merit_FsError_tag;",
+            "typedef struct { merit_FsError_tag tag; } merit_FsError;",
+            "_Static_assert(offsetof(merit_FsError, tag) == 0, \"Merit enum layout mismatch: FsError.tag\");",
+            "static inline merit_FsError merit_make_FsError_FsNotFound(void) { return (merit_FsError){.tag=merit_FsError_FsNotFound}; }",
+            "static inline merit_FsError merit_make_FsError_FsPermissionDenied(void) { return (merit_FsError){.tag=merit_FsError_FsPermissionDenied}; }",
+            "static inline merit_FsError merit_make_FsError_FsIoError(void) { return (merit_FsError){.tag=merit_FsError_FsIoError}; }",
+            "",
+            "typedef enum { merit_FileReadResult_ReadOk = 0, merit_FileReadResult_ReadErr = 1 } merit_FileReadResult_tag;",
+            "typedef struct { merit_FileReadResult_tag tag; union { merit_Buffer ReadOk; merit_FsError ReadErr; } data; } merit_FileReadResult;",
+            "_Static_assert(offsetof(merit_FileReadResult, tag) == 0, \"Merit enum layout mismatch: FileReadResult.tag\");",
+            "_Static_assert(offsetof(merit_FileReadResult, data) >= sizeof(merit_FileReadResult_tag), \"Merit enum layout mismatch: FileReadResult.data\");",
+            "static inline merit_FileReadResult merit_make_FileReadResult_ReadOk(merit_Buffer value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadOk,.data.ReadOk=value}; }",
+            "static inline merit_FileReadResult merit_make_FileReadResult_ReadErr(merit_FsError value) { return (merit_FileReadResult){.tag=merit_FileReadResult_ReadErr,.data.ReadErr=value}; }",
+            "",
+            "typedef enum { merit_FileWriteResult_WriteOk = 0, merit_FileWriteResult_WriteErr = 1 } merit_FileWriteResult_tag;",
+            "typedef struct { merit_FileWriteResult_tag tag; union { int64_t WriteOk; merit_FsError WriteErr; } data; } merit_FileWriteResult;",
+            "_Static_assert(offsetof(merit_FileWriteResult, tag) == 0, \"Merit enum layout mismatch: FileWriteResult.tag\");",
+            "_Static_assert(offsetof(merit_FileWriteResult, data) >= sizeof(merit_FileWriteResult_tag), \"Merit enum layout mismatch: FileWriteResult.data\");",
+            "static inline merit_FileWriteResult merit_make_FileWriteResult_WriteOk(int64_t value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteOk,.data.WriteOk=value}; }",
+            "static inline merit_FileWriteResult merit_make_FileWriteResult_WriteErr(merit_FsError value) { return (merit_FileWriteResult){.tag=merit_FileWriteResult_WriteErr,.data.WriteErr=value}; }",
+            "",
+        ])
+    for name in sorted(public_vectors):
+        lines.append(
+            f"typedef struct {{ void *data; size_t len; size_t capacity; merit_Allocator allocator; }} {name};"
+        )
+    if public_vectors:
         lines.append("")
     emitted: set[str] = set()
     pending = dict(layouts)
@@ -1108,7 +1233,7 @@ def emit_c_header(
         for name, type_ in sorted(pending.items()):
             abi = _aggregate_struct_abi(type_)
             assert abi is not None
-            _, _, member_names = abi
+            flags, _, member_names = abi
             dependencies = {
                 child_abi[1]
                 for field in type_.arguments
@@ -1121,6 +1246,11 @@ def emit_c_header(
                 for field, member in zip(type_.arguments, member_names)
             )
             lines.append(f"typedef struct {{ {fields} }} merit_{_identifier(name)};")
+            if flags != _PUBLIC_STABLE_AGGREGATE_ABI_FLAGS:
+                emitted.add(name)
+                del pending[name]
+                progressed = True
+                break
             offset = 0
             alignment = 1
             offsets: list[int] = []
@@ -1148,6 +1278,55 @@ def emit_c_header(
         if not progressed:
             raise MirToCError("replacement public ABI layout graph is cyclic")
     if layouts:
+        lines.append("")
+
+    emitted_enums: set[str] = set()
+    pending_enums = dict(copy_enums)
+    while pending_enums:
+        progressed = False
+        for identity, type_ in sorted(pending_enums.items(), key=lambda item: int(item[0])):
+            dependencies = {
+                dependency
+                for payload in type_.arguments
+                if (dependency := _copy_payload_enum_identity(payload)) is not None
+            }
+            if not dependencies <= emitted_enums:
+                continue
+            if type_.arguments:
+                fields = " ".join(
+                    f"{header_type(payload)} variant_{ordinal};"
+                    for ordinal, payload in enumerate(type_.arguments)
+                )
+                lines.append(
+                    f"typedef struct {{ int64_t tag; union {{ {fields} }} payload; }} "
+                    f"merit_enum_copy_payload_{identity};"
+                )
+            else:
+                lines.append(
+                    f"typedef struct {{ int64_t tag; int64_t payload; }} "
+                    f"merit_enum_copy_payload_{identity};"
+                )
+            emitted_enums.add(identity)
+            del pending_enums[identity]
+            progressed = True
+            break
+        if not progressed:
+            raise MirToCError("replacement public enum type graph is cyclic")
+    if copy_enums:
+        lines.append("")
+
+    for identity, type_ in sorted(public_owned_enums.items(), key=lambda item: int(item[0])):
+        owned = _recursive_owned_payload_enum_identity(type_)
+        assert owned is not None
+        fields = " ".join(
+            f"{header_type(payload)} variant_{ordinal};"
+            for ordinal, payload in enumerate(owned[1])
+        )
+        lines.append(
+            f"typedef struct {{ int64_t tag; union {{ {fields} }} payload; }} "
+            f"merit_enum_owned_payload_{identity};"
+        )
+    if public_owned_enums:
         lines.append("")
 
     def parameter_list(function: MirFunction) -> str:

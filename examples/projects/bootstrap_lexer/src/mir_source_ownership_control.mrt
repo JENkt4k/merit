@@ -442,7 +442,7 @@ requires_caps [allocate]
     if (kind == statement_record_var_kind()) { return source_control_initialize_binding(callable_signatures,callable_parameters,source,tokens,statement,operands,metadata,starts,lengths,allocator,1,counters,direct,events); }
     if (kind == statement_record_return_kind()) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
-        if (result < 0) { return source_control_invalid_return_expression_status(); }
+        if (result < 0) { if (result != sfr_unit_expression_result()) { return source_control_invalid_return_expression_status(); } }
         var return_consumed:i64=0;
         while(return_consumed<vec_len<i64>(direct)){
             let binding_id:i64=vec_get<i64>(direct,return_consumed);
@@ -456,7 +456,9 @@ requires_caps [allocate]
             }
             return_consumed=checked_add(return_consumed,1);
         }
-        vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); return 0;
+        if (result == sfr_unit_expression_result()) { vec_push<MirOwnershipEvent>(events, ownership_event_return(-1)); }
+        else { vec_push<MirOwnershipEvent>(events, ownership_event_return(result)); }
+        return 0;
     }
     if (kind == statement_record_print_kind()) {
         let result: i64 = source_control_expression_statement(callable_signatures,callable_parameters,source,tokens,statement,operands,starts,lengths,allocator,counters,direct,events);
@@ -734,7 +736,6 @@ fn source_control_lower_impl(
 ) -> i32
 requires_caps [allocate]
 {
-    if (vec_len<StatementRecord>(statements) == 0) { return 1; }
     var starts: Vec<i64> = vec_new<i64>(allocator, 8); var lengths: Vec<i64> = vec_new<i64>(allocator, 8);
     let parameter_status:i32=collect_source_parameter_spans(source,tokens,starts,lengths);
     let parameter_count:i64=vec_len<i64>(starts);

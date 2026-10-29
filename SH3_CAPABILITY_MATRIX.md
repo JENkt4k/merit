@@ -1399,6 +1399,396 @@ or hosted PR checks.
 | F8 | **Compiler project and complete accepted/rejected evidence.** Compile all 46 required compiler modules, ten acceptance applications, and the complete accepted/rejected corpus through the v4 path; compare interpreter/native, protocol, diagnostics, MIR, C, and header bytes without weakening tests. | **Partial; independent compiler MIR and current-tree full/M7 passes.** All 22 accepted/rejected Alpha.1 corpus cases pass through native-v4 preparation/build with deterministic artifacts or native rejection. Nine non-compiler acceptance applications pass exact native/Python MIR, C/header, GCC/runtime/output comparison and now build through the public v4 path with reference runtime/side-effect parity. The 46-module compiler emits deterministic v4 MIR/C/header; its MIR matches independent Python materialization byte-for-byte on `740425c` (`1 passed in 2157.91s`), its C/header match the Python emitter for that MIR, GCC compiles it, and focused `main`/adapter protocol behavior matches stage 0. The legacy M7 replacement gate passed all ten projects within the `d1aff3e` full gate (`11 passed`, `M7_ACCEPTANCE_RESULT=PASS`); that gate is not itself a native-v4 differential. Compiler-to-compiler public build belongs to SH4. Wider SH3-specific accepted/rejected evidence remains open. | Complete wider accepted/rejected evidence and an uninterrupted compiler-project run with artifact hashes and fail-closed cases; do not infer these from the fixed Alpha.1 corpus or legacy M7 gate alone. |
 | F9 | **SH3 validation and PR handoff.** Confirm the final tree's focused family evidence, affected subsystem gate, clean full gate, hosted authorities, scope/representation audit, and one PR for manual merge review. | **Partial.** The native-Windows subsystem gate passed on `8ebf24a` (`909 passed`); the canonical Windows full gate, including M7 and all ten acceptance projects, passed on `d1aff3e` as recorded above. Wider SH3-specific evidence, hosted checks, and the SH3 PR remain open. | `SELF_HOSTING.md` per-PR evidence items 1–10, terminal gate markers/results for the final tree, canonical hosted checks, PR link; never auto-merge. SH4–SH6 self-hosting gates are not redefined as SH3 completion. |
 
+### Post-merge evidence reconciliation (PR #131)
+
+PR [#131](https://github.com/JENkt4k/merit/pull/131) merged as `f36a57d`.
+Its merge tree equals the PR head `057e050`. The F1–F9 statuses above are
+the pre-merge burn-down snapshot, not a claim that those checks are still
+unrun. The later evidence is:
+
+| Evidence | Result and limit |
+| --- | --- |
+| Independent complete-compiler MIR oracle | The 46-module comparison passed on `aabd6a6` (`1 passed in 2436.89s`); `D:\Temp\merit-tests\sh3-compiler-mir-oracle-aabd6a6.log`. This compares MIR bytes, not every malformed descriptor or runtime behavior. |
+| Windows subsystem | `930 passed`, `MERIT_GATE_RESULT=PASS` on the then-current SH3 compiler/test tree; `D:\Temp\merit-tests\sh3-subsystem-rerun.log`. |
+| Windows full gate | `MERIT_GATE_RESULT=PASS`, `1679` pytest tests, M7 replacement acceptance `11 passed`, and `10/10` applications on `34fa7cc`; `D:\Temp\merit-tests\sh3-full-final-34fa7cc.log`. |
+| Test-only PR repair | `057e050` changed four test files so native process statuses are asserted portably on POSIX. No production compiler code changed. Focused tests and the local `pr` gate passed; hosted Ubuntu and Windows short `pr` checks passed on this head. The full gate was **not** repeated after this commit; the owner explicitly accepted and recorded that evidence exception on PR #131. |
+| Hosted long gates | Not run for this PR under the owner's short-automatic/long-manual validation split. Short `pr` checks do not prove full Ubuntu or Windows gate coverage. |
+
+This reconciliation does not close SH3. F1–F6 and F8 still contain explicitly
+unproven breadth (notably malformed catalogs/source records, complete
+instruction/call/cleanup differential coverage, wider ABI combinations, and
+the wider SH3 accepted/rejected corpus). F7's normal-path authority has focused
+evidence but not the full hosted authority listed in F9. Before checking the
+SH3 box, assign each gap to its existing family, establish a bounded final
+test/evidence set, and either prove it or record a specific justified scope
+correction. Do not infer all-family closure from the successful full gate or
+from the merge alone; do not begin SH4 while SH3 remains open.
+
+#### F5 dispatch audit after merge
+
+The native backend does not dispatch directly on canonical JSON instruction
+names. Its validated function-record body dispatch currently recognizes
+`const`, `copy_to_binding`, `binary`, `print`, `call`, struct
+construct/load/store, and enum construct/tag/payload load in
+`mir_resolved_source_function_bundle.mrt`. Placement dispatch separately
+emits contract records and explicit ownership records; the latter accepts
+move, replace-move, drop, replace-drop, and implicit-drop. The same backend
+has dedicated vector and filesystem call lowering and return/jump/branch/
+switch/unreachable CFG lowering. Thus the older F5 phrase "limited
+binary/print/call" understates implementation, but dispatch presence is
+not differential proof for every represented operation.
+
+The next bounded F5 evidence set must map each accepted Alpha.2 producer
+shape to its canonical MIR and native record path, then compare complete
+MIR/C/header bytes and execution (or diagnostic rejection) to the Python
+oracle. In particular, trace `convert` from `hir_to_mir.py` through the
+native record producer; verify borrowed/mutable-borrow forwarding, each
+vector/filesystem builtin family, contract/capability checks, and cleanup
+across early returns and aggregate replacement. `allocate` is admitted by
+the generic MIR contract but is not implemented by the Python C emitter's
+instruction dispatch; determine whether any accepted Alpha.2 producer can
+emit it before treating it as an SH3 parity requirement. Do not add semantics
+to make that unused contract spelling executable.
+
+The source-producer trace found no accepted-source `convert` or `allocate`
+instruction producer. `hir_to_mir.py` can lower a manually supplied HIR
+`conversion` node, and the Python MIR C emitter can render `convert`, but the
+source-backed native record producer writes `conversion_policy:"none"` for
+its instructions and does not construct a conversion node. `allocate` is a
+recognized MIR-contract/ownership spelling without a corresponding Python
+C-emitter instruction branch or source-backed producer. These remain
+fail-closed non-source contract shapes, not missing Alpha.2 source semantics;
+the conclusion must be revisited if an accepted source producer is added.
+On the F6 audit branch, `ledger_app` also passed the independent native-v4
+versus Python project-artifact test (`1 passed in 41.85s`,
+`D:\Temp\merit-tests\sh3-ledger-oracle.log`), covering complete MIR/C/header,
+native/reference runtime, and the generated ledger side-effect file. The
+focused resource/coercion-flow oracle group passed all four cases in 41.63s
+(`D:\Temp\merit-tests\sh3-resource-coercion.log`). These are current-tree
+F1/F2/F5 examples, not proof of the full malformed-record or instruction
+matrix.
+
+For F8, the checked-in fixed accepted/rejected corpus is
+`tests/project/alpha1_corpus_v1.json`: ten accepted and twelve rejected
+programs covering its declared 26 required surfaces. The native-v4 corpus
+test checks deterministic artifact publication and reference/native execution
+for accepted cases; rejected cases check repeatable fail-closed preparation
+and absence of a published manifest. This is the finite corpus named by the
+existing convergence contract, not a reason to invent an unbounded second
+corpus. F8 still needs final-tree evidence for that complete test file and
+the independent compiler project, while F1-F6 retain their separate
+mechanism-specific malformed and differential checks. SH5 later requires
+stage-to-stage structured diagnostic bytes for the fixed rejected probes;
+SH3's rejection test does not prove that future stage-equivalence condition.
+
+The bounded F3-F5 acceptance-artifact file passed on this branch with
+`30 passed, 1 deselected in 401.42s` (`TEST_EXIT_CODE=0`,
+`D:\Temp\merit-tests\sh3-acceptance-boundary.log`). The sole deselection is
+`test_native_compiler_project_mir_matches_independent_oracle`, the separately
+tracked approximately 40-minute complete-compiler MIR comparison. This run
+jointly covers nine native-v4 application differentials, compiler C/protocol
+artifacts, owned/vector/enum cleanup, resource/coercion flow, and rejected
+filesystem/ownership shapes. It is not a substitute for the excluded MIR
+oracle, subsystem gate, or full gate on this tree.
+
+#### F6 first uncovered public-ABI failure
+
+The focused `ledger_app` shared-library probe through the public native-v4
+command fails before header publication with native status `4409` (backend
+function status `9`), while the historical reference `build_shared` succeeds.
+Status `9` maps to the native C function emitter's exported-parameter/type
+guard, not a timeout or a header-byte comparison; the public `write_audit`
+function has an `Allocator` parameter that this guard currently rejects.
+The reference header exposes `merit_Allocator` and
+`merit_FileWriteResult` as well as the stable `Account` and exact-decimal
+functions. The generic Python MIR header oracle and native v4 header backend
+currently cover a narrower public type set than that Alpha.2 reference ABI.
+`tests/project/test_sh3_v4_corpus.py::test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi`
+is the currently failing reproducer (`D:\Temp\merit-tests\sh3-ledger-abi.log`).
+
+This is an F6 implementation/evidence gap, not a reason to narrow the
+all-public no-adapter shared-build policy or change Alpha.2 exports. Audit
+the full reference public type family and versioned native type descriptors,
+then make the Python MIR oracle and Merit-native C/header path agree with the
+frozen reference ABI. Keep unsupported public types fail-closed until the
+corresponding layout and foreign-call behavior are proved.
+
+The first coherent repair now admits the existing `Allocator`, `ByteSlice`,
+and borrowed `Buffer` C layouts to the native/MIR-oracle public header, with
+exact header bytes and foreign-call execution (`1 passed`). The ledger
+all-public probe then advanced to header status `4602`, revealing that its
+declared decimal fields and nested Copy-payload enums also needed public
+type-catalog traversal. With that traversal and numeric-descriptor validation,
+the native-v4 public shared build succeeds. Its header matches the independent
+MIR-header oracle byte-for-byte, and a C consumer compiled against the
+historical Alpha.2 reference header can call `deposit`, `account_balance`,
+and `withdraw_checked` (including the nested enum return) in the native
+library (`1 passed`). The two header texts intentionally use their established
+different spelling; this test proves binary interoperability, not textual
+identity with the source-level reference header. Wider public type families
+and both-platform evidence remain to be audited before closing F6. The
+coherent Windows F6 boundary, including 53 MIR-header cases, public shared
+builds, exact oracle headers, the historical-header C consumer, selected and
+invalid exports, the now-positive direct `Allocator`/`ByteSlice` probes, and
+an owned-Buffer missing-effect rejection, passed `60` tests in `128.53s`
+(`D:\Temp\merit-tests\sh3-f6-boundary.log`). No full gate has been run for
+this follow-up tree.
+
+The pushed F6 branch `adf8fbf` also passed the short canonical PR gate:
+`MERIT_GATE_RESULT=PASS`, 111 short tests, 212 independent reference-authority
+cases, and 23 corpus-convergence cases in `152.384s`
+(`D:\Temp\merit-tests\sh3-f6-pr-gate.log`). This is not a subsystem or full
+gate for the follow-up tree.
+
+The next F6 differential used the complete `cobol_finance_modernization`
+acceptance project. Its ordinary native-v4 executable build passes, but its
+all-public shared build initially returned `4403`: exported `TransferResult`
+is a recursive owned-payload enum containing stable `TransferReceipt` and
+Copy `TransferError`. That return was rejected by the backend's broad owned
+export guard even though its C body and canonical MIR were already emitted.
+The bounded repair admits a public owned-payload enum only when every variant
+payload is a public stable aggregate or Copy enum. Both the Merit-native header
+and the independent Python MIR-header oracle emit the same ordered declarations.
+A C consumer compiled against the historical Alpha.2 reference header links
+to the native-v4 shared library and exercises `import_account`,
+`import_transfer`, `apply_transfer` (committed and rejected results), and
+`export_account`, checking exact decimal and bounded values. A separate
+resource-bearing owned enum with a `Buffer` variant continues to reject the
+all-public export without publishing a shared header. The paired focused
+Windows tests passed (`2 passed`, each under 40s; logs
+`D:\Temp\merit-tests\sh3-f6-cobol-owned-enum.log` and
+`D:\Temp\merit-tests\sh3-f6-resource-enum.log`). This does not generalize
+foreign ownership transfer or close every F6 type family; wider regression
+and final-tree gates remain required.
+The complete affected Python MIR-emitter and native-v4 corpus/project files
+then passed together (`97 passed in 58.30s`,
+`D:\Temp\merit-tests\sh3-f6-final-focused.log`); a separate direct
+destructor-bearing payload rejection test passed after that run.
+
+The finite all-public acceptance inventory now distinguishes the ten projects:
+all nine non-compiler applications pass native-v4 `build-shared` on temporary
+copies; each also passes the historical reference shared build and has a
+native header byte-identical to the independent Python MIR-header oracle
+(`9 passed in 25.58s`, `D:\Temp\merit-tests\sh3-f6-all-acceptance-shared.log`).
+The tenth, 45-module `bootstrap_lexer` compiler project is different:
+historical reference `build_shared` succeeds with a 227,540-byte header
+(38.96s), but native-v4 all-public `build-shared` fails at backend status
+`4403` (44.02s; `D:\Temp\merit-tests\sh3-f6-compiler-public-inventory.log`).
+Its normal selected/empty-header compiler path has separate passing evidence;
+that does not prove the all-public C ABI. Classify this as the remaining F6
+compiler-public-surface boundary before claiming full ABI compatibility.
+The normal native-v4 compiler build also succeeds and reports `1,522` exported
+MIR functions. Source inspection finds at least ten public functions returning
+`Vec<T>`, a type family the native all-public function guard explicitly
+rejects for export; 88 inventoried exported aggregate-return records carry
+non-stable `abi_1` metadata, which the current stable-only public-header path
+also cannot expose. The first exact `4403` function was not identified by the
+inventory, so these are classified mechanisms, not a claim about its precise
+execution order (`D:\Temp\merit-tests\sh3-f6-compiler-export-types.log`).
+Do not broaden the frozen vector/aggregate ABI or silently exempt the compiler
+project; either prove the historical foreign-call contract with a coherent
+native/header implementation, or record an explicitly approved SH3 scope
+correction before closing F6.
+
+The next F6 slice adds public `Vec<T>` return/parameter admission and a
+matching vector typedef to the native and Python MIR header emitters. A
+`Vec<i64>` shared-library regression builds through native v4, matches the
+independent MIR header oracle byte-for-byte, and is called successfully by a
+C consumer compiled against the historical reference header (`1 passed in
+41.22s`, `D:\Temp\merit-tests\sh3-f6-vector-abi.log`). The first compiler
+all-public probe advanced from `4403` to header status `4602` because its
+ordinary public aggregates carry non-stable `abi_1` metadata. Native and MIR
+header emission now expose those public fields without pretending they have
+stable-layout assertions; private `abi_0` aggregates remain rejected. The
+complete compiler all-public native-v4 shared build and its byte-identical
+Python MIR header comparison passed (`1 passed in 135.30s`).
+
+A C consumer initially could not compile against the historical reference
+compiler header: public vector typedefs used pointers to seven private
+aggregate types without forward declarations. The reference emitter now adds
+only the needed incomplete declarations, without publishing private struct
+bodies or changing runtime behavior. A focused private-vector header compile
+test and a compiler C consumer borrowing and returning `HirExpressionRecord`
+both pass (`D:\Temp\merit-tests\sh3-f6-compiler-consumer.log`). The affected
+MIR emitter, reference-header, and native-v4 corpus files pass together on
+the final ABI-flag tree (`115 passed in 240.12s`,
+`D:\Temp\merit-tests\sh3-f6-aggregate-final.log`). This completes a
+coherent all-public compiler-header mechanism, but not the whole F6 contract:
+other exported resource/aggregate relationships and final-tree broad gates
+still need evidence. Do not claim SH3 closure from this focused result.
+
+Commit `9d92895` passed the canonical short Windows `pr` gate: 112 short
+tests, 212 reference tests, and 23 Alpha.1 convergence cases;
+`MERIT_GATE_RESULT=PASS` in 157.483s
+(`D:\Temp\merit-tests\sh3-f6-pr-9d92895.log`). This is not a subsystem or
+full-gate result. A further inventory found that the compiler MIR already
+contains all 52 exported aggregate names, but the all-public native header
+collected only types reachable from exported function signatures. All-public
+mode now collects every public `abi_1`/`abi_3` aggregate from the existing
+catalog while selected-export mode stays narrow. The compiler test asserts
+all exported struct declarations and still compiles/runs the historical
+reference-header C consumer. The affected files pass `115` tests in
+`161.11s` (`D:\Temp\merit-tests\sh3-f6-public-types-family.log`). Reference
+headers additionally publish always-present built-in typedefs/enums and
+private incomplete declarations; those names are not yet claimed byte-equal
+to the MIR header. No conclusion about that remaining header availability
+surface or the entire F6 row follows from callable ABI parity alone.
+
+The compiler all-public ABI regression now also inventories every exported
+callable name: all 1,522 native C prototypes equal the project export set,
+and each exists in the historical reference header. The reference header has
+seven additional inline constructors for built-in filesystem enums; those
+are not exported project functions. A C consumer compiled against the
+historical header calls both `hir_with_type` (non-stable struct by value) and
+`lex` (`Buffer`/`Allocator` input, `Vec<Token>` return), checks the first
+token, and frees its vector data. The focused compiler test passes in
+136.20s (`D:\Temp\merit-tests\sh3-f6-compiler-lex-abi.log`). This proves
+representative binary interop for those signature families, not all
+possible public types or the still-unrun final-tree broad gates.
+
+The historical all-public reference header also exposes public built-in
+types without requiring a function signature to mention them. The native
+and Python MIR header emitters now retain `String`, `ByteSlice`, `Allocator`,
+`Buffer`, legacy `I64Vec`, and the `FsError`/`FileReadResult`/
+`FileWriteResult` enum declarations and inline constructors in all-public
+mode only; selected-export mode remains dependency-scoped. A native C
+consumer compiles against those declarations, and the complete compiler
+all-public build, nine acceptance all-public headers, and the Python MIR
+header oracle agree. The affected test files passed `115` tests in 166.67s
+(`D:\Temp\merit-tests\sh3-f6-legacy-final.log`). This is header availability
+and representative ABI evidence; every foreign type combination is not yet
+proven. A focused exported `I64Vec` callable now passes a foreign call through
+the native shared library and a C consumer compiled against the historical
+reference header. A value-mode `I64Vec` parameter returned directly also
+passes by-value ABI execution against that historical header; native C bytes
+match the Python MIR emitter (`1 passed in 23.00s` for the combined focused
+case). The native backend now admits this exact return provenance only when
+the returned local is a matching value-mode parameter; unrelated missing
+resource effects still fail closed. MPRQ source preparation rewrites
+legacy `I64Vec` to `Vec<i64>` before canonical MIR, so the native header names
+that parameter `merit_Vec_693634` while the historical header names it
+`merit_I64Vec`. This proves binary layout/call compatibility, not identical
+header spelling or source-level interchangeability. Retain that distinction
+in the final F6 ABI audit. Before the provenance repair, that owned-by-value
+probe failed at backend status `110` (`4510` at the driver); temporary
+diagnostic edits were reverted. The focused built-in resource ABI, generic
+vector ABI, and multiblock owned-return selection passed `3` tests in 69.01s.
+The multiblock test's header oracle now uses the request's explicit empty
+export selection; MIR/C and runtime assertions remain unchanged. No broad
+gate was run. The canonical short Windows `pr` gate passed on this candidate:
+112 short tests, 212 reference tests, and 23 Alpha.1 convergence cases;
+`MERIT_GATE_RESULT=PASS` in 164.172s. This is not a subsystem or full-gate
+result. Two raw native-request negatives (return after explicit drop and
+borrowed-to-owned return) still reject (`2 passed in 23.67s`), so the new
+direct-parameter allowance does not admit those invalid source programs.
+The fixed 22-case native-v4 Alpha.1 accepted/rejected corpus passes on this
+owned-return tree (`22 passed in 26.78s`,
+`C:\Temp\merit-tests\sh3-owned-vector-alpha1-corpus.log`).
+The compiler source helper uses
+an explicit result after an initial implicit-`void` shape caused native
+status `5006`. The focused source-path audit decoded this as a nested
+missing-return status, not a CFG status. Native `void` type resolution and
+fallthrough-return lowering now pass the side-effecting and empty-body
+reference/native cases (`2 passed in 43.80s`). The empty-body path retains
+the existing statement-lowerer rejection for other return types while
+allowing the ownership traversal to process zero statements and the
+source-function boundary to append the implicit unit return. An empty
+`void` function consuming an owned parameter matches the reference and
+drops it exactly once (`1 passed in 25.93s`); seven adjacent source,
+ownership, statement, and resolved-pipeline tests passed in 248.87s.
+The additional `return effect()` probe for a `void` function exposed a
+pre-existing Python-oracle C defect (`_merit_result` undeclared and assignment
+from a `void` expression). The oracle now evaluates that call once and jumps
+to the existing epilogue. Native source, statement, and ownership lowering
+retain the validated unit-call sentinel until emitting the canonical absent
+return local. The focused reference/native MIR, C, and runtime parity case
+passes; together with adjacent implicit-fallthrough and owned-parameter
+cleanup cases, the focused selection passed 4 tests in 23.72s. This evidence
+does not replace the final-tree subsystem or full gate.
+
+The F5 owned-return/CFG/contract cross-section selected 19 cases and took
+998.46s, substantially longer than the 2–4-minute estimate
+(`C:\Temp\merit-tests\sh3-f5-return-matrix.log`). Seventeen passed; two
+failed at stale test expectations, not at a generated-C or runtime mismatch.
+The private vector-return test compared an explicitly empty native header
+selection against Python's all-public header, and a former negative case
+expected exported vector return to be unsupported despite the completed F6
+export path. The tests now compare the private empty header exactly, exercise
+the exported prototype and C/runtime path positively, and retain both
+malformed effect/layout negatives. That final four-case selection passed in
+95.54s (`C:\Temp\merit-tests\sh3-vector-return-oracle-final.log`). The
+other 17 cases were not rerun after the test-only correction. Do not repeat
+the 19-case selection as a routine focused check; it exceeds the owner's
+seven-minute manual-help threshold.
+
+### Windows subsystem failure and selected-header oracle repair
+
+The Windows subsystem gate on `41ce216` ended with `116 failed, 835 passed`
+after 15040.83 seconds (`C:\Temp\merit-tests\sh3-subsystem-41ce216.log`;
+`.merit/gates/subsystem/result.json` records failure). This is not SH3
+completion evidence. The first failure and 113 other cases compared a
+selected-function or explicitly empty native C header against the Python
+oracle's default **all-public** header. The difference arose when F6 added
+historical built-in resource declarations to the all-public header; the
+generated C and native behavior were not the root failure. One further test
+still expected a borrowed `Buffer` C export to reject, and another expected
+an owned `Buffer` return export to reject, although both are now admitted by
+the F6 ABI contract.
+
+The repair passes each probe's explicit export selection to the independent
+Python header oracle. The two obsolete rejection cases now check selected
+header bytes and, for the owned return, a compiled C consumer and runtime
+transfer. The missing-move rejection remains intact. Focused evidence:
+scalar selection passed, borrowed-Buffer selection passed after repair,
+and the selected owned-Buffer variant passed; the missing-move negative
+also passed. The empty-export acceptance artifacts passed `3/3`, and
+arithmetic, scalar-copy, string, and buffer-header samples passed `4/4`.
+The external logs are under `C:\Temp\merit-tests\sh3-*`.
+These focused results identify and repair the fan-out root; they do not
+replace a final-tree subsystem rerun or full/hosted evidence.
+The canonical short Windows `pr` gate then passed on the repaired working
+tree: `112` short tests, `212` reference tests, `23` corpus-convergence tests,
+`MERIT_GATE_RESULT=PASS` in 172.264 seconds
+(`C:\Temp\merit-tests\sh3-header-repair-pr-gate.log`).
+
+The final-tree native-Windows `subsystem` rerun passed on `f0478a0`:
+`951 passed`, `MERIT_GATE_RESULT=PASS`, exit code `0`, and
+`duration_seconds=36214.811` (10h03m34s). The terminal output and
+`.merit/gates/subsystem/result.json` agree. The single black-box native
+artifact-entry test accounted for 29130.71 seconds (8h05m31s); the
+46-module compiler MIR-oracle test accounted for 2318 seconds. This closes
+the previously failed subsystem rerun, not the final-tree full gate or
+hosted authority. Do not interpret the old 116 failures as current defects.
+
+### SH3 candidate-tree full-gate and family reconciliation
+
+The native-Windows canonical `full` gate passed on `c0816af` without a
+source or test edit after the subsystem run: `1704 passed` in 9017.00s,
+the M7 replacement suite `11 passed` in 3842.05s,
+`M7_ACCEPTANCE_RESULT=PASS`, all ten acceptance applications verified,
+and `MERIT_GATE_RESULT=PASS` in 12908.635s. The external log is
+`C:\Temp\merit-tests\sh3-full-c0816af.log`; `.merit/gates/full/result.json`
+records `status=passed`, `acceptance_projects=10`, and
+`replacement_acceptance=true`. The intentionally trapping short-packet
+negative raised a Windows crash dialog; closing it let the expected
+nonzero-result assertion and the gate complete. The dialog is a test-runner
+UX issue, not evidence of an accepted-program compiler mismatch.
+
+| Family | Current candidate evidence covered by the passing full gate | Remaining qualification |
+| --- | --- | --- |
+| F1-F2 | Native-v4 type/CFG/effect records, malformed source/catalog probes, and the independent 46-module compiler MIR comparison; accepted applications exercise complete project graphs. | Preserve the existing fail-closed boundary; do not extrapolate to future resource relationships. |
+| F3 | Destructor catalog rejection, multi-module ordering, payload-free storage, explicit/implicit cleanup, owned-child replacement, and native/oracle artifact/runtime tests. | No Alpha.3 resource kinds are claimed. |
+| F4-F5 | Native-v4 C/header oracle comparisons, numeric/vector/filesystem/runtime fixtures, accepted/rejected corpus, application differentials, and compiler C/protocol compilation. Source-producer audit found no accepted-source `convert` or `allocate` producer. | Unproduced MIR spellings are not new Alpha.2 source obligations; retain fail-closed behavior. |
+| F6 | Selected and all-public headers, invalid export rejection, all nine application shared builds, complete compiler all-public header/prototype inventory, and historical-reference-header C consumers for aggregate, decimal, vector, and resource ABI families. | Representative ABI probes do not assert every hypothetical foreign type combination. |
+| F7 | Public build/check/shared/run native-v4 artifact path, framing/digest and atomic-publication negatives, and fresh-process guards against Python semantic/backend authority. | SH4 public-command next-stage build is not claimed here. |
+| F8 | All 22 fixed accepted/rejected corpus cases; nine application native-v4 differential/build cases plus the 46-module compiler artifact, MIR, C/header, and protocol checks. | SH5 stage-to-stage diagnostics and SH6 cross-platform qualification remain separate milestones. |
+| F9 | Windows subsystem and full gate passed; one draft SH3 PR opened. | Hosted short checks and explicit owner review remain pending. Long hosted gates were not automatically dispatched. |
+
+This is the latest evidence reconciliation for the F1-F9 rows above, whose
+earlier `Partial` labels describe the pre-final-gate state. It does not yet
+check the SH3 milestone box, make the draft PR ready for review, or waive
+the unchanged-tree rule for this documentation-only ledger update.
+
 ## Execution order and boundary rule
 
 1. Finish F1+F2 together as the **canonical representation family**, using
