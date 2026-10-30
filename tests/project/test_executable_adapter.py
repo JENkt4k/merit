@@ -34,7 +34,7 @@ def test_compiler_manifest_uses_complete_source_closure_and_generic_adapter() ->
     manifest = load_manifest(root / "compiler" / "Merit.toml")
     assert manifest.name == "bootstrap_compiler"
     assert manifest.executable_adapter == "stdin-string-i32"
-    assert manifest.executable_entry == "emit_replacement_bundle"
+    assert manifest.executable_entry == "emit_native_project_artifacts"
     sources = {
         path.resolve()
         for pattern in manifest.sources

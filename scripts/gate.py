@@ -39,6 +39,9 @@ PR_INTEGRATION_TESTS = (
     "tests/test_gate.py",
     "tests/test_release_docs.py",
     "tests/bootstrap/test_replacement_prepare.py::test_v4_preparation_never_imports_python_snapshot_semantics",
+    "tests/bootstrap/test_replacement_prepare.py::test_public_v4_build_never_imports_python_semantic_backend",
+    "tests/project/test_project_request.py::test_loaded_project_request_canonicalizes_sibling_source_tree",
+    "tests/project/test_executable_adapter.py::test_compiler_manifest_uses_complete_source_closure_and_generic_adapter",
     "tests/project/test_native_artifact_entry.py::test_native_compiler_entry_emits_v4_artifacts_without_snapshot_decoder",
     "tests/project/test_sh3_v4_corpus.py::test_sh3_v4_rejects_missing_import_without_python_loader",
 )

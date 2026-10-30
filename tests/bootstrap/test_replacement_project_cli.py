@@ -44,14 +44,39 @@ def _project(tmp_path: Path) -> Path:
     return root
 
 
-def test_replacement_cli_fails_closed_when_native_artifacts_are_missing(tmp_path: Path, capsys) -> None:
+def test_replacement_cli_fails_closed_without_configured_compiler(tmp_path: Path, capsys, monkeypatch) -> None:
     root = _project(tmp_path)
+    monkeypatch.delenv("MERIT_REPLACEMENT_DRIVER", raising=False)
+    monkeypatch.setattr("merit.project.cli.shutil.which", lambda _name: None)
     status = main(["build", str(root)])
     assert status == 1
     error = capsys.readouterr().err
-    assert "native frontend artifacts are missing" in error
-    assert "refusing to fall back" in error
+    assert "replacement frontend is not configured" in error
+    assert "--compiler-path" in error
     assert not (root / "build" / "replacement_project").exists()
+
+
+@pytest.mark.parametrize("command", ("build", "build-shared", "run"))
+def test_public_replacement_commands_refuse_cached_artifacts_without_compiler(
+    command: str, tmp_path: Path, capsys, monkeypatch,
+) -> None:
+    root = _project(tmp_path)
+    (root / ".merit").mkdir()
+    (root / ".merit" / REPLACEMENT_MANIFEST).write_text(
+        '{"schema":"merit-replacement-project-v1"}', encoding="utf-8",
+    )
+    monkeypatch.delenv("MERIT_REPLACEMENT_DRIVER", raising=False)
+    monkeypatch.setattr("merit.project.cli.shutil.which", lambda _name: None)
+    monkeypatch.setattr(
+        "merit.project.cli.build_replacement_project",
+        lambda *_args: pytest.fail("must not build from cache without a compiler"),
+    )
+    monkeypatch.setattr(
+        "merit.project.cli.build_replacement_shared",
+        lambda *_args: pytest.fail("must not build from cache without a compiler"),
+    )
+    assert main([command, str(root)]) == 1
+    assert "replacement frontend is not configured" in capsys.readouterr().err
 
 
 def test_replacement_manifest_loads_snapshot_transport_without_reference_semantics(tmp_path: Path) -> None:
@@ -194,9 +219,8 @@ assert artifact.c_source == "int main(void) { return 0; }\\n"
 if any(shutil.which(name) for name in ("cc", "gcc", "clang")):
     built = build_replacement_project(project, Path(sys.argv[1]) / "build" / "native-v4")
     subprocess.run([str(built.executable)], check=True, capture_output=True)
-    assert project_main(["build", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-v4")]) == 0
-    assert project_main(["run", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-run-v4")]) == 0
-    assert project_main(["build-shared", sys.argv[1], "-o", str(Path(sys.argv[1]) / "build" / "cli-shared-v4")]) == 0
+    for command in ("build", "run", "build-shared"):
+        assert project_main([command, sys.argv[1]]) == 1
 """
     subprocess.run(
         [sys.executable, "-c", script, str(root)],
@@ -216,6 +240,8 @@ def test_replacement_cli_routes_shared_build_without_reference_fallback(
 ) -> None:
     root = _project(tmp_path)
     library = root / "build" / "replacement_project.so"
+    driver = tmp_path / "native-compiler"
+    driver.write_bytes(b"native compiler placeholder")
     observed: list[tuple[object, Path]] = []
 
     def fake_build_shared(project, output: Path):
@@ -223,7 +249,8 @@ def test_replacement_cli_routes_shared_build_without_reference_fallback(
         return SimpleNamespace(library=library)
 
     monkeypatch.setattr("merit.project.cli.build_replacement_shared", fake_build_shared)
-    status = main(["build-shared", str(root)])
+    monkeypatch.setattr("merit.project.cli.prepare_replacement_artifacts", lambda *_args, **_kwargs: None)
+    status = main(["build-shared", str(root), "--compiler-path", str(driver)])
 
     assert status == 0
     assert observed and observed[0][1] == root / "build" / "replacement_project"
@@ -309,8 +336,12 @@ def test_default_check_runs_native_frontend_preparation(
 
 def test_default_run_uses_replacement_executable(tmp_path: Path, monkeypatch) -> None:
     root = _project(tmp_path)
+    driver = tmp_path / "native-compiler"
+    driver.write_bytes(b"native compiler placeholder")
     executable = root / "build" / "replacement_project"
     observed: list[object] = []
+
+    monkeypatch.setattr("merit.project.cli.prepare_replacement_artifacts", lambda *_args, **_kwargs: None)
 
     monkeypatch.setattr(
         "merit.project.cli.build_replacement_project",
@@ -322,7 +353,7 @@ def test_default_run_uses_replacement_executable(tmp_path: Path, monkeypatch) ->
         return SimpleNamespace(returncode=23)
 
     monkeypatch.setattr("merit.project.cli.subprocess.run", fake_run)
-    assert main(["run", str(root)]) == 23
+    assert main(["run", str(root), "--compiler-path", str(driver)]) == 23
     assert observed == [[str(executable)]]
 
 

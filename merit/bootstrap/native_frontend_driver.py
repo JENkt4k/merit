@@ -16,7 +16,7 @@ internal generated types.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import shutil
 import tempfile
@@ -60,10 +60,14 @@ def _link_native_replacement_driver(output: Path, library: Path) -> NativeReplac
 
 
 def build_native_replacement_driver(output: Path) -> NativeReplacementDriver:
-    """Build the stage-0 Python-reference-produced frontend driver."""
+    """Build the historical bundle-only stage-0 driver for Alpha.2 evidence."""
 
     output = output.expanduser().resolve()
     project = load_project(COMPILER_PROJECT)
+    project = replace(
+        project,
+        manifest=replace(project.manifest, executable_entry=REPLACEMENT_FRONTEND_ENTRYPOINT),
+    )
     _, _, executable = build(project, output)
     return NativeReplacementDriver(executable)
 

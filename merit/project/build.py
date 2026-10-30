@@ -10,9 +10,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from typing import TYPE_CHECKING
 
-from merit.compiler import CGenerator, Checker, Interpreter
-from .loader import LoadedProject
+if TYPE_CHECKING:
+    from merit.compiler import Checker
+    from .loader import LoadedProject
 
 NATIVE_OBJECT_CACHE_ENV = "MERIT_NATIVE_OBJECT_CACHE"
 
@@ -42,6 +44,8 @@ class NativeBuildError(subprocess.CalledProcessError):
 
 
 def check(project: LoadedProject) -> Checker:
+    from merit.compiler import Checker
+
     return Checker(project.program).check()
 
 
@@ -281,6 +285,8 @@ def build(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
         )
         return c_path, h_path, executable
     check(project)
+    from merit.compiler import CGenerator
+
     output = _native_executable_path(output.resolve())
     output.parent.mkdir(parents=True, exist_ok=True)
     c_path = output.with_suffix(".c")
@@ -318,6 +324,8 @@ def shared_library_policy(
 
 def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path]:
     check(project)
+    from merit.compiler import CGenerator
+
     suffix, link_flags, pic = shared_library_policy()
     library = output.resolve()
     if library.suffix != suffix:
@@ -348,6 +356,8 @@ def build_shared(project: LoadedProject, output: Path) -> tuple[Path, Path, Path
 
 def interpret(project: LoadedProject) -> str:
     check(project)
+    from merit.compiler import Interpreter
+
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
         Interpreter(project.program).run()
