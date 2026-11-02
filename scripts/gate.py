@@ -154,6 +154,22 @@ def run_reproducibility() -> None:
         run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")])
 
 
+def run_self_hosting() -> dict[str, object]:
+    with group("SH5 public self-hosting stage equivalence"):
+        command = [sys.executable, str(REPOSITORY_ROOT / "scripts" / "self_hosting_report.py")]
+        print("+ " + subprocess.list2cmdline(command), flush=True)
+        completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
+    report = RESULT_ROOT / "self-hosting" / "result.json"
+    if not report.is_file():
+        raise GateFailure("self-hosting report was not written")
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    if completed.returncode == 0 and payload.get("status") != "passed":
+        raise GateFailure("self-hosting report and process status disagree")
+    if completed.returncode != 0 and payload.get("status") == "passed":
+        raise GateFailure("self-hosting report and process status disagree")
+    return payload
+
+
 def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, object]:
     started = time.monotonic()
     if name == "smoke":
@@ -187,6 +203,8 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         run_acceptance_replacement()
     elif name == "reproducibility":
         run_reproducibility()
+    elif name == "self-hosting":
+        return run_self_hosting()
     elif name == "full":
         with group("pytest: full"):
             pytest(
@@ -227,7 +245,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Canonical cross-platform Merit validation gates.")
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "pr", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "full"),
+        choices=("smoke", "fast", "pr", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "self-hosting", "full"),
         help="validation level to run",
     )
     parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")
@@ -262,12 +280,19 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    if result.get("status") != "passed":
+        destination = write_result(args.gate, result, args.result_json)
+        print("\nMERIT_GATE_RESULT=FAIL", file=sys.stderr)
+        print(f"result={destination}", file=sys.stderr)
+        print(str(result.get("error", "self-hosting gate failed")), file=sys.stderr)
+        return 1
+
     destination = write_result(args.gate, result, args.result_json)
     print()
     print("MERIT_GATE_RESULT=PASS")
     print(f"gate={args.gate}")
     print(f"duration_seconds={result['duration_seconds']}")
-    if result["acceptance_projects"]:
+    if result.get("acceptance_projects"):
         print("acceptance_projects=10/10")
     if result.get("corpus_convergence"):
         print("corpus_convergence=PASS")

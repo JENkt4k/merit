@@ -42,6 +42,7 @@ python scripts/gate.py acceptance
 python scripts/gate.py corpus
 python scripts/gate.py acceptance-replacement
 python scripts/gate.py reproducibility
+python scripts/gate.py self-hosting
 python scripts/gate.py full
 ```
 
@@ -57,11 +58,12 @@ The gates have distinct purposes:
 | `corpus` | Alpha.1 accepted/rejected reference/replacement convergence | semantic convergence evidence |
 | `acceptance-replacement` | Ten applications compiled and run through replacement | replacement acceptance evidence |
 | `reproducibility` | Isolated stage-0/stage-1/stage-2 canonical agreement | compiler trust/release evidence |
+| `self-hosting` | Public stage-1/stage-2 builds, canonical comparisons, fixed corpus, acceptance and import-guard report | SH5 evidence; deliberate long run |
 | `full` | Entire pytest suite plus all acceptance projects | PR readiness / merge authority |
 
 A feature change should still run its directly affected pytest file or test names.
 The `fast` and `pr` gates are deliberately not substitutes for feature-specific,
-subsystem, full, replacement-acceptance, or reproducibility evidence. The `pr`
+subsystem, full, replacement-acceptance, reproducibility, or self-hosting evidence. The `pr`
 gate is intentionally bounded; it does not run the 46-module independent MIR
 oracle or every acceptance application.
 On native Windows, `./scripts/test-windows.ps1 -Gate pr` is a convenience

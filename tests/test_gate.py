@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 from pathlib import Path
+import json
 import sys
 
 from scripts import gate
@@ -129,3 +130,16 @@ def test_reproducibility_gate_runs_stage_report_once(monkeypatch) -> None:
         str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py"),
     ]]
     assert result["stage_reproducibility"] is True
+
+
+def test_self_hosting_gate_preserves_versioned_report(monkeypatch, tmp_path: Path) -> None:
+    report = tmp_path / "self-hosting" / "result.json"
+    report.parent.mkdir(parents=True)
+    payload = {"schema": "merit-self-hosting-v1", "status": "passed",
+               "duration_seconds": 4.0, "acceptance_projects": {"count": 10}}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(gate, "RESULT_ROOT", tmp_path)
+    monkeypatch.setattr(gate.subprocess, "run", lambda *_args, **_kwargs: type(
+        "Completed", (), {"returncode": 0}
+    )())
+    assert gate.run_gate("self-hosting", None, fail_fast=False) == payload
