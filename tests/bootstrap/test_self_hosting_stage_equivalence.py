@@ -130,6 +130,19 @@ def test_stage_comparison_requires_byte_identity_and_fail_closed_diagnostics(
         sh.compare_stage_bytes(stages)
 
 
+def test_stage_evidence_records_executable_identity_and_protocol(tmp_path: Path, monkeypatch) -> None:
+    stages = tuple(_stage(tmp_path, name, {}) for name in
+                   ("stage_0", "stage_1", "stage_2"))
+    for stage in stages:
+        stage.executable.write_bytes(stage.name.encode())
+    monkeypatch.setattr(sh, "compare_stage_bytes", lambda _stages: {"fixed_probes": {}})
+    evidence = sh.stage_equivalence_evidence(stages)
+    for stage in stages:
+        row = evidence["stages"][stage.name]
+        assert row["executable_sha256"] == sh.sha256(stage.name.encode())
+        assert row["protocol"] == sh.REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+
+
 def test_public_stage_equivalence_core(tmp_path: Path, monkeypatch) -> None:
     stages = sh.build_stages(tmp_path / "self-hosting")
     evidence = sh.stage_equivalence_evidence(stages)

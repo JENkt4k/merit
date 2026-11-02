@@ -183,7 +183,8 @@ def build_seed(output: Path) -> Stage:
         raise SelfHostingError("reference stage-0 compiler was not produced")
     return Stage("stage_0", None, COMPILER_MANIFEST.parent, executable,
                  ("reference-build", str(COMPILER_MANIFEST), str(output)),
-                 time.monotonic() - started, {}, {}, None)
+                 time.monotonic() - started, {}, {},
+                 REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2)
 
 
 def build_public_stage(name: str, project: Path, producer: Path, output: Path) -> Stage:
@@ -495,7 +496,9 @@ def stage_equivalence_evidence(stages: tuple[Stage, Stage, Stage]) -> dict[str, 
                            "paths": [path for path, _ in rows]},
         "stages": {stage.name: {
             "producer": str(stage.producer) if stage.producer else "reference-oracle",
-            "executable": str(stage.executable), "command": list(stage.command),
+            "executable": str(stage.executable),
+            "executable_sha256": sha256(stage.executable.read_bytes()),
+            "command": list(stage.command),
             "project": str(stage.project), "build_seconds": round(stage.build_seconds, 3),
             "protocol": stage.protocol, "artifact_sha256": stage.artifact_hashes,
         } for stage in stages},
