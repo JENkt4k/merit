@@ -149,8 +149,9 @@ multi-hour full suite on every PR update. A green short PR check is not merge
 authority for a compiler milestone.
 
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
-`full`, `reproducibility`, `acceptance-replacement`, and `corpus`. Selecting
-`full` runs the unchanged canonical full gate on Ubuntu and native Windows;
+`full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
+`self-hosting`. Selecting `full` runs the unchanged canonical full gate on
+Ubuntu and native Windows;
 the other choices run only their named gate. The local `python scripts/gate.py
 full --durations 50` and native Windows wrapper remain available for manual
 milestone validation. Record the exact commit and terminal result for each

@@ -71,9 +71,14 @@ compiler-build cutover closed in PR #133: the installed `merit-project build`
 command built a usable stage 1 with stage 0 and a usable stage 2 with stage 1
 from isolated 46-module source trees. Its final-tree native-Windows full gate
 passed (1,712 main tests, 11 M7 tests, 10/10 acceptance projects), and both
-hosted short PR checks passed. SH5 stage equivalence and its versioned
-self-hosting report are not yet complete; `SELF_HOSTING.md` remains the active
-work queue. Alpha.3 resource-model work is out of scope.
+hosted short PR checks passed. SH5 now has a passing native-Windows candidate
+`merit-self-hosting-v1` report: fresh public stage-1/stage-2 builds agree on
+canonical compiler artifacts and protocol behavior, all 10 accepted and 12
+rejected fixed-corpus cases agree with the independent oracle, and all 10
+acceptance applications agree on runtime and observable effects. SH5 still
+requires final-tree broader and hosted evidence and manual PR merge review;
+`SELF_HOSTING.md` remains the active work queue. Alpha.3 resource-model work is
+out of scope.
 
 ## Documentation
 

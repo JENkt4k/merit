@@ -287,6 +287,33 @@ milestone before its prerequisite is confirmed merged on current `main`.
   The historical M9 private helper remains only for its unchanged Alpha.2
   trust gate; it is not used by the normal SH4 stage path.
 
+### SH5 candidate evidence
+
+- The versioned `merit-self-hosting-v1` gate builds stages 1 and 2 from fresh,
+  byte-identical 46-module source closures using the installed public
+  `merit-project build ... --compiler-path ...` command. Its result records the
+  source digest, stage executable identities, producer paths, public commands,
+  protocol version, canonical artifact hashes, toolchain, timings, and import
+  guard. The separate Alpha.2 `reproducibility` gate is unchanged.
+- Stage 1 and stage 2 produce byte-identical canonical compiler C, public
+  header, and MIR. The fixed accepted and rejected requests agree on stdout,
+  stderr, and process status; unsupported framed and missing-import requests
+  fail closed. A fresh-process public-build guard rejects Python semantic,
+  loader, MIR, snapshot, and C-emitter imports.
+- Independent Python-oracle comparison covers all 10 accepted and 12 rejected
+  fixed-corpus cases plus all 10 acceptance applications. Accepted cases
+  compare protocol, canonical artifacts, runtime output, and observable file
+  effects; rejected cases compare native diagnostic/protocol bytes and require
+  all stages to reject. No compiler semantics, ABI, or serialization changed.
+- Native-Windows focused unit/gate tests pass (`18 passed`, one real integration
+  test deselected). The real stage/corpus/acceptance smoke passes in 220.81s.
+  The complete `self-hosting` gate passes on `9b50185` in 664.527s, with
+  `MERIT_SELF_HOSTING_RESULT=PASS` and `MERIT_GATE_RESULT=PASS`; its external log
+  is `D:\Temp\merit-tests\sh5-self-hosting-9b50185.log`. The report records
+  `dirty=true` solely because the user's untracked Alpha.3 resource-model
+  proposal remains outside SH5 scope. Final-tree subsystem/full and hosted
+  evidence are still required before PR readiness; SH5 is not yet closed.
+
 ### SH3 implementation audit
 
 SH3 moves one vertical production boundary. It is not satisfied by wrapping
