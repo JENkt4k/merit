@@ -59,12 +59,12 @@ Its semantic numeric-identifier migrations and separately tracked bootstrap/
 test-infrastructure defects completed without renumbering or changing language
 semantics.
 
-**Self-hosting** is now the first compiler-engineering frontier, with its bounded
-inventory, milestones, and evidence contract in `SELF_HOSTING.md`: the trusted
-replacement must reproducibly compile its own source
-through the normal project interface without weakening the independent oracle
-or stage-agreement contract. Separate compilation and dependency-granular
-caching are the next natural infrastructure boundary. Stored
+**Self-hosting** has reached SH5: the trusted replacement reproducibly compiles
+its complete 46-module source through the normal public project interface,
+with a versioned stage-equivalence report and the Python oracle kept independent.
+`SELF_HOSTING.md` tracks SH6 cross-platform qualification and handoff before
+the campaign closes. Separate compilation and dependency-granular caching are
+the next natural infrastructure boundary. Stored
 references/lifetimes and scientific arrays remain later semantic/domain work
 rather than implicit Alpha.2 scope.
 

@@ -23,9 +23,9 @@ merit audit program.mrt
 Projects use `Merit.toml` plus source modules and the `merit-project` commands:
 
 ```bash
-merit-project check PATH --replacement-driver EXECUTABLE
-merit-project build PATH --replacement-driver EXECUTABLE
-merit-project run PATH --replacement-driver EXECUTABLE
+merit-project check PATH --compiler-path EXECUTABLE
+merit-project build PATH --compiler-path EXECUTABLE
+merit-project run PATH --compiler-path EXECUTABLE
 merit-project layout PATH --compiler reference
 merit-project audit PATH --compiler reference
 merit-project verify PATH --compiler reference
@@ -100,3 +100,23 @@ In `v0.1.0-alpha.2`, `merit-project` uses the trusted Merit-native replacement
 compiler by default. The Python-hosted compiler remains available only when
 explicitly selected as the reference/oracle. Programs should target the
 documented language semantics, not implementation quirks of either compiler.
+
+## Building the compiler project
+
+The compiler is an ordinary 46-module Merit project at `compiler/Merit.toml`.
+Given a trusted compiler executable, the public build command produces the
+next directly usable compiler stage:
+
+```bash
+merit-project build compiler --compiler-path STAGE0 -o STAGE1
+merit-project build compiler --compiler-path STAGE1 -o STAGE2
+```
+
+`--compiler-path` selects the producer explicitly. Without it, the command
+may use `MERIT_REPLACEMENT_DRIVER` for automation, then looks for
+`merit-replacement-frontend` on `PATH`; it fails closed if no trusted compiler
+is available. The stage output is an executable, not merely a shared
+library or intermediate snapshot. The Python reference remains an independent
+oracle; it is not a semantic fallback in this workflow. See
+[`SELF_HOSTING.md`](../../SELF_HOSTING.md) for the stage comparison contract and
+the still-open SH6 cross-platform qualification.

@@ -131,9 +131,9 @@ is a privileged Python assembly path rather than the normal project UX.
 | Deterministic C/header emission | The Merit-native compiler emits v4 C and selected/all-public headers; `merit/bootstrap/mir_to_c.py` remains the independent oracle | Merit-owned backend plus oracle | SH3 candidate has byte-stable native/oracle comparisons across projects, compiler source, and public ABI probes |
 | C compilation and linking | `replacement_build.py` invokes the external C11 compiler/linker | Permitted host/toolchain work | May remain generic and non-semantic; commands and failures must be deterministic and recorded |
 | Compiler process host | `merit/project/executable_adapter.py` provides the manifest-selected, generic `stdin-string-i32` process/ABI adapter; `native_frontend_driver.py` delegates to it | Permitted generic runtime/ABI bridge | Closed for SH1; keep semantic interpretation out of the adapter |
-| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the Alpha.2 M9 historical helper still calls `build_replacement_shared` | Historical trust-gate path only | SH4's stage-1/stage-2 production path invokes only the installed public `merit-project build` command; retain the private helper solely for unchanged Alpha.2 M9 evidence until SH5 supersedes it |
+| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the Alpha.2 M9 historical helper still calls `build_replacement_shared` | Historical trust-gate path only | SH5's public stage path does not call the private helper; retain it solely for unchanged Alpha.2 M9 evidence |
 | Source isolation | `native_frontend_driver.py` copies the compiler project while excluding `.merit`, build, and bytecode state | Trust orchestration | Retain and generalize in the reproducibility gate |
-| Stage comparison | `reproducibility.py` builds stages and compares C, header, and fixed probe output | Trust orchestration | Retain, then extend to invoke only the public project command and the self-hosting result schema |
+| Stage comparison | `reproducibility.py` retains the Alpha.2 M9 trust comparison; `self_hosting.py` builds fresh public stages and compares C, header, MIR, protocol, diagnostics, corpus, acceptance, and runtime behavior | Trust orchestration | Keep the historical M9 schema distinct from the versioned SH5 self-hosting report |
 | CLI compiler discovery | `merit/project/cli.py` selects explicit `--compiler-path`, environment, then `PATH` driver | Public UX with historical alias | SH4 candidate rejects `build`, `build-shared`, and `run` without a compiler even when cached artifacts exist; `--replacement-driver` remains an alias |
 
 The external C compiler, platform linker, filesystem, and process launcher are
@@ -154,9 +154,9 @@ needed to produce the next usable compiler must be classified.
 | Project/module request is representable without Python source rewriting | Closed in SH2 by `MPRQ` v1 and native bundle metadata v3 | Host framing oracle, malformed-request rejection, Windows binary transport, single/multi-module execution parity, and legacy Alpha.1 vector evidence |
 | Complete canonical MIR is materialized by Merit | SH3 native-v4 candidate emits canonical project MIR; Python is an independent oracle | Native MIR artifact comparison against the independent Python materializer, including all 46 compiler modules |
 | Deterministic C and public header are emitted by Merit | SH3 native-v4 candidate emits C and selected/all-public headers | Byte comparisons with the independent canonical emitter over the accepted corpus, applications, compiler project, and C ABI probes |
-| Diagnostics and failures are represented without Python semantic guessing | SH2 native request validation and SH3 fail-closed v4 artifact statuses are in the production path; stage-to-stage structured diagnostic-byte comparison remains SH5 | Native rejection, deterministic statuses, no fallback, and later SH5 diagnostic equivalence |
-| Required filesystem/process authority is explicit | Not yet applicable to the compiler executable boundary | Capability inventory and negative tests for missing authority |
-| The resulting artifact can compile the same complete source closure | Proven only through the private M9 stage helper | Stage 1 and stage 2 built solely by the public command |
+| Diagnostics and failures are represented without Python semantic guessing | SH2 native request validation and SH3 fail-closed v4 artifact statuses are in the production path; SH5 compares rejected-corpus diagnostic/protocol bytes across stages | Native rejection, deterministic statuses, no fallback, and SH5 diagnostic equivalence |
+| Required filesystem/process authority is explicit | SH6 inventories Merit allocation, host file/manifest transport, process I/O, and external C toolchain authority below | Capability inventory and negative tests for missing authority |
+| The resulting artifact can compile the same complete source closure | SH4 and SH5 build stages 1 and 2 through the public command from isolated 46-module trees | Stage 1 and stage 2 built solely by the public command |
 | Python is absent from production semantic authority | SH3 native-v4 normal project path has no Python MIR/C/header semantic authority; Python remains an oracle | Fresh-process import/process guard for public build/check/shared/run; SH4 extends this to the next-stage public build |
 
 ## Scope rules
@@ -204,10 +204,11 @@ needed to produce the next usable compiler must be classified.
   next-stage compiler. Remove the private stage-build API from production use and
   add a guard against Python semantic/backend imports during the build. Merged
   as PR #133 at `35efc4f`; both hosted short PR checks passed.
-- [ ] **SH5 — Self-hosted stage equivalence**: build isolated stages 1 and 2 only
+- [x] **SH5 — Self-hosted stage equivalence**: build isolated stages 1 and 2 only
   through the public command. Prove canonical artifact, protocol, diagnostics,
   corpus, acceptance-project, and runtime agreement under a versioned
-  machine-readable self-hosting report.
+  machine-readable self-hosting report. Merged as PR #134 at `fdc8827`; both
+  hosted Ubuntu and Windows short PR checks passed.
 - [ ] **SH6 — Cross-platform qualification and handoff**: pass focused,
   subsystem, full, corpus, replacement-acceptance, and self-hosting gates on the
   required local and hosted Ubuntu/native-Windows environments; update status,
@@ -311,8 +312,13 @@ milestone before its prerequisite is confirmed merged on current `main`.
   `MERIT_SELF_HOSTING_RESULT=PASS` and `MERIT_GATE_RESULT=PASS`; its external log
   is `D:\Temp\merit-tests\sh5-self-hosting-9b50185.log`. The report records
   `dirty=true` solely because the user's untracked Alpha.3 resource-model
-  proposal remains outside SH5 scope. Final-tree subsystem/full and hosted
-  evidence are still required before PR readiness; SH5 is not yet closed.
+  proposal remains outside SH5 scope. The Windows subsystem gate passed on
+  `3a820fd` (`971 passed`); the final-tree Windows full gate passed on the same
+  commit (`1725 passed`, M7 `11 passed`, 10/10 acceptance applications). The
+  first full attempt failed solely because the invoking shell omitted
+  `.venv\Scripts` from `PATH`; the focused test and corrected full rerun passed.
+  PR #134 merged at `fdc8827` after Ubuntu and Windows short PR checks passed.
+  SH6 still requires clean-platform qualification; no Alpha.3 work is authorized.
 
 ### SH3 implementation audit
 
@@ -474,6 +480,19 @@ until SH5 deliberately supersedes or composes it. Do not silently redefine its
 schema or comparison contract.
 
 ## Completion evidence matrix
+
+The SH6 authority inventory is bounded to the existing compiler boundary:
+
+| Authority | Owner and boundary | Negative/qualification evidence |
+|---|---|---|
+| Merit allocation | The native entry declares `capability allocate` and enters `with capability allocate` before creating owned buffers and vectors | Existing allocation-capability, ownership/drop, and compiler-project lifecycle tests; no ambient allocation permission is added |
+| Source files and manifests | The host reads `Merit.toml` and transports path-sorted source bytes; `project_request.mrt` validates the versioned request and module/capability identities | Missing imports, malformed/unsupported frames, stale source digests, and source-closure inventory reject without Python semantic fallback |
+| Standard input/output and process launch | The generic `stdin-string-i32` adapter carries request/response bytes; the host launches the selected compiler executable | SH5 raw protocol/status/diagnostic parity and fresh-process prohibited-import guard |
+| External C compilation and publication | The host invokes the platform C compiler/linker and publishes validated native artifacts | Artifact digest/framing checks, public-stage command tests, and platform full/self-hosting gates |
+
+No separate sanitizer gate is defined for SH6; existing native ownership,
+capability, fail-closed, and diagnostic tests are the applicable evidence. This
+inventory grants no new language or runtime authority.
 
 | Requirement | Required proof |
 |---|---|

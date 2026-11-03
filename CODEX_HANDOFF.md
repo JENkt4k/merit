@@ -5,17 +5,18 @@ This repository contains the completed `v0.1.0-alpha.1` release and the
 completed, tagged **`v0.1.0-alpha.2` release**.
 
 Alpha.2 replacement work closed M1-M10 through PR #116. The replacement
-compiler is trusted for the documented Alpha.1 production surface but is not
-self-hosted. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
+compiler is trusted for the documented Alpha.1 production surface. SH5's
+public stage-1/stage-2 equivalence merged in PR #134; SH6 cross-platform
+qualification remains open. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
 The bounded cleanup campaign, including its final repository-wide audit, is
 closed through PR #126. `POST_ALPHA2_CLEANUP.md` is the completed evidence
-ledger; self-hosting through the normal project interface is the next
-compiler-engineering frontier, with its bounded work queue and evidence contract
-in `SELF_HOSTING.md`.
+ledger; the bounded self-hosting work queue and evidence contract remain in
+`SELF_HOSTING.md`.
 
 Current baseline:
 - Exact test counts are recorded by canonical gate runs rather than frozen here
-- Python-hosted compiler
+- Python reference compiler as an independent oracle; Merit-native normal
+  production compiler and public next-stage builds
 - C11 native backend
 - single-file and project CLIs
 - interpreter/native differential verification

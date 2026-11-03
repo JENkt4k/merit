@@ -151,8 +151,8 @@ authority for a compiler milestone.
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
 `full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
 `self-hosting`. Selecting `full` runs the unchanged canonical full gate on
-Ubuntu and native Windows;
-the other choices run only their named gate. The local `python scripts/gate.py
+Ubuntu and native Windows; the other choices run only their named gate. The
+local `python scripts/gate.py
 full --durations 50` and native Windows wrapper remain available for manual
 milestone validation. Record the exact commit and terminal result for each
 long run, and do not infer a pass from the short PR check. Platform-specific

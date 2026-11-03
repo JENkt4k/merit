@@ -21,8 +21,10 @@ These limits are deliberate and enforced. They are not promises of silently appr
 - Projects merge into one generated C translation unit; the object cache is not dependency-granular.
 - Normal project builds use the Merit-native replacement compiler by default
   and lower to C11. Python remains an explicitly selected independent oracle;
-  the trusted compiler is not self-hosted. LLVM remains future work.
+  SH5 proves public stage-1/stage-2 self-hosting on native Windows, while SH6
+  clean cross-platform qualification remains open. LLVM remains future work.
 - System and portable allocator identities are distinct, but currently use the same host allocation primitives.
 - There is no async, concurrency, networking, tensor runtime, package registry, formatter, or language server in this alpha.
-- Clean Ubuntu and native-Windows hosted gates validate the same canonical
-  corpus, replacement acceptance, reproducibility, and full-gate contracts.
+- Clean Ubuntu and native-Windows short PR gates run automatically; the long
+  canonical corpus, replacement-acceptance, reproducibility, self-hosting, and
+  full gates are deliberately dispatched for milestone qualification.
