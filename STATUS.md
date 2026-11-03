@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-09-27
+Status date: 2026-11-01
 
 ## Release target
 
@@ -11,9 +11,10 @@ equivalent `0.1.0a2`. Normal project compilation uses the
 Merit-native replacement compiler. Python remains the independent semantic and
 diagnostic reference oracle.
 
-The canonical GitHub gates run the full clean suite on Ubuntu and native
-Windows. M1-M10 are closed. `ALPHA2_CLOSURE.md` is the historical detailed
-release ledger; `POST_ALPHA2_CLEANUP.md` is the completed cleanup ledger.
+Pull requests run the short gate on Ubuntu and native Windows; long canonical
+gates are deliberate milestone validation. M1-M10 are closed.
+`ALPHA2_CLOSURE.md` is the historical detailed release ledger;
+`POST_ALPHA2_CLEANUP.md` is the completed cleanup ledger.
 
 ## Proven alpha foundation
 
@@ -30,7 +31,13 @@ All seven ordered `v0.1.0-alpha.1` gates remain complete. No known semantic corr
 
 The replacement effort has progressed beyond the early isolated lexer/parser/AST/HIR/MIR checkpoints. Native source-backed resolution carries function bodies, contracts, instruction provenance, ownership bindings/effects, CFG records/placement, capability identities, project/module identity, generics/traits, exact numerics, aggregates, resources, and stable export metadata into the production replacement boundary.
 
-Those native-resolved artifacts feed the production replacement build boundary. Replacement builds consume prepared snapshots/project artifacts, reconstruct canonical replacement MIR, emit deterministic C, compile it, and refuse to fall back to the Python reference compiler. Project artifacts are source-digest checked so stale snapshots fail closed.
+Those native-resolved artifacts feed the production replacement build boundary.
+The Merit-native compiler now materializes canonical MIR and emits deterministic
+C and public headers in versioned v4 project artifacts. The host transports and
+validates the artifacts, invokes the external C toolchain, and refuses Python
+semantic/backend fallback. Project artifacts are source-digest checked so stale
+artifacts fail closed. The Python MIR/C implementations remain independent
+comparison oracles.
 
 M1-M5 close the documented Alpha.1 semantic and project surfaces through the concrete replacement pipeline. M6 adds a canonical same-source accepted/rejected convergence corpus: accepted cases compare reference and replacement native behavior and deterministic replacement artifacts; rejected cases require both boundaries to reject deterministically. The dedicated corpus gate and ordinary hosted full gates were green before M6 merged.
 
@@ -40,9 +47,8 @@ The proven vertical shape is now:
 Merit project/source
   -> concrete Merit-native replacement driver
   -> native project/function/declaration resolution
-  -> resolved replacement artifacts
-  -> canonical replacement MIR
-  -> deterministic C
+  -> Merit-owned canonical replacement MIR
+  -> Merit-owned deterministic C and public header
   -> native executable
 ```
 
@@ -59,11 +65,20 @@ native-Windows environments.
 
 The replacement compiler is trusted for the documented Alpha.1 production
 surface, and Alpha.2 completed M10 and was tagged at merge commit `53699f2`.
-The bounded post-Alpha.2 cleanup campaign, including its final repository-wide
-audit, is closed through PR #126. Self-hosting through the normal project
-interface is now the active compiler-engineering frontier tracked in
-`SELF_HOSTING.md`; ownership/buffer/tensor expansion belongs to a later Alpha.3
-plan.
+The bounded post-Alpha.2 cleanup campaign is closed through PR #126. SH3
+Merit-owned canonical MIR/backend closed in PR #132. SH4's normal public
+compiler-build cutover closed in PR #133: the installed `merit-project build`
+command built a usable stage 1 with stage 0 and a usable stage 2 with stage 1
+from isolated 46-module source trees. Its final-tree native-Windows full gate
+passed (1,712 main tests, 11 M7 tests, 10/10 acceptance projects), and both
+hosted short PR checks passed. SH5 now has a passing native-Windows candidate
+`merit-self-hosting-v1` report: fresh public stage-1/stage-2 builds agree on
+canonical compiler artifacts and protocol behavior, all 10 accepted and 12
+rejected fixed-corpus cases agree with the independent oracle, and all 10
+acceptance applications agree on runtime and observable effects. SH5 still
+requires final-tree broader and hosted evidence and manual PR merge review;
+`SELF_HOSTING.md` remains the active work queue. Alpha.3 resource-model work is
+out of scope.
 
 ## Documentation
 
@@ -73,7 +88,9 @@ A user-facing programming manual lives under `docs/manual/`. It is distinct from
 
 Python remains the independent semantic and diagnostic reference oracle; it is
 not production semantic authority. The Merit-native replacement compiler has
-satisfied the Alpha.2 trust criteria but is not self-hosted. Self-hosting is a
-post-Alpha.2 milestone and must preserve reproducible stage equivalence.
+satisfied the Alpha.2 trust criteria and now builds next-stage compilers through
+the normal public interface. The complete SH5 equivalence contract and SH6
+cross-platform qualification are still required before claiming the
+self-hosting campaign is complete.
 
 Do not describe isolated parser/HIR/MIR corpus counts as whole-language replacement percentages. The useful progress metric is vertical removal of Python semantic authority from real production compilation boundaries.

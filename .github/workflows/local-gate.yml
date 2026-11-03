@@ -14,6 +14,7 @@ on:
           - reproducibility
           - acceptance-replacement
           - corpus
+          - self-hosting
 
 concurrency:
   group: merit-local-gate-${{ github.workflow }}-${{ github.ref }}
@@ -204,6 +205,75 @@ jobs:
         with:
           name: m7-replacement-acceptance
           path: .merit/gates/acceptance-replacement/*.json
+          if-no-files-found: warn
+
+  linux-self-hosting:
+    name: Python 3.11 / Ubuntu / SH5 self-hosting
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'self-hosting'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install Merit and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-build-isolation -e ".[dev]"
+      - name: Run SH5 self-hosting gate
+        run: python scripts/gate.py self-hosting
+      - name: Upload SH5 self-hosting report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sh5-self-hosting-ubuntu
+          path: .merit/gates/self-hosting/result.json
+          if-no-files-found: warn
+
+  windows-self-hosting:
+    name: Python 3.11 / Windows / SH5 self-hosting
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'self-hosting'
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Set up MSYS2 UCRT64 GCC
+        id: msys2-self-hosting
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+      - name: Create Windows virtual environment and install Merit
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+          .\.venv\Scripts\python.exe -m pip install --no-build-isolation -e ".[dev]"
+      - name: Run SH5 self-hosting gate
+        shell: pwsh
+        run: |
+          .\scripts\activate-windows-dev.ps1 -Msys2Root "${{ steps.msys2-self-hosting.outputs.msys2-location }}"
+          .\.venv\Scripts\python.exe scripts\gate.py self-hosting
+      - name: Upload SH5 self-hosting report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sh5-self-hosting-windows
+          path: .merit/gates/self-hosting/result.json
           if-no-files-found: warn
 
   linux-full:
