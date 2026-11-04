@@ -149,9 +149,18 @@ def run_acceptance_replacement() -> None:
         run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "acceptance_replacement_report.py")])
 
 
-def run_reproducibility() -> None:
-    with group("alpha.2 M9 compiler-stage reproducibility"):
-        run([sys.executable, str(REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")])
+def run_reproducibility() -> dict[str, object]:
+    with group("public compiler-stage reproducibility v2"):
+        command = [sys.executable, str(REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")]
+        print("+ " + subprocess.list2cmdline(command), flush=True)
+        completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
+    report = RESULT_ROOT / "reproducibility" / "result.json"
+    if not report.is_file():
+        raise GateFailure("reproducibility report was not written")
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    if (completed.returncode == 0) != (payload.get("status") == "passed"):
+        raise GateFailure("reproducibility report and process status disagree")
+    return payload
 
 
 def run_self_hosting() -> dict[str, object]:
@@ -202,7 +211,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
     elif name == "acceptance-replacement":
         run_acceptance_replacement()
     elif name == "reproducibility":
-        run_reproducibility()
+        return run_reproducibility()
     elif name == "self-hosting":
         return run_self_hosting()
     elif name == "full":

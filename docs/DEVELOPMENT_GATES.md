@@ -57,7 +57,7 @@ The gates have distinct purposes:
 | `acceptance` | Ten interpreter/native acceptance projects | acceptance-only verification |
 | `corpus` | Alpha.1 accepted/rejected reference/replacement convergence | semantic convergence evidence |
 | `acceptance-replacement` | Ten applications compiled and run through replacement | replacement acceptance evidence |
-| `reproducibility` | Isolated stage-0/stage-1/stage-2 canonical agreement | compiler trust/release evidence |
+| `reproducibility` | Fresh public stage-0/stage-1/stage-2 C/header/probe agreement (v2); historical Alpha.2 M9 v1 report remains archived | compiler stage evidence |
 | `self-hosting` | Public stage-1/stage-2 builds, canonical comparisons, fixed corpus, acceptance and import-guard report | SH5 evidence; deliberate long run |
 | `full` | Entire pytest suite plus all acceptance projects | PR readiness / merge authority |
 

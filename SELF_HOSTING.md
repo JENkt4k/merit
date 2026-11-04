@@ -114,8 +114,10 @@ to the inventory before it is migrated.
 
 ## Current special-stage seam audit
 
-The present M9 path proves stage agreement, but `build_replacement_compiler_stage`
-is a privileged Python assembly path rather than the normal project UX.
+The released M9 path proved stage agreement, but
+`build_replacement_compiler_stage` is a retired privileged Python assembly path
+rather than the normal project UX. The current reproducibility gate uses the
+versioned public-stage v2 comparison described below.
 
 | Seam | Current owner and behavior | Classification | Required disposition |
 |---|---|---|---|
@@ -131,9 +133,9 @@ is a privileged Python assembly path rather than the normal project UX.
 | Deterministic C/header emission | The Merit-native compiler emits v4 C and selected/all-public headers; `merit/bootstrap/mir_to_c.py` remains the independent oracle | Merit-owned backend plus oracle | SH3 candidate has byte-stable native/oracle comparisons across projects, compiler source, and public ABI probes |
 | C compilation and linking | `replacement_build.py` invokes the external C11 compiler/linker | Permitted host/toolchain work | May remain generic and non-semantic; commands and failures must be deterministic and recorded |
 | Compiler process host | `merit/project/executable_adapter.py` provides the manifest-selected, generic `stdin-string-i32` process/ABI adapter; `native_frontend_driver.py` delegates to it | Permitted generic runtime/ABI bridge | Closed for SH1; keep semantic interpretation out of the adapter |
-| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the Alpha.2 M9 historical helper still calls `build_replacement_shared` | Historical trust-gate path only | SH5's public stage path does not call the private helper; retain it solely for unchanged Alpha.2 M9 evidence |
+| Shared-library construction | The ordinary reference and replacement project builders construct the adapter's library; the retired Alpha.2 M9 helper still calls `build_replacement_shared` | Historical source retained for release-audit context only | The current SH5 and reproducibility v2 stage paths invoke only the installed public `merit-project build` command |
 | Source isolation | `native_frontend_driver.py` copies the compiler project while excluding `.merit`, build, and bytecode state | Trust orchestration | Retain and generalize in the reproducibility gate |
-| Stage comparison | `reproducibility.py` retains the Alpha.2 M9 trust comparison; `self_hosting.py` builds fresh public stages and compares C, header, MIR, protocol, diagnostics, corpus, acceptance, and runtime behavior | Trust orchestration | Keep the historical M9 schema distinct from the versioned SH5 self-hosting report |
+| Stage comparison | `reproducibility.py` deliberately supersedes the archived M9 v1 report with a public-stage v2 C/header/probe comparison; `self_hosting.py` additionally compares MIR, diagnostics, corpus, acceptance, and runtime behavior | Trust orchestration | Keep the historical M9 v1, current reproducibility v2, and SH5 report schemas distinct |
 | CLI compiler discovery | `merit/project/cli.py` selects explicit `--compiler-path`, environment, then `PATH` driver | Public UX with historical alias | SH4 candidate rejects `build`, `build-shared`, and `run` without a compiler even when cached artifacts exist; `--replacement-driver` remains an alias |
 
 The external C compiler, platform linker, filesystem, and process launcher are
@@ -475,9 +477,12 @@ contains:
 - prohibited Python semantic/backend import guard result;
 - stage timings and terminal status.
 
-The existing `reproducibility` gate remains Alpha.2 historical/trust evidence
-until SH5 deliberately supersedes or composes it. Do not silently redefine its
-schema or comparison contract.
+The released Alpha.2 M9 v1 report remains historical trust evidence. The
+current `reproducibility` gate deliberately supersedes its bundle-only stage
+builder with fresh public stages under `merit-public-stage-reproducibility-v2`.
+It retains the canonical C/header/probe comparison rule, while the separate
+SH5 report adds MIR, rejected probes, corpus, acceptance, and import-guard
+evidence. The schema transition is explicit in `docs/M9_REPRODUCIBILITY.md`.
 
 ## Completion evidence matrix
 

@@ -119,17 +119,33 @@ def test_pr_gate_runs_bounded_native_checks_and_corpus_not_full(monkeypatch) -> 
     assert result["acceptance_projects"] == 0
 
 
-def test_reproducibility_gate_runs_stage_report_once(monkeypatch) -> None:
-    calls: list[list[str]] = []
-    monkeypatch.setattr(gate, "run", lambda command: calls.append(command))
+def test_reproducibility_gate_preserves_versioned_report(monkeypatch, tmp_path: Path) -> None:
+    report = tmp_path / "reproducibility" / "result.json"
+    report.parent.mkdir(parents=True)
+    payload = {"schema": "merit-public-stage-reproducibility-v2", "status": "passed",
+               "duration_seconds": 4.0, "probe_protocol_sha256": "digest"}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(gate, "RESULT_ROOT", tmp_path)
+    calls = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda command, **_kwargs: (
+        calls.append(command), type("Completed", (), {"returncode": 0})()
+    )[1])
 
-    result = gate.run_gate("reproducibility", None, fail_fast=False)
+    assert gate.run_gate("reproducibility", None, fail_fast=False) == payload
+    assert calls == [[sys.executable, str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")]]
 
-    assert calls == [[
-        sys.executable,
-        str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py"),
-    ]]
-    assert result["stage_reproducibility"] is True
+
+def test_reproducibility_gate_preserves_versioned_failure(monkeypatch, tmp_path: Path) -> None:
+    report = tmp_path / "reproducibility" / "result.json"
+    report.parent.mkdir(parents=True)
+    payload = {"schema": "merit-public-stage-reproducibility-v2", "status": "failed",
+               "error": "stage build failed"}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(gate, "RESULT_ROOT", tmp_path)
+    monkeypatch.setattr(gate.subprocess, "run", lambda *_args, **_kwargs: type(
+        "Completed", (), {"returncode": 1}
+    )())
+    assert gate.run_gate("reproducibility", None, fail_fast=False) == payload
 
 
 def test_self_hosting_gate_preserves_versioned_report(monkeypatch, tmp_path: Path) -> None:
