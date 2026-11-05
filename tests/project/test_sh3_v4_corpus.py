@@ -596,7 +596,9 @@ def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
     library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
     environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
     consumed = subprocess.run([str(consumer_executable)], capture_output=True, env=environment)
-    assert consumed.returncode == 0, consumed.stderr
+    assert consumed.returncode == 0, (
+        consumed.returncode, consumed.stdout, consumed.stderr,
+    )
 
 
 def test_sh3_v4_public_shared_build_preserves_cobol_finance_abi(

@@ -12,6 +12,7 @@ on:
         options:
           - full
           - full-diagnostic
+          - ledger-diagnostic
           - reproducibility
           - acceptance-replacement
           - corpus
@@ -278,8 +279,8 @@ jobs:
           if-no-files-found: warn
 
   linux-full:
-    name: Python 3.11 / Ubuntu / full gate
-    if: github.event_name == 'workflow_dispatch' && (inputs.gate == 'full' || inputs.gate == 'full-diagnostic')
+    name: Python 3.11 / Ubuntu / ${{ inputs.gate == 'full' && 'full gate' || 'focused diagnostic' }}
+    if: github.event_name == 'workflow_dispatch' && (inputs.gate == 'full' || inputs.gate == 'full-diagnostic' || inputs.gate == 'ledger-diagnostic')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -317,6 +318,9 @@ jobs:
       - name: Diagnose first full-suite failure
         if: inputs.gate == 'full-diagnostic'
         run: python -m pytest -q -x -n 2 --dist loadfile tests --ignore=tests/project/test_acceptance_replacement_migration.py --durations=10
+      - name: Diagnose ledger shared-library ABI
+        if: inputs.gate == 'ledger-diagnostic'
+        run: python -m pytest -q -s tests/project/test_sh3_v4_corpus.py::test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi
 
   windows-full:
     name: Python 3.11 / Windows / native full gate
