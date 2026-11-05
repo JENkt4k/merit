@@ -608,7 +608,10 @@ def _instruction(
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
                 f".payload.variant_{ordinal} = {operands[0]} }};"
             ]
-        raise MirToCError("copy-payload enum construction requires a represented variant payload")
+        return [
+            f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
+            f".payload.variant_{ordinal} = {operands[0]} }};"
+        ]
     if kind == "load_field":
         if result is None or len(operands) != 1 or not instruction.symbol:
             raise MirToCError("aggregate field load requires one receiver and a field symbol")
@@ -663,7 +666,14 @@ def _instruction(
             if instruction.result not in local_types:
                 raise MirToCError("enum payload load has unresolved result type")
             return [f"{result} = {operands[0]}{access}payload.variant_{ordinal};"]
+        if instruction.symbol == "payload" and not receiver_type.arguments:
+            return [f"{result} = {operands[0]}{access}payload.variant_0;"]
         if instruction.symbol.startswith("payload_"):
+            if _copy_payload_enum_identity(receiver_type) is not None:
+                ordinal_text = instruction.symbol.removeprefix("payload_")
+                if not ordinal_text.isdecimal():
+                    raise MirToCError("enum payload variant has an invalid ordinal")
+                return [f"{result} = {operands[0]}{access}payload.variant_{ordinal_text};"]
             return [f"{result} = {operands[0]}{access}payload;"]
         return [f"{result} = {operands[0]}{access}{instruction.symbol};"]
     if kind == "store_field":
@@ -1627,8 +1637,13 @@ def emit_c_module(module: MirModule) -> str:
                 if instruction.kind == "load_field" and instruction.result is not None and instruction.operands:
                     receiver_type = function_types[instruction.operands[0]]
                     identity = _copy_payload_enum_identity(receiver_type)
-                    if identity is not None and instruction.symbol and instruction.symbol.startswith("payload_"):
+                    if identity is not None and instruction.symbol in {"payload", "payload_0"}:
+                        ordinal_text = "0"
+                    elif identity is not None and instruction.symbol and instruction.symbol.startswith("payload_"):
                         ordinal_text = instruction.symbol.removeprefix("payload_")
+                    else:
+                        ordinal_text = ""
+                    if identity is not None:
                         if ordinal_text.isdecimal():
                             observed_copy_payloads.setdefault(identity, {})[int(ordinal_text)] = function_types[instruction.result]
     vector_types = tuple(sorted(
@@ -1796,7 +1811,7 @@ def emit_c_module(module: MirModule) -> str:
                 copy_payload_enums[identity] = type_
     for identity, observed in observed_copy_payloads.items():
         prior = copy_payload_enums.get(identity)
-        if prior is None or not prior.arguments:
+        if prior is None:
             continue
         width = max((*observed, *(range(len(prior.arguments)))), default=-1) + 1
         if width > 0:

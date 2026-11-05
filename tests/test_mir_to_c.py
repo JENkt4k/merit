@@ -443,7 +443,7 @@ def test_emits_bootstrap_buffer_append_with_borrow_modes_and_bounds(tmp_path):
 
 
 def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
-    choice = MirType("enum_copy_payload_0", (I64,))
+    choice = MirType("enum_copy_payload_0")
     function = MirFunction(
         "payload",
         I64,
@@ -460,7 +460,7 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
                 MirInstruction(2, "load_field", result=2, operands=(1,), symbol="tag"),
             ), MirTerminator("switch", operands=(2,), targets=(1, 2), cases=(0,))),
             MirBlock(1, (
-                MirInstruction(3, "load_field", result=3, operands=(1,), symbol="payload_0"),
+                MirInstruction(3, "load_field", result=3, operands=(1,), symbol="payload"),
             ), MirTerminator("return", operands=(3,))),
             MirBlock(2, (), MirTerminator("return", operands=(2,))),
         ),
@@ -497,11 +497,6 @@ def test_payload_free_copy_enum_uses_reference_tag_layout(tmp_path):
         "int main(void) { return empty_variant() == 1 ? 0 : 1; }",
     )
     assert run.returncode == 0
-    with pytest.raises(MirToCError, match="represented variant payload"):
-        _instruction(
-            MirInstruction(0, "construct", result=0, operands=(1,), symbol="variant_0"),
-            {1: "m1"}, {0: choice},
-        )
 
 
 def test_owned_enum_payload_free_construct_uses_inert_storage_and_rejects_wrong_type():
