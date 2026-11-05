@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("smoke", "fast", "pr", "subsystem", "acceptance", "full")]
+    [ValidateSet("smoke", "fast", "pr", "subsystem", "acceptance", "full", "full-pytest", "full-acceptance")]
     [string]$Gate = "full",
     [switch]$StopOnFirstFailure,
     [int]$Durations = 0
@@ -16,7 +16,7 @@ if (-not (Test-Path $Python)) {
 }
 
 $DoctorArguments = @((Join-Path $PSScriptRoot "doctor.py"))
-if ($Gate -eq "full") {
+if ($Gate -in @("full", "full-pytest", "full-acceptance")) {
     $DoctorArguments += "--full"
 }
 & $Python @DoctorArguments

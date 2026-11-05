@@ -214,7 +214,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         return run_reproducibility()
     elif name == "self-hosting":
         return run_self_hosting()
-    elif name == "full":
+    elif name in {"full", "full-pytest"}:
         with group("pytest: full"):
             pytest(
                 ["tests", f"--ignore={M7_ACCEPTANCE_TEST}"],
@@ -222,6 +222,10 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
                 fail_fast=fail_fast,
                 workers=PARALLEL_TEST_WORKERS,
             )
+        if name == "full":
+            run_acceptance_replacement()
+            run_acceptance()
+    elif name == "full-acceptance":
         run_acceptance_replacement()
         run_acceptance()
     else:
@@ -234,9 +238,9 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         "duration_seconds": round(duration, 3),
         "python": sys.version.split()[0],
         "platform": sys.platform,
-        "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full"} else 0,
+        "acceptance_projects": 10 if name in {"acceptance", "acceptance-replacement", "full", "full-acceptance"} else 0,
         "corpus_convergence": name in {"corpus", "pr"},
-        "replacement_acceptance": name in {"acceptance-replacement", "full"},
+        "replacement_acceptance": name in {"acceptance-replacement", "full", "full-acceptance"},
         "stage_reproducibility": name == "reproducibility",
     }
 
@@ -254,7 +258,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Canonical cross-platform Merit validation gates.")
     parser.add_argument(
         "gate",
-        choices=("smoke", "fast", "pr", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "self-hosting", "full"),
+        choices=("smoke", "fast", "pr", "subsystem", "corpus", "acceptance", "acceptance-replacement", "reproducibility", "self-hosting", "full", "full-pytest", "full-acceptance"),
         help="validation level to run",
     )
     parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")

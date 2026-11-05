@@ -150,14 +150,15 @@ authority for a compiler milestone.
 
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
 `full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
-`self-hosting`. Selecting `full` runs the unchanged canonical full gate on
-Ubuntu and native Windows; the other choices run only their named gate. The
-local `python scripts/gate.py
-full --durations 50` and native Windows wrapper remain available for manual
-milestone validation. Record the exact commit and terminal result for each
-long run, and do not infer a pass from the short PR check. Platform-specific
-workflow steps provision dependencies only; semantic test selection remains in
-`scripts/gate.py`.
+`self-hosting`. Selecting `full` runs `full-pytest` and `full-acceptance` as
+separate canonical gate phases on each platform. The per-platform `full gate`
+status succeeds only when both phases pass. This keeps each hosted job below
+GitHub's six-hour limit; the local `python scripts/gate.py full --durations 50`
+and native Windows wrapper still run the same phases together. The diagnostic
+dispatch choices run only their named focused checks and do not qualify a full
+gate. Record the exact commit and terminal result for each long run, and do not
+infer a pass from the short PR check. Platform-specific workflow steps
+provision dependencies only; semantic test selection remains in `scripts/gate.py`.
 
 The objective is one validation contract across local humans, WSL, native
 Windows, GitHub-hosted runners, remote Codex, and local Jan agents.

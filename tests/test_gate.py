@@ -70,6 +70,21 @@ def test_full_gate_runs_replacement_acceptance_once_as_reported_phase(monkeypatc
     assert result["replacement_acceptance"] is True
 
 
+def test_hosted_full_phases_preserve_canonical_full_work(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(gate, "pytest", lambda *args, **kwargs: events.append("pytest"))
+    monkeypatch.setattr(gate, "run_acceptance_replacement", lambda: events.append("replacement"))
+    monkeypatch.setattr(gate, "run_acceptance", lambda: events.append("acceptance"))
+
+    first = gate.run_gate("full-pytest", 50, fail_fast=False)
+    second = gate.run_gate("full-acceptance", 50, fail_fast=False)
+
+    assert events == ["pytest", "replacement", "acceptance"]
+    assert first["replacement_acceptance"] is False
+    assert second["replacement_acceptance"] is True
+    assert second["acceptance_projects"] == 10
+
+
 def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
     calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
 
