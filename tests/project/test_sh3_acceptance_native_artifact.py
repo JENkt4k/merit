@@ -600,6 +600,8 @@ def test_native_compiler_project_mir_matches_independent_oracle(
     artifact = decode_native_project_artifact_transport(
         int(line) for line in native_response.stdout.splitlines()
     )
+    actual = artifact.canonical_mir_bytes
+    del native_response, artifact
     legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
     assert legacy_response.returncode == 0, legacy_response.stderr.decode(
         "utf-8", errors="replace"
@@ -607,19 +609,21 @@ def test_native_compiler_project_mir_matches_independent_oracle(
     bundle = decode_resolved_source_function_bundle(
         int(line) for line in legacy_response.stdout.splitlines()
     )
+    del legacy_response, request
+    source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    capability_names = {index: name for index, name in enumerate(bundle.capability_names)}
     oracle = build_replacement_project_artifact(
         (
             ReplacementFunctionInput.from_values(
-                source=bytes(bundle.functions[0].effective_source_bytes).decode("utf-8"),
+                source=source,
                 module_name=bundle.module_name,
                 snapshot_values=values,
-                capability_names={index: name for index, name in enumerate(bundle.capability_names)},
+                capability_names=capability_names,
             )
             for values in bundle.encoded_snapshots
         ), module_name=bundle.module_name,
     )
     expected = canonical_mir_json(oracle.module).encode("utf-8")
-    actual = artifact.canonical_mir_bytes
     if actual != expected:
         first_difference = next(
             (index for index, (left, right) in enumerate(zip(actual, expected)) if left != right),
