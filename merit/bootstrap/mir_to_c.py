@@ -555,10 +555,11 @@ def _instruction(
                 ordinal_value = int(ordinal)
                 if ordinal_value >= len(recursive[1]) or recursive[1][ordinal_value].name != "i64":
                     raise MirToCError("payload-free owned enum constructor is outside represented storage")
-            payload_initializer = "{0}" if result_type.arguments else "0"
+            if not result_type.arguments and recursive is None:
+                return [f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}) }};"]
             return [
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
-                f".payload = {payload_initializer} }};"
+                ".payload = {0} };"
             ]
         aggregate = _aggregate_struct_identity(result_type)
         if aggregate is not None:
@@ -607,7 +608,7 @@ def _instruction(
                 f"{result} = ({_type(result_type)}) {{ .tag = INT64_C({ordinal}), "
                 f".payload.variant_{ordinal} = {operands[0]} }};"
             ]
-        return [f"{result} = ({_type(local_types[instruction.result])}) {{ INT64_C({ordinal}), {operands[0]} }};"]
+        raise MirToCError("copy-payload enum construction requires a represented variant payload")
     if kind == "load_field":
         if result is None or len(operands) != 1 or not instruction.symbol:
             raise MirToCError("aggregate field load requires one receiver and a field symbol")
@@ -1298,12 +1299,12 @@ def emit_c_header(
                     for ordinal, payload in enumerate(type_.arguments)
                 )
                 lines.append(
-                    f"typedef struct {{ int64_t tag; union {{ {fields} }} payload; }} "
+                    f"typedef struct {{ int32_t tag; union {{ {fields} }} payload; }} "
                     f"merit_enum_copy_payload_{identity};"
                 )
             else:
                 lines.append(
-                    f"typedef struct {{ int64_t tag; int64_t payload; }} "
+                    f"typedef struct {{ int32_t tag; }} "
                     f"merit_enum_copy_payload_{identity};"
                 )
             emitted_enums.add(identity)
@@ -1893,14 +1894,14 @@ def emit_c_module(module: MirModule) -> str:
         prelude.extend([
             *[
                 (
-                    "typedef struct { int64_t tag; union { "
+                    "typedef struct { int32_t tag; union { "
                     + " ".join(
                         f"{_type(payload)} variant_{ordinal};"
                         for ordinal, payload in enumerate(type_.arguments)
                     )
                     + f" }} payload; }} merit_enum_copy_payload_{identity};"
                     if type_.arguments else
-                    f"typedef struct {{ int64_t tag; int64_t payload; }} merit_enum_copy_payload_{identity};"
+                    f"typedef struct {{ int32_t tag; }} merit_enum_copy_payload_{identity};"
                 )
                 for identity in enum_identities
                 for type_ in (copy_payload_enums[identity],)

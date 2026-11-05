@@ -443,7 +443,7 @@ def test_emits_bootstrap_buffer_append_with_borrow_modes_and_bounds(tmp_path):
 
 
 def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
-    choice = MirType("enum_copy_payload_0")
+    choice = MirType("enum_copy_payload_0", (I64,))
     function = MirFunction(
         "payload",
         I64,
@@ -460,7 +460,7 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
                 MirInstruction(2, "load_field", result=2, operands=(1,), symbol="tag"),
             ), MirTerminator("switch", operands=(2,), targets=(1, 2), cases=(0,))),
             MirBlock(1, (
-                MirInstruction(3, "load_field", result=3, operands=(1,), symbol="payload"),
+                MirInstruction(3, "load_field", result=3, operands=(1,), symbol="payload_0"),
             ), MirTerminator("return", operands=(3,))),
             MirBlock(2, (), MirTerminator("return", operands=(2,))),
         ),
@@ -468,12 +468,40 @@ def test_emits_copy_payload_enum_construct_tag_and_payload(tmp_path):
     )
     module = scalar_module(function)
     generated = emit_c_module(module)
-    assert "typedef struct { int64_t tag; int64_t payload; } merit_enum_copy_payload_0;" in generated
-    assert "m1 = (merit_enum_copy_payload_0) { INT64_C(0), m0 };" in generated
+    assert "typedef struct { int32_t tag; union { int64_t variant_0; } payload; } merit_enum_copy_payload_0;" in generated
+    assert "m1 = (merit_enum_copy_payload_0) { .tag = INT64_C(0), .payload.variant_0 = m0 };" in generated
     assert "m2 = m1.tag;" in generated
-    assert "m3 = m1.payload;" in generated
+    assert "m3 = m1.payload.variant_0;" in generated
     run = compile_and_run(tmp_path, module, "int main(void) { return payload() == 7 ? 0 : 1; }")
     assert run.returncode == 0
+
+
+def test_payload_free_copy_enum_uses_reference_tag_layout(tmp_path):
+    choice = MirType("enum_copy_payload_0")
+    function = MirFunction(
+        "empty_variant", I64,
+        (MirLocal(0, "choice", choice), MirLocal(1, "tag", I64)),
+        (MirBlock(0, (
+            MirInstruction(0, "construct", result=0, symbol="variant_1"),
+            MirInstruction(1, "load_field", result=1, operands=(0,), symbol="tag"),
+        ), MirTerminator("return", operands=(1,))),),
+        0,
+    )
+    module = scalar_module(function)
+    generated = emit_c_module(module)
+    assert "typedef struct { int32_t tag; } merit_enum_copy_payload_0;" in generated
+    assert "m0 = (merit_enum_copy_payload_0) { .tag = INT64_C(1) };" in generated
+    run = compile_and_run(
+        tmp_path, module,
+        "_Static_assert(sizeof(merit_enum_copy_payload_0) == 4, \"enum tag ABI\"); "
+        "int main(void) { return empty_variant() == 1 ? 0 : 1; }",
+    )
+    assert run.returncode == 0
+    with pytest.raises(MirToCError, match="represented variant payload"):
+        _instruction(
+            MirInstruction(0, "construct", result=0, operands=(1,), symbol="variant_0"),
+            {1: "m1"}, {0: choice},
+        )
 
 
 def test_owned_enum_payload_free_construct_uses_inert_storage_and_rejects_wrong_type():

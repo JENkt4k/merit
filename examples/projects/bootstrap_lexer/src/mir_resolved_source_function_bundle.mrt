@@ -4670,7 +4670,7 @@ requires_caps [allocate]
                             canonical_mir_append_text(bodies,") { .tag = INT64_C(");
                             canonical_mir_append_i32(bodies,variant);
                             if(payload_count>0){canonical_mir_append_text(bodies,"), .payload = {0} };\n");}
-                            else{canonical_mir_append_text(bodies,"), .payload = 0 };\n");}
+                            else{canonical_mir_append_text(bodies,") };\n");}
                         }else{if(payload_count>0){
                             canonical_mir_append_text(bodies,") { .tag = INT64_C(");
                             canonical_mir_append_i32(bodies,variant);
@@ -4678,12 +4678,7 @@ requires_caps [allocate]
                             canonical_mir_append_i32(bodies,variant);
                             canonical_mir_append_text(bodies," = m");canonical_mir_append_i64(bodies,payload_local);
                             canonical_mir_append_text(bodies," };\n");
-                        }else{
-                            canonical_mir_append_text(bodies,") { INT64_C(");
-                            canonical_mir_append_i32(bodies,variant);
-                            canonical_mir_append_text(bodies,"), m");canonical_mir_append_i64(bodies,payload_local);
-                            canonical_mir_append_text(bodies," };\n");
-                        }}
+                        }else{return canonical_c_aggregate_invalid_record_status();}}
                     }
                     if(instruction_kind==function_mir_kind_enum_tag_load()){
                         let result_local:i64=function_mir_result(instruction);
@@ -6234,9 +6229,9 @@ requires_caps [allocate]
             index=checked_add(index,1);
         }
         if(ordinal==0){
-            canonical_mir_append_text(output,"typedef struct { int64_t tag; int64_t payload; } merit_enum_copy_payload_");
+            canonical_mir_append_text(output,"typedef struct { int32_t tag; } merit_enum_copy_payload_");
         }else{
-            canonical_mir_append_text(output,"typedef struct { int64_t tag; union { ");
+            canonical_mir_append_text(output,"typedef struct { int32_t tag; union { ");
             index=0;var field_ordinal:i32=0;
             while(index<vec_len<MirTypeDescriptor>(descriptors)){
                 let item:MirTypeDescriptor=vec_get<MirTypeDescriptor>(descriptors,index);

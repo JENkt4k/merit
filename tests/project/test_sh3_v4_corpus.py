@@ -534,6 +534,8 @@ def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
         "-o", str(output),
     ]) == 0
     header = output.with_suffix(".h").read_bytes()
+    assert b"typedef struct { int32_t tag; } merit_enum_copy_payload_0;" in header
+    assert b"typedef struct { int32_t tag; union {" in header
     reference_header = oracle_header.read_bytes()
     manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
