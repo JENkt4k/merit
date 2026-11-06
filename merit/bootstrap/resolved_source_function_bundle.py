@@ -305,7 +305,8 @@ def decode_native_project_artifact_transport(
             raise ResolvedSourceFunctionBundleError(f"bundle function {index} is truncated or empty")
         for _ in range(length):
             read_value(f"function {index}")
-    if read_value("metadata") != _METADATA_MAGIC:
+    metadata_magic = next(data, missing)
+    if metadata_magic is missing or metadata_magic != _METADATA_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing metadata")
     try:
         module_name = length_delimited("module name", nonempty=True).decode("utf-8")
@@ -318,7 +319,8 @@ def decode_native_project_artifact_transport(
         )
     except UnicodeDecodeError as exc:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid metadata UTF-8") from exc
-    if read_value("project artifacts") != _PROJECT_ARTIFACT_MAGIC:
+    artifact_magic = next(data, missing)
+    if artifact_magic is missing or artifact_magic != _PROJECT_ARTIFACT_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing project artifacts")
     canonical_mir = length_delimited("canonical MIR", nonempty=True)
     c_source = length_delimited("C source", nonempty=True)
