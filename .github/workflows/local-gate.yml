@@ -357,7 +357,21 @@ jobs:
           python scripts/gate.py full-pytest --durations 50
       - name: Diagnose first full-suite failure
         if: inputs.gate == 'full-diagnostic'
-        run: python -m pytest -q -x -n 2 --dist loadfile tests --ignore=tests/project/test_acceptance_replacement_migration.py --durations=10
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          (
+            while true; do
+              echo "::group::Memory at $(date -u +%FT%TZ)"
+              free -m
+              ps -eo pid,ppid,rss,comm --sort=-rss | head -n 12
+              echo "::endgroup::"
+              sleep 60
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          PYTHONUNBUFFERED=1 python -m pytest -vv -x -n 2 --dist loadfile tests --ignore=tests/project/test_acceptance_replacement_migration.py --durations=10
       - name: Diagnose ledger shared-library ABI
         if: inputs.gate == 'ledger-diagnostic'
         run: python -m pytest -q -s tests/project/test_sh3_v4_corpus.py::test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi
