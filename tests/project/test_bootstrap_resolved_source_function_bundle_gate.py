@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import gc
 import re
 import shutil
 import subprocess
@@ -36,6 +37,15 @@ from merit.project.loader import load_project
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
+
+
+@pytest.fixture(autouse=True)
+def _release_compiler_graphs_after_probe():
+    yield
+    # Each probe loads and builds the complete bootstrap compiler project.
+    # Collect cycles between cases so a file-affine pytest worker does not
+    # retain several independent compiler graphs at once.
+    gc.collect()
 
 
 def _selected_c_header(module: MirModule) -> str:
