@@ -230,6 +230,8 @@ jobs:
           python -m pip install --no-build-isolation -e ".[dev]"
       - name: Diagnose bootstrap acceptance memory
         shell: bash
+        env:
+          MERIT_TRANSPORT_DIAGNOSTIC: "1"
         run: |
           set -Eeuo pipefail
           echo "Runner memory before test"

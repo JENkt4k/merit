@@ -144,6 +144,10 @@ def _run_driver(
                 f"{completed.returncode}: {'; '.join(streams)}"
             )
         stdout_file.seek(0)
+        if os.environ.get("MERIT_TRANSPORT_DIAGNOSTIC") == "1":
+            stdout_file.seek(0, os.SEEK_END)
+            print(f"MERIT_TRANSPORT_STDOUT_BYTES={stdout_file.tell()}", flush=True)
+            stdout_file.seek(0)
         try:
             values = (int(line.strip()) for line in stdout_file if line.strip())
             first = next(values, None)
