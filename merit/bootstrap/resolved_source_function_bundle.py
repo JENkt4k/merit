@@ -261,53 +261,50 @@ def decode_native_project_artifact_transport(
 ) -> NativeProjectArtifactTransport:
     """Validate v4 framing without importing Python snapshot semantics."""
 
-    data = tuple(int(value) for value in values)
-    if len(data) < _BUNDLE_HEADER_WIDTH or data[_BUNDLE_MAGIC_INDEX] != BUNDLE_MAGIC:
+    data = iter(values)
+    missing = object()
+
+    def read_value(label: str) -> int:
+        value = next(data, missing)
+        if value is missing:
+            raise ResolvedSourceFunctionBundleError(
+                f"resolved source function bundle has truncated {label}"
+            )
+        return int(value)
+
+    if read_value("header") != BUNDLE_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
-    if data[_BUNDLE_VERSION_INDEX] != PROJECT_ARTIFACT_BUNDLE_VERSION:
+    if read_value("header") != PROJECT_ARTIFACT_BUNDLE_VERSION:
         raise ResolvedSourceFunctionBundleError("native project artifacts require bundle v4")
-    count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
+    count = read_value("function count")
     if count < 0:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid function count")
 
-    position = _BUNDLE_HEADER_WIDTH
-
     def length_delimited(label: str, *, nonempty: bool = False) -> bytes:
-        nonlocal position
-        if position >= len(data):
-            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has truncated {label}")
-        length = data[position]
-        position += 1
+        length = read_value(label)
         if length < 0 or (nonempty and length == 0):
             raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} length")
-        end = position + length
-        if end > len(data):
-            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has truncated {label}")
-        payload = data[position:end]
-        position = end
-        if any(value < 0 or value > 255 for value in payload):
-            raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} byte")
+        payload = bytearray()
+        for _ in range(length):
+            value = read_value(label)
+            if value < 0 or value > 255:
+                raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} byte")
+            payload.append(value)
         return bytes(payload)
 
     for index in range(count):
         # Snapshot rows are not interpreted by the host in the native artifact
         # protocol. Their length still has to frame the following metadata.
-        if position >= len(data):
-            raise ResolvedSourceFunctionBundleError(f"bundle is missing function {index} length")
-        length = data[position]
-        position += 1
-        if length <= 0 or position + length > len(data):
+        length = read_value(f"function {index} length")
+        if length <= 0:
             raise ResolvedSourceFunctionBundleError(f"bundle function {index} is truncated or empty")
-        position += length
-    if position >= len(data) or data[position] != _METADATA_MAGIC:
+        for _ in range(length):
+            read_value(f"function {index}")
+    if read_value("metadata") != _METADATA_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing metadata")
-    position += 1
     try:
         module_name = length_delimited("module name", nonempty=True).decode("utf-8")
-        if position >= len(data):
-            raise ResolvedSourceFunctionBundleError("resolved source function bundle has truncated capabilities")
-        capability_count = data[position]
-        position += 1
+        capability_count = read_value("capabilities")
         if capability_count < 0:
             raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid capability count")
         capability_names = tuple(
@@ -316,13 +313,12 @@ def decode_native_project_artifact_transport(
         )
     except UnicodeDecodeError as exc:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid metadata UTF-8") from exc
-    if position >= len(data) or data[position] != _PROJECT_ARTIFACT_MAGIC:
+    if read_value("project artifacts") != _PROJECT_ARTIFACT_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is missing project artifacts")
-    position += 1
     canonical_mir = length_delimited("canonical MIR", nonempty=True)
     c_source = length_delimited("C source", nonempty=True)
     c_header = length_delimited("C header", nonempty=True)
-    if position != len(data):
+    if next(data, missing) is not missing:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
     return NativeProjectArtifactTransport(
         module_name, capability_names, canonical_mir, c_source, c_header,
