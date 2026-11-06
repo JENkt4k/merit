@@ -85,6 +85,33 @@ def test_hosted_full_phases_preserve_canonical_full_work(monkeypatch) -> None:
     assert second["acceptance_projects"] == 10
 
 
+def test_isolated_bundle_runs_every_collected_case_in_fresh_batches(monkeypatch) -> None:
+    cases = [f"{gate.BOOTSTRAP_BUNDLE_TEST}::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda *args, **kwargs: collected)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: commands.append(tuple(paths)))
+
+    assert gate.pytest_isolated_bootstrap_bundle(fail_fast=False) == 11
+    assert commands == [tuple(cases[:5]), tuple(cases[5:10]), tuple(cases[10:])]
+
+
+def test_isolated_full_gate_excludes_only_the_separately_covered_file(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest_isolated_bootstrap_bundle", lambda **kwargs: 368)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, isolate_bootstrap_bundle=True)
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+    )]
+    assert result["isolated_bootstrap_cases"] == 368
+
+
 def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
     calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
 

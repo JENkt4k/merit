@@ -354,7 +354,7 @@ jobs:
         if: inputs.gate == 'full'
         run: |
           python scripts/doctor.py --full
-          python scripts/gate.py full-pytest --durations 50
+          python scripts/gate.py full-pytest --durations 50 --isolate-bootstrap-bundle
       - name: Diagnose first full-suite failure
         if: inputs.gate == 'full-diagnostic'
         shell: bash
@@ -371,7 +371,7 @@ jobs:
           ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
-          PYTHONUNBUFFERED=1 python -m pytest -vv -x -n 2 --dist loadfile tests --ignore=tests/project/test_acceptance_replacement_migration.py --durations=10
+          PYTHONUNBUFFERED=1 python scripts/gate.py full-pytest --fail-fast --isolate-bootstrap-bundle --durations 10
       - name: Diagnose ledger shared-library ABI
         if: inputs.gate == 'ledger-diagnostic'
         run: python -m pytest -q -s tests/project/test_sh3_v4_corpus.py::test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi

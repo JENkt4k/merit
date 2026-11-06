@@ -59,6 +59,8 @@ SUBSYSTEM_TESTS = (
 PARALLEL_TEST_WORKERS = 2
 PARALLEL_TEST_DISTRIBUTION = "loadfile"
 M7_ACCEPTANCE_TEST = "tests/project/test_acceptance_replacement_migration.py"
+BOOTSTRAP_BUNDLE_TEST = "tests/project/test_bootstrap_resolved_source_function_bundle_gate.py"
+BOOTSTRAP_BUNDLE_BATCH_SIZE = 5
 
 
 class GateFailure(RuntimeError):
@@ -104,6 +106,29 @@ def pytest(
     if durations is not None:
         command.append(f"--durations={durations}")
     run(command)
+
+
+def pytest_isolated_bootstrap_bundle(*, fail_fast: bool) -> int:
+    """Run every bundle probe in fresh, bounded-size pytest processes."""
+
+    collect = [sys.executable, "-m", "pytest", "--collect-only", "-q", BOOTSTRAP_BUNDLE_TEST]
+    print("+ " + subprocess.list2cmdline(collect), flush=True)
+    completed = subprocess.run(collect, cwd=REPOSITORY_ROOT, text=True, capture_output=True)
+    if completed.returncode != 0:
+        raise GateFailure(f"bootstrap bundle collection failed: {completed.stdout}\n{completed.stderr}")
+    cases = tuple(
+        line for line in completed.stdout.splitlines()
+        if line.startswith(f"{BOOTSTRAP_BUNDLE_TEST}::")
+    )
+    if not cases or len(cases) != len(set(cases)):
+        raise GateFailure("bootstrap bundle collection is empty or contains duplicate cases")
+    print(f"isolated_bootstrap_cases={len(cases)}", flush=True)
+    for offset in range(0, len(cases), BOOTSTRAP_BUNDLE_BATCH_SIZE):
+        batch = cases[offset:offset + BOOTSTRAP_BUNDLE_BATCH_SIZE]
+        print(f"bootstrap_bundle_batch={offset // BOOTSTRAP_BUNDLE_BATCH_SIZE + 1}/"
+              f"{(len(cases) + BOOTSTRAP_BUNDLE_BATCH_SIZE - 1) // BOOTSTRAP_BUNDLE_BATCH_SIZE}", flush=True)
+        pytest(batch, fail_fast=fail_fast)
+    return len(cases)
 
 
 def verify_project(name: str, path: Path, output: Path | None = None, cwd: Path = REPOSITORY_ROOT) -> None:
@@ -179,8 +204,12 @@ def run_self_hosting() -> dict[str, object]:
     return payload
 
 
-def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, object]:
+def run_gate(
+    name: str, durations: int | None, *, fail_fast: bool,
+    isolate_bootstrap_bundle: bool = False,
+) -> dict[str, object]:
     started = time.monotonic()
+    isolated_cases = 0
     if name == "smoke":
         with group("pytest: smoke"):
             pytest(SMOKE_TESTS, durations=durations, fail_fast=fail_fast)
@@ -215,9 +244,13 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
     elif name == "self-hosting":
         return run_self_hosting()
     elif name in {"full", "full-pytest"}:
+        if isolate_bootstrap_bundle:
+            with group("pytest: process-isolated bootstrap bundle probes"):
+                isolated_cases = pytest_isolated_bootstrap_bundle(fail_fast=fail_fast)
         with group("pytest: full"):
             pytest(
-                ["tests", f"--ignore={M7_ACCEPTANCE_TEST}"],
+                ["tests", f"--ignore={M7_ACCEPTANCE_TEST}",
+                 *([f"--ignore={BOOTSTRAP_BUNDLE_TEST}"] if isolate_bootstrap_bundle else [])],
                 durations=durations,
                 fail_fast=fail_fast,
                 workers=PARALLEL_TEST_WORKERS,
@@ -242,6 +275,7 @@ def run_gate(name: str, durations: int | None, *, fail_fast: bool) -> dict[str, 
         "corpus_convergence": name in {"corpus", "pr"},
         "replacement_acceptance": name in {"acceptance-replacement", "full", "full-acceptance"},
         "stage_reproducibility": name == "reproducibility",
+        "isolated_bootstrap_cases": isolated_cases,
     }
 
 
@@ -263,6 +297,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--durations", nargs="?", type=int, const=50, help="show the N slowest pytest tests (default 50 when flag is present)")
     parser.add_argument("--fail-fast", action="store_true", help="stop pytest at the first failure")
+    parser.add_argument(
+        "--isolate-bootstrap-bundle", action="store_true",
+        help="run all bootstrap bundle tests in small fresh pytest processes (hosted Linux memory)",
+    )
     parser.add_argument("--result-json", type=Path, help="result JSON destination; defaults to .merit/gates/<gate>/result.json")
     return parser.parse_args()
 
@@ -277,7 +315,10 @@ def main() -> int:
 
     started = time.monotonic()
     try:
-        result = run_gate(args.gate, args.durations, fail_fast=args.fail_fast)
+        result = run_gate(
+            args.gate, args.durations, fail_fast=args.fail_fast,
+            isolate_bootstrap_bundle=args.isolate_bootstrap_bundle,
+        )
     except (GateFailure, OSError) as exc:
         result = {
             "gate": args.gate,

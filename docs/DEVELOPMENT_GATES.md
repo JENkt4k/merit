@@ -88,6 +88,12 @@ boundary intact while independent native probe builds run concurrently. Direct
 focused pytest commands remain serial unless the developer explicitly selects
 parallel execution.
 
+Hosted Ubuntu full pytest uses `--isolate-bootstrap-bundle` to collect every
+test in the large bootstrap bundle probe file and run them in batches of five
+through fresh pytest processes. The remaining files retain the normal two-worker
+gate. This preserves coverage while bounding memory on the hosted runner; the
+gate reports the separately executed case count.
+
 Each gate writes a machine-readable terminal result to:
 
 ```text
