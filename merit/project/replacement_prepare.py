@@ -168,7 +168,7 @@ def _run_driver(
             bundle = (
                 decode_native_project_artifact_transport(framed_values)
                 if second == PROJECT_ARTIFACT_BUNDLE_VERSION
-                else decode_resolved_source_function_bundle(framed_values)
+                else decode_resolved_source_function_bundle(framed_values, retain_decoded=False)
             )
         except ValueError as exc:
             if not isinstance(exc, ResolvedSourceFunctionBundleError):
@@ -238,8 +238,8 @@ def prepare_replacement_artifacts(
     )
     if not isinstance(bundle, NativeProjectArtifactTransport):
         try:
-            project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
-        except (IndexError, UnicodeDecodeError) as exc:
+            project_source = bytes(bundle.effective_source_bytes).decode("utf-8")
+        except UnicodeDecodeError as exc:
             raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
         digest = _source_digest(project_source)
         capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}

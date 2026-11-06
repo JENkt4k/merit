@@ -55,6 +55,20 @@ def test_bundle_v2_deduplicates_and_rehydrates_effective_source() -> None:
     assert decoded.functions[1].effective_source_bytes == source
 
 
+def test_bundle_preparation_validates_without_retaining_hydrated_functions() -> None:
+    source = tuple(b"module main")
+    snapshot = _snapshot(source)
+    encoded = encode_resolved_source_function_bundle((snapshot, snapshot))
+
+    prepared = decode_resolved_source_function_bundle(encoded, retain_decoded=False)
+    ordinary = decode_resolved_source_function_bundle(encoded)
+
+    assert prepared.functions == ()
+    assert prepared.encoded_snapshots == ordinary.encoded_snapshots
+    assert prepared.effective_source_bytes == source
+    assert prepared.module_name == ordinary.module_name
+
+
 def test_bundle_v1_remains_decodable() -> None:
     snapshot = _snapshot(tuple("old".encode()))
     encoded = (BUNDLE_MAGIC, 1, 1, len(snapshot), *snapshot)

@@ -47,6 +47,7 @@ class ResolvedSourceFunctionBundle:
     canonical_mir_bytes: bytes = b""
     c_source_bytes: bytes = b""
     c_header_bytes: bytes = b""
+    effective_source_bytes: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,8 @@ def encode_resolved_source_function_bundle(
 
 def decode_resolved_source_function_bundle(
     values: Iterable[int],
+    *,
+    retain_decoded: bool = True,
 ) -> ResolvedSourceFunctionBundle:
     from merit.bootstrap.resolved_source_function_snapshot import decode_resolved_source_function_snapshot
 
@@ -165,11 +168,11 @@ def decode_resolved_source_function_bundle(
             raise ResolvedSourceFunctionBundleError(
                 f"resolved source function bundle function {index} is invalid: {exc}"
             ) from exc
+        if index == 0:
+            shared_source = snapshot.effective_source_bytes
         if bundle_version >= 2:
             source = snapshot.effective_source_bytes
-            if index == 0:
-                shared_source = source
-            elif not source and shared_source:
+            if index > 0 and not source and shared_source:
                 snapshot_values = snapshot_values[:-1] + (len(shared_source), *shared_source)
                 snapshot = decode_resolved_source_function_snapshot(snapshot_values)
             elif source != shared_source:
@@ -181,7 +184,8 @@ def decode_resolved_source_function_bundle(
         # artifacts can continue to share the canonical source supplied by the
         # project unit instead of duplicating it into every snapshot file.
         encoded.append(encoded_snapshot_values)
-        decoded.append(snapshot)
+        if retain_decoded:
+            decoded.append(snapshot)
         position = end
 
     module_name = ""
@@ -254,6 +258,7 @@ def decode_resolved_source_function_bundle(
     return ResolvedSourceFunctionBundle(
         tuple(decoded), tuple(encoded), module_name, capability_names,
         canonical_mir_bytes, c_source_bytes, c_header_bytes,
+        shared_source,
     )
 
 
