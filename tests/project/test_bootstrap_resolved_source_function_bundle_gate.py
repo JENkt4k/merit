@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 import re
 import shutil
 import subprocess
@@ -36,6 +37,11 @@ from merit.project.loader import load_project
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
+
+# The file builds the full compiler for many independent probes. On Unix,
+# release each probe's compiler graph with its child process before the next
+# probe runs in the same file-affine xdist worker.
+pytestmark = pytest.mark.forked if sys.platform != "win32" else []
 
 
 def _selected_c_header(module: MirModule) -> str:
