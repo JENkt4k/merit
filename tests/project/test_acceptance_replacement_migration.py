@@ -106,39 +106,27 @@ def test_acceptance_project_converges_through_replacement(
     acceptance_replacement_driver: NativeReplacementDriver,
     name: str,
 ) -> None:
-    def phase(label: str) -> None:
-        if name == "bootstrap_lexer":
-            print(f"M7_BOOTSTRAP_PHASE={label}", flush=True)
-
     reference_root = _copy_project(tmp_path, name, "reference")
     replacement_root = _copy_project(tmp_path, name, "replacement")
 
     reference_project = load_project(reference_root / "Merit.toml")
     replacement_project = load_project(replacement_root / "Merit.toml")
 
-    phase("reference-build-start")
     _, _, reference_executable = build(reference_project, tmp_path / f"reference-{name}")
-    phase("reference-build-end")
     reference = _run(reference_executable, reference_root)
     assert reference[0] == 0, (name, reference)
     reference_tree = _observable_tree(reference_root)
 
-    phase("replacement-prepare-first-start")
     prepare_replacement_artifacts(replacement_project, acceptance_replacement_driver)
-    phase("replacement-prepare-first-end")
     first_generation = _generation_bytes(replacement_root)
-    phase("replacement-prepare-second-start")
     prepare_replacement_artifacts(replacement_project, acceptance_replacement_driver)
-    phase("replacement-prepare-second-end")
     second_generation = _generation_bytes(replacement_root)
     assert second_generation == first_generation, name
 
-    phase("legacy-oracle-build-start")
     replacement_artifact = build_legacy_oracle_project(
         replacement_project,
         tmp_path / f"replacement-{name}",
     )
-    phase("legacy-oracle-build-end")
     replacement = _run(replacement_artifact.executable, replacement_root)
     assert replacement[0] == 0, (name, replacement)
     replacement_tree = _observable_tree(replacement_root)

@@ -16,7 +16,6 @@ MIR, C source, and header artifacts without any legacy snapshot row.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
@@ -288,8 +287,6 @@ def decode_native_project_artifact_transport(
 
     def length_delimited(label: str, *, nonempty: bool = False) -> bytes:
         length = read_value(label)
-        if os.environ.get("MERIT_TRANSPORT_DIAGNOSTIC") == "1":
-            print(f"MERIT_TRANSPORT_FIELD={label}:{length}", flush=True)
         if length < 0 or (nonempty and length == 0):
             raise ResolvedSourceFunctionBundleError(f"resolved source function bundle has invalid {label} length")
         payload = bytearray()
