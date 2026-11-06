@@ -152,11 +152,19 @@ def _run_driver(
             values = (int(line.strip()) for line in stdout_file if line.strip())
             first = next(values, None)
             second = next(values, None)
+            third = next(values, None)
+            if os.environ.get("MERIT_TRANSPORT_DIAGNOSTIC") == "1":
+                print(f"MERIT_TRANSPORT_HEADER={first},{second},{third}", flush=True)
             if first is None:
                 raise ReplacementProjectError(
                     f"replacement driver emitted no bundle for project {project_name!r}"
                 )
-            framed_values = itertools.chain((first,), () if second is None else (second,), values)
+            framed_values = itertools.chain(
+                (first,),
+                () if second is None else (second,),
+                () if third is None else (third,),
+                values,
+            )
             bundle = (
                 decode_native_project_artifact_transport(framed_values)
                 if second == PROJECT_ARTIFACT_BUNDLE_VERSION
