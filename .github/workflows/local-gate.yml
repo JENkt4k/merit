@@ -358,6 +358,10 @@ jobs:
       - name: Diagnose first full-suite failure
         if: inputs.gate == 'full-diagnostic'
         shell: bash
+        env:
+          PYTHONMALLOC: malloc
+          MALLOC_ARENA_MAX: "2"
+          MALLOC_TRIM_THRESHOLD_: "131072"
         run: |
           set -Eeuo pipefail
           (
