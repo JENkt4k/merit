@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -593,24 +594,30 @@ def test_native_compiler_project_mir_matches_independent_oracle(
     project = load_project(ROOT / "examples" / "projects" / "bootstrap_lexer" / "Merit.toml")
     request = encode_loaded_project_request(project, header_exports=())
     native_compiler, legacy_compiler = compiler_paths
-    native_response = subprocess.run([str(native_compiler)], input=request, capture_output=True)
-    assert native_response.returncode == 0, native_response.stderr.decode(
-        "utf-8", errors="replace"
-    )
-    artifact = decode_native_project_artifact_transport(
-        int(line) for line in native_response.stdout.splitlines()
-    )
+    with tempfile.TemporaryFile(mode="w+b") as output:
+        native_response = subprocess.run(
+            [str(native_compiler)], input=request, stdout=output, stderr=subprocess.PIPE,
+        )
+        assert native_response.returncode == 0, native_response.stderr.decode(
+            "utf-8", errors="replace"
+        )
+        output.seek(0)
+        artifact = decode_native_project_artifact_transport(int(line) for line in output)
     actual = artifact.canonical_mir_bytes
     del native_response, artifact
-    legacy_response = subprocess.run([str(legacy_compiler)], input=request, capture_output=True)
-    assert legacy_response.returncode == 0, legacy_response.stderr.decode(
-        "utf-8", errors="replace"
-    )
-    bundle = decode_resolved_source_function_bundle(
-        int(line) for line in legacy_response.stdout.splitlines()
-    )
+    with tempfile.TemporaryFile(mode="w+b") as output:
+        legacy_response = subprocess.run(
+            [str(legacy_compiler)], input=request, stdout=output, stderr=subprocess.PIPE,
+        )
+        assert legacy_response.returncode == 0, legacy_response.stderr.decode(
+            "utf-8", errors="replace"
+        )
+        output.seek(0)
+        bundle = decode_resolved_source_function_bundle(
+            (int(line) for line in output), retain_decoded=False,
+        )
     del legacy_response, request
-    source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
+    source = bytes(bundle.effective_source_bytes).decode("utf-8")
     capability_names = {index: name for index, name in enumerate(bundle.capability_names)}
     oracle = build_replacement_project_artifact(
         (
@@ -623,6 +630,7 @@ def test_native_compiler_project_mir_matches_independent_oracle(
             for values in bundle.encoded_snapshots
         ), module_name=bundle.module_name,
     )
+    del bundle
     expected = canonical_mir_json(oracle.module).encode("utf-8")
     if actual != expected:
         first_difference = next(
