@@ -95,7 +95,25 @@ def test_isolated_bundle_runs_every_collected_case_in_fresh_batches(monkeypatch)
     monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: commands.append(tuple(paths)))
 
     assert gate.pytest_isolated_bootstrap_bundle(fail_fast=False) == 11
-    assert commands == [tuple(cases[:5]), tuple(cases[5:10]), tuple(cases[10:])]
+    assert commands == [(case,) for case in cases]
+
+
+def test_bootstrap_bundle_shards_cover_every_case_once(monkeypatch) -> None:
+    cases = [f"{gate.BOOTSTRAP_BUNDLE_TEST}::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda *args, **kwargs: collected)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: commands.append(tuple(paths)))
+
+    counts = [gate.pytest_isolated_bootstrap_bundle(
+        fail_fast=False, shard_index=index, shard_count=4,
+    ) for index in range(4)]
+
+    assert counts == [3, 3, 3, 2]
+    assert sorted(case for batch in commands for case in batch) == sorted(cases)
+    assert all(len(batch) == 1 for batch in commands)
 
 
 def test_isolated_full_gate_excludes_only_the_separately_covered_file(monkeypatch) -> None:
@@ -110,6 +128,18 @@ def test_isolated_full_gate_excludes_only_the_separately_covered_file(monkeypatc
         f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
     )]
     assert result["isolated_bootstrap_cases"] == 368
+
+
+def test_hosted_full_pytest_excludes_bundle_only_when_shards_cover_it(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    gate.run_gate("full-pytest", None, fail_fast=False, exclude_bootstrap_bundle=True)
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+    )]
 
 
 def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:

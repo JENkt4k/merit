@@ -88,11 +88,13 @@ boundary intact while independent native probe builds run concurrently. Direct
 focused pytest commands remain serial unless the developer explicitly selects
 parallel execution.
 
-Hosted Ubuntu full pytest uses `--isolate-bootstrap-bundle` to collect every
-test in the large bootstrap bundle probe file and run them in batches of five
-through fresh pytest processes. The remaining files retain the normal two-worker
-gate. This preserves coverage while bounding memory on the hosted runner; the
-gate reports the separately executed case count.
+Hosted Ubuntu full pytest divides the large bootstrap bundle probe file into
+four deterministic shards. Each shard collects the complete file and runs its
+assigned cases in fresh one-test pytest processes. A separate two-worker job
+runs every other test file. The Linux full status requires all four bundle
+shards, the remaining pytest suite, and acceptance to pass. This preserves
+complete coverage while bounding memory and job duration on hosted runners;
+each shard reports its separately executed case count.
 
 Each gate writes a machine-readable terminal result to:
 
@@ -157,8 +159,9 @@ authority for a compiler milestone.
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
 `full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
 `self-hosting`. Selecting `full` runs `full-pytest` and `full-acceptance` as
-separate canonical gate phases on each platform. The per-platform `full gate`
-status succeeds only when both phases pass. This keeps each hosted job below
+separate canonical gate phases on each platform, with the four additional
+Ubuntu bootstrap bundle shards described above. The per-platform `full gate`
+status succeeds only when every required phase passes. This keeps each hosted job below
 GitHub's six-hour limit; the local `python scripts/gate.py full --durations 50`
 and native Windows wrapper still run the same phases together. The diagnostic
 dispatch choices run only their named focused checks and do not qualify a full
