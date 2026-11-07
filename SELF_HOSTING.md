@@ -322,6 +322,44 @@ milestone before its prerequisite is confirmed merged on current `main`.
   PR #134 merged at `fdc8827` after Ubuntu and Windows short PR checks passed.
   SH6 still requires clean-platform qualification; no Alpha.3 work is authorized.
 
+### SH6 candidate evidence
+
+- The native-Windows subsystem gate passed on `4c5f857` (`974 passed`). The
+  final local Windows full gate passed on `f682ae9` (`1,738 passed`, M7
+  replacement acceptance `11 passed`, and all 10 acceptance projects); its
+  external log is `D:\Temp\merit-tests\sh6-full-f682ae9.log`. Compiler and
+  runtime semantics did not change in the later hosted-validation repairs.
+- Hosted Ubuntu and native-Windows full gates passed on `f484731` in [Local
+  Gate run 42375626321](https://github.com/JENkt4k/merit/actions/runs/42375626321).
+  Ubuntu's full test partition covers every non-M7 case: 368 bundle cases in
+  four shards, 20 destructor cases, 312 other project cases in four shards,
+  and the non-project suite; M7 is covered by full acceptance. Every isolated
+  case runs in a fresh process. The aggregate Ubuntu and Windows full statuses
+  both passed, including acceptance. The ordinary local Windows gate remains
+  the unpartitioned canonical suite.
+- Hosted Ubuntu and native-Windows `self-hosting` gates both passed on
+  `f484731` in [Local Gate run 42389996884](https://github.com/JENkt4k/merit/actions/runs/42389996884).
+  The local Windows gate also passed on the documentation candidate in 643.462s,
+  including 10/10 acceptance projects; its external log is
+  `D:\Temp\merit-tests\sh6-self-hosting-handoff.log`.
+- The local Windows public-stage reproducibility gate passed in 228.402s
+  (`D:\Temp\merit-tests\sh6-reproducibility-handoff.log`), and the standalone
+  Alpha.1 accepted/rejected corpus gate passed in 72.54s
+  (`D:\Temp\merit-tests\sh6-corpus-handoff.log`). The M7 replacement-acceptance
+  gate passed inside local and hosted full acceptance phases; no tests or
+  language contracts were waived.
+- Hosted memory diagnostics located two cumulative pytest-worker growth sites:
+  destructor artifact tests and other project-native probes each drove a worker
+  toward 15 GB before runner shutdown. A third interruption occurred inside a
+  single full-compiler MIR-oracle test. That test now streams native and legacy
+  transport output and requests compact validated snapshots while retaining
+  its exact canonical MIR byte comparison. The focused WSL test passed in
+  31m24s with peak resident memory about 696 MB and no swap, logged at
+  `D:\Temp\merit-tests\sh6-mir-oracle-wsl.log`.
+- Final-tree gate results must be recorded in the SH6 PR before manual merge
+  review and campaign closure. The untracked Alpha.3 resource-model proposal
+  remains outside this campaign.
+
 ### SH3 implementation audit
 
 SH3 moves one vertical production boundary. It is not satisfied by wrapping

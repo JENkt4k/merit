@@ -55,7 +55,7 @@ def test_bootstrap_status_reports_required_quality_dimensions():
         assert metric in status
     assert 'Trusted for the documented Alpha.1 production surface' in status
     assert 'SH5 public stage equivalence merged in PR #134' in status
-    assert 'SH6 platform qualification remains' in status
+    assert 'SH6 candidate hosted Ubuntu/Windows full and self-hosting gates passed' in status
 
 
 def test_alpha2_release_boundary_keeps_oracle_and_self_hosting_distinct():
@@ -117,7 +117,9 @@ def test_sh6_handoff_describes_public_stages_without_claiming_campaign_closure()
     assert '[x] **SH5' in ledger
     assert '[ ] **SH6' in ledger
     assert 'PR #134' in ledger
-    assert 'SH6 cross-platform qualification' in status
+    assert 'SH6 candidate qualification is underway' in status
+    assert 'hosted Ubuntu and native-Windows' in status
+    assert 'manual PR merge' in status
     assert 'Python' in architecture and 'independent' in architecture
     assert 'merit-project build compiler --compiler-path STAGE0 -o STAGE1' in manual
     assert 'merit-project build compiler --compiler-path STAGE1 -o STAGE2' in manual

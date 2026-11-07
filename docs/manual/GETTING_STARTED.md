@@ -119,4 +119,4 @@ is available. The stage output is an executable, not merely a shared
 library or intermediate snapshot. The Python reference remains an independent
 oracle; it is not a semantic fallback in this workflow. See
 [`SELF_HOSTING.md`](../../SELF_HOSTING.md) for the stage comparison contract and
-the still-open SH6 cross-platform qualification.
+the SH6 cross-platform qualification and manual merge evidence.

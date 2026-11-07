@@ -6,8 +6,9 @@ completed, tagged **`v0.1.0-alpha.2` release**.
 
 Alpha.2 replacement work closed M1-M10 through PR #116. The replacement
 compiler is trusted for the documented Alpha.1 production surface. SH5's
-public stage-1/stage-2 equivalence merged in PR #134; SH6 cross-platform
-qualification remains open. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
+public stage-1/stage-2 equivalence merged in PR #134. SH6 candidate hosted
+Ubuntu/native-Windows full and self-hosting gates pass; its final qualification and manual PR
+merge remain open. `ALPHA2_CLOSURE.md` is the historical evidence ledger;
 The bounded cleanup campaign, including its final repository-wide audit, is
 closed through PR #126. `POST_ALPHA2_CLEANUP.md` is the completed evidence
 ledger; the bounded self-hosting work queue and evidence contract remain in

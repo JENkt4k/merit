@@ -116,6 +116,9 @@ SH5 proves that fresh isolated 46-module compiler projects build usable stages
 1 and 2 through the installed `merit-project build ... --compiler-path ...`
 command. The versioned `merit-self-hosting-v1` report compares canonical
 C/header/MIR, protocol and diagnostics, accepted/rejected corpus, and all ten
-acceptance applications against the independent Python oracle. SH6 still must
-qualify this boundary across clean Ubuntu and native Windows environments; see
-`SELF_HOSTING.md` for its completion evidence.
+acceptance applications against the independent Python oracle. SH6 candidate
+qualification exercises that same boundary on clean Ubuntu and native Windows.
+The host still owns request transport, validated artifact publication, and
+external C compilation; the Merit compiler owns production semantics, canonical
+MIR, C, and header emission. See `SELF_HOSTING.md` for the platform evidence and
+manual merge boundary.

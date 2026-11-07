@@ -24,7 +24,7 @@ These documents describe design goals and constraints. Claims about performance,
 For continued development, start with:
 
 - `AGENTS.md` — repository rules, invariants, and development loop
-- `SELF_HOSTING.md` — merged SH5 evidence and active SH6 qualification ledger
+- `SELF_HOSTING.md` — SH0-SH5 evidence and SH6 qualification ledger
 - `POST_ALPHA2_CLEANUP.md` — completed bounded cleanup evidence ledger
 - `STATUS.md` — current project and replacement-compiler state
 - `ROADMAP.md` — active critical path and later work
@@ -67,8 +67,9 @@ the `v0.1.0-alpha.2` tag. See `ALPHA2_CLOSURE.md` for historical release
 evidence and `POST_ALPHA2_CLEANUP.md` for the completed cleanup evidence.
 SH5 merged in PR #134: isolated stage 1 and stage 2 builds use only the public
 project command and agree on canonical artifacts, protocol, diagnostics, fixed
-accepted/rejected corpus, and all ten acceptance applications. SH6 clean
-cross-platform qualification remains open in `SELF_HOSTING.md`.
+accepted/rejected corpus, and all ten acceptance applications. SH6 candidate
+Ubuntu and native-Windows full and self-hosting gates pass; final-tree
+qualification and manual merge review are tracked in `SELF_HOSTING.md`.
 
 ## Established language surface
 
