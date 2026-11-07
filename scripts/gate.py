@@ -60,6 +60,7 @@ PARALLEL_TEST_WORKERS = 2
 PARALLEL_TEST_DISTRIBUTION = "loadfile"
 M7_ACCEPTANCE_TEST = "tests/project/test_acceptance_replacement_migration.py"
 BOOTSTRAP_BUNDLE_TEST = "tests/project/test_bootstrap_resolved_source_function_bundle_gate.py"
+SH3_DESTRUCTOR_TEST = "tests/project/test_sh3_destructor_artifact.py"
 BOOTSTRAP_BUNDLE_BATCH_SIZE = 1
 
 
@@ -108,34 +109,43 @@ def pytest(
     run(command)
 
 
-def pytest_isolated_bootstrap_bundle(
-    *, fail_fast: bool, shard_index: int = 0, shard_count: int = 1,
+def pytest_isolated_test_file(
+    test_file: str, *, fail_fast: bool, shard_index: int = 0, shard_count: int = 1,
 ) -> int:
-    """Run every bundle probe in fresh, bounded-size pytest processes."""
+    """Run selected cases from one heavy test file in fresh pytest processes."""
 
-    collect = [sys.executable, "-m", "pytest", "--collect-only", "-q", BOOTSTRAP_BUNDLE_TEST]
+    collect = [sys.executable, "-m", "pytest", "--collect-only", "-q", test_file]
     print("+ " + subprocess.list2cmdline(collect), flush=True)
     completed = subprocess.run(collect, cwd=REPOSITORY_ROOT, text=True, capture_output=True)
     if completed.returncode != 0:
-        raise GateFailure(f"bootstrap bundle collection failed: {completed.stdout}\n{completed.stderr}")
+        raise GateFailure(f"isolated test collection failed: {completed.stdout}\n{completed.stderr}")
     cases = tuple(
         line for line in completed.stdout.splitlines()
-        if line.startswith(f"{BOOTSTRAP_BUNDLE_TEST}::")
+        if line.startswith(f"{test_file}::")
     )
     if not cases or len(cases) != len(set(cases)):
-        raise GateFailure("bootstrap bundle collection is empty or contains duplicate cases")
+        raise GateFailure("isolated test collection is empty or contains duplicate cases")
     if shard_count < 1 or not 0 <= shard_index < shard_count:
         raise GateFailure("invalid bootstrap bundle shard")
     cases = cases[shard_index::shard_count]
     if not cases:
-        raise GateFailure("bootstrap bundle shard contains no cases")
-    print(f"isolated_bootstrap_cases={len(cases)} shard={shard_index + 1}/{shard_count}", flush=True)
+        raise GateFailure("isolated test shard contains no cases")
+    print(f"isolated_cases={len(cases)} file={test_file} shard={shard_index + 1}/{shard_count}", flush=True)
     for offset in range(0, len(cases), BOOTSTRAP_BUNDLE_BATCH_SIZE):
         batch = cases[offset:offset + BOOTSTRAP_BUNDLE_BATCH_SIZE]
         print(f"bootstrap_bundle_batch={offset // BOOTSTRAP_BUNDLE_BATCH_SIZE + 1}/"
               f"{(len(cases) + BOOTSTRAP_BUNDLE_BATCH_SIZE - 1) // BOOTSTRAP_BUNDLE_BATCH_SIZE}", flush=True)
         pytest(batch, fail_fast=fail_fast)
     return len(cases)
+
+
+def pytest_isolated_bootstrap_bundle(
+    *, fail_fast: bool, shard_index: int = 0, shard_count: int = 1,
+) -> int:
+    return pytest_isolated_test_file(
+        BOOTSTRAP_BUNDLE_TEST, fail_fast=fail_fast,
+        shard_index=shard_index, shard_count=shard_count,
+    )
 
 
 def verify_project(name: str, path: Path, output: Path | None = None, cwd: Path = REPOSITORY_ROOT) -> None:
@@ -215,6 +225,8 @@ def run_gate(
     name: str, durations: int | None, *, fail_fast: bool,
     isolate_bootstrap_bundle: bool = False,
     exclude_bootstrap_bundle: bool = False,
+    exclude_destructor: bool = False,
+    destructor_only: bool = False,
     bundle_shard: tuple[int, int] | None = None,
 ) -> dict[str, object]:
     started = time.monotonic()
@@ -223,6 +235,10 @@ def run_gate(
         raise GateFailure("bootstrap bundle exclusion requires full-pytest")
     if exclude_bootstrap_bundle and isolate_bootstrap_bundle:
         raise GateFailure("bootstrap bundle cannot be both excluded and isolated")
+    if (exclude_destructor or destructor_only) and name != "full-pytest":
+        raise GateFailure("destructor isolation requires full-pytest")
+    if destructor_only and (exclude_destructor or exclude_bootstrap_bundle or isolate_bootstrap_bundle or bundle_shard is not None):
+        raise GateFailure("destructor-only cannot be combined with other isolation options")
     if bundle_shard is not None and name != "full-pytest":
         raise GateFailure("bundle shard requires full-pytest")
     if name == "smoke":
@@ -259,8 +275,16 @@ def run_gate(
     elif name == "self-hosting":
         return run_self_hosting()
     elif name in {"full", "full-pytest"}:
+        if destructor_only:
+            with group("pytest: process-isolated destructor artifact probes"):
+                destructor_cases = pytest_isolated_test_file(SH3_DESTRUCTOR_TEST, fail_fast=fail_fast)
+            return {
+                "gate": name, "status": "passed", "isolated_destructor_cases": destructor_cases,
+                "duration_seconds": round(time.monotonic() - started, 3),
+                "python": sys.version.split()[0], "platform": sys.platform,
+            }
         if bundle_shard is not None:
-            if name != "full-pytest" or isolate_bootstrap_bundle or exclude_bootstrap_bundle:
+            if name != "full-pytest" or isolate_bootstrap_bundle or exclude_bootstrap_bundle or exclude_destructor:
                 raise GateFailure("bundle shard requires full-pytest alone")
             with group("pytest: process-isolated bootstrap bundle shard"):
                 isolated_cases = pytest_isolated_bootstrap_bundle(
@@ -278,7 +302,8 @@ def run_gate(
         with group("pytest: full"):
             pytest(
                 ["tests", f"--ignore={M7_ACCEPTANCE_TEST}",
-                 *([f"--ignore={BOOTSTRAP_BUNDLE_TEST}"] if isolate_bootstrap_bundle or exclude_bootstrap_bundle else [])],
+                 *([f"--ignore={BOOTSTRAP_BUNDLE_TEST}"] if isolate_bootstrap_bundle or exclude_bootstrap_bundle else []),
+                 *([f"--ignore={SH3_DESTRUCTOR_TEST}"] if exclude_destructor else [])],
                 durations=durations,
                 fail_fast=fail_fast,
                 workers=PARALLEL_TEST_WORKERS,
@@ -305,6 +330,7 @@ def run_gate(
         "stage_reproducibility": name == "reproducibility",
         "isolated_bootstrap_cases": isolated_cases,
         "excluded_bootstrap_bundle": exclude_bootstrap_bundle,
+        "excluded_destructor": exclude_destructor,
     }
 
 
@@ -338,6 +364,14 @@ def parse_args() -> argparse.Namespace:
         "--bundle-shard", type=str, metavar="INDEX/COUNT",
         help="run only one zero-based shard of process-isolated bootstrap bundle probes",
     )
+    parser.add_argument(
+        "--exclude-destructor", action="store_true",
+        help="exclude destructor artifact probes when a separate hosted job covers them",
+    )
+    parser.add_argument(
+        "--destructor-only", action="store_true",
+        help="run destructor artifact probes in fresh one-test pytest processes",
+    )
     parser.add_argument("--result-json", type=Path, help="result JSON destination; defaults to .merit/gates/<gate>/result.json")
     return parser.parse_args()
 
@@ -362,6 +396,8 @@ def main() -> int:
             args.gate, args.durations, fail_fast=args.fail_fast,
             isolate_bootstrap_bundle=args.isolate_bootstrap_bundle,
             exclude_bootstrap_bundle=args.exclude_bootstrap_bundle,
+            exclude_destructor=args.exclude_destructor,
+            destructor_only=args.destructor_only,
             bundle_shard=bundle_shard,
         )
     except (GateFailure, OSError) as exc:

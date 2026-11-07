@@ -142,6 +142,38 @@ def test_hosted_full_pytest_excludes_bundle_only_when_shards_cover_it(monkeypatc
     )]
 
 
+def test_hosted_full_pytest_excludes_both_separately_covered_files(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate(
+        "full-pytest", None, fail_fast=False,
+        exclude_bootstrap_bundle=True, exclude_destructor=True,
+    )
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+        f"--ignore={gate.SH3_DESTRUCTOR_TEST}",
+    )]
+    assert result["excluded_destructor"] is True
+
+
+def test_destructor_only_covers_its_file_without_other_suite(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(gate, "pytest_isolated_test_file", lambda path, **kwargs: calls.append(path) or 20)
+    monkeypatch.setattr(gate, "pytest", lambda *args, **kwargs: raise_unexpected_pytest())
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, destructor_only=True)
+
+    assert calls == [gate.SH3_DESTRUCTOR_TEST]
+    assert result["isolated_destructor_cases"] == 20
+
+
+def raise_unexpected_pytest() -> None:
+    raise AssertionError("general pytest suite must not run in destructor-only mode")
+
+
 def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
     calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
 

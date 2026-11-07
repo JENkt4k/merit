@@ -90,11 +90,13 @@ parallel execution.
 
 Hosted Ubuntu full pytest divides the large bootstrap bundle probe file into
 four deterministic shards. Each shard collects the complete file and runs its
-assigned cases in fresh one-test pytest processes. A separate two-worker job
-runs every other test file. The Linux full status requires all four bundle
-shards, the remaining pytest suite, and acceptance to pass. This preserves
-complete coverage while bounding memory and job duration on hosted runners;
-each shard reports its separately executed case count.
+assigned cases in fresh one-test pytest processes. The destructor artifact
+file runs in a separate job with the same process isolation after hosted memory
+sampling showed one pytest worker growing to about 15 GB across that file. A
+two-worker job runs every other test file. The Linux full status requires all
+four bundle shards, the destructor job, the remaining pytest suite, and
+acceptance to pass. This preserves complete coverage while bounding memory
+and job duration on hosted runners; isolated jobs report their case counts.
 
 Each gate writes a machine-readable terminal result to:
 
@@ -159,8 +161,8 @@ authority for a compiler milestone.
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
 `full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
 `self-hosting`. Selecting `full` runs `full-pytest` and `full-acceptance` as
-separate canonical gate phases on each platform, with the four additional
-Ubuntu bootstrap bundle shards described above. The per-platform `full gate`
+separate canonical gate phases on each platform, with the additional Ubuntu
+process-isolated jobs described above. The per-platform `full gate`
 status succeeds only when every required phase passes. This keeps each hosted job below
 GitHub's six-hour limit; the local `python scripts/gate.py full --durations 50`
 and native Windows wrapper still run the same phases together. The diagnostic
