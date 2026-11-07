@@ -170,6 +170,43 @@ def test_destructor_only_covers_its_file_without_other_suite(monkeypatch) -> Non
     assert result["isolated_destructor_cases"] == 20
 
 
+def test_hosted_project_shards_cover_all_remaining_project_cases_once(monkeypatch) -> None:
+    cases = [f"tests/project/test_example.py::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    collect_commands: list[tuple[str, ...]] = []
+    batches: list[tuple[str, ...]] = []
+
+    def collect(command, **kwargs):
+        collect_commands.append(tuple(command))
+        return collected
+
+    monkeypatch.setattr(gate.subprocess, "run", collect)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: batches.append(tuple(paths)))
+
+    counts = [gate.pytest_isolated_project_shard(
+        fail_fast=False, shard_index=index, shard_count=4,
+    ) for index in range(4)]
+
+    assert counts == [3, 3, 3, 2]
+    assert sorted(case for batch in batches for case in batch) == sorted(cases)
+    assert all(len(batch) == 1 for batch in batches)
+    assert all(f"--ignore={path}" in command for command in collect_commands for path in (
+        gate.M7_ACCEPTANCE_TEST, gate.BOOTSTRAP_BUNDLE_TEST, gate.SH3_DESTRUCTOR_TEST,
+    ))
+
+
+def test_hosted_non_project_phase_excludes_only_separately_covered_directory(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, exclude_project=True)
+
+    assert calls == [("tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}", "--ignore=tests/project")]
+    assert result["excluded_project"] is True
+
+
 def raise_unexpected_pytest() -> None:
     raise AssertionError("general pytest suite must not run in destructor-only mode")
 

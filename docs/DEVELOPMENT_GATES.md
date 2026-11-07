@@ -89,14 +89,16 @@ focused pytest commands remain serial unless the developer explicitly selects
 parallel execution.
 
 Hosted Ubuntu full pytest divides the large bootstrap bundle probe file into
-four deterministic shards. Each shard collects the complete file and runs its
-assigned cases in fresh one-test pytest processes. The destructor artifact
-file runs in a separate job with the same process isolation after hosted memory
-sampling showed one pytest worker growing to about 15 GB across that file. A
-two-worker job runs every other test file. The Linux full status requires all
-four bundle shards, the destructor job, the remaining pytest suite, and
-acceptance to pass. This preserves complete coverage while bounding memory
-and job duration on hosted runners; isolated jobs report their case counts.
+four deterministic shards. The destructor artifact file runs in a separate
+job, and four more shards cover every other project test except the M7 cases
+in the acceptance phase. Each isolated job collects its complete assigned
+surface and runs each selected case in a fresh pytest process. Hosted memory
+sampling showed a pytest worker growing to about 15 GB across passing cases
+in more than one project file, so the ordinary two-worker job runs only
+non-project tests. The Linux full status requires every shard, the destructor
+job, the non-project suite, and acceptance to pass. This preserves complete
+coverage while bounding memory and job duration on hosted runners; isolated
+jobs report their case counts.
 
 Each gate writes a machine-readable terminal result to:
 
