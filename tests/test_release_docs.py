@@ -55,7 +55,7 @@ def test_bootstrap_status_reports_required_quality_dimensions():
         assert metric in status
     assert 'Trusted for the documented Alpha.1 production surface' in status
     assert 'SH5 public stage equivalence merged in PR #134' in status
-    assert 'SH6 candidate hosted Ubuntu/Windows full and self-hosting gates passed' in status
+    assert 'SH6 hosted Ubuntu/Windows full and self-hosting gates passed' in status
 
 
 def test_alpha2_release_boundary_keeps_oracle_and_self_hosting_distinct():
@@ -109,17 +109,21 @@ def test_self_hosting_ledger_defines_public_interface_seams_and_evidence():
     assert 'does not authorize Alpha.3 language features' in ledger
 
 
-def test_sh6_handoff_describes_public_stages_without_claiming_campaign_closure():
+def test_sh6_handoff_closure_and_rm0_design_boundary():
     ledger=(ROOT/'SELF_HOSTING.md').read_text(encoding='utf-8')
     status=(ROOT/'STATUS.md').read_text(encoding='utf-8')
     architecture=(ROOT/'ARCHITECTURE.md').read_text(encoding='utf-8')
     manual=(ROOT/'docs/manual/GETTING_STARTED.md').read_text(encoding='utf-8')
     assert '[x] **SH5' in ledger
-    assert '[ ] **SH6' in ledger
+    assert '[x] **SH6' in ledger
     assert 'PR #134' in ledger
-    assert 'SH6 candidate qualification is underway' in status
+    assert 'SH6 closed in PR #135' in status
     assert 'hosted Ubuntu and native-Windows' in status
-    assert 'manual PR merge' in status
+    assert 'ALPHA3_RESOURCE_MODEL.md' in status
+    rm0=(ROOT/'ALPHA3_RESOURCE_MODEL.md').read_text(encoding='utf-8')
+    assert 'no syntax,' in rm0 and 'runtime, ABI, or compiler behavior' in rm0
+    assert 'spec/OWNERSHIP.md' in rm0
+    assert (ROOT/'docs/design/MEMORY_RESOURCE_MODEL.md').exists()
     assert 'Python' in architecture and 'independent' in architecture
     assert 'merit-project build compiler --compiler-path STAGE0 -o STAGE1' in manual
     assert 'merit-project build compiler --compiler-path STAGE1 -o STAGE2' in manual

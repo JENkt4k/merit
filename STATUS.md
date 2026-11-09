@@ -78,15 +78,15 @@ behavior, all 10 accepted and 12 rejected fixed-corpus cases agree with the
 independent oracle, and all 10 acceptance applications agree on runtime and
 observable effects. Its final-tree
 Windows subsystem and full gates passed; both hosted short PR checks passed.
-SH6 candidate qualification is underway. The hosted Ubuntu and native-Windows
+SH6 closed in PR #135. The hosted Ubuntu and native-Windows
 full gates passed on `f484731` after Ubuntu project tests were partitioned into
 fresh-process jobs to bound runner memory. The native-Windows local full gate
 passed on `f682ae9` (1,738 pytest tests, M7 replacement acceptance, and 10/10
 acceptance projects). Hosted Ubuntu and native-Windows self-hosting gates also
 passed on `f484731`; the local Windows self-hosting gate passed with 10/10
 acceptance projects. The complete SH6 evidence and merge state are tracked in
-`SELF_HOSTING.md`.
-Alpha.3 resource-model work is out of scope.
+`SELF_HOSTING.md`. RM0 design work is now tracked in
+`ALPHA3_RESOURCE_MODEL.md`; no Alpha.3 resource semantics are implemented.
 
 ## Documentation
 
@@ -97,8 +97,8 @@ A user-facing programming manual lives under `docs/manual/`. It is distinct from
 Python remains the independent semantic and diagnostic reference oracle; it is
 not production semantic authority. The Merit-native replacement compiler has
 satisfied the Alpha.2 trust criteria and now builds next-stage compilers through
-the normal public interface. SH5 proves isolated stage equivalence; SH6 is
-qualifying that boundary on clean Ubuntu and native Windows. The self-hosting
-campaign closes only after the required SH6 evidence and manual PR merge.
+the normal public interface. SH5 proves isolated stage equivalence; SH6
+qualified that boundary on clean Ubuntu and native Windows. The self-hosting
+campaign closed in PR #135 after the required evidence and manual merge.
 
 Do not describe isolated parser/HIR/MIR corpus counts as whole-language replacement percentages. The useful progress metric is vertical removal of Python semantic authority from real production compilation boundaries.
