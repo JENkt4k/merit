@@ -211,10 +211,11 @@ needed to produce the next usable compiler must be classified.
   corpus, acceptance-project, and runtime agreement under a versioned
   machine-readable self-hosting report. Merged as PR #134 at `fdc8827`; both
   hosted Ubuntu and Windows short PR checks passed.
-- [ ] **SH6 — Cross-platform qualification and handoff**: pass focused,
+- [x] **SH6 — Cross-platform qualification and handoff**: pass focused,
   subsystem, full, corpus, replacement-acceptance, and self-hosting gates on the
   required local and hosted Ubuntu/native-Windows environments; update status,
   architecture, manual/tooling documentation, limitations, and release evidence.
+  Merged as PR #135 at `0aeeee6`; the campaign is closed.
 
 One PR should close one coherent milestone unless the active ledger records a
 specific dependency or reviewability reason to split it. Never begin a successor
@@ -320,9 +321,10 @@ milestone before its prerequisite is confirmed merged on current `main`.
   first full attempt failed solely because the invoking shell omitted
   `.venv\Scripts` from `PATH`; the focused test and corrected full rerun passed.
   PR #134 merged at `fdc8827` after Ubuntu and Windows short PR checks passed.
-  SH6 still requires clean-platform qualification; no Alpha.3 work is authorized.
+  SH6 subsequently completed clean-platform qualification in PR #135; SH5 did
+  not authorize Alpha.3 work.
 
-### SH6 candidate evidence
+### SH6 closure evidence
 
 - The native-Windows subsystem gate passed on `4c5f857` (`974 passed`). The
   final local Windows full gate passed on `f682ae9` (`1,738 passed`, M7
@@ -356,9 +358,9 @@ milestone before its prerequisite is confirmed merged on current `main`.
   its exact canonical MIR byte comparison. The focused WSL test passed in
   31m24s with peak resident memory about 696 MB and no swap, logged at
   `D:\Temp\merit-tests\sh6-mir-oracle-wsl.log`.
-- Final-tree gate results must be recorded in the SH6 PR before manual merge
-  review and campaign closure. The untracked Alpha.3 resource-model proposal
-  remains outside this campaign.
+- Final-tree gate results were recorded in PR #135 before manual merge review.
+  The Alpha.3 resource-model proposal remains outside this campaign and is
+  evaluated separately under `ALPHA3_RESOURCE_MODEL.md`.
 
 ### SH3 implementation audit
 

@@ -59,20 +59,20 @@ Its semantic numeric-identifier migrations and separately tracked bootstrap/
 test-infrastructure defects completed without renumbering or changing language
 semantics.
 
-**Self-hosting** has reached the SH6 qualification candidate: the trusted replacement reproducibly compiles
+**Self-hosting** closed through SH6 in PR #135: the trusted replacement reproducibly compiles
 its complete 46-module source through the normal public project interface,
 with a versioned stage-equivalence report and the Python oracle kept independent.
-Hosted Ubuntu and native-Windows full and self-hosting gates pass on the candidate. `SELF_HOSTING.md`
-tracks final-tree qualification evidence and manual merge review before
-the campaign closes. Separate compilation and dependency-granular caching are
+Hosted Ubuntu and native-Windows full and self-hosting gates passed. `SELF_HOSTING.md`
+records final-tree qualification evidence and the campaign closure.
+Separate compilation and dependency-granular caching are
 the next natural infrastructure boundary. Stored
 references/lifetimes and scientific arrays remain later semantic/domain work
 rather than implicit Alpha.2 scope.
 
-After SH6 closes, a separate Alpha.3 RM0 milestone should start from the
-proposed `docs/design/MEMORY_RESOURCE_MODEL.md` and freeze resource semantics
-before implementation. That proposal does not authorize new resource behavior
-in SH6.
+The separate Alpha.3 RM0 design milestone is tracked in
+`ALPHA3_RESOURCE_MODEL.md`. It starts from the proposed
+`docs/design/MEMORY_RESOURCE_MODEL.md` and must freeze resource semantics
+before any implementation. The proposal itself does not authorize new behavior.
 
 ### Documentation path
 

@@ -1,12 +1,12 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-11-07
+Checkpoint date: 2026-11-09
 
-Scope: released `v0.1.0-alpha.2` baseline and merged SH5 self-hosted-stage
+Scope: released `v0.1.0-alpha.2` baseline and closed SH0–SH6 self-hosting
 equivalence. Python remains the independent oracle. The Merit-native compiler
 is trusted for the documented Alpha.1 production surface and builds its own
-46-module source through the public project command. SH6 candidate
-cross-platform qualification is underway; PR merge remains manual.
+46-module source through the public project command. SH6 cross-platform
+qualification and handoff merged in PR #135. RM0 design is separate.
 
 ## Current verified architecture
 
@@ -50,7 +50,7 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | All canonical acceptance projects through replacement | M7 CLOSED (PR #113) |
 | Normal Python-free production compilation | M8 CLOSED (PR #114) |
 | Stage reproducibility/trust | M9 CLOSED (PR #115) |
-| Trusted/self-hosted replacement | Trusted for the documented Alpha.1 production surface; SH5 public stage equivalence merged in PR #134; SH6 candidate hosted Ubuntu/Windows full and self-hosting gates passed on `f484731` |
+| Trusted/self-hosted replacement | Trusted for the documented Alpha.1 production surface; SH5 public stage equivalence merged in PR #134; SH6 hosted Ubuntu/Windows full and self-hosting gates passed on `f484731` and handoff merged in PR #135 |
 
 The canonical GitHub short PR gate runs automatically on Ubuntu and native
 Windows. Long full and self-hosting gates are deliberate workflow-dispatch
@@ -63,9 +63,9 @@ stage 2, and canonical compiler artifacts agree under
 `docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows. The bounded
 technical-debt campaign and its final audit are closed through PR #126, as
 recorded in `POST_ALPHA2_CLEANUP.md`. SH5 proves public stage-1/stage-2
-equivalence with a versioned report on native Windows; SH6 candidate
-cross-platform qualification and handoff evidence are tracked in
-`SELF_HOSTING.md`.
+equivalence with a versioned report on native Windows; SH6 cross-platform
+qualification and handoff evidence closed in PR #135 and are tracked in
+`SELF_HOSTING.md`. `ALPHA3_RESOURCE_MODEL.md` tracks the design-only RM0 milestone.
 Unsupported source must continue to fail deterministically rather than silently
 falling back to the reference compiler.
 
