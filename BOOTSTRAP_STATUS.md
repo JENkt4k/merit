@@ -1,17 +1,18 @@
 # Merit Bootstrap Compiler Status
 
-Checkpoint date: 2026-09-27
+Checkpoint date: 2026-11-07
 
-Scope: released `v0.1.0-alpha.2` baseline after replacement-compiler trust
-qualification. Python remains the independent oracle. The Merit-native
-replacement compiler is trusted for the documented Alpha.1 production surface
-but is not self-hosted.
+Scope: released `v0.1.0-alpha.2` baseline and merged SH5 self-hosted-stage
+equivalence. Python remains the independent oracle. The Merit-native compiler
+is trusted for the documented Alpha.1 production surface and builds its own
+46-module source through the public project command. SH6 candidate
+cross-platform qualification is underway; PR merge remains manual.
 
 ## Current verified architecture
 
 The replacement compiler is no longer accurately described as an expression-MIR experiment. The measured lexer/parser/AST/HIR/MIR fixtures remain useful differential evidence, but the active work now reaches complete source-backed semantic slices, project-wide resolution, and same-source corpus convergence.
 
-The native replacement path represents resolved functions and projects with versioned records for bodies, contracts, provenance, ownership, CFG/placement, capabilities, exact numerics, aggregates/resources, generics/traits, imports/visibility, and export/ABI identity. Prepared replacement projects validate native-resolved artifacts against current source, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables. Replacement mode fails closed instead of falling back to Python semantics.
+The native replacement path represents resolved functions and projects with versioned records for bodies, contracts, provenance, ownership, CFG/placement, capabilities, exact numerics, aggregates/resources, generics/traits, imports/visibility, and export/ABI identity. The Merit compiler emits versioned canonical MIR, C, and public-header artifacts. The host validates source digests and artifact framing, then invokes the external C toolchain; it does not reconstruct production MIR or emit production C. Replacement mode fails closed instead of falling back to Python semantics.
 
 M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the canonical accepted/rejected same-source corpus convergence boundary: accepted programs reach reference and replacement native execution with observable parity and repeated deterministic replacement artifacts; rejected programs are rejected independently and deterministically. Detailed evidence remains centralized in `ALPHA2_CLOSURE.md` and `docs/ALPHA1_CORPUS_CONVERGENCE.md`.
 
@@ -49,9 +50,11 @@ M1-M5 close the documented Alpha.1 semantic and project surfaces. M6 closes the 
 | All canonical acceptance projects through replacement | M7 CLOSED (PR #113) |
 | Normal Python-free production compilation | M8 CLOSED (PR #114) |
 | Stage reproducibility/trust | M9 CLOSED (PR #115) |
-| Trusted/self-hosted replacement | Trusted for the documented Alpha.1 production surface; not self-hosted |
+| Trusted/self-hosted replacement | Trusted for the documented Alpha.1 production surface; SH5 public stage equivalence merged in PR #134; SH6 candidate hosted Ubuntu/Windows full and self-hosting gates passed on `f484731` |
 
-The canonical GitHub gates run the full clean suite on Ubuntu and native Windows.
+The canonical GitHub short PR gate runs automatically on Ubuntu and native
+Windows. Long full and self-hosting gates are deliberate workflow-dispatch
+choices, not automatic on every PR update.
 
 ## Current milestone
 
@@ -59,8 +62,9 @@ The canonical GitHub gates run the full clean suite on Ubuntu and native Windows
 stage 2, and canonical compiler artifacts agree under
 `docs/M9_REPRODUCIBILITY.md` on clean Ubuntu and native Windows. The bounded
 technical-debt campaign and its final audit are closed through PR #126, as
-recorded in `POST_ALPHA2_CLEANUP.md`. Self-hosting through the normal project
-interface is the active compiler-engineering frontier tracked in
+recorded in `POST_ALPHA2_CLEANUP.md`. SH5 proves public stage-1/stage-2
+equivalence with a versioned report on native Windows; SH6 candidate
+cross-platform qualification and handoff evidence are tracked in
 `SELF_HOSTING.md`.
 Unsupported source must continue to fail deterministically rather than silently
 falling back to the reference compiler.

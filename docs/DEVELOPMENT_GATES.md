@@ -57,8 +57,8 @@ The gates have distinct purposes:
 | `acceptance` | Ten interpreter/native acceptance projects | acceptance-only verification |
 | `corpus` | Alpha.1 accepted/rejected reference/replacement convergence | semantic convergence evidence |
 | `acceptance-replacement` | Ten applications compiled and run through replacement | replacement acceptance evidence |
-| `reproducibility` | Isolated stage-0/stage-1/stage-2 canonical agreement | compiler trust/release evidence |
-| `self-hosting` | Public stage-1/stage-2 builds, canonical comparisons, fixed corpus, acceptance and import-guard report | SH5 evidence; deliberate long run |
+| `reproducibility` | Fresh public stage-0/stage-1/stage-2 C/header/probe agreement (v2); historical Alpha.2 M9 v1 report remains archived | compiler stage evidence |
+| `self-hosting` | Public stage-1/stage-2 builds, canonical comparisons, fixed corpus, acceptance and import-guard report | SH5/SH6 platform evidence; deliberate long run |
 | `full` | Entire pytest suite plus all acceptance projects | PR readiness / merge authority |
 
 A feature change should still run its directly affected pytest file or test names.
@@ -87,6 +87,18 @@ by file keeps module/session fixtures and each test module's local isolation
 boundary intact while independent native probe builds run concurrently. Direct
 focused pytest commands remain serial unless the developer explicitly selects
 parallel execution.
+
+Hosted Ubuntu full pytest divides the large bootstrap bundle probe file into
+four deterministic shards. The destructor artifact file runs in a separate
+job, and four more shards cover every other project test except the M7 cases
+in the acceptance phase. Each isolated job collects its complete assigned
+surface and runs each selected case in a fresh pytest process. Hosted memory
+sampling showed a pytest worker growing to about 15 GB across passing cases
+in more than one project file, so the ordinary two-worker job runs only
+non-project tests. The Linux full status requires every shard, the destructor
+job, the non-project suite, and acceptance to pass. This preserves complete
+coverage while bounding memory and job duration on hosted runners; isolated
+jobs report their case counts.
 
 Each gate writes a machine-readable terminal result to:
 
@@ -150,14 +162,16 @@ authority for a compiler milestone.
 
 The same Local Gate workflow offers deliberate `workflow_dispatch` choices for
 `full`, `reproducibility`, `acceptance-replacement`, `corpus`, and
-`self-hosting`. Selecting `full` runs the unchanged canonical full gate on
-Ubuntu and native Windows;
-the other choices run only their named gate. The local `python scripts/gate.py
-full --durations 50` and native Windows wrapper remain available for manual
-milestone validation. Record the exact commit and terminal result for each
-long run, and do not infer a pass from the short PR check. Platform-specific
-workflow steps provision dependencies only; semantic test selection remains in
-`scripts/gate.py`.
+`self-hosting`. Selecting `full` runs `full-pytest` and `full-acceptance` as
+separate canonical gate phases on each platform, with the additional Ubuntu
+process-isolated jobs described above. The per-platform `full gate`
+status succeeds only when every required phase passes. This keeps each hosted job below
+GitHub's six-hour limit; the local `python scripts/gate.py full --durations 50`
+and native Windows wrapper still run the same phases together. The diagnostic
+dispatch choices run only their named focused checks and do not qualify a full
+gate. Record the exact commit and terminal result for each long run, and do not
+infer a pass from the short PR check. Platform-specific workflow steps
+provision dependencies only; semantic test selection remains in `scripts/gate.py`.
 
 The objective is one validation contract across local humans, WSL, native
 Windows, GitHub-hosted runners, remote Codex, and local Jan agents.

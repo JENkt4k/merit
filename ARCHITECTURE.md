@@ -106,6 +106,19 @@ The replacement implementation closed M1-M10 through the concrete native-driver 
 
 Stage equivalence is established for the documented Alpha.1 production
 surface. The Python compiler remains the independent executable semantic
-reference, not production semantic authority. The active self-hosting campaign
-in `SELF_HOSTING.md` must preserve this distinction and the deterministic stage
-contract.
+reference, not production semantic authority. In the normal v4 path, the Merit
+compiler executable owns canonical project MIR, deterministic C, and public
+header emission; the Python host transports and validates those artifacts and
+invokes the external C toolchain. The historical M9 private stage helper remains
+only for the unchanged Alpha.2 trust comparison.
+
+SH5 proves that fresh isolated 46-module compiler projects build usable stages
+1 and 2 through the installed `merit-project build ... --compiler-path ...`
+command. The versioned `merit-self-hosting-v1` report compares canonical
+C/header/MIR, protocol and diagnostics, accepted/rejected corpus, and all ten
+acceptance applications against the independent Python oracle. SH6 candidate
+qualification exercises that same boundary on clean Ubuntu and native Windows.
+The host still owns request transport, validated artifact publication, and
+external C compilation; the Merit compiler owns production semantics, canonical
+MIR, C, and header emission. See `SELF_HOSTING.md` for the platform evidence and
+manual merge boundary.

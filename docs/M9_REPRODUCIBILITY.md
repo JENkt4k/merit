@@ -45,3 +45,17 @@ checkouts as well as the existing semantic, corpus, acceptance, and full gates.
 
 This gate qualifies the replacement compiler for Alpha.2. It does not claim
 later self-hosting policy beyond the stage-1/stage-2 equivalence defined here.
+
+## Post-Alpha.2 gate transition
+
+The released `merit-alpha2-reproducibility-v1` result is historical evidence;
+its bundle-only private stage builder cannot produce the later v4 project
+artifacts and is not production authority. After SH5, the current
+`python scripts/gate.py reproducibility` command deliberately writes
+`merit-public-stage-reproducibility-v2`. It retains this document's canonical
+C/header/fixed-probe comparison rule but obtains fresh stages through the
+installed public project command and a v4 framed request. The v2 schema and
+`REPRODUCIBILITY_RESULT` marker distinguish current qualification from the
+archived M9 report. The more comprehensive `self-hosting` gate additionally
+checks MIR, rejected probes, full corpus, acceptance behavior, and the Python
+semantic import guard; it is not replaced by the v2 reproducibility gate.

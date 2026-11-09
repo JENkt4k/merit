@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "examples/projects/bootstrap_lexer"
 
 
+
 def _selected_c_header(module: MirModule) -> str:
     """Compare a probe's selected public functions, not the legacy all-public ABI."""
 

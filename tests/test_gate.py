@@ -70,6 +70,147 @@ def test_full_gate_runs_replacement_acceptance_once_as_reported_phase(monkeypatc
     assert result["replacement_acceptance"] is True
 
 
+def test_hosted_full_phases_preserve_canonical_full_work(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(gate, "pytest", lambda *args, **kwargs: events.append("pytest"))
+    monkeypatch.setattr(gate, "run_acceptance_replacement", lambda: events.append("replacement"))
+    monkeypatch.setattr(gate, "run_acceptance", lambda: events.append("acceptance"))
+
+    first = gate.run_gate("full-pytest", 50, fail_fast=False)
+    second = gate.run_gate("full-acceptance", 50, fail_fast=False)
+
+    assert events == ["pytest", "replacement", "acceptance"]
+    assert first["replacement_acceptance"] is False
+    assert second["replacement_acceptance"] is True
+    assert second["acceptance_projects"] == 10
+
+
+def test_isolated_bundle_runs_every_collected_case_in_fresh_batches(monkeypatch) -> None:
+    cases = [f"{gate.BOOTSTRAP_BUNDLE_TEST}::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda *args, **kwargs: collected)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: commands.append(tuple(paths)))
+
+    assert gate.pytest_isolated_bootstrap_bundle(fail_fast=False) == 11
+    assert commands == [(case,) for case in cases]
+
+
+def test_bootstrap_bundle_shards_cover_every_case_once(monkeypatch) -> None:
+    cases = [f"{gate.BOOTSTRAP_BUNDLE_TEST}::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda *args, **kwargs: collected)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: commands.append(tuple(paths)))
+
+    counts = [gate.pytest_isolated_bootstrap_bundle(
+        fail_fast=False, shard_index=index, shard_count=4,
+    ) for index in range(4)]
+
+    assert counts == [3, 3, 3, 2]
+    assert sorted(case for batch in commands for case in batch) == sorted(cases)
+    assert all(len(batch) == 1 for batch in commands)
+
+
+def test_isolated_full_gate_excludes_only_the_separately_covered_file(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest_isolated_bootstrap_bundle", lambda **kwargs: 368)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, isolate_bootstrap_bundle=True)
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+    )]
+    assert result["isolated_bootstrap_cases"] == 368
+
+
+def test_hosted_full_pytest_excludes_bundle_only_when_shards_cover_it(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    gate.run_gate("full-pytest", None, fail_fast=False, exclude_bootstrap_bundle=True)
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+    )]
+
+
+def test_hosted_full_pytest_excludes_both_separately_covered_files(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate(
+        "full-pytest", None, fail_fast=False,
+        exclude_bootstrap_bundle=True, exclude_destructor=True,
+    )
+
+    assert calls == [(
+        "tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}",
+        f"--ignore={gate.BOOTSTRAP_BUNDLE_TEST}",
+        f"--ignore={gate.SH3_DESTRUCTOR_TEST}",
+    )]
+    assert result["excluded_destructor"] is True
+
+
+def test_destructor_only_covers_its_file_without_other_suite(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(gate, "pytest_isolated_test_file", lambda path, **kwargs: calls.append(path) or 20)
+    monkeypatch.setattr(gate, "pytest", lambda *args, **kwargs: raise_unexpected_pytest())
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, destructor_only=True)
+
+    assert calls == [gate.SH3_DESTRUCTOR_TEST]
+    assert result["isolated_destructor_cases"] == 20
+
+
+def test_hosted_project_shards_cover_all_remaining_project_cases_once(monkeypatch) -> None:
+    cases = [f"tests/project/test_example.py::case_{index}" for index in range(11)]
+    collected = type("Collected", (), {
+        "returncode": 0, "stdout": "\n".join(cases) + "\n\n11 tests collected\n", "stderr": "",
+    })()
+    collect_commands: list[tuple[str, ...]] = []
+    batches: list[tuple[str, ...]] = []
+
+    def collect(command, **kwargs):
+        collect_commands.append(tuple(command))
+        return collected
+
+    monkeypatch.setattr(gate.subprocess, "run", collect)
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: batches.append(tuple(paths)))
+
+    counts = [gate.pytest_isolated_project_shard(
+        fail_fast=False, shard_index=index, shard_count=4,
+    ) for index in range(4)]
+
+    assert counts == [3, 3, 3, 2]
+    assert sorted(case for batch in batches for case in batch) == sorted(cases)
+    assert all(len(batch) == 1 for batch in batches)
+    assert all(f"--ignore={path}" in command for command in collect_commands for path in (
+        gate.M7_ACCEPTANCE_TEST, gate.BOOTSTRAP_BUNDLE_TEST, gate.SH3_DESTRUCTOR_TEST,
+    ))
+
+
+def test_hosted_non_project_phase_excludes_only_separately_covered_directory(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gate, "pytest", lambda paths, **kwargs: calls.append(tuple(paths)))
+
+    result = gate.run_gate("full-pytest", None, fail_fast=False, exclude_project=True)
+
+    assert calls == [("tests", f"--ignore={gate.M7_ACCEPTANCE_TEST}", "--ignore=tests/project")]
+    assert result["excluded_project"] is True
+
+
+def raise_unexpected_pytest() -> None:
+    raise AssertionError("general pytest suite must not run in destructor-only mode")
+
+
 def test_subsystem_gate_leaves_m7_for_dedicated_gate(monkeypatch) -> None:
     calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
 
@@ -119,17 +260,33 @@ def test_pr_gate_runs_bounded_native_checks_and_corpus_not_full(monkeypatch) -> 
     assert result["acceptance_projects"] == 0
 
 
-def test_reproducibility_gate_runs_stage_report_once(monkeypatch) -> None:
-    calls: list[list[str]] = []
-    monkeypatch.setattr(gate, "run", lambda command: calls.append(command))
+def test_reproducibility_gate_preserves_versioned_report(monkeypatch, tmp_path: Path) -> None:
+    report = tmp_path / "reproducibility" / "result.json"
+    report.parent.mkdir(parents=True)
+    payload = {"schema": "merit-public-stage-reproducibility-v2", "status": "passed",
+               "duration_seconds": 4.0, "probe_protocol_sha256": "digest"}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(gate, "RESULT_ROOT", tmp_path)
+    calls = []
+    monkeypatch.setattr(gate.subprocess, "run", lambda command, **_kwargs: (
+        calls.append(command), type("Completed", (), {"returncode": 0})()
+    )[1])
 
-    result = gate.run_gate("reproducibility", None, fail_fast=False)
+    assert gate.run_gate("reproducibility", None, fail_fast=False) == payload
+    assert calls == [[sys.executable, str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py")]]
 
-    assert calls == [[
-        sys.executable,
-        str(gate.REPOSITORY_ROOT / "scripts" / "reproducibility_report.py"),
-    ]]
-    assert result["stage_reproducibility"] is True
+
+def test_reproducibility_gate_preserves_versioned_failure(monkeypatch, tmp_path: Path) -> None:
+    report = tmp_path / "reproducibility" / "result.json"
+    report.parent.mkdir(parents=True)
+    payload = {"schema": "merit-public-stage-reproducibility-v2", "status": "failed",
+               "error": "stage build failed"}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(gate, "RESULT_ROOT", tmp_path)
+    monkeypatch.setattr(gate.subprocess, "run", lambda *_args, **_kwargs: type(
+        "Completed", (), {"returncode": 1}
+    )())
+    assert gate.run_gate("reproducibility", None, fail_fast=False) == payload
 
 
 def test_self_hosting_gate_preserves_versioned_report(monkeypatch, tmp_path: Path) -> None:

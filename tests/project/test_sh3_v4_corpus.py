@@ -534,6 +534,8 @@ def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
         "-o", str(output),
     ]) == 0
     header = output.with_suffix(".h").read_bytes()
+    assert b"typedef struct { int32_t tag; } merit_enum_copy_payload_0;" in header
+    assert b"typedef struct { int32_t tag; union {" in header
     reference_header = oracle_header.read_bytes()
     manifest_path = root / ".merit" / REPLACEMENT_MANIFEST
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -596,7 +598,9 @@ def test_sh3_v4_public_shared_build_preserves_ledger_decimal_abi(
     library_path_key = "PATH" if os.name == "nt" else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
     environment[library_path_key] = str(tmp_path) + os.pathsep + environment.get(library_path_key, "")
     consumed = subprocess.run([str(consumer_executable)], capture_output=True, env=environment)
-    assert consumed.returncode == 0, consumed.stderr
+    assert consumed.returncode == 0, (
+        consumed.returncode, consumed.stdout, consumed.stderr,
+    )
 
 
 def test_sh3_v4_public_shared_build_preserves_cobol_finance_abi(

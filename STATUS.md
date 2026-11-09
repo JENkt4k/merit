@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-11-01
+Status date: 2026-11-07
 
 ## Release target
 
@@ -71,14 +71,22 @@ compiler-build cutover closed in PR #133: the installed `merit-project build`
 command built a usable stage 1 with stage 0 and a usable stage 2 with stage 1
 from isolated 46-module source trees. Its final-tree native-Windows full gate
 passed (1,712 main tests, 11 M7 tests, 10/10 acceptance projects), and both
-hosted short PR checks passed. SH5 now has a passing native-Windows candidate
-`merit-self-hosting-v1` report: fresh public stage-1/stage-2 builds agree on
-canonical compiler artifacts and protocol behavior, all 10 accepted and 12
-rejected fixed-corpus cases agree with the independent oracle, and all 10
-acceptance applications agree on runtime and observable effects. SH5 still
-requires final-tree broader and hosted evidence and manual PR merge review;
-`SELF_HOSTING.md` remains the active work queue. Alpha.3 resource-model work is
-out of scope.
+hosted short PR checks passed. SH5 merged in PR #134 at `fdc8827`, with a
+passing native-Windows `merit-self-hosting-v1` report: fresh public
+stage-1/stage-2 builds agree on canonical compiler artifacts and protocol
+behavior, all 10 accepted and 12 rejected fixed-corpus cases agree with the
+independent oracle, and all 10 acceptance applications agree on runtime and
+observable effects. Its final-tree
+Windows subsystem and full gates passed; both hosted short PR checks passed.
+SH6 candidate qualification is underway. The hosted Ubuntu and native-Windows
+full gates passed on `f484731` after Ubuntu project tests were partitioned into
+fresh-process jobs to bound runner memory. The native-Windows local full gate
+passed on `f682ae9` (1,738 pytest tests, M7 replacement acceptance, and 10/10
+acceptance projects). Hosted Ubuntu and native-Windows self-hosting gates also
+passed on `f484731`; the local Windows self-hosting gate passed with 10/10
+acceptance projects. The complete SH6 evidence and merge state are tracked in
+`SELF_HOSTING.md`.
+Alpha.3 resource-model work is out of scope.
 
 ## Documentation
 
@@ -89,8 +97,8 @@ A user-facing programming manual lives under `docs/manual/`. It is distinct from
 Python remains the independent semantic and diagnostic reference oracle; it is
 not production semantic authority. The Merit-native replacement compiler has
 satisfied the Alpha.2 trust criteria and now builds next-stage compilers through
-the normal public interface. The complete SH5 equivalence contract and SH6
-cross-platform qualification are still required before claiming the
-self-hosting campaign is complete.
+the normal public interface. SH5 proves isolated stage equivalence; SH6 is
+qualifying that boundary on clean Ubuntu and native Windows. The self-hosting
+campaign closes only after the required SH6 evidence and manual PR merge.
 
 Do not describe isolated parser/HIR/MIR corpus counts as whole-language replacement percentages. The useful progress metric is vertical removal of Python semantic authority from real production compilation boundaries.

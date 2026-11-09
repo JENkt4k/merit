@@ -54,7 +54,8 @@ def test_bootstrap_status_reports_required_quality_dimensions():
     for metric in ('Total tests passing','Compile-pass tests','Compile-fail tests','Acceptance projects','Lexer differential cases','Parser differential cases','AST differential cases','HIR differential cases','Bootstrap/reference parity','Reference compiler source','Merit-native compiler source','Generated C size','Known semantic blockers'):
         assert metric in status
     assert 'Trusted for the documented Alpha.1 production surface' in status
-    assert 'not self-hosted' in status
+    assert 'SH5 public stage equivalence merged in PR #134' in status
+    assert 'SH6 candidate hosted Ubuntu/Windows full and self-hosting gates passed' in status
 
 
 def test_alpha2_release_boundary_keeps_oracle_and_self_hosting_distinct():
@@ -106,3 +107,19 @@ def test_self_hosting_ledger_defines_public_interface_seams_and_evidence():
     ):
         assert requirement in ledger
     assert 'does not authorize Alpha.3 language features' in ledger
+
+
+def test_sh6_handoff_describes_public_stages_without_claiming_campaign_closure():
+    ledger=(ROOT/'SELF_HOSTING.md').read_text(encoding='utf-8')
+    status=(ROOT/'STATUS.md').read_text(encoding='utf-8')
+    architecture=(ROOT/'ARCHITECTURE.md').read_text(encoding='utf-8')
+    manual=(ROOT/'docs/manual/GETTING_STARTED.md').read_text(encoding='utf-8')
+    assert '[x] **SH5' in ledger
+    assert '[ ] **SH6' in ledger
+    assert 'PR #134' in ledger
+    assert 'SH6 candidate qualification is underway' in status
+    assert 'hosted Ubuntu and native-Windows' in status
+    assert 'manual PR merge' in status
+    assert 'Python' in architecture and 'independent' in architecture
+    assert 'merit-project build compiler --compiler-path STAGE0 -o STAGE1' in manual
+    assert 'merit-project build compiler --compiler-path STAGE1 -o STAGE2' in manual

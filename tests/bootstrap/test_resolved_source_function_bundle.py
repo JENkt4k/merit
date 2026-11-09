@@ -6,6 +6,8 @@ from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_MAGIC,
     BUNDLE_VERSION,
     PROJECT_ARTIFACT_BUNDLE_VERSION,
+    _METADATA_MAGIC,
+    _PROJECT_ARTIFACT_MAGIC,
     ResolvedSourceFunctionBundleError,
     decode_native_project_artifact_transport,
     decode_resolved_source_function_bundle,
@@ -53,6 +55,20 @@ def test_bundle_v2_deduplicates_and_rehydrates_effective_source() -> None:
     assert decoded.functions[1].effective_source_bytes == source
 
 
+def test_bundle_preparation_validates_without_retaining_hydrated_functions() -> None:
+    source = tuple(b"module main")
+    snapshot = _snapshot(source)
+    encoded = encode_resolved_source_function_bundle((snapshot, snapshot))
+
+    prepared = decode_resolved_source_function_bundle(encoded, retain_decoded=False)
+    ordinary = decode_resolved_source_function_bundle(encoded)
+
+    assert prepared.functions == ()
+    assert prepared.encoded_snapshots == ordinary.encoded_snapshots
+    assert prepared.effective_source_bytes == source
+    assert prepared.module_name == ordinary.module_name
+
+
 def test_bundle_v1_remains_decodable() -> None:
     snapshot = _snapshot(tuple("old".encode()))
     encoded = (BUNDLE_MAGIC, 1, 1, len(snapshot), *snapshot)
@@ -93,6 +109,30 @@ def test_bundle_v4_can_carry_artifacts_without_legacy_snapshots() -> None:
     transport = decode_native_project_artifact_transport(encoded)
     assert transport.canonical_mir_bytes == b"mir"
     assert decode_resolved_source_function_bundle(encoded).functions == ()
+
+
+def test_v4_transport_streams_large_artifact_with_bounded_host_memory() -> None:
+    import itertools
+    import tracemalloc
+
+    payload_size = 1_000_000
+    framed = itertools.chain(
+        (BUNDLE_MAGIC, PROJECT_ARTIFACT_BUNDLE_VERSION, 0, _METADATA_MAGIC, 4),
+        b"demo",
+        (0, _PROJECT_ARTIFACT_MAGIC, payload_size),
+        itertools.repeat(65, payload_size),
+        (1, 66, 1, 67),
+    )
+    tracemalloc.start()
+    try:
+        transport = decode_native_project_artifact_transport(framed)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert transport.canonical_mir_bytes == b"A" * payload_size
+    assert transport.c_source_bytes == b"B"
+    assert transport.c_header_bytes == b"C"
+    assert peak < 6_000_000
 
 
 def test_v4_transport_treats_nested_snapshot_as_opaque() -> None:

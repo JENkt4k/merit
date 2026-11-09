@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -92,52 +93,6 @@ def _run_driver(
     source_path: Path,
 ):
     executable = driver.resolved()
-    try:
-        completed = subprocess.run(
-            [str(executable)],
-            input=request,
-            capture_output=True,
-            env=_driver_environment(source_path),
-            timeout=DRIVER_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ReplacementProjectError(
-            f"replacement driver timed out after {DRIVER_TIMEOUT_SECONDS}s "
-            f"for project {project_name!r}"
-        ) from exc
-    except OSError as exc:
-        raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
-    try:
-        stdout = completed.stdout.decode("utf-8")
-        stderr = completed.stderr.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ReplacementProjectError(
-            f"replacement driver emitted non-UTF-8 output for project {project_name!r}"
-        ) from exc
-    if completed.returncode != 0:
-        stderr = stderr.strip()
-        stdout = stdout.strip()
-        streams = []
-        if stderr:
-            streams.append(f"stderr={stderr}")
-        if stdout:
-            streams.append(f"stdout={stdout[-1200:]}")
-        if not streams:
-            streams.append("no driver output")
-        raise ReplacementProjectError(
-            f"replacement driver failed for project {project_name!r} with exit code "
-            f"{completed.returncode}: {'; '.join(streams)}"
-        )
-    try:
-        values = tuple(int(line.strip()) for line in stdout.splitlines() if line.strip())
-    except ValueError as exc:
-        raise ReplacementProjectError(
-            f"replacement driver emitted non-integer bundle data for project {project_name!r}"
-        ) from exc
-    if not values:
-        raise ReplacementProjectError(
-            f"replacement driver emitted no bundle for project {project_name!r}"
-        )
     from merit.bootstrap.resolved_source_function_bundle import (
         PROJECT_ARTIFACT_BUNDLE_VERSION,
         ResolvedSourceFunctionBundleError,
@@ -145,16 +100,72 @@ def _run_driver(
         decode_resolved_source_function_bundle,
     )
 
-    try:
-        bundle = (
-            decode_native_project_artifact_transport(values)
-            if len(values) > 1 and values[1] == PROJECT_ARTIFACT_BUNDLE_VERSION
-            else decode_resolved_source_function_bundle(values)
-        )
-    except ResolvedSourceFunctionBundleError as exc:
-        raise ReplacementProjectError(
-            f"replacement driver emitted invalid bundle for project {project_name!r}: {exc}"
-        ) from exc
+    with tempfile.TemporaryFile(mode="w+b") as stdout_file:
+        try:
+            completed = subprocess.run(
+                [str(executable)],
+                input=request,
+                stdout=stdout_file,
+                stderr=subprocess.PIPE,
+                env=_driver_environment(source_path),
+                timeout=DRIVER_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ReplacementProjectError(
+                f"replacement driver timed out after {DRIVER_TIMEOUT_SECONDS}s "
+                f"for project {project_name!r}"
+            ) from exc
+        except OSError as exc:
+            raise ReplacementProjectError(f"replacement driver could not start: {exc}") from exc
+        try:
+            stderr = completed.stderr.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ReplacementProjectError(
+                f"replacement driver emitted non-UTF-8 output for project {project_name!r}"
+            ) from exc
+        if completed.returncode != 0:
+            stdout_file.seek(0, os.SEEK_END)
+            stdout_file.seek(max(0, stdout_file.tell() - 4800))
+            try:
+                stdout_tail = stdout_file.read().decode("utf-8").strip()[-1200:]
+            except UnicodeDecodeError as exc:
+                raise ReplacementProjectError(
+                    f"replacement driver emitted non-UTF-8 output for project {project_name!r}"
+                ) from exc
+            streams = []
+            if stderr.strip():
+                streams.append(f"stderr={stderr.strip()}")
+            if stdout_tail:
+                streams.append(f"stdout={stdout_tail}")
+            if not streams:
+                streams.append("no driver output")
+            raise ReplacementProjectError(
+                f"replacement driver failed for project {project_name!r} with exit code "
+                f"{completed.returncode}: {'; '.join(streams)}"
+            )
+        stdout_file.seek(0)
+        try:
+            values = (int(line.strip()) for line in stdout_file if line.strip())
+            first = next(values, None)
+            second = next(values, None)
+            if first is None:
+                raise ReplacementProjectError(
+                    f"replacement driver emitted no bundle for project {project_name!r}"
+                )
+            framed_values = itertools.chain((first,), () if second is None else (second,), values)
+            bundle = (
+                decode_native_project_artifact_transport(framed_values)
+                if second == PROJECT_ARTIFACT_BUNDLE_VERSION
+                else decode_resolved_source_function_bundle(framed_values, retain_decoded=False)
+            )
+        except ValueError as exc:
+            if not isinstance(exc, ResolvedSourceFunctionBundleError):
+                raise ReplacementProjectError(
+                    f"replacement driver emitted non-integer bundle data for project {project_name!r}"
+                ) from exc
+            raise ReplacementProjectError(
+                f"replacement driver emitted invalid bundle for project {project_name!r}: {exc}"
+            ) from exc
     if not bundle.module_name:
         raise ReplacementProjectError("replacement driver response has no native module identity")
     return bundle
@@ -215,8 +226,8 @@ def prepare_replacement_artifacts(
     )
     if not isinstance(bundle, NativeProjectArtifactTransport):
         try:
-            project_source = bytes(bundle.functions[0].effective_source_bytes).decode("utf-8")
-        except (IndexError, UnicodeDecodeError) as exc:
+            project_source = bytes(bundle.effective_source_bytes).decode("utf-8")
+        except UnicodeDecodeError as exc:
             raise ReplacementProjectError("replacement driver response has no UTF-8 effective source") from exc
         digest = _source_digest(project_source)
         capability_names = {str(index): name for index, name in enumerate(bundle.capability_names)}

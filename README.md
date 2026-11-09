@@ -24,7 +24,7 @@ These documents describe design goals and constraints. Claims about performance,
 For continued development, start with:
 
 - `AGENTS.md` — repository rules, invariants, and development loop
-- `SELF_HOSTING.md` — active bounded self-hosting inventory and work queue
+- `SELF_HOSTING.md` — SH0-SH5 evidence and SH6 qualification ledger
 - `POST_ALPHA2_CLEANUP.md` — completed bounded cleanup evidence ledger
 - `STATUS.md` — current project and replacement-compiler state
 - `ROADMAP.md` — active critical path and later work
@@ -41,10 +41,11 @@ bash scripts/ci.sh
 ```
 
 The completed `v0.1.0-alpha.1` release is followed by the completed and tagged
-`v0.1.0-alpha.2` release. The authoritative GitHub Local Gate runs
-clean Ubuntu and native-Windows corpus, replacement-acceptance,
-reproducibility, and full validation. Exact counts remain checkpoint evidence
-rather than a frozen README promise.
+`v0.1.0-alpha.2` release. Automatic GitHub pull-request checks run a bounded
+short gate on Ubuntu and native Windows. The canonical long corpus,
+replacement-acceptance, reproducibility, self-hosting, and full gates are
+deliberately dispatched for milestone qualification. Exact counts remain
+checkpoint evidence rather than a frozen README promise.
 
 ## Current replacement checkpoint
 
@@ -53,7 +54,10 @@ Merit-native production compiler carries source-backed resolved functions with
 contracts, ownership/control-flow metadata, capability identities, and source
 provenance.
 
-Supported native-resolved functions are serialized into versioned snapshots; multiple functions from one source unit are framed in `resolved-source-function-bundle-v2`, which carries their shared effective source once. Prepared replacement projects validate source digests, reconstruct canonical replacement MIR, emit deterministic C, and compile native executables without falling back to Python semantics.
+The Merit-native compiler emits versioned v4 canonical MIR, C, and public-header
+artifacts. The host validates source digests and artifact framing, then invokes
+the external C toolchain without Python semantic or backend fallback. Python
+retains independent reference/oracle implementations for differential evidence.
 
 The concrete native driver covers M1-M10: the complete accepted/rejected Alpha.1
 corpus, all ten acceptance applications, default production-path cutover, and
@@ -61,6 +65,11 @@ clean stage reproducibility. PR #115 closed the trust gate, and PR #116 closed
 the release audit with authoritative Ubuntu and native-Windows evidence before
 the `v0.1.0-alpha.2` tag. See `ALPHA2_CLOSURE.md` for historical release
 evidence and `POST_ALPHA2_CLEANUP.md` for the completed cleanup evidence.
+SH5 merged in PR #134: isolated stage 1 and stage 2 builds use only the public
+project command and agree on canonical artifacts, protocol, diagnostics, fixed
+accepted/rejected corpus, and all ten acceptance applications. SH6 candidate
+Ubuntu and native-Windows full and self-hosting gates pass; final-tree
+qualification and manual merge review are tracked in `SELF_HOSTING.md`.
 
 ## Established language surface
 
@@ -96,16 +105,27 @@ merit check program.mrt
 merit verify program.mrt
 merit layout program.mrt
 merit audit program.mrt
-merit-project check PATH --replacement-driver EXECUTABLE
-merit-project build PATH --replacement-driver EXECUTABLE
-merit-project run PATH --replacement-driver EXECUTABLE
+merit-project check PATH --compiler-path EXECUTABLE
+merit-project build PATH --compiler-path EXECUTABLE
+merit-project run PATH --compiler-path EXECUTABLE
 merit-project layout PATH --compiler reference
 merit-project audit PATH --compiler reference
-merit-project prepare-replacement PATH --replacement-driver EXECUTABLE
+merit-project prepare-replacement PATH --compiler-path EXECUTABLE
 merit-project verify PATH --compiler reference
+merit-project build compiler --compiler-path STAGE0 -o STAGE1
+merit-project build compiler --compiler-path STAGE1 -o STAGE2
 ```
 
-`merit-project` selects replacement compilation by default. It discovers the native frontend from `--replacement-driver`, `MERIT_REPLACEMENT_DRIVER`, or `merit-replacement-frontend` on `PATH`, and prepares fresh native-resolved artifacts before compiling. Existing prepared artifacts may still be consumed without rediscovery. Replacement mode is deliberately fail-closed and never silently uses Python semantics. `verify`, `layout`, and `audit` are reference/oracle tools and therefore require explicit `--compiler reference`. The single-file `merit` interface remains the explicitly documented independent reference compiler; it is not the normal production compiler path.
+`merit-project` selects replacement compilation by default. It discovers the
+native frontend from `--compiler-path`, `MERIT_REPLACEMENT_DRIVER`, or
+`merit-replacement-frontend` on `PATH`; `--replacement-driver` remains a
+compatibility alias. The explicit stage commands above use the ordinary
+`compiler/Merit.toml` project and produce directly usable executables without a
+private bootstrap build step. Replacement mode fails closed and never silently
+uses Python semantics. `verify`, `layout`, and `audit` are reference/oracle
+tools and require explicit `--compiler reference`. The single-file `merit`
+interface remains the documented independent reference compiler, not the
+normal production project path.
 
 ---
 

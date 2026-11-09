@@ -4,37 +4,41 @@ from pathlib import Path
 
 import pytest
 
-from merit.bootstrap.native_frontend_driver import ReplacementCompilerStage
 from merit.bootstrap.native_frontend_driver import _copy_isolated_compiler_source
-from merit.bootstrap.reproducibility import ReproducibilityError, build_reproducibility_evidence
-from merit.project.replacement_prepare import NativeReplacementDriver
+from merit.bootstrap.reproducibility import SCHEMA, ReproducibilityError, build_reproducibility_evidence
+from merit.bootstrap.self_hosting import SelfHostingError, Stage
 
 
-def _driver(path: Path) -> NativeReplacementDriver:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"native-driver")
-    return NativeReplacementDriver(path)
+def _stages(root: Path) -> tuple[Stage, Stage, Stage]:
+    return tuple(
+        Stage(name, None if index == 0 else root / f"stage-{index-1}",
+              root / f"{name}-source", root / name / "compiler",
+              ("merit-project", "build", name), 1.0, {}, {}, "v4")
+        for index, name in enumerate(("stage_0", "stage_1", "stage_2"))
+    )
 
 
-def _stage(path: Path, canonical: bytes) -> ReplacementCompilerStage:
-    driver = _driver(path / "merit-frontend")
-    c_path = path / "frontend.c"
-    header_path = path / "frontend.h"
-    library = path / "frontend.so"
-    c_path.write_bytes(canonical)
-    header_path.write_bytes(b"canonical header")
-    library.write_bytes(b"platform library")
-    return ReplacementCompilerStage(driver, c_path, header_path, library)
+def _comparison() -> dict[str, object]:
+    return {
+        "canonical_artifact_sha256": {
+            "c_source": "canonical-c", "c_header": "canonical-header",
+            "canonical_mir": "canonical-mir",
+        },
+        "fixed_probes": {
+            "accepted": {"stdout_sha256": "protocol", "request_sha256": "request"},
+        },
+    }
 
 
 def test_reproducibility_evidence_compares_canonical_artifacts_and_protocol(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    stage0 = _driver(tmp_path / "stage-0-driver")
-    stages = iter((_stage(tmp_path / "stage-1", b"canonical C"), _stage(tmp_path / "stage-2", b"canonical C")))
-    monkeypatch.setattr("merit.bootstrap.reproducibility.build_native_replacement_driver", lambda _path: stage0)
-    monkeypatch.setattr("merit.bootstrap.reproducibility.build_replacement_compiler_stage", lambda _path, _producer: next(stages))
-    monkeypatch.setattr("merit.bootstrap.reproducibility._driver_output", lambda _driver: b"canonical protocol")
+    stages = _stages(tmp_path)
+    calls = []
+    monkeypatch.setattr("merit.bootstrap.reproducibility.build_stages",
+                        lambda path: (calls.append(path), stages)[1])
+    monkeypatch.setattr("merit.bootstrap.reproducibility.compare_stage_bytes",
+                        lambda built: (calls.append(built), _comparison())[1])
 
     progress = []
     evidence = build_reproducibility_evidence(
@@ -43,14 +47,19 @@ def test_reproducibility_evidence_compares_canonical_artifacts_and_protocol(
     )
 
     assert evidence["status"] == "passed"
+    assert evidence["schema"] == SCHEMA
+    assert evidence["supersedes"] == "merit-alpha2-reproducibility-v1"
     assert evidence["isolated_source_staging"] is True
     assert evidence["stages"]["stage_1"]["generated_c_sha256"] == evidence["stages"]["stage_2"]["generated_c_sha256"]
-    assert set(evidence["timings_seconds"]) == {
-        "stage_0_build", "stage_1_build", "stage_2_build",
-        "stage_0_probe", "stage_1_probe", "stage_2_probe",
-    }
-    assert progress[0][:2] == ("stage_0_build", "started")
-    assert progress[-1][:2] == ("stage_2_probe", "passed")
+    assert evidence["stages"]["stage_1"]["public_command"][0] == "merit-project"
+    assert evidence["probe_protocol_sha256"] == "protocol"
+    assert evidence["probe_request_sha256"] == "request"
+    assert set(evidence["timings_seconds"]) == {"public_stage_build", "canonical_comparison"}
+    assert calls[0].name == "stages"
+    assert calls[0].parent.parent == tmp_path / "evidence"
+    assert calls[1] == stages
+    assert progress[0][:2] == ("public_stage_build", "started")
+    assert progress[-1][:2] == ("canonical_comparison", "passed")
 
 
 def test_reproducibility_progress_reports_failed_stage(
@@ -58,7 +67,7 @@ def test_reproducibility_progress_reports_failed_stage(
 ) -> None:
     events = []
     monkeypatch.setattr(
-        "merit.bootstrap.reproducibility.build_native_replacement_driver",
+        "merit.bootstrap.reproducibility.build_stages",
         lambda _path: (_ for _ in ()).throw(OSError("build failed")),
     )
 
@@ -69,20 +78,38 @@ def test_reproducibility_progress_reports_failed_stage(
         )
 
     assert [event[:2] for event in events] == [
-        ("stage_0_build", "started"),
-        ("stage_0_build", "failed"),
+        ("public_stage_build", "started"),
+        ("public_stage_build", "failed"),
     ]
+
+
+def test_reproducibility_reuses_report_root_but_not_stage_workspace(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    roots: list[Path] = []
+    monkeypatch.setattr("merit.bootstrap.reproducibility.build_stages",
+                        lambda path: (roots.append(path), _stages(path))[1])
+    monkeypatch.setattr("merit.bootstrap.reproducibility.compare_stage_bytes",
+                        lambda _stages: _comparison())
+
+    first = build_reproducibility_evidence(tmp_path / "evidence")
+    second = build_reproducibility_evidence(tmp_path / "evidence")
+
+    assert first["schema"] == second["schema"] == SCHEMA
+    assert roots[0] != roots[1]
+    assert all(not root.exists() for root in roots)
 
 
 def test_reproducibility_evidence_fails_when_next_stage_canonical_source_differs(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    stage0 = _driver(tmp_path / "stage-0-driver")
-    stages = iter((_stage(tmp_path / "stage-1", b"first"), _stage(tmp_path / "stage-2", b"second")))
-    monkeypatch.setattr("merit.bootstrap.reproducibility.build_native_replacement_driver", lambda _path: stage0)
-    monkeypatch.setattr("merit.bootstrap.reproducibility.build_replacement_compiler_stage", lambda _path, _producer: next(stages))
+    monkeypatch.setattr("merit.bootstrap.reproducibility.build_stages",
+                        lambda _path: _stages(tmp_path))
+    monkeypatch.setattr("merit.bootstrap.reproducibility.compare_stage_bytes",
+                        lambda _stages: (_ for _ in ()).throw(
+                            SelfHostingError("stage-1/stage-2 c_source bytes differ")))
 
-    with pytest.raises(ReproducibilityError, match="canonical generated C/header artifacts differ"):
+    with pytest.raises(ReproducibilityError, match="c_source bytes differ"):
         build_reproducibility_evidence(tmp_path / "evidence")
 
 
