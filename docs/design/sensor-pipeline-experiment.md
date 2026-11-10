@@ -48,6 +48,9 @@ bounded owned FIFO** can use two vector stacks and `vec_pop`/`vec_push` instead
 of indexed take. Its typed full-queue failure returns the original owned
 packet and preserves interpreter/native FIFO and destructor parity. This is
 library expressibility evidence, not a concurrent channel or indexed ring.
+The original capacity-one handoff still deliberately drops a rejected packet;
+that older experiment tests current move/drop behavior and is not the proposed
+future channel's return-of-value policy.
 See the [follow-up audit](concurrency-evidence-audit.md).
 The current checker required the success path to be written as an explicit
 `else` after the full-path `drop(item); return`: placing the push after that
