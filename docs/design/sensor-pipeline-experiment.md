@@ -101,12 +101,24 @@ publication contracts.
 ## Focused evidence and proposed next tests
 
 `tests/test_epoch_iii_vec.py` passed **49/49** before editing. The new
-`tests/project/test_sensor_pipeline.py` passed **3/3** after the example was
-added: reference/native output parity and exact trace, compile-fail use after
+`tests/project/test_sensor_pipeline.py` passed **4/4** after the example was
+added: reference/native output parity and exact trace, a sequential `Sample`
+build through the public replacement compiler path, compile-fail use after
 owned handoff, and compile-fail allocation without capability. Both
 runs used MSYS2 UCRT64 GCC and D: temporary paths. The example also passed
 `merit.project.cli verify` with output matching in 50 bytes. No broad gate was
 run for this isolated example. No stage-3/4 program was compiled.
+
+The **full ring project** does not yet build through the replacement compiler:
+the native driver fails closed with status `971` in about 36 seconds. That
+status is `970 + i64_struct_catalog_invalid_status()`. The native source struct
+catalog currently expects a single identifier token for a field type and
+rejects the `Vec<Sample>` field in `SampleRing`; this is a replacement frontend
+coverage seam, not a reference/native behavior mismatch. The sequential
+`Sample` subset passed the same public replacement path in 21.32 seconds.
+Extending the native catalog and downstream generic aggregate handling is a
+separate compiler capability, outside this RM0 design experiment. The full
+ring remains validated by the independent reference/native parity test only.
 
 Next focused tests, before any concurrent implementation, should cover ring
 capacity one and zero, invalid/maximum sequence, untrusted negative distance,
