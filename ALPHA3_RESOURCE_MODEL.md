@@ -86,6 +86,16 @@ boundary explaining why the first implementation slice does not depend on them.
 
 ## Ordered RM0 work
 
+PRs #138 and #139 completed a bounded concurrency design probe. Their
+channel/task directions remain provisional future constraints, not RM0
+resource semantics or implementation authority. The preferred first slice is
+still immutable function-local stored borrows under F with A-style final-use
+proof. The [implementation readiness audit](docs/design/alpha3/LOCAL_BORROW_IMPLEMENTATION_PLAN.md)
+records the minimum acceptance/rejection matrix, compiler boundaries, tests,
+and the remaining local-reference identity, provisional spelling, diagnostic,
+and versioning decisions. RM0.1–RM0.3 remain open pending review; concurrency
+runtime questions do not block the local-borrow design.
+
 - [x] **RM0.0 — Establish ledger and baseline**: close SH6 status, preserve the
   proposal as a non-normative input, list compatibility invariants and decisions.
 - [ ] **RM0.1 — Choose first semantic slice**: choose the smallest coherent

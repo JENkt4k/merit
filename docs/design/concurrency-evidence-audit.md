@@ -50,7 +50,7 @@ destroyed once; no packet has two terminal owners.
 | S7 | Cancel request and close race while send is pending | Exactly one `Cancelled(value)`, `Rejected(Closed,value)`, or `Sent` according to ordered commit points; never `Unknown` or two values. |
 | R1 | Receive races final teardown on one queued packet | Exactly one receiver delivery or teardown disposition; the loser cannot access the slot. |
 | R2 | Close races final receive of the last packet | Accepted packet can be delivered; EOF follows only after queue and prior publications are empty/resolved. |
-| R3 | Final receiver handle is dropped while packets remain | Recovery or valid-context destruction accounts for each ID once; close alone is not disposal. |
+| R3 | Final channel handle is released while packets remain | Valid-context destruction accounts for each ID once, unless an explicit recovery API transfers ownership; close alone is not disposal. Handle-lifetime rules must make this transition unambiguous. |
 | T1 | Spawn fails after capture preparation | Original task and every capture returned, or a specified partial-construction cleanup path; no child executes. |
 | T2 | Spawn succeeds, then immediate cancellation request | Task retains captures until join/equivalent completion, including in-flight callbacks; release occurs once afterward. |
 | T3 | Parent exits scope while child blocks or ignores cancellation | Scope cannot reclaim captured storage or complete until an approved join/completion policy is satisfied. |
@@ -67,9 +67,9 @@ small history checker are more informative than elapsed-time stress alone.
 
 ## Remaining specification decisions
 
-1. Choose the final undelivered-message disposition and handle-lifetime model.
-   A recovery object is more reversible than automatic destruction but needs a
-   clear owner and drop policy itself.
+1. Define final handle-lifetime and teardown triggering rules. Remaining
+   messages may be destroyed safely; optional recovery must transfer them to a
+   clear owner with a drop policy.
 2. Define the payload transfer/destruction relation, including recursive owned
    fields, provider lifetime, destructor context, and foreign handles. A
    blanket `Owned<T>` rule would be unsound.
