@@ -67,6 +67,7 @@ def test_v2_local_loan_round_trip_keeps_v1_bytes_unchanged():
     lambda data: data["bindings"][0].update(extra=1),
     lambda data: data["bindings"][0]["type"].update(extra=1),
     lambda data: data["nodes"][0].update(extra=1),
+    lambda data: data["bindings"][0].update(ownership="local_reference"),
 ])
 def test_v2_rejects_malformed_local_loan_semantics(change):
     data = local_loan_module().to_data()

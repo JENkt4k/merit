@@ -84,6 +84,9 @@ def test_v2_loan_effects_round_trip_without_changing_v1():
     lambda data: data["functions"][0]["return_type"].update(extra=1),
     lambda data: data["functions"][0]["blocks"][0]["instructions"][0].update(kind="copy"),
     lambda data: data["functions"][0]["blocks"][0]["instructions"][1].update(operands=[0]),
+    lambda data: data["functions"][0]["locals"][0].update(ownership="local_reference"),
+    lambda data: data["functions"][0]["local_loan_effects"].pop(1),
+    lambda data: data["functions"][0]["blocks"][0]["terminator"].update(operands=[1]),
 ])
 def test_v2_rejects_malformed_loan_effects(change):
     data = local_loan_module().to_data()

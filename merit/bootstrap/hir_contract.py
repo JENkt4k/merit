@@ -230,6 +230,8 @@ def _validate_module(module: HirModule) -> None:
             raise HirContractError("local reference binding must be immutable")
         if binding_by_id[loan.reference_binding_id].ownership != "local_reference":
             raise HirContractError("local loan requires a local-reference binding")
+        if binding_by_id[loan.origin_binding_id].ownership == "local_reference":
+            raise HirContractError("local loan cannot originate from another local reference")
         if binding_by_id[loan.reference_binding_id].type != binding_by_id[loan.origin_binding_id].type:
             raise HirContractError("local loan reference and origin types differ")
     node_set = set(node_ids)

@@ -414,6 +414,7 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
         raise MirContractError("local loan source binding IDs must be unique")
     active: dict[int, int] = {}
     finished: set[int] = set()
+    recorded_uses: set[tuple[int, int]] = set()
     previous = (-1, -1, -1)
     rank = {"create": 0, "use": 1, "end": 2}
     for effect in function.local_loan_effects:
@@ -427,6 +428,8 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
             raise MirContractError("local loan effect references an unknown source binding")
         if effect.reference_binding_id not in references:
             raise MirContractError("local loan effect requires a local-reference binding")
+        if effect.origin_binding_id in references:
+            raise MirContractError("local loan cannot originate from another local reference")
         if effect.kind == "create":
             instruction = instructions[effect.instruction_id]
             if (instruction.kind != "borrow"
@@ -440,11 +443,26 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
             raise MirContractError("local loan use/end has no matching active origin")
         elif effect.kind == "use" and locals_by_binding[effect.reference_binding_id] not in instructions[effect.instruction_id].operands:
             raise MirContractError("local loan use must read the reference local")
+        elif effect.kind == "use":
+            recorded_uses.add((effect.instruction_id, effect.reference_binding_id))
         elif effect.kind == "end":
             del active[effect.reference_binding_id]
             finished.add(effect.reference_binding_id)
     if active:
         raise MirContractError("local loan missing end effect")
+    if references != finished:
+        raise MirContractError("every local reference requires one complete loan")
+    reference_by_local = {locals_by_binding[binding]: binding for binding in references}
+    for block in function.blocks:
+        if any(operand in reference_by_local for operand in block.terminator.operands):
+            raise MirContractError("local reference cannot escape through a terminator")
+        for instruction in block.instructions:
+            for operand in instruction.operands:
+                reference = reference_by_local.get(operand)
+                if reference is not None and (instruction.instruction_id, reference) not in recorded_uses:
+                    raise MirContractError("local reference use has no explicit loan effect")
+            if instruction.result in reference_by_local and instruction.kind != "borrow":
+                raise MirContractError("local reference cannot be overwritten")
 
 
 def _validate_executable(
