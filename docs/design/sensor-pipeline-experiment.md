@@ -11,7 +11,7 @@ from an owned `Buffer` payload: a copyable sample alone cannot test move safety.
 | Stage | What current Merit supports | Missing language boundary | Library/runtime boundary | Verification |
 | --- | --- | --- | --- | --- |
 | 1. Sequential producer → consumer | `Sample { sequence:u64, distance_mm:i32 }`, typed function call, exact integer arithmetic, explicit printing. `consume(borrow sample:Sample)` uses current call-scoped borrow. | None for this example; no stored reference is needed. | Sensor acquisition, clock and physical-unit validation are outside the language. | Direct call prints 120; interpreter/native parity. |
-| 2. Single-threaded bounded ring | `Vec<Sample>` prefilled to capacity three, head/tail/count, checked `vec_set`/`vec_get`, explicit allocation capability. A separate capacity-one `Vec<OwnedSample>` moves a `Buffer` in and out; a full send destroys the transferred packet once. | A general owned-element ring needs a safe arbitrary-slot take/empty-slot contract; current `Vec<OwnedSample>` supports push/pop but does not itself provide an indexed owned take. | Queue full/empty policy, stale-sample policy and capacity are library/application rules. | Fill/full/wrap/drain/empty order, owned move rejection, full-send disposition, capability rejection. |
+| 2. Single-threaded bounded ring | `Vec<Sample>` prefilled to capacity three, head/tail/count, checked `vec_set`/`vec_get`, explicit allocation capability. A separate capacity-one `Vec<OwnedSample>` moves a `Buffer` in and out; a full send destroys the transferred packet once. | A general owned-element *indexed ring* needs safe arbitrary-slot take/empty-slot handling; `vec_replace` destroys its displaced value. A bounded owned FIFO is expressible with two vector stacks instead. | Queue full/empty policy, stale-sample policy and capacity are library/application rules. | Fill/full/wrap/drain/empty order, owned move rejection, full-send disposition, capability rejection. |
 | 3. Two-thread SPSC queue | Current single-thread state and move rules are useful but do not authorize cross-thread access. | Transfer/share safety, thread affinity, publication/happens-before, atomic ordering, child lifetime and cancellation ownership are not specified. | Bounded SPSC queue and scheduler can be library/runtime features after the language boundary is frozen. | Future weak-memory litmus, lost/duplicate sequence history, failed-send ownership and race stress. |
 | 4. Sensor → filter → control | Structs, calls, and sequential processing exist; concurrency does not. | Same stage-3 boundary plus safe task/channel lifetime, capture/escape checks, and possibly future async suspension rules. | Two bounded channels, filtering, control policy, cancellation and backpressure are library/application responsibilities. | Future per-stage order, end-to-end sequence/freshness, faults at every handoff, bounded memory and cleanup. |
 
@@ -43,6 +43,12 @@ packet prints `7` once, and the received packet prints `6` once at its explicit
 drop. Using the old binding after send is a compile error. This is a
 capacity-one owned handoff, **not** a
 general multi-slot owned ring; that gap is a finding, not an API claim.
+After PR #138 merged, a separate focused probe proved that a **single-threaded
+bounded owned FIFO** can use two vector stacks and `vec_pop`/`vec_push` instead
+of indexed take. Its typed full-queue failure returns the original owned
+packet and preserves interpreter/native FIFO and destructor parity. This is
+library expressibility evidence, not a concurrent channel or indexed ring.
+See the [follow-up audit](concurrency-evidence-audit.md).
 The current checker required the success path to be written as an explicit
 `else` after the full-path `drop(item); return`: placing the push after that
 `if` was diagnosed as use of dropped `item`. The explicit branch version
@@ -129,9 +135,10 @@ plus SPSC stress/history and memory-order litmus tests.
 
 ## Questions requiring human approval
 
-1. Is the **capacity-one owned handoff plus copyable multi-slot ring** enough
-   evidence for this stage, or should a future library primitive support
-   arbitrary indexed owned take before stage 3?
+1. The later two-stack probe demonstrates a bounded owned FIFO in current
+   single-threaded Merit. Is true indexed-ring behavior required for the
+   later concurrency performance target, or is a queue representation
+   sufficient? No answer is needed to freeze the local-borrow RM0 slice.
 2. What are the sensor input bounds, sequence-wrap behavior and stale-sample
    policy? These are application contracts, not automatic language semantics.
 3. The owner provisionally chose return-of-value on full/closed send and on
