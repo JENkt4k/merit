@@ -1,5 +1,10 @@
 # Prioritized concurrency design experiments
 
+The first bounded sensor pipeline probe is documented in
+[sensor-pipeline-experiment.md](sensor-pipeline-experiment.md). Its sequential
+and single-threaded stages are current-language examples; its SPSC and
+three-stage concurrent cases remain plans.
+
 **Plans, not executed tests.** Pseudo-Merit notation is proposed. No compiler
 or runtime implementation is authorized by this document. All experiments
 first compare with a sequential oracle or history checker, then measure on

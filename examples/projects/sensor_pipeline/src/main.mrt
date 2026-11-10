@@ -1,0 +1,112 @@
+module sensor_pipeline
+capability allocate;
+
+struct Sample {
+    sequence: u64;
+    distance_mm: i32;
+}
+
+struct SampleRing {
+    slots: Vec<Sample>;
+    head: i64;
+    tail: i64;
+    count: i64;
+    capacity: i64;
+}
+
+struct OwnedSample {
+    sample: Sample;
+    payload: Buffer;
+}
+
+destructor OwnedSample { print(self.sample.sequence); }
+
+fn queue_rejected() -> i32 { return 0; }
+fn queue_accepted() -> i32 { return 1; }
+
+fn next_slot(index: i64, capacity: i64) -> i64 {
+    let next: i64 = index + 1;
+    if (next == capacity) { return 0; }
+    return next;
+}
+
+fn ring_push(borrow_mut ring: SampleRing, sample: Sample) -> i32 {
+    if (ring.count == ring.capacity) { return queue_rejected(); }
+    vec_set<Sample>(ring.slots, ring.tail, sample);
+    ring.tail = next_slot(ring.tail, ring.capacity);
+    ring.count = ring.count + 1;
+    return queue_accepted();
+}
+
+fn ring_pop(borrow_mut ring: SampleRing, borrow_mut output: Sample) -> i32 {
+    if (ring.count == 0) { return queue_rejected(); }
+    let current: Sample = vec_get<Sample>(ring.slots, ring.head);
+    output.sequence = current.sequence;
+    output.distance_mm = current.distance_mm;
+    ring.head = next_slot(ring.head, ring.capacity);
+    ring.count = ring.count - 1;
+    return queue_accepted();
+}
+
+fn consume(borrow sample: Sample) -> i32 {
+    return sample.distance_mm;
+}
+
+fn owned_slot_send(borrow_mut slot: Vec<OwnedSample>, item: OwnedSample) -> i32 {
+    if (vec_len<OwnedSample>(slot) == 1) {
+        drop(item);
+        return queue_rejected();
+    } else {
+        with capability allocate {
+            vec_push<OwnedSample>(slot, item);
+        }
+        return queue_accepted();
+    }
+}
+
+fn main() -> i32 {
+    with capability allocate {
+        let allocator: Allocator = system_allocator();
+        let first: Sample = Sample { sequence: 1, distance_mm: 120 };
+        print(consume(first));
+
+        let capacity: i64 = 3;
+        var slots: Vec<Sample> = vec_new<Sample>(allocator, capacity);
+        vec_push<Sample>(slots, Sample { sequence: 0, distance_mm: 0 });
+        vec_push<Sample>(slots, Sample { sequence: 0, distance_mm: 0 });
+        vec_push<Sample>(slots, Sample { sequence: 0, distance_mm: 0 });
+        var ring: SampleRing = SampleRing { slots: slots, head: 0, tail: 0, count: 0, capacity: capacity };
+        var output: Sample = Sample { sequence: 0, distance_mm: 0 };
+        print(ring_push(ring, Sample { sequence: 2, distance_mm: 121 }));
+        print(ring_push(ring, Sample { sequence: 3, distance_mm: 122 }));
+        print(ring_push(ring, Sample { sequence: 4, distance_mm: 123 }));
+        print(ring_push(ring, Sample { sequence: 5, distance_mm: 124 }));
+        print(ring_pop(ring, output));
+        print(output.sequence);
+        print(output.distance_mm);
+        print(ring_push(ring, Sample { sequence: 5, distance_mm: 124 }));
+        print(ring_pop(ring, output));
+        print(output.sequence);
+        print(ring_pop(ring, output));
+        print(output.sequence);
+        print(ring_pop(ring, output));
+        print(output.sequence);
+        print(ring_pop(ring, output));
+
+        var owned_slot: Vec<OwnedSample> = vec_new<OwnedSample>(allocator, 1);
+        let payload: Buffer = buffer_from_string(allocator, "sensor");
+        let packet: OwnedSample = OwnedSample { sample: Sample { sequence: 6, distance_mm: 125 }, payload: payload };
+        print(owned_slot_send(owned_slot, packet));
+        let rejected_payload: Buffer = buffer_from_string(allocator, "old");
+        let rejected_packet: OwnedSample = OwnedSample { sample: Sample { sequence: 7, distance_mm: 126 }, payload: rejected_payload };
+        print(owned_slot_send(owned_slot, rejected_packet));
+        print(vec_len<OwnedSample>(owned_slot));
+        let received: OwnedSample = vec_pop<OwnedSample>(owned_slot);
+        print(received.sample.sequence);
+        print(buffer_len(received.payload));
+        drop(received);
+        drop(owned_slot);
+        drop(ring);
+    }
+    return 0;
+}
