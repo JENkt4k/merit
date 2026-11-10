@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from merit.bootstrap.hir_contract import HirModule, HirNode, HirType
+from merit.bootstrap.hir_contract import LOCAL_LOAN_HIR_SCHEMA, HirModule, HirNode, HirType
 from merit.bootstrap.mir_contract import (
+    LOCAL_LOAN_MIR_SCHEMA,
+    MIR_SCHEMA,
     MirBlock,
     MirFunction,
     MirInstruction,
     MirLocal,
+    MirLocalLoanEffect,
     MirModule,
     MirTerminator,
     MirType,
@@ -68,8 +71,24 @@ class _FunctionLowerer:
         self.next_local = 0
         self.next_instruction = 0
         self.current = self._new_block()
+        self.local_loan_creations: dict[int, int] = {}
 
+        used_bindings: set[int] = set()
+        if self.module.schema == LOCAL_LOAN_HIR_SCHEMA:
+            pending = [self.function.node_id]
+            visited: set[int] = set()
+            while pending:
+                node_id = pending.pop()
+                if node_id in visited:
+                    continue
+                visited.add(node_id)
+                node = self.by_id[node_id]
+                if node.binding_id is not None:
+                    used_bindings.add(node.binding_id)
+                pending.extend(node.children)
         for binding in sorted(self.module.bindings, key=lambda item: item.binding_id):
+            if self.module.schema == LOCAL_LOAN_HIR_SCHEMA and binding.binding_id not in used_bindings:
+                continue
             local_id = self._new_local(
                 binding.name,
                 _mir_type(binding.type),
@@ -394,6 +413,8 @@ class _FunctionLowerer:
             raise HirToMirError(
                 f"HIR node {node.node_id} kind {node.kind!r} is not a supported statement"
             )
+        if self.module.schema == LOCAL_LOAN_HIR_SCHEMA and node.kind in _CONTROL_KINDS:
+            raise HirToMirError("local loans require proven straight-line control flow")
         if self.current.terminator is not None:
             raise HirToMirError(f"statement node {node.node_id} appears after a terminator")
 
@@ -410,9 +431,25 @@ class _FunctionLowerer:
                 raise HirToMirError(f"{node.kind} node {node.node_id} has no resolved binding")
             if len(node.children) != 1:
                 raise HirToMirError(f"{node.kind} node {node.node_id} requires one value")
-            source = self.lower_value(self._child(node, 0))
             destination = self.binding_locals[node.binding_id]
-            self._emit(node, "copy", result=destination, operands=(source,))
+            if self.module.schema == LOCAL_LOAN_HIR_SCHEMA and node.kind == "let" and any(
+                loan.reference_binding_id == node.binding_id for loan in self.module.local_loans
+            ):
+                loan = next(loan for loan in self.module.local_loans if loan.reference_binding_id == node.binding_id)
+                initializer = self._child(node, 0)
+                if initializer.kind != "borrow" or len(initializer.children) != 1:
+                    raise HirToMirError("local reference requires a borrow initializer")
+                origin = self._child(initializer, 0)
+                if origin.kind != "identifier" or origin.binding_id != loan.origin_binding_id:
+                    raise HirToMirError("local loan origin does not match the initializer")
+                if node.binding_id in self.local_loan_creations:
+                    raise HirToMirError("local reference initialized more than once")
+                self._emit(initializer, "borrow", result=destination,
+                           operands=(self.binding_locals[loan.origin_binding_id],), ownership="local_reference")
+                self.local_loan_creations[node.binding_id] = self.next_instruction - 1
+            else:
+                source = self.lower_value(self._child(node, 0))
+                self._emit(node, "copy", result=destination, operands=(source,))
         elif node.kind == "drop":
             if node.binding_id is None or node.binding_id not in self.binding_locals:
                 raise HirToMirError(f"drop node {node.node_id} has no resolved binding")
@@ -456,6 +493,36 @@ class _FunctionLowerer:
             )
             for block in self.blocks
         )
+        loan_effects: list[MirLocalLoanEffect] = []
+        if self.module.schema == LOCAL_LOAN_HIR_SCHEMA:
+            for loan in self.module.local_loans:
+                creation = self.local_loan_creations.get(loan.reference_binding_id)
+                if creation is None:
+                    continue
+                reference_local = self.binding_locals[loan.reference_binding_id]
+                uses = sorted(instruction.instruction_id for block in blocks
+                              for instruction in block.instructions
+                              if reference_local in instruction.operands)
+                span = SourceSpan(loan.span.start, loan.span.length)
+                loan_effects.append(MirLocalLoanEffect(
+                    "create", creation, loan.reference_binding_id, loan.origin_binding_id, span,
+                ))
+                for instruction_id in uses:
+                    use_instruction = next(instruction for block in blocks for instruction in block.instructions
+                                           if instruction.instruction_id == instruction_id)
+                    loan_effects.append(MirLocalLoanEffect(
+                        "use", instruction_id, loan.reference_binding_id, loan.origin_binding_id,
+                        use_instruction.span or span,
+                    ))
+                loan_effects.append(MirLocalLoanEffect(
+                    "end", uses[-1] if uses else creation,
+                    loan.reference_binding_id, loan.origin_binding_id,
+                    (next(instruction for block in blocks for instruction in block.instructions
+                          if instruction.instruction_id == uses[-1]).span or span) if uses else span,
+                ))
+            loan_effects.sort(key=lambda effect: (
+                effect.instruction_id, {"create": 0, "use": 1, "end": 2}[effect.kind], effect.reference_binding_id,
+            ))
         return MirFunction(
             self.function.symbol,
             _mir_type(self.function.type),
@@ -463,6 +530,7 @@ class _FunctionLowerer:
             blocks,
             0,
             self.function.capabilities,
+            local_loan_effects=tuple(loan_effects),
         )
 
 
@@ -474,4 +542,5 @@ def lower_hir_to_mir(module: HirModule) -> MirModule:
         _FunctionLowerer(module, by_id[root_id]).lower()
         for root_id in module.roots
     ]
-    return MirModule(module.name, tuple(functions))
+    return MirModule(module.name, tuple(functions),
+                     LOCAL_LOAN_MIR_SCHEMA if module.schema == LOCAL_LOAN_HIR_SCHEMA else MIR_SCHEMA)

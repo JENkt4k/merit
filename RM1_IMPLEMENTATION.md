@@ -82,6 +82,15 @@ replacement compiler does not yet consume or emit them; this remains an
 interchange-contract checkpoint rather than complete canonical representation
 evidence.
 
+The generic checked-HIR-to-MIR bridge now lowers v2 local-reference
+initializers into a direct borrow instruction and derives ordered create,
+read/call-use, and final-use end effects from the emitted instruction IDs.
+It rejects a mismatched origin and unsupported structured control flow.
+The ABI bridge retains the v2 loan records. Focused HIR-to-MIR and ABI tests
+pass 43 tests on Windows. This bridge consumes constructed checked HIR; it is
+not yet evidence that the Python source frontend or Merit-native project
+compiler emits v2 from actual source.
+
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and
 loan effects, rejects legacy snapshot mixing, and records the v5 producer
