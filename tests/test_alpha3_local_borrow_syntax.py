@@ -14,7 +14,10 @@ def test_local_borrow_form_has_distinct_node_and_origin_binding() -> None:
     )
     binding = program.functions[0].body[1]
     assert binding.kind == "local_borrow"
-    assert binding.operands == ("r", "Box", "x")
+    assert binding.operands[:2] == ("r", "Box")
+    assert binding.operands[2].kind == "var"
+    assert binding.operands[2].operands == ("x",)
+    assert binding.operands[2].binding_id == program.functions[0].body[0].binding_id
     assert binding.binding_id.name == "r"
     with pytest.raises(CompileError, match="M5400"):
         Checker(program).check()

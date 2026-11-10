@@ -211,7 +211,7 @@ class SemanticNodeView:
     @property
     def declared_type(self):self.require('let','local_borrow','try_let');return self.operand(1)
     @property
-    def initializer(self):self.require('let','try_let');return self.operand(2)
+    def initializer(self):self.require('let','local_borrow','try_let');return self.operand(2)
     @property
     def mutable(self):self.require('let');return self.operand(3)
     @property
@@ -363,7 +363,9 @@ class ASTBuilder(Transformer):
     @v_args(meta=True)
     def let_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],False),meta)
     @v_args(meta=True)
-    def local_borrow_stmt(self,meta,x): return self.mark(self.semantic('local_borrow',str(x[0]),x[2],str(x[4])),meta)
+    def local_borrow_stmt(self,meta,x):
+        origin=self.mark(self.semantic('var',str(x[4])),x[4])
+        return self.mark(self.semantic('local_borrow',str(x[0]),x[2],origin),meta)
     @v_args(meta=True)
     def var_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],True),meta)
     @v_args(meta=True)
@@ -654,6 +656,7 @@ def assign_binding_ids(program):
                 if kind in ('let','try_let'):
                     expression(node.initializer);binding=bind(node.binding_name);object.__setattr__(statement,'binding_id',binding)
                 elif kind=='local_borrow':
+                    expression(node.initializer)
                     object.__setattr__(statement,'binding_id',bind(node.binding_name))
                 elif kind in ('assign','replace'):
                     expression(node.assignment_target);expression(node.assigned_value)
