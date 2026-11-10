@@ -35,7 +35,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
 | HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects, strict v2 readers, canonical round trips, and malformed-record tests pass. Source-to-HIR/MIR producers and native parity remain open. |
-| Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Open. |
+| Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Python transport and public artifact publication/loading accept validated v5 MIR v2, reject mixed snapshot framing and mislabeled v4/v5. Merit-native producer and actual new-feature project build remain open. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Open. |
 | Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused baseline only. |
 
@@ -81,6 +81,14 @@ Windows. Source lowering does not yet produce these v2 records, and the native
 replacement compiler does not yet consume or emit them; this remains an
 interchange-contract checkpoint rather than complete canonical representation
 evidence.
+
+The native project-artifact transport now recognizes a separate v5 version
+word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and
+loan effects, rejects legacy snapshot mixing, and records the v5 producer
+protocol in the public manifest. Loading rejects v2 MIR mislabeled as v4.
+The old v4 producer protocol and bytes retain their existing path. Focused
+transport/preparation tests pass 36 tests on Windows. This is reader and
+publication support; no Merit-native compiler emits a v5 bundle yet.
 
 ## Bounded semantic-coherence audit
 

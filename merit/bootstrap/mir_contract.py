@@ -12,8 +12,9 @@ from dataclasses import dataclass
 import json
 from typing import Mapping, Sequence
 
+from merit.bootstrap.representation_versions import LOCAL_LOAN_MIR_SCHEMA
+
 MIR_SCHEMA = "bootstrap-mir-v1"
-LOCAL_LOAN_MIR_SCHEMA = "bootstrap-mir-v2"
 LOCAL_LOAN_EFFECT_KINDS = frozenset({"create", "use", "end"})
 
 INSTRUCTION_KINDS = frozenset({
