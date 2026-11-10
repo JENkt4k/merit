@@ -120,4 +120,12 @@ Current bounded findings:
 | Future architectural risk | `ByteSlice` has a separate backing-owner relationship; a local loan of the slice alone does not prove that backing storage remains valid. The checker rejects that new combination until a separate origin proof exists. | Checker and future MIR provenance. |
 | No issue | A local reference is absent from owned cleanup records; the owner remains the only destructor authority. | Ownership planner. |
 | Confirmed implementation gap, merge-blocking | Reference interpreter/C lowering passes focused new-feature parity, but HIR/MIR v2, native v5, replacement compiler, and stage parity remain absent. | Canonical representation and production replacement compiler. |
-| Confirmed pre-existing defect, separate from RM1 | A pre-feature program `fn inspect(borrow x:i32)->i32 { return x; }` passes the checker but existing C emits `_merit_result = x;` where `x` is `const int32_t *`; GCC rejects the pointer-to-value assignment. RM1's case 24 execution evidence uses the already-supported `borrow Box` field read. Correcting the old primitive direct-read C bytes conflicts with the RM0 old-artifact byte-preservation rule and needs a separate compatibility decision. | Alpha.2 reference C generator; no local-borrow syntax required. |
+| Confirmed required-path defect, narrowly corrected | A pre-feature program `fn inspect(borrow x:i32)->i32 { return x; }` passed the checker but emitted `_merit_result = x;` where `x` is a pointer. RM1's required case 24 passes a stored local reference to such a function, so native execution could not satisfy the approved acceptance matrix. The reference C emitter now dereferences only a direct borrowed parameter returned from a value-returning function; borrowed-return functions and other old emission paths remain unchanged. Focused old-source and RM1 execution regressions pass. This changes the previously invalid C bytes for that one old source shape. Representative runnable Alpha.2 fixture digests pass. | Reference C emitter and case 24 execution. |
+
+Representative old-program C/header digests were compared byte for byte
+against the committed pre-fix compiler for scalar, owned/destructor, and
+borrowed-return fixtures. All three pairs match and are pinned in
+`tests/test_alpha3_local_borrow_compatibility.py`. Existing HIR v1 and MIR v1
+sample canonical JSON digests are pinned in their contract tests. The focused
+compatibility/contract/execution run passed 128 tests on Windows. This is
+representative byte evidence, not yet the complete Alpha.2 artifact corpus.

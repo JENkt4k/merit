@@ -48,6 +48,19 @@ def test_borrowed_parameter_origin_and_owner_destructor_are_identical(tmp_path):
     assert parity(source,tmp_path)==('1\n1\n9\n9\n','1\n1\n9\n9\n')
 
 
+def test_required_case_24_primitive_borrowed_parameter_has_native_parity(tmp_path):
+    source=('module rm1\nfn inspect(borrow value:i32)->i32 { return value; }\n'
+            'fn main()->i32 { let x:i32=1; let r: borrow i32 = borrow x; '
+            'print(inspect(r)); print(r); return 0; }')
+    assert parity(source,tmp_path)==('1\n1\n','1\n1\n')
+
+
+def test_existing_primitive_borrowed_parameter_return_has_native_parity(tmp_path):
+    source=('module old\nfn inspect(borrow value:i32)->i32 { return value; }\n'
+            'fn main()->i32 { let x:i32=2; print(inspect(x)); return 0; }')
+    assert parity(source,tmp_path)==('2\n','2\n')
+
+
 @pytest.mark.parametrize(
     ("tail", "expected"),
     [

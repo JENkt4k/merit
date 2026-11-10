@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -109,6 +110,7 @@ def test_sample_mir_is_canonical_and_round_trips():
     assert parse_mir(json.loads(encoded)) == module
     assert encoded == canonical_mir_json(module)
     assert json.loads(encoded)["schema"] == MIR_SCHEMA
+    assert hashlib.sha256(encoded.encode()).hexdigest() == "504df2b92f22dbcf679361f0966b74940d6ac89663f0452eb8087e7bd59cc811"
 
 
 def test_executable_destructor_is_canonical_and_round_trips():

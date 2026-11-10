@@ -2390,6 +2390,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         for c in f.pre:
             prelude,value=self.ordered_expr(c,env,None,'    ');o.extend(prelude);o.append(f'    if(!({value})) merit_fail("precondition failed in {f.name}",71);')
         self.current_return=f.return_type
+        self.current_return_mode=f.return_mode
         if f.return_type!='void':
             if f.return_mode=='borrow':o.append(f'    const {self.ctype(f.return_type)} *_merit_result = NULL;')
             elif f.return_mode=='borrow_mut':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
@@ -2530,6 +2531,10 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             prelude,value=self.ordered_expr(node.expression,env,self.current_return,p)
             if self.current_return=='void':
                 return prelude+[f'{p}(void)({value});',f'{p}goto _merit_epilogue;']
+            return_expression=self.p.node(node.expression)
+            if (self.current_return_mode=='value' and return_expression.kind=='var'
+                and self.env_mode(env,return_expression.raw.binding_id) in ('borrow','borrow_mut')):
+                value=f'(*{return_expression.raw.binding_id.c_name})'
             return prelude+[f'{p}_merit_result = {self.checked(self.current_return,value)};',f'{p}goto _merit_epilogue;']
         if kind=='print':
             t=self.etype(node.expression,env);prelude,x=self.ordered_expr(node.expression,env,t,p)

@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -90,6 +91,7 @@ def test_hir_round_trips_canonically():
     assert decoded == module
     assert canonical_hir_json(decoded) == encoded
     assert json.loads(encoded)["schema"] == HIR_SCHEMA
+    assert hashlib.sha256(encoded.encode()).hexdigest() == "467e4a817bb0c966c054083f6aa52b542c1cb63f7743c58ba970db03b94e09ff"
 
 
 def test_canonical_hir_is_independent_of_mapping_order():
