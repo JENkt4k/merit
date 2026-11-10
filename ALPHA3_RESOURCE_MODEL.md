@@ -48,22 +48,25 @@ The SH3 deferred seams in `SELF_HOSTING.md` are the starting architecture audit.
 
 ## Finite decision matrix
 
-`OPEN` means no Alpha.3 behavior is authorized. A row closes only with a
+`OPEN` means no Alpha.3 behavior is authorized. `APPROVED DRAFT` records the
+owner's semantic direction pending design-only PR review and merge; it does
+not authorize compiler implementation. `DEFERRED` excludes the relationship
+from the first slice without freezing its later semantics. A row closes only with a
 normative rule, accepted and rejected examples, observable behavior, and a
 compatibility/evidence entry. Rows marked deferred still need an explicit
 boundary explaining why the first implementation slice does not depend on them.
 
 | ID | Decision to freeze | Proposal anchor | State |
 | --- | --- | --- | --- |
-| R1 | First implementation slice and whether relationship names are conceptual or user syntax | §§4, 28–30, 33 | OPEN |
-| R2 | Borrow validity, storage and escape, access/mutation authority, alias conflicts, and inference versus named lifetime syntax | §§4.2, 8, 30 | OPEN |
-| R3 | Resource ownership versus allocator identity, transfer, and deterministic normal/early/error cleanup | §§4.1, 6–7, 15, 30 | OPEN |
-| R4 | Shared/weak identity, clone and release, cycles, upgrade failure, runtime costs, and whether RC is semantic or implementation detail | §§4.3–5, 30 | OPEN |
-| R5 | Region membership, escape, destruction order, and interaction with owned/borrowed values | §§6, 30 | OPEN |
-| R6 | Address stability/pinning and its relation to moves, borrows, and FFI | §§11, 18, 30 | OPEN |
-| R7 | Foreign ownership/retained callbacks, hazardous capability boundaries, and unwind/fatal behavior | §§11–13, 30 | OPEN |
-| R8 | Arrays/views and overlap authority; concurrency and thread transfer boundary | §§9–10, 30 | OPEN |
-| R9 | Canonical MIR effects, diagnostics, serialization/versioning, C ABI/layout, interpreter/native and stage equivalence | §§21, 26–27 and SH3 deferred seams | OPEN |
+| R1 | First implementation slice and whether relationship names are conceptual or user syntax | §§4, 28–30, 33 | APPROVED DRAFT: immutable function-local reference mode; preferred provisional spelling under grammar review. |
+| R2 | Borrow validity, storage and escape, access/mutation authority, alias conflicts, and inference versus named lifetime syntax | §§4.2, 8, 30 | APPROVED DRAFT: F authority split, A-style final use, stated minimum accepted/rejected cases. |
+| R3 | Resource ownership versus allocator identity, transfer, and deterministic normal/early/error cleanup | §§4.1, 6–7, 15, 30 | APPROVED DRAFT: owner retains cleanup; no borrow destructor, allocation, or RC. |
+| R4 | Shared/weak identity, clone and release, cycles, upgrade failure, runtime costs, and whether RC is semantic or implementation detail | §§4.3–5, 30 | DEFERRED: independent future semantic contract. |
+| R5 | Region membership, escape, destruction order, and interaction with owned/borrowed values | §§6, 30 | DEFERRED: local borrow has no region membership. |
+| R6 | Address stability/pinning and its relation to moves, borrows, and FFI | §§11, 18, 30 | DEFERRED: live local reference validity does not imply public pinning. |
+| R7 | Foreign ownership/retained callbacks, hazardous capability boundaries, and unwind/fatal behavior | §§11–13, 30 | DEFERRED: no foreign retention/callback right. |
+| R8 | Arrays/views and overlap authority; concurrency and thread transfer boundary | §§9–10, 30 | DEFERRED: no aggregate view, concurrency, or thread-transfer right. |
+| R9 | Canonical MIR effects, diagnostics, serialization/versioning, C ABI/layout, interpreter/native and stage equivalence | §§21, 26–27 and SH3 deferred seams | APPROVED DRAFT: stable diagnostic identities and explicit versioned metadata; proposed encoding contract awaiting review. |
 
 ## Required evidence before semantic freeze
 
@@ -92,9 +95,12 @@ resource semantics or implementation authority. The preferred first slice is
 still immutable function-local stored borrows under F with A-style final-use
 proof. The [implementation readiness audit](docs/design/alpha3/LOCAL_BORROW_IMPLEMENTATION_PLAN.md)
 records the minimum acceptance/rejection matrix, compiler boundaries, tests,
-and the remaining local-reference identity, provisional spelling, diagnostic,
-and versioning decisions. RM0.1–RM0.3 remain open pending review; concurrency
-runtime questions do not block the local-borrow design.
+and the compiler evidence requirements. The owner has now approved the R1–R3
+semantic direction and the R9 compatibility requirement, with R4–R8 explicitly
+deferred. The [first-slice contract](docs/design/alpha3/LOCAL_BORROW_CONTRACT.md)
+records the final case matrix and a proposed conditional HIR/MIR/v4/v5
+encoding for review. RM0.1–RM0.3 remain open until that design-only review and
+merge; concurrency runtime questions do not block the local-borrow design.
 
 - [x] **RM0.0 — Establish ledger and baseline**: close SH6 status, preserve the
   proposal as a non-normative input, list compatibility invariants and decisions.

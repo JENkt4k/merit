@@ -1,14 +1,15 @@
 # RM0 immutable local borrow: implementation readiness audit
 
 **Status:** Bounded implementation plan, not an RM0 freeze or authorization to
-change the compiler. The owner has reaffirmed F's separation of validity,
+change the compiler in this PR. The owner has approved F's separation of validity,
 access permission, and transfer/destruction authority, A-style final-use
 proof, and Alpha.2 shared-read/exclusive-write rules. The active
 [`ALPHA3_RESOURCE_MODEL.md`](../../../ALPHA3_RESOURCE_MODEL.md) still requires
-reviewed R1–R3 and R9 decisions before feature implementation. The
-[borrow decision brief](BORROW_MODEL_DECISION.md) explicitly leaves reference
-type identity, parameter/result compatibility, diagnostic identity, and
-surface spelling unresolved. No concurrency decision reopens the local rule.
+reviewed and merged R1–R3 and R9 design decisions before feature
+implementation. The [first-slice contract](LOCAL_BORROW_CONTRACT.md) records
+the owner's identity, compatibility, diagnostic, and provisional spelling
+direction plus an encoding proposal for that review. No concurrency decision
+reopens the local rule.
 
 ## Smallest user-visible capability
 
@@ -82,9 +83,10 @@ No new allocation or capability is implied by local borrowing.
 
 ## Independent implementation and validation sequence
 
-1. **Close the RM0 design gates.** Review the reference identity, compatibility,
-   diagnostic, and provisional syntax choices below. Record normative R1–R3/R9
-   decisions and precise Alpha.2 compatibility language in the RM0 ledger.
+1. **Close the RM0 design gates.** Review the approved reference identity,
+   compatibility, diagnostic, and provisional syntax contract and the proposed
+   encoding. Merge the design-only R1–R3/R9 decisions and precise Alpha.2
+   compatibility language in the RM0 ledger.
 2. **Isolate the checker proof.** Add table-driven origin/liveness tests using
    the approved AST form. Start with one local owner, then two shared borrows,
    borrowed-parameter origin, non-retaining call, and post-final-use
@@ -126,30 +128,17 @@ gates, not per-edit checks. The legacy `Vec<Sample>` replacement gap and all
 concurrency, indexed-ring, shared/weak, region, pinning, and foreign-ownership
 features stay on separate tracks.
 
-## Exact decisions before a public feature change
+## Remaining review gate before a public feature change
 
-1. **Local reference identity and compatibility (blocking).** Recommended
-   narrow choice: a non-owning, immutable *local reference binding mode*
-   distinct from owned `T`, with static origin/place metadata; it can read `T`
-   and satisfy an existing `borrow T` parameter without transferring ownership.
-   It cannot satisfy a value parameter, escape, appear in aggregate/generic
-   storage, or be returned in the first slice. Mutability is a later distinct
-   permission. Approve or revise this relation; the preferred F foundation
-   alone does not fix it.
-2. **Provisional surface form (blocking for end-to-end source tests).** Choose
-   only the spelling needed to create and bind one immutable local borrow. The
-   final wider syntax design can follow separately. Reusing `let r:T = ...`
-   would conflate owned and borrowed identity and is not recommended.
-3. **Diagnostic and encoding contract (blocking for compatibility evidence).**
-   Approve categories and source spans for unknown origin, live-loan conflict,
-   invalid reference use, and local escape; choose a new versioned HIR/MIR and
-   native artifact extension with old-program byte stability. Exact numeric
-   IDs must be named at canonical definition sites, not duplicated.
-4. **RM0 review/closure (blocking under the active ledger).** Review normative
-   R1–R3/R9 and explicit R4–R8 deferrals. This plan does not mark any row
-   closed or freeze language semantics automatically.
-
-No new concurrency property is a blocker for this local slice. The decisions
-above are genuine because they alter user-visible acceptance, diagnostics, or
-serialized artifacts. Until they are reviewed, a production implementation
-would guess at contracts the existing RM0 documents explicitly leave open.
+The owner has approved local reference identity, compatibility, minimum
+acceptance/rejection, cleanup, diagnostic categories/spans, and the preferred
+provisional source form. The in-memory grammar probe found that a naive
+keyword alternative breaks the existing accepted `struct borrow` type, while
+a contextual alternative preserves it; production parser tests must cover
+this. The proposed conditional HIR/MIR v1/v2 and native artifact v4/v5
+compatibility contract in [the first-slice contract](LOCAL_BORROW_CONTRACT.md)
+still needs design-only review and merge. RM0's active ledger also requires
+R1–R3/R9 normative closure and explicit R4–R8 deferral before implementation.
+No new concurrency property blocks this local slice. Specific numeric
+diagnostic/effect IDs and internal layout are delegated to implementation,
+with named canonical definitions and unchanged Alpha.2 encodings.

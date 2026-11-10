@@ -1,16 +1,19 @@
 # RM0 borrowing decision brief
 
-**Owner-approved preferred design direction, not a frozen language contract.** No compiler
+**Owner-approved first-slice semantic direction, not a frozen language contract.** No compiler
 or test implementation has changed. See the [comparison](BORROW_MODEL_COMPARISON.md),
 [30 cases](BORROW_MODEL_CASES.md), [risks](BORROW_MODEL_RISKS.md), and
-[evidence ledger](BORROW_MODEL_EVIDENCE.md).
+[evidence ledger](BORROW_MODEL_EVIDENCE.md). The
+[first-slice contract for review](LOCAL_BORROW_CONTRACT.md) records the owner's
+later R1–R3/R9 approvals and proposed versioned encoding.
 
 ## Decision requested
 
-Review the proposed minimum portable acceptance contract and remaining
-semantic/type-identity gates for the first Alpha.3 stored-borrow slice. The
-owner has selected a preferred direction; this brief does not approve syntax,
-implementation, or a normative freeze.
+Review the minimum portable acceptance contract and proposed versioned
+representation for the first Alpha.3 stored-borrow slice. The owner has
+approved its semantic direction and preferred provisional source spelling;
+the design-only PR must be reviewed and merged before implementation. This
+brief does not approve production code or a normative freeze by itself.
 
 **Preferred foundation:** F's explicit separation of resource validity,
 read/write permission, and transfer/destruction authority, while preserving
@@ -93,32 +96,31 @@ preferred, while B's lexical rejection is not permanent semantics; (4) final
 surface syntax is deferred to separate review. None is a frozen specification
 or authorization to implement. [E18]
 
-Before implementation planning, inspect the Merit-native
-`mir_ownership_flow.mrt` binding flags and downstream uses for loan origin and
-identity; specify all-path final-use and join behavior, cleanup/destructor
-interaction, Python-oracle/native parity, and versioned canonical MIR/protocol
-effects. The current source audit gives seams, not proof of readiness. [E02–E08,
-E11–E13, E16]
+The [implementation readiness audit](LOCAL_BORROW_IMPLEMENTATION_PLAN.md)
+inspected the Merit-native `mir_ownership_flow.mrt` flags and the parser,
+checker, HIR/MIR, interpreter, C, replacement, and serialization seams. The
+first-slice contract now proposes explicit versioned loan effects and a
+minimum straight-line final-use proof. This design audit is not a running
+loan solver or compiler parity evidence. [E02–E08, E11–E13, E16, E20]
 
-Reference **type identity** must be settled before implementation: whether a
-local borrow is a distinct type or mode, whether mutability is a type property,
-whether an origin/lifetime relationship participates in type checking, and how
-borrowed parameters/results relate to local references. These affect overloads,
-generic substitution, ABI/serialization, diagnostics, and observable acceptance.
-The spelling of a borrow expression or annotation can wait for syntax review;
-it must not silently imply Rust-style reference semantics. [E12, E18]
+The owner has since chosen a **distinct non-owning immutable local binding
+mode**, with known origin, readable and passable to compatible proven
+non-retaining `borrow T` parameters, but not returnable, storable in an
+aggregate, or passable as owned `T`. The preferred provisional source form is
+`let r: borrow T = borrow x;`. General reference type identity, generics,
+mutable stored borrows, and wider syntax remain open. A naive grammar rule
+conflicts with an existing accepted type named `borrow`; an in-memory
+contextual-token probe parsed both forms. The production parser must preserve
+that compatibility. See the [contract](LOCAL_BORROW_CONTRACT.md). [E12, E18]
 
-### Questions still requiring human approval before normative freeze
+### Review gates still open before implementation
 
-1. Approve or revise the precise assumptions and case IDs in the proposed
-   minimum portable acceptance/rejection table.
-2. Settle local reference type identity and parameter/result compatibility,
-   without choosing final syntax yet.
-3. Define diagnostic identity for unproven origin, conflicting access, and
-   escape; decide the acceptance/version policy for later checker improvements.
-4. Review the architectural gates and authorize a later bounded implementation
-   plan only after the normative spec and evidence contract are complete.
+1. Review and merge the design-only contract with the approved acceptance and
+   rejection matrix. It must preserve the accepted `borrow` identifier forms.
+2. Review the proposed conditional v1/v2 HIR/MIR and v4/v5 native artifact
+   compatibility contract and stable diagnostic categories/spans.
+3. Close RM0's design-only ledger under its existing evidence requirements,
+   then start a separate bounded implementation PR.
 
-Approval of these questions would guide a later normative spec. It would not
-authorize compiler implementation, merge this investigation, or mark RM0
-closed. No feature work begins without a separate bounded plan and approval.
+The owner's semantic approval does not itself merge this design PR, mark RM0
+closed, or authorize changes to production compiler code in this PR.
