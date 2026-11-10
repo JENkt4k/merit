@@ -7,6 +7,9 @@ A-style inferred spans are the preferred local proof strategy. The proposed
 first slice is immutable function-local stored borrows only. See
 `docs/design/alpha3/BORROW_MODEL_DECISION.md`. Cross-thread, captured,
 aggregate, or suspended borrows are **not** authorized by local last-use proof.
+The owner has since approved provisional channel/task ownership directions;
+their [lifecycle contract](concurrency-provisional-lifecycle.md) remains
+outside the RM0 freeze and implementation scope.
 
 | Scenario and pseudo-Merit | Expected decision; static guarantee | Runtime duty; RM0 status |
 | --- | --- | --- |

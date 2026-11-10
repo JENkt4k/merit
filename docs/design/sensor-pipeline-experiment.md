@@ -134,8 +134,10 @@ plus SPSC stress/history and memory-order litmus tests.
    arbitrary indexed owned take before stage 3?
 2. What are the sensor input bounds, sequence-wrap behavior and stale-sample
    policy? These are application contracts, not automatic language semantics.
-3. Which failed-send and cancellation outcome owns a packet? Where is the
-   publication/linearization point?
+3. The owner provisionally chose return-of-value on full/closed send and on
+   cancellation before publication; publication wins the race when it commits
+   first. The exact atomic publication point and final teardown path remain
+   open. See [the lifecycle specification](concurrency-provisional-lifecycle.md).
 4. What transfer/share and scoped-child guarantees must be frozen before a
    two-thread SPSC example can be considered safe Merit?
 

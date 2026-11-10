@@ -1,7 +1,14 @@
 # Concurrency architecture: decisions for human review
 
-**Recommendation only.** No concurrency semantics, runtime, syntax, MIR/ABI
-encoding, or RM0 decision is approved by this review. The RM0 borrowing
+**Owner-approved provisional directions, not a freeze or implementation
+authorization.** The owner approved return of the original owned value on
+full/closed send and failed spawn; close-then-drain; exact accounting at final
+teardown; context-safe transfer/destruction; distinct transfer/share/affinity
+and provider properties; one linearizable send/cancel outcome; and
+join-before-reclamation for canceled tasks. See the
+[ownership lifecycle and test specifications](concurrency-provisional-lifecycle.md)
+for boundaries and remaining approvals. No concurrency semantics, runtime,
+syntax, or MIR/ABI encoding has been implemented. The RM0 borrowing
 direction in `docs/design/alpha3/BORROW_MODEL_DECISION.md` remains preferred
 but unfrozen. The 36 catalog workloads are requirements to investigate, not
 proof that a feature belongs in the language.
@@ -32,7 +39,7 @@ silently extended across thread or async boundaries. [RM0 implications](rm0-conc
 | Transfer and share traits | Distinct transfer-safe, share-safe, and thread-affine properties; derivation must account for owned fields, allocators, foreign handles, and custom destructors. | `actor-buffer`, `immutable-tree`, `ffi-callback`; prove no unsound auto-derivation. |
 | Memory model | Race-free safe code with explicit publication; atomic orderings only through typed primitives/trusted wrappers. | `ring-buffer` weak-memory litmus and `locks-atomics` multi-field snapshot. |
 | Scoped task semantics | All child tasks joined or cancel-and-joined before scope exit; specify blocked/uncooperative child behavior. | `structured-tasks` cancellation and resource accounting. |
-| Channel ownership | Define exact send linearization point, capacity, close, failure/cancel return of ownership, and ordering scope. | `actor-buffer` and `csp-pipeline` fault injection. |
+| Channel ownership | Provisional: full/closed failure returns the value; close preserves queued messages for draining; send/cancel has one committed or returned outcome. Final teardown disposition and exact linearization point remain open. | `actor-buffer` and `csp-pipeline` fault injection. |
 | Sharing and reclamation | Choose when immutable readers can retain an object, release order, and safe reclamation; do not implicitly adopt reference counting. | `immutable-tree`, `concurrent-map`, `reporting`; compare copy/RC/epoch. |
 | Borrow/capture across concurrency | Defer until task scope, origin, suspension, and escape proofs exist. Local RM0 final-use is insufficient. | `structured-tasks`, `async-io`, `ffi-callback` accept/reject pairs. |
 | FFI boundary | Declare callback lifetime, thread affinity, release provider, and foreign failure behavior at safe adapter boundary. | Race unregister/free and wrong-thread callbacks. |
