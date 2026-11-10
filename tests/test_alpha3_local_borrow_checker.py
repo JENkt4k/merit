@@ -2,7 +2,7 @@
 
 import pytest
 
-from merit.compiler import CGenerator, Checker, CompileError, Interpreter, OwnershipEffects, TypeTable, parse
+from merit.compiler import Checker, CompileError, OwnershipEffects, TypeTable, parse
 
 
 def check(body: str, *, declarations: str = "", functions: str = "") -> None:
@@ -75,15 +75,6 @@ def test_invalid_origin_use_control_flow_and_call_effects_fail_closed(body: str,
                'fn relay(borrow x:i32)->borrow i32 { return x; }')
     with pytest.raises(CompileError, match=diagnostic):
         check(body, functions=functions)
-
-
-def test_backend_entry_remains_fail_closed_during_checker_phase() -> None:
-    program=parse('module rm1\nfn main()->i32 { let x:i32=1; let r: borrow i32 = borrow x; print(r); return 0; }')
-    Checker(program).check()
-    with pytest.raises(CompileError, match='M5400'):
-        Interpreter(program)
-    with pytest.raises(CompileError, match='M5400'):
-        CGenerator(program)
 
 
 def test_unsupported_nested_control_flow_fails_closed() -> None:

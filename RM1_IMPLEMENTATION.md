@@ -33,7 +33,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Contextual source syntax and old `borrow` names | Preferred declaration parses; old names and borrowed parameters remain valid; comments/newlines covered. | Parser checkpoint merged. |
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker: 7/7 accepted and 6/6 rejected cases pass. Native parity open. |
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
-| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Open. |
+| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
 | HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Open. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Open. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Open. |
@@ -53,6 +53,19 @@ closed. Reference bindings do not enter the owner cleanup list. Interpreter
 and C generator entry deliberately reject feature-bearing programs with
 `M5400` until the next coherent execution slice is implemented. This checker
 checkpoint alone is **not a working RM1 feature**.
+
+### Reference execution checkpoint
+
+The interpreter now binds a local reference to the exact owner `TypedValue`
+object without adding an owned cleanup entry. The C generator emits a local
+`const T *` pointer and dereferences it for value reads, while passing its
+address directly to existing shared-borrow parameters. This pointer is an
+internal lowering choice, not a public reference type. Focused parity tests
+pass for all seven accepted cases and for normal, explicit-drop, moved-owner,
+replaced-owner, and early-return destructor traces. `try` error propagation
+remains explicitly rejected by the checker when a local loan appears; its
+control-flow proof is outside this straight-line checkpoint. HIR/MIR v2 and
+native v5 remain mandatory before RM1 can merge.
 
 ## Bounded semantic-coherence audit
 
@@ -74,4 +87,5 @@ Current bounded findings:
 | No issue | The required straight-line checker matrix proves shared reads, final-use owner effects, and specified live-loan rejection with binding-ID origins. | Reference parser/checker. |
 | Future architectural risk | `ByteSlice` has a separate backing-owner relationship; a local loan of the slice alone does not prove that backing storage remains valid. The checker rejects that new combination until a separate origin proof exists. | Checker and future MIR provenance. |
 | No issue | A local reference is absent from owned cleanup records; the owner remains the only destructor authority. | Ownership planner. |
-| Confirmed implementation gap, merge-blocking | No interpreter/C or native replacement handling exists yet. Both Python backends explicitly reject new-feature programs; replacement/stage parity is pending. | Interpreter, C generator, replacement compiler. |
+| Confirmed implementation gap, merge-blocking | Reference interpreter/C lowering passes focused new-feature parity, but HIR/MIR v2, native v5, replacement compiler, and stage parity remain absent. | Canonical representation and production replacement compiler. |
+| Confirmed pre-existing defect, separate from RM1 | A pre-feature program `fn inspect(borrow x:i32)->i32 { return x; }` passes the checker but existing C emits `_merit_result = x;` where `x` is `const int32_t *`; GCC rejects the pointer-to-value assignment. RM1's case 24 execution evidence uses the already-supported `borrow Box` field read. Correcting the old primitive direct-read C bytes conflicts with the RM0 old-artifact byte-preservation rule and needs a separate compatibility decision. | Alpha.2 reference C generator; no local-borrow syntax required. |

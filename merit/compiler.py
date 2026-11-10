@@ -690,14 +690,6 @@ def assign_binding_ids(program):
     for destructor in program.destructors.values():
         for statement in destructor.body:attach_destructor(statement)
 
-def has_local_borrow(program):
-    def visit(value):
-        if isinstance(value,SemanticNode):
-            return value.kind=='local_borrow' or any(visit(part) for part in value.operands)
-        if isinstance(value,(list,tuple)):return any(visit(part) for part in value)
-        if isinstance(value,dict):return any(visit(part) for part in value.values())
-        return False
-    return any(visit(f.body) for f in program.functions)
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer','allocator')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
@@ -1834,8 +1826,6 @@ class TrySignal:
 
 class Interpreter:
     def __init__(self,p):
-        if has_local_borrow(p):
-            raise CompileError('M5400: local borrow execution is not implemented')
         self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[];self.call_return_types=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
@@ -1862,6 +1852,7 @@ class Interpreter:
         for st in b:
             node=self.p.node(st);kind=node.kind
             if kind=='let':env[node.raw.binding_id]=self.eval(node.initializer,env,node.declared_type)
+            elif kind=='local_borrow':env[node.raw.binding_id]=env[node.initializer.binding_id]
             elif kind=='try_let':
                 value=self.eval(node.initializer,env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
@@ -2109,8 +2100,6 @@ class Interpreter:
 
 class CGenerator:
     def __init__(self,p):
-        if has_local_borrow(p):
-            raise CompileError('M5400: local borrow C lowering is not implemented')
         self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0;self._expr_overrides={};self._address_overrides=set()
     def vec_types(self):
         found=set()
@@ -2423,6 +2412,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         finally:self._expr_overrides=previous;self._address_overrides=previous_addresses
     def rendered_address(self,e,rendered,env):
         node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id)=='local_borrow':return node.raw.binding_id.c_name
         if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):return rendered
         if node.kind in ('call','generic_call'):
             called,_=resolved_call(node);callee=self.fn.get(called)
@@ -2506,6 +2496,11 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         if kind=='let':
             prelude,value=self.ordered_expr(node.initializer,env,node.declared_type,p);binding=node.raw.binding_id;env[binding]=node.declared_type
             return prelude+[f'{p}{self.ctype(node.declared_type)} {binding.c_name} = {self.checked(node.declared_type,value)};']
+        if kind=='local_borrow':
+            binding=node.raw.binding_id;origin=node.initializer.binding_id
+            source=origin.c_name if self.env_mode(env,origin) in ('borrow','borrow_mut','local_borrow') else '&'+origin.c_name
+            env[binding]=(node.declared_type,'local_borrow')
+            return [f'{p}const {self.ctype(node.declared_type)} *{binding.c_name} = {source};']
         if kind=='try_let':
             enum_t=self.etype(node.initializer,env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
@@ -2618,6 +2613,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         rendered=self.expr(e,env)
         if id(e) in self._address_overrides:return rendered
         node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id)=='local_borrow':return node.raw.binding_id.c_name
         if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):
             return rendered
         if node.kind in ('call','generic_call'):
@@ -2634,10 +2630,14 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
             if expected=='u64' and value==INT_RANGES['u64'][1]:return 'UINT64_MAX'
             return str(value)
-        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get(node.raw.binding_id),tuple) and env[node.raw.binding_id][1] in ('__result__','borrow','borrow_mut') else node.raw.binding_id.c_name
+        if kind=='var':
+            if self.env_mode(env,node.raw.binding_id)=='local_borrow':return f'(*{node.raw.binding_id.c_name})'
+            return '_merit_result' if node.atom_value=='result' and isinstance(env.get(node.raw.binding_id),tuple) and env[node.raw.binding_id][1] in ('__result__','borrow','borrow_mut') else node.raw.binding_id.c_name
         if kind=='field':
             base=node.field_base; op='.'
             base_node=self.p.node(base)
+            if base_node.kind=='var' and self.env_mode(env,base_node.raw.binding_id)=='local_borrow':
+                return f'{base_node.raw.binding_id.c_name}->{node.field_name}'
             if base_node.kind=='var' and self.env_mode(env,base_node.raw.binding_id) in ('borrow','borrow_mut'): op='->'
             elif base_node.kind in ('call','generic_call'):
                 called,_=resolved_call(base_node);callee=self.fn.get(called)
