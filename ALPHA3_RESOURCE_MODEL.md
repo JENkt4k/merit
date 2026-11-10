@@ -66,7 +66,7 @@ boundary explaining why the first implementation slice does not depend on them.
 | R6 | Address stability/pinning and its relation to moves, borrows, and FFI | §§11, 18, 30 | DEFERRED: live local reference validity does not imply public pinning. |
 | R7 | Foreign ownership/retained callbacks, hazardous capability boundaries, and unwind/fatal behavior | §§11–13, 30 | DEFERRED: no foreign retention/callback right. |
 | R8 | Arrays/views and overlap authority; concurrency and thread transfer boundary | §§9–10, 30 | DEFERRED: no aggregate view, concurrency, or thread-transfer right. |
-| R9 | Canonical MIR effects, diagnostics, serialization/versioning, C ABI/layout, interpreter/native and stage equivalence | §§21, 26–27 and SH3 deferred seams | APPROVED DRAFT: stable diagnostic identities and explicit versioned metadata; proposed encoding contract awaiting review. |
+| R9 | Canonical MIR effects, diagnostics, serialization/versioning, C ABI/layout, interpreter/native and stage equivalence | §§21, 26–27 and SH3 deferred seams | DESIGN REVIEWED: conditional HIR v1/v2, MIR v1/v2, native v4/v5; exact old bytes, old-reader rejection, diagnostics, framing, and migration evidence specified. Pending PR review/merge. |
 
 ## Required evidence before semantic freeze
 
@@ -98,9 +98,11 @@ records the minimum acceptance/rejection matrix, compiler boundaries, tests,
 and the compiler evidence requirements. The owner has now approved the R1–R3
 semantic direction and the R9 compatibility requirement, with R4–R8 explicitly
 deferred. The [first-slice contract](docs/design/alpha3/LOCAL_BORROW_CONTRACT.md)
-records the final case matrix and a proposed conditional HIR/MIR/v4/v5
-encoding for review. RM0.1–RM0.3 remain open until that design-only review and
-merge; concurrency runtime questions do not block the local-borrow design.
+records the final case matrix and the R9-reviewed conditional HIR/MIR/v4/v5
+encoding. RM0.1 and RM0.2 are design-complete but remain open until manual PR
+review and merge; RM0.3 closes only after that merge. The implementation
+milestone may then start separately. The concurrency runtime questions do not
+block this local-borrow design.
 
 - [x] **RM0.0 — Establish ledger and baseline**: close SH6 status, preserve the
   proposal as a non-normative input, list compatibility invariants and decisions.

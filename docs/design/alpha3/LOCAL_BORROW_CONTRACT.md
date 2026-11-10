@@ -96,8 +96,9 @@ site where available. The same source must produce equivalent category,
 primary span, and notes in the Python oracle and replacement compiler.
 Old source retains its existing diagnostic codes, spans, and wording.
 
-The following is a **proposed compatibility contract**, not a claim that
-these encodings already exist:
+The following is the **reviewed representation recommendation**, not a claim
+that these encodings already exist. The owner must still review and merge this
+design PR before implementation:
 
 | Artifact | Old-program contract | New-feature contract |
 | --- | --- | --- |
@@ -105,6 +106,40 @@ these encodings already exist:
 | Canonical MIR | Existing `bootstrap-mir-v1` bytes unchanged, including old borrow and returned-origin meaning. | Explicit `bootstrap-mir-v2` local-loan effect records for create, read/call use, and end; each anchors a reference binding, origin binding/place, permission, ordered instruction ID, and source span. Do not reinterpret an Alpha.2 ownership mode or discriminant. |
 | Native project artifacts | Existing complete v4 MIR/C/header bundle and producer protocol bytes unchanged for projects without a local borrow. | A distinct v5 bundle/protocol for any project containing the feature. Its canonical MIR uses v2; old decoders reject v5, new decoders accept validated v4 and v5. No Python semantic fallback. |
 | C and public ABI | Old generated C/header/layout bytes and public signatures unchanged. | Local references are internal implementation values; no new public C parameter, field, or layout in this slice. New C/header output is deterministic and compared with the independent oracle. |
+
+### Why a version transition is required
+
+The existing HIR and MIR readers require exact `bootstrap-hir-v1` and
+`bootstrap-mir-v1` schema values, but their JSON parsers read known fields and
+do not reject every unknown key. An extension object under either v1 schema
+could therefore be silently ignored by an old reader while changing the
+program's meaning. The v4 native transport has a fixed three-artifact tail
+(MIR, C, header), checks lengths, and rejects trailing data. Its old decoder
+requires bundle version 4 exactly. There is no evidenced optional,
+must-understand extension slot in v1 or v4. A versioned extension section
+would still need a new outer version and strict old/new decoding, while adding
+another framing and ordering rule. It has no demonstrated compatibility or
+implementation advantage for this one relationship. Retain conditional HIR
+v1/v2, MIR v1/v2, and native v4/v5. An old decoder must reject a new-feature
+artifact at the outer schema/version boundary before interpreting any payload.
+
+The compatibility change crosses four implementations/boundaries: (1) the
+Python oracle gains new HIR/MIR validation and differential output while its
+v1 encoders remain byte-identical; (2) the Merit-native replacement producer
+gains v2 local-loan semantics and conditional v5 emission; (3) fresh stage-1
+and stage-2 compilers must independently emit the same v5 protocol and
+canonical bytes, without Python semantic fallback; and (4) the public project
+prepare/load/build interface must recognize validated v5 beside v4 and retain
+the v4 manifest/request/artifact behavior for old projects. This is one new
+version at each of three representation layers, not a new public C ABI.
+Existing v4 preparation dispatches on bundle version; its transport reads
+exactly three length-delimited artifacts, and the project loader checks the
+producer protocol and request digest. V5 therefore needs an explicit
+transport dispatch, protocol identity, manifest validation, and content
+digest checks; a v5 producer must not be mistaken for v4 or trigger the legacy
+snapshot path. The project-request format may remain unchanged if it can
+carry the source and exports without ambiguity; change it only on demonstrated
+need, with its own version and old-reader rejection.
 
 For a v5 project, every encoded function/module must be framed and validated
 under the new version, including unchanged modules in that project. Local-loan
@@ -115,9 +150,25 @@ create precedes use, use precedes end, and no use follows end. Duplicate IDs,
 unknown permission/effect kind, missing end, out-of-range span, inconsistent
 origin, truncated length, trailing data, mixed v4/v5 framing, or v2 data
 inside a v4 declaration must fail closed. The decoder must not guess a
-legacy interpretation. Conditional v4/v5 emission is required to retain
-old-program artifact bytes; this version proposal needs byte-level review
-before implementation.
+legacy interpretation. V2 HIR/MIR readers must reject unknown semantic fields
+and unsupported versions; v1 readers must reject v2 by schema. The v5
+transport reader must reject unknown sections, invalid UTF-8, invalid byte
+values, inconsistent lengths, and unexpected end/trailing data. V4 readers
+must reject v5 at the version word. Conditional v4/v5 emission retains
+old-program artifact bytes, including the manifest, protocol, canonical MIR,
+C, and header.
+
+Minimum migration evidence: freeze representative Alpha.2 HIR/MIR/v4/protocol/
+manifest/C/header byte digests and assert unchanged results for old accepted
+programs; assert old HIR/MIR/v4 readers reject v2/v5 artifacts; round-trip and
+corrupt every new length, schema, section, effect, ID, span, and digest;
+compare accepted/rejected diagnostics and primary/note spans across Python,
+native replacement, stage 1, and stage 2; compare deterministic HIR/MIR/C/
+header/protocol bytes across repeated fresh builds and source-order variants;
+and compare normal, early, error, explicit-drop, and replace cleanup traces
+with the Alpha.2 oracle. The public project interface must accept a complete
+v5 build and reject a stale or partial one without fallback. New-feature C
+may change; old-program C/header and public ABI/layout may not.
 
 No old numeric semantic identifier is reused. New effect and diagnostic
 values must be named at their canonical definition boundaries. The compiler
@@ -132,6 +183,6 @@ their runtimes. The local reference has no inferred sendability, shareability,
 thread affinity, stored aggregate lifetime, or async capture right. The
 `Vec<Sample>` replacement gap and owned indexed extraction are separate.
 
-Review of this draft must confirm the diagnostic identity and conditional
-v1/v2/v4/v5 compatibility contract. No code, syntax, ABI, or feature is
-approved merely by this document's existence.
+This design review recommends the diagnostic identity and conditional
+v1/v2/v4/v5 compatibility contract above. No code, syntax, ABI, or feature is
+implemented merely by this document's existence.
