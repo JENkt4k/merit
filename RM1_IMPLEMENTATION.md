@@ -34,7 +34,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker: 7/7 accepted and 6/6 rejected cases pass. Native parity open. |
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
-| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Open. |
+| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects, strict v2 readers, canonical round trips, and malformed-record tests pass. Source-to-HIR/MIR producers and native parity remain open. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Open. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Open. |
 | Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused baseline only. |
@@ -66,6 +66,21 @@ replaced-owner, and early-return destructor traces. `try` error propagation
 remains explicitly rejected by the checker when a local loan appears; its
 control-flow proof is outside this straight-line checkpoint. HIR/MIR v2 and
 native v5 remain mandatory before RM1 can merge.
+
+### Versioned contract checkpoint
+
+`bootstrap-hir-v2` now has an explicit non-owning local-reference binding and
+source-anchored origin record. `bootstrap-mir-v2` has explicit create/use/end
+effects tied to declared reference/origin source bindings, instruction IDs,
+immutable permission, and spans. V2 readers reject unknown semantic fields at
+each nested object boundary, unknown IDs/effects/permissions, inconsistent
+origins, duplicate or unordered events, and missing end effects. V1 readers
+reject new-feature fields and modes; old serializers retain their v1 shape.
+Focused contract, checker, and reference execution suites pass 146 tests on
+Windows. Source lowering does not yet produce these v2 records, and the native
+replacement compiler does not yet consume or emit them; this remains an
+interchange-contract checkpoint rather than complete canonical representation
+evidence.
 
 ## Bounded semantic-coherence audit
 

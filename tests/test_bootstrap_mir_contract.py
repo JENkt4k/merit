@@ -4,12 +4,14 @@ import pytest
 
 from merit.bootstrap.mir_contract import (
     MIR_SCHEMA,
+    LOCAL_LOAN_MIR_SCHEMA,
     MirBlock,
     MirContractError,
     MirDestructor,
     MirFunction,
     MirInstruction,
     MirLocal,
+    MirLocalLoanEffect,
     MirModule,
     MirParameter,
     MirTerminator,
@@ -45,6 +47,56 @@ def sample_module():
     failure = MirBlock(2, (), MirTerminator("unreachable"))
     function = MirFunction("add_one", i32(), locals_, (entry, success, failure), 0, ("math",))
     return MirModule("sample", (function,))
+
+
+def local_loan_module():
+    locals_ = (MirLocal(0, "owner", i32(), source_binding_id=10),
+               MirLocal(1, "view", i32(), ownership="local_reference", source_binding_id=11),
+               MirLocal(2, "read", i32()))
+    block = MirBlock(0, (MirInstruction(0, "borrow", result=1, operands=(0,)),
+                         MirInstruction(1, "copy", result=2, operands=(1,)),
+                         MirInstruction(2, "nop")), MirTerminator("return", operands=(2,)))
+    effects = (MirLocalLoanEffect("create", 0, 11, 10, SourceSpan(5, 8)),
+               MirLocalLoanEffect("use", 1, 11, 10, SourceSpan(15, 4)),
+               MirLocalLoanEffect("end", 1, 11, 10, SourceSpan(15, 4)))
+    function = MirFunction("main", i32(), locals_, (block,), 0, local_loan_effects=effects)
+    return MirModule("loan", (function,), LOCAL_LOAN_MIR_SCHEMA)
+
+
+def test_v2_loan_effects_round_trip_without_changing_v1():
+    old = canonical_mir_json(sample_module())
+    module = local_loan_module()
+    assert load_mir_json(canonical_mir_json(module)) == module
+    assert canonical_mir_json(sample_module()) == old
+
+
+@pytest.mark.parametrize("change", [
+    lambda data: data.update(extra=1),
+    lambda data: data["functions"][0]["local_loan_effects"][0].update(extra=1),
+    lambda data: data["functions"][0]["local_loan_effects"][0].update(kind="retain"),
+    lambda data: data["functions"][0]["local_loan_effects"][0].update(origin_binding_id=99),
+    lambda data: data["functions"][0]["local_loan_effects"].pop(),
+    lambda data: data["functions"][0]["local_loan_effects"].reverse(),
+    lambda data: data["functions"][0]["local_loan_effects"][1].update(instruction_id=99),
+    lambda data: data["functions"][0]["locals"][0].update(extra=1),
+    lambda data: data["functions"][0]["blocks"][0]["instructions"][0].update(extra=1),
+    lambda data: data["functions"][0]["blocks"][0]["terminator"].update(extra=1),
+    lambda data: data["functions"][0]["return_type"].update(extra=1),
+    lambda data: data["functions"][0]["blocks"][0]["instructions"][0].update(kind="copy"),
+    lambda data: data["functions"][0]["blocks"][0]["instructions"][1].update(operands=[0]),
+])
+def test_v2_rejects_malformed_loan_effects(change):
+    data = local_loan_module().to_data()
+    change(data)
+    with pytest.raises(MirContractError):
+        parse_mir(data)
+
+
+def test_v1_rejects_unversioned_loan_effects():
+    data = sample_module().to_data()
+    data["functions"][0]["local_loan_effects"] = []
+    with pytest.raises(MirContractError, match="MIR v1 cannot contain"):
+        parse_mir(data)
 
 
 def test_sample_mir_is_canonical_and_round_trips():
