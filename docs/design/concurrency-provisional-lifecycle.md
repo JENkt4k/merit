@@ -40,7 +40,10 @@ Close is a linearizable transition that prevents later admission. Accepted
 messages remain in FIFO order and receivers may drain them. Once the queue is
 empty and closed, receive reports end-of-stream. The exact ordering between
 an already pending publication and close is decided by their linearization
-order. Closing does not dispose of queued values. Final teardown must account
+order. End-of-stream additionally requires that earlier admitted/pending
+publications are resolved; a temporarily empty closed queue cannot report EOF
+while an earlier successful publication is still becoming visible. Closing does
+not dispose of queued values. Final teardown must account
 for each undelivered value once, by draining, returning it through an explicit
 recovery path, or destroying it with a valid release provider on an allowed
 execution context. The choice and handle-lifetime rules remain open.
@@ -120,8 +123,11 @@ happens-before boundary; and scoped task/capture lifetime enforcement. A safe
 library may implement channel policy and queue mechanics on top of those
 guarantees. A general owned ring is not yet demonstrated with current
 `vec_get` (copying owned elements is rejected) and `vec_pop` (tail only); safe
-occupied-slot take or an equivalent library representation requires separate
-proof. The `Vec<Sample>` replacement-compiler limitation is a separate
+occupied-slot take for a true indexed ring requires separate proof. A focused
+single-threaded two-stack FIFO probe now establishes a bounded library
+alternative with typed return-of-value failure, without proving a concurrent
+channel. See the [follow-up evidence audit](concurrency-evidence-audit.md).
+The `Vec<Sample>` replacement-compiler limitation is a separate
 compiler coverage issue, not evidence for or against these ownership rules.
 
 Human decisions still needed before a concurrency specification:
