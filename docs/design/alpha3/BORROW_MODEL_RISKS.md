@@ -27,11 +27,14 @@ owner's preferred minimum includes proven post-last-use owner operations in
 cases 04, 07, and 09; B alone cannot implement that minimum. It may handle the
 subset it can prove while another analysis handles those cases. [E10, E14, E18]
 
-Before implementation, type identity needs a decision: local borrow as a
-distinct type or mode, mutability as a type property, provenance/lifetime in
-type checking, and compatibility with existing borrowed parameters/results.
-Those affect generic substitution, diagnostics, ABI, and serialization. Final
-spelling is a separate syntax review. No current Alpha.2 discriminant may be
+The owner has now approved a distinct non-owning immutable **local binding
+mode** with proven origin, compatible with existing non-retaining `borrow T`
+parameters but not value parameters, returns, or aggregate storage. General
+reference type identity, generics, mutable reference compatibility, and wider
+syntax remain deferred. The preferred provisional spelling is
+`let r: borrow T = borrow x;`; preserving an existing type named `borrow`
+requires contextual parsing. The proposed versioned encoding and diagnostic
+contract still need design-PR review. No current Alpha.2 discriminant may be
 silently repurposed. [E06, E12, E16, E18]
 
 ## Required representation changes for later implementation

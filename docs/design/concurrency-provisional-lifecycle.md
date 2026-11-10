@@ -35,6 +35,10 @@ cancellable send must report exactly one of `Cancelled { value: T }`,
 result and does not reclaim a published message. A full or closed nonblocking
 send has no waiting phase; cancellation matters only if a future operation can
 be pending or cancellation races its publication.
+If the caller abandons an asynchronous operation, an owned completion
+mechanism must continue to hold the value or committed outcome until it is
+claimed or disposed of under an explicit cleanup rule. Abandonment is not an
+implicit cancellation acknowledgment or an ownership rollback.
 
 Close is a linearizable transition that prevents later admission. Accepted
 messages remain in FIFO order and receivers may drain them. Once the queue is
@@ -43,10 +47,11 @@ an already pending publication and close is decided by their linearization
 order. End-of-stream additionally requires that earlier admitted/pending
 publications are resolved; a temporarily empty closed queue cannot report EOF
 while an earlier successful publication is still becoming visible. Closing does
-not dispose of queued values. Final teardown must account
-for each undelivered value once, by draining, returning it through an explicit
-recovery path, or destroying it with a valid release provider on an allowed
-execution context. The choice and handle-lifetime rules remain open.
+not dispose of queued values. At final teardown, remaining queued messages
+may be destroyed once with a valid release provider on an allowed execution
+context. An optional recovery API may instead return them to an explicit
+owner; it must specify that owner's cleanup obligation. Handle-lifetime and
+execution-context rules remain open.
 
 `spawn(task_with_captures) -> Spawned(handle) | SpawnFailed(task_with_captures)`
 has the same ownership split: failure returns the original task and captures;
@@ -69,7 +74,7 @@ consumes the preceding state exactly once.
 | InOperation | Publication wins -> Published | `Sent`; channel owns value. Cancellation cannot roll this back. |
 | Published | Receive wins -> ReceiverOwned | Receiver obtains value; channel slot is empty. |
 | Published | Close -> Published | Queue retains value; receiver may still drain it. |
-| Published | Final teardown -> Recovered or Destroyed | One explicit recovery or one valid destruction; no leak or second drop. |
+| Published | Final teardown -> Recovered or Destroyed | Optional explicit recovery transfers ownership; otherwise one valid destruction. No leak or second drop. |
 | ReceiverOwned / Recovered / CallerOwned | Owner moves or drops -> Transferred / Destroyed | Ordinary ownership rules and exactly-once cleanup. |
 
 Close and publication, cancellation and publication, receive and teardown, and
@@ -132,9 +137,9 @@ compiler coverage issue, not evidence for or against these ownership rules.
 
 Human decisions still needed before a concurrency specification:
 
-1. On final teardown, do undelivered messages drain, return through a recovery
-   object, or get destroyed? Who can initiate teardown, and what if receivers
-   or senders still hold handles?
+1. How is final teardown triggered when senders or receivers still hold handles?
+   If an optional recovery API exists, who owns its result and what happens if
+   that result is abandoned?
 2. What exact execution contexts may run destructors and release providers?
    What bounds the initial transferable payload set and allocator lifetime?
 3. What memory model, atomic primitive, and linearization point establish
