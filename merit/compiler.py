@@ -30,7 +30,7 @@ return_ref: "borrow_mut" type_ref -> return_borrow_mut
           | type_ref -> return_value
 params: param ("," param)*
 param: "borrow_mut" CNAME ":" type_ref -> param_borrow_mut
-     | "borrow" CNAME ":" type_ref -> param_borrow
+     | LOCAL_BORROW CNAME ":" type_ref -> param_borrow
      | CNAME ":" type_ref -> param_value
 effects: "effects" "[" [name_list] "]"
 requires_caps: "requires_caps" "[" [name_list] "]"
@@ -39,7 +39,8 @@ contract: "requires" expr ";" -> precontract
 name_list: CNAME ("," CNAME)*
 type_ref: CNAME | BASE_INT | "void"
 block: "{" statement* "}"
-?statement: let_stmt | var_stmt | try_let_stmt | replace_stmt | assign_stmt | return_stmt | print_stmt | expr_stmt | drop_stmt | with_capability | if_stmt | while_stmt | match_stmt
+?statement: local_borrow_stmt | let_stmt | var_stmt | try_let_stmt | replace_stmt | assign_stmt | return_stmt | print_stmt | expr_stmt | drop_stmt | with_capability | if_stmt | while_stmt | match_stmt
+local_borrow_stmt: "let" CNAME ":" LOCAL_BORROW type_ref "=" LOCAL_BORROW CNAME ";"
 let_stmt: "let" CNAME ":" type_ref "=" expr ";"
 var_stmt: "var" CNAME ":" type_ref "=" expr ";"
 try_let_stmt: "let" CNAME ":" type_ref "=" "try" expr ";"
@@ -72,6 +73,7 @@ args: expr ("," expr)*
 ADD_OP: "+"|"-"
 MUL_OP: "*"|"/"
 COMP_OP: "=="|"!="|">="|"<="|">"|"<"
+LOCAL_BORROW.2: /borrow(?=(?:[ \t\r\n]|\/\/[^\n]*\n)+[A-Za-z_]\w*)/
 BASE_INT: "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"
 GENERIC_CALL_HEAD.2: /[A-Za-z_]\w*<\s*(?:[A-Za-z_]\w*|i8|i16|i32|i64|u8|u16|u32|u64|void)\s*>/
 %import common.CNAME
@@ -172,6 +174,7 @@ class GenericCallNode(CallNode):pass
 class BinaryNode(SemanticNode):pass
 class BindingNode(SemanticNode):pass
 class LetNode(BindingNode):pass
+class LocalBorrowNode(BindingNode):pass
 class TryLetNode(BindingNode):pass
 class AssignmentNode(SemanticNode):pass
 class AssignNode(AssignmentNode):pass
@@ -189,7 +192,7 @@ class MatchNode(ControlFlowNode):pass
 SEMANTIC_STORAGE_TYPES={
     'string':StringNode,'number':NumberNode,'var':VariableNode,'field':FieldNode,
     'struct_init':StructInitNode,'call':DirectCallNode,'generic_call':GenericCallNode,'binop':BinaryNode,
-    'let':LetNode,'try_let':TryLetNode,'assign':AssignNode,'replace':ReplaceNode,
+    'let':LetNode,'local_borrow':LocalBorrowNode,'try_let':TryLetNode,'assign':AssignNode,'replace':ReplaceNode,
     'return':ReturnNode,'print':PrintNode,'expr':ExpressionStatementNode,'drop':DropNode,
     'with_cap':CapabilityNode,'if':IfNode,'while':WhileNode,'match':MatchNode,
 }
@@ -204,11 +207,11 @@ class SemanticNodeView:
     def require(self,*kinds):
         if self.kind not in kinds:raise ValueError(f'{self.kind} node does not support this accessor')
     @property
-    def binding_name(self):self.require('let','try_let','drop');return self.operand(0)
+    def binding_name(self):self.require('let','local_borrow','try_let','drop');return self.operand(0)
     @property
-    def declared_type(self):self.require('let','try_let');return self.operand(1)
+    def declared_type(self):self.require('let','local_borrow','try_let');return self.operand(1)
     @property
-    def initializer(self):self.require('let','try_let');return self.operand(2)
+    def initializer(self):self.require('let','local_borrow','try_let');return self.operand(2)
     @property
     def mutable(self):self.require('let');return self.operand(3)
     @property
@@ -314,7 +317,7 @@ class ASTBuilder(Transformer):
     @v_args(meta=True)
     def destructor_decl(self,meta,x): return DeclarationEntry('destructor',self.mark(DestructorDecl(str(x[0]),x[1]),meta))
     def param_borrow_mut(self,x): return Parameter(str(x[0]),x[1],'borrow_mut')
-    def param_borrow(self,x): return Parameter(str(x[0]),x[1],'borrow')
+    def param_borrow(self,x): return Parameter(str(x[1]),x[2],'borrow')
     def param_value(self,x): return Parameter(str(x[0]),x[1],'value')
     def params(self,x): return list(x)
     def name_list(self,x): return [str(v) for v in x]
@@ -359,6 +362,10 @@ class ASTBuilder(Transformer):
         return self.mark(n,meta)
     @v_args(meta=True)
     def let_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],False),meta)
+    @v_args(meta=True)
+    def local_borrow_stmt(self,meta,x):
+        origin=self.mark(self.semantic('var',str(x[4])),x[4])
+        return self.mark(self.semantic('local_borrow',str(x[0]),x[2],origin),meta)
     @v_args(meta=True)
     def var_stmt(self,meta,x): return self.mark(self.semantic('let',str(x[0]),x[1],x[2],True),meta)
     @v_args(meta=True)
@@ -648,6 +655,9 @@ def assign_binding_ids(program):
                 node=program.node(statement);kind=node.kind
                 if kind in ('let','try_let'):
                     expression(node.initializer);binding=bind(node.binding_name);object.__setattr__(statement,'binding_id',binding)
+                elif kind=='local_borrow':
+                    expression(node.initializer)
+                    object.__setattr__(statement,'binding_id',bind(node.binding_name))
                 elif kind in ('assign','replace'):
                     expression(node.assignment_target);expression(node.assigned_value)
                 elif kind in ('return','print','expr'):expression(node.expression)
@@ -1222,6 +1232,8 @@ class Checker:
     def block(self,body,env,caps,fn):
         for st in body:
             node=self.p.node(st);tag=node.kind
+            if tag=='local_borrow':
+                self.fail('M5400: local borrow semantic lowering is not implemented',st)
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable
                 self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
