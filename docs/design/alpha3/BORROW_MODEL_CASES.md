@@ -8,8 +8,10 @@ are illustrative of current syntax, but their combination with stored locals
 is unsupported. `use(r)` reads; `edit(r)` writes; `move(x)` means a consuming
 value transfer. `scope { ... }` indicates a lexical block, not literal grammar.
 `?` below means specification or proof is missing; it is not permission to
-accept. `S` safe under stated assumptions, `U` unsafe, `D` dependent. A/B/F
-outcomes are provisional; no outcome is an Alpha.3 compiler result. Alpha.2
+accept. `S` safe under stated assumptions, `U` unsafe, `D` dependent. F is the
+preferred semantic foundation; the A and B columns compare proof strategies
+under F. `F+A` records the prior F evaluation with A-style spans, not a third
+algorithm. Outcomes are provisional; no outcome is an Alpha.3 compiler result. Alpha.2
 `U/S` means **unsupported syntax**, not an observed diagnostic. Current
 call/return baseline evidence is [E01–E08].
 
@@ -17,7 +19,7 @@ All cases require a checker to prove the referent remains valid at every use,
 that write authority has no conflicting alias, and that destruction happens
 once after the final permissible use. Each case adds a specific obligation.
 
-| ID | Conceptual fragment and intent | Safety; relationships, paths, proof/cleanup | Alpha.2 | A | B | F | Complexity; compatibility; why |
+| ID | Conceptual fragment and intent | Safety; relationships, paths, proof/cleanup | Alpha.2 | A | B | F+A | Complexity; compatibility; why |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 01 | `let r:borrow T=borrow x; use(r);` | S if `x` live; one read loan; prove origin; owner cleans once. | U/S | Accept | Accept | Accept | Local origin; new syntax, no old behavior change. |
 | 02 | `r=borrow x; s=borrow x; use(r); use(s);` | S; two read permissions; prove both share live `x`; one owner cleanup. | U/S | Accept | Accept | Accept | Alias accounting; read/read coexist. |
@@ -47,26 +49,39 @@ once after the final permissible use. Each case adds a specific obligation.
 | 26 | `r=borrow x; scope { owned y=make(); use(r); } return;` | S if x/y live at uses; deterministic reverse cleanup remains; reference has no drop. | U/S | Accept | Accept | Accept | Cleanup trace across nested scope. |
 | 27 | `r=borrow_mut x; s=borrow x; use(s); edit(r);` | U unless first exclusive loan ended before `s` starts; both aliases live by final use. | U/S | Reject | Reject | Reject | Mixed alias prohibition. |
 | 28 | `r=borrow x; x=make(); use(r);` | U if assignment replaces/destroys old x; reject; one old-value destruction only. | U/S | Reject | Reject | Reject | Replacement effect must conflict with active loan. |
-| 29 | `r=borrow x; with capability io { hazard(x); }; use(r);` | D: depends on declared hazard effects; reject if it can invalidate/mutate x without proof. | U/S | ? | ? | ? | Capabilities do not imply alias safety; effect contract needed. |
+| 29 | `r=borrow x; with capability io { hazard(x); }; use(r);` | D: accept only with proven non-conflicting effects and live x; reject a proven conflict/invalidation; unknown effects permit conservative rejection. | U/S | Conditional | Conditional | Conditional | Capability does not imply alias safety; effect contract needed. |
 | 30 | `a=view_mut(tensor,0..4); b=view_mut(tensor,4..8); edit(a); edit(b);` | D: safe only with proven bounds, nonoverlap, stable backing lifetime; otherwise reject. | U/S | ? | ? | ? | Hypothetical tensor syntax; later slice needs interval/shape proof. |
 
 ## Matrix interpretation and proof obligations
 
-This table is the complete A/B/F matrix. `Accept` assumes the common domain's
+This table retains the complete A/B/F investigation matrix with F interpreted
+through A. `Accept` assumes the common domain's
 origin, type, and validity premises are proven. It is not a promise that the
 current compiler accepts the notation. `Reject` is a proposed mandatory
 outcome under the provisional rule. `?` means the model definition alone does
 not settle observable acceptance, or a required semantic fact is absent.
 
 Cases 04/07/09/13 distinguish inference from lexical restriction. None
-distinguishes A from F under the fixed alias policy; a future F policy that
+distinguishes A from F+A under the fixed alias policy; a future F policy that
 allows interior mutation or runtime-checked aliases must be compared anew.
-Cases 10/12/15/19/20/25/29/30 identify specification gaps rather than evidence
-for any model. Cases 06/08/17/21/22/23/27/28 are safety counterexamples.
+Cases 10/12/15/19/20/25/30 identify specification gaps rather than evidence
+for any strategy. Case 29 is effect-dependent: a proven non-conflicting hazard
+can be allowed, a proven conflict must be rejected, and unknown effects may be
+conservatively rejected. Cases 06/08/17/21/22/23/27/28 are safety counterexamples.
 Cases 14–17 require per-edge or loop proof; a solver that cannot prove the
-facts rejects, regardless of apparent intent. A/F must compute a sound fixed
-point over loan origin, liveness, and access restrictions. B still needs a
+facts rejects, regardless of apparent intent. An A-style checker must compute
+a sound fixed point over loan origin, liveness, and access restrictions for
+supported loops. B still needs a
 sound origin and exit analysis; lexical intervals alone do not prove safety.
+
+The proposed **minimum portable acceptance** is cases 01, 02, 04, 07, 09, 18,
+and 24 under the straight-line assumptions in the comparison document; case 01
+also covers a borrowed parameter when its origin and remaining validity are
+proven. Cases
+10–12 are expressly *not* required acceptance. Case 03 describes deferred
+mutable stored borrows; its theoretical `Accept` does not authorize that first
+slice. A/B/F+A outcomes outside the minimum express conditional model behavior,
+not a promise that every conforming first checker must accept them.
 
 Only existing Alpha.2 parameter/ephemeral-return forms can be checked against
 the current compiler. All local-reference fragments are unsupported in Alpha.2;
