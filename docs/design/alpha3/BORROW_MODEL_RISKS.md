@@ -2,7 +2,7 @@
 
 **Status:** Design-only analysis. Evidence IDs refer to `BORROW_MODEL_EVIDENCE.md`.
 
-| Risk | A inferred spans | B lexical spans | F separated authority | Mitigation/evidence needed |
+| Risk | A inferred-span proof | B lexical-span proof | F semantic foundation | Mitigation/evidence needed |
 | --- | --- | --- | --- | --- |
 | Dangling local reference after move/drop/replace | Requires path-sensitive use and origin proof. | Lexical scope prevents some safe moves but still needs origin proof. | Must keep validity distinct from access permission; use A or B solver. | Cases 06–09, 17, 22, 28; edge cleanup traces [E09–E12]. |
 | Conflicting aliases | Needs place overlap and live-use spans. | Needs place overlap within lexical interval. | Same under fixed alias policy; richer policy needs new semantics. | Cases 02–05, 20–21, 27; reject unknown overlap. |
@@ -22,11 +22,17 @@ when not exposed by ABI, and optimizer strategy can evolve while preserving
 the contract. Accepting additional safe programs can still change portable
 build results and diagnostics; record acceptance expansion by version. [E14]
 
-B is most reversible if its lexical rejection is expressly a **checker limit**
-rather than permanent semantic rule. That requires a frozen minimum acceptance
-set that B actually implements. If RM0 mandates post-last-use acceptance, B
-cannot be substituted without breaking conformance. This distinction is a
-human design decision, not a coding convenience. [E10, E14]
+B's lexical rejection is a **checker limit**, not permanent semantic law. The
+owner's preferred minimum includes proven post-last-use owner operations in
+cases 04, 07, and 09; B alone cannot implement that minimum. It may handle the
+subset it can prove while another analysis handles those cases. [E10, E14, E18]
+
+Before implementation, type identity needs a decision: local borrow as a
+distinct type or mode, mutability as a type property, provenance/lifetime in
+type checking, and compatibility with existing borrowed parameters/results.
+Those affect generic substitution, diagnostics, ABI, and serialization. Final
+spelling is a separate syntax review. No current Alpha.2 discriminant may be
+silently repurposed. [E06, E12, E16, E18]
 
 ## Required representation changes for later implementation
 
@@ -34,7 +40,8 @@ human design decision, not a coding convenience. [E10, E14]
   identity; no syntax is approved here. `merit/compiler.py` parameter/return
   grammar at lines ~28–32 and `Checker`/`VarState` [E02–E04].
 - Checker: origin/place graph, access permission, all-path validity and
-  last-use or lexical span, joins/loops/error edges, alias conflicts, and
+  final-use proof for the mandatory straight-line subset, then joins/loops/error
+  edges as separately specified, alias conflicts, and
   source-span diagnostics. Existing per-call `loans` list at ~1477 is not a
   stored-reference checker [E03, E12].
 - Interpreter and C backend: preserve identity and single evaluation while
