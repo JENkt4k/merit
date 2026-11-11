@@ -36,7 +36,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
 | HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects, strict v2 readers, canonical round trips, and malformed-record tests pass. Source-to-HIR/MIR producers and native parity remain open. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Python transport and public artifact publication/loading accept validated v5 MIR v2, reject mixed snapshot framing and mislabeled v4/v5. Merit-native producer and actual new-feature project build remain open. |
-| Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Open. |
+| Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | The statement frontend now retains contextual local-reference mode separately from its declared referent type. The native driver explicitly rejects that mode until loan proof and v5 emission exist. No accepted local-reference program reaches the native backend yet. |
 | Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused baseline only. |
 
 ### Checker checkpoint
@@ -90,6 +90,16 @@ The ABI bridge retains the v2 loan records. Focused HIR-to-MIR and ABI tests
 pass 43 tests on Windows. This bridge consumes constructed checked HIR; it is
 not yet evidence that the Python source frontend or Merit-native project
 compiler emits v2 from actual source.
+
+The first Merit-native source probe failed with driver status 1053. This is
+the type-catalog unresolved-type status: the statement parser had represented
+`borrow` as the declared type in `let r: borrow T`, losing the reference mode
+and `T`. The statement frontend now emits distinct contextual mode and
+referent-type operands, with matching record counts. A focused native and
+interpreter operand test passed, an existing Alpha.2 operand fixture passed,
+and two public-interface native-driver probes remain fail-closed pending the
+native loan checker. These are parser/transport observations only, not native
+RM1 semantic acceptance or v5 production evidence.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

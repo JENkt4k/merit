@@ -38,6 +38,7 @@ pub fn native_driver_unclosed_function_body_status()->i32{return 903;}
 pub fn native_driver_invalid_function_slice_status()->i32{return 904;}
 pub fn native_driver_unclosed_function_slice_status()->i32{return 905;}
 pub fn native_driver_function_count_mismatch_status()->i32{return 906;}
+pub fn native_driver_unproven_local_loan_status()->i32{return 907;}
 pub fn native_driver_enum_catalog_failure_status(status:i32)->i32{return checked_add(920,status);}
 pub fn native_driver_capability_catalog_failure_status(status:i32)->i32{return checked_add(950,status);}
 pub fn native_driver_numeric_descriptor_failure_status(status:i32)->i32{return checked_add(985,status);}
@@ -269,6 +270,17 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 var canonical_function:Buffer=buffer_new(allocator,1024);
 
                 var function_status: i32 = slice_status;
+                // The mode operand is kept distinct from the referent type.
+                // Until native loan proof and v5 emission are complete, never
+                // interpret it as an ordinary value binding.
+                var loan_operand_index: i64 = 0;
+                while (loan_operand_index < vec_len<StatementOperand>(operands)) {
+                    let loan_operand: StatementOperand = vec_get<StatementOperand>(operands,loan_operand_index);
+                    if (statement_operand_kind(loan_operand) == statement_operand_local_borrow_mode_kind()) {
+                        function_status = native_driver_unproven_local_loan_status();
+                    }
+                    loan_operand_index = checked_add(loan_operand_index,1);
+                }
                 let resolved_match_enum_id: i64 = -1;
                 if (function_status == 0) {
                 if (emitted_functions == 0) {
