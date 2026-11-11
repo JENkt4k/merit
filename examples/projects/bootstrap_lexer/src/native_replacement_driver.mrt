@@ -10,6 +10,7 @@ import bootstrap_mir_function_assembly_plan;
 import bootstrap_mir_function_instruction_source;
 import bootstrap_mir_match_capability_flow;
 import bootstrap_mir_source_type_lifecycle;
+import bootstrap_mir_source_ownership_metadata;
 import bootstrap_mir_source_function_records;
 import bootstrap_mir_project_payload_types;
 import bootstrap_mir_ownership_flow;
@@ -273,11 +274,12 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 // The mode operand is kept distinct from the referent type.
                 // Until native loan proof and v5 emission are complete, never
                 // interpret it as an ordinary value binding.
+                var has_local_loan:i32=0;
                 var loan_operand_index: i64 = 0;
                 while (loan_operand_index < vec_len<StatementOperand>(operands)) {
                     let loan_operand: StatementOperand = vec_get<StatementOperand>(operands,loan_operand_index);
                     if (statement_operand_kind(loan_operand) == statement_operand_local_borrow_mode_kind()) {
-                        function_status = native_driver_unproven_local_loan_status();
+                        has_local_loan=1;
                     }
                     loan_operand_index = checked_add(loan_operand_index,1);
                 }
@@ -658,6 +660,53 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                 source,tokens,variants,structs,allocator,callable_signatures,callable_parameters
                             );
                             if(callable_status!=0){return native_driver_callable_catalog_failure_status(callable_status);}
+                            if(has_local_loan!=0){
+                                var loan_types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,8);
+                                var loan_origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,4);
+                                var loan_uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,8);
+                                var loan_ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,4);
+                                let loan_type_status:i32=derive_source_type_ownership_catalog(
+                                    source,tokens,statements,operands,loan_types
+                                );
+                                if(loan_type_status==0){
+                                    let binding_status:i32=derive_source_ownership_bindings(
+                                        source,statements,operands,loan_types,ownership
+                                    );
+                                    if(binding_status==0){
+                                        var loan_parameter_start:i64=-1;
+                                        var loan_parameter_count:i64=0;
+                                        var loan_signature_index:i64=0;
+                                        let function_start:i64=token_start(candidate);
+                                        let final_token:Token=vec_get<Token>(
+                                            function_tokens,checked_sub(vec_len<Token>(function_tokens),1)
+                                        );
+                                        let function_end:i64=checked_add(token_start(final_token),1);
+                                        while(loan_signature_index<vec_len<SourceFunctionSignature>(callable_signatures)){
+                                            let signature:SourceFunctionSignature=vec_get<SourceFunctionSignature>(callable_signatures,loan_signature_index);
+                                            let name_start:i64=source_function_signature_name_start(signature);
+                                            if(name_start>=function_start){if(name_start<function_end){
+                                                loan_parameter_start=source_function_signature_parameter_start(signature);
+                                                loan_parameter_count=source_function_signature_parameter_count(signature);
+                                            }}
+                                            loan_signature_index=checked_add(loan_signature_index,1);
+                                        }
+                                        if(loan_parameter_start>=0){
+                                            let loan_proof:SourceLocalLoanProof=prove_source_local_loans(
+                                                source,function_tokens,statements,operands,
+                                                callable_parameters,loan_parameter_start,loan_parameter_count,
+                                                callable_signatures,ownership,allocator,loan_origins,loan_uses,loan_ends
+                                            );
+                                            // Semantic proof is necessary, but v2/v5 emission is not yet
+                                            // connected. Even a proved source must remain fail closed.
+                                            if(source_local_loan_proof_stage(loan_proof)!=source_local_loan_proof_success_stage()){
+                                                function_status=native_driver_unproven_local_loan_status();
+                                            }
+                                        }
+                                    }
+                                }
+                                function_status=native_driver_unproven_local_loan_status();
+                                drop(loan_ends);drop(loan_uses);drop(loan_origins);drop(loan_types);
+                            }
                             if(artifact_mode!=0){
                                 var signature_index:i64=0;
                                 while(signature_index<vec_len<SourceFunctionSignature>(callable_signatures)){

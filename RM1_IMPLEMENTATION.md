@@ -246,6 +246,18 @@ current straight-line v2 contract; it does not claim full control-flow or
 native-producer proof. The focused source-artifact, MIR-contract, and Alpha.2
 compatibility suite passed 102 tests on Windows.
 
+The production native driver now invokes the composed source-loan proof after
+its callable catalog is available, using the current function's parameter
+range and independently derived ownership bindings. It retains status 907
+even for a successful proof until native v2/v5 emission is connected; old
+sources do not enter this branch. The 45-module bootstrap compiler builds,
+and its interpreter/native regression passed. A temporary, subsequently
+restored cutover on the smallest `i32` stored-borrow program reached native
+driver status 4368 after the proof boundary. Thus the existing v1 assembly /
+canonical materializer cannot yet be used as a v2 producer; removing 907 now
+would not publish a valid artifact. The next implementation boundary is native
+loan-aware canonical lowering and C emission, followed by v5 framing.
+
 ## Bounded semantic-coherence audit
 
 For each new accepted case, compare one source program at every available
