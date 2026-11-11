@@ -203,6 +203,8 @@ fn main()->i32 { with capability allocate {
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mutate(x); print(r); return 0; }",-1,0,0,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(mutate(x)); print(r); return 0; }",-1,0,0,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); mutate(x); return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(x); print(r); return 0; }",67,7,1,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mutate(x); print(r); return 0; }",67,6,2,0);
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -216,7 +218,7 @@ fn main()->i32 { with capability allocate {
         "0\n1\n1\n0\n0\n1\n1\n1\n0\n1\n1\n1\n"
         "0\n0\n2\n1\n0\n1\n0\n1\n0\n"
         + "".join("0\n0\n0\n0\n0\n" + f"{result}\n" for result in (0, 2, 0, 2, 0, 2, 2, 0, 2, 0, 0))
-        + "".join(f"0\n0\n0\n{result}\n" for result in (0, 4, 4, 4, 3, 3, 2, 2, 4, 4, 0))
+        + "".join(f"0\n0\n0\n{result}\n" for result in (0, 4, 4, 4, 3, 3, 2, 2, 4, 4, 0, 0, 4))
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")

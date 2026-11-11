@@ -139,6 +139,10 @@ copying a primitive referent into a new local, field-value returns, and safe
 ephemeral borrowed calls involving the owner need separate proof before RM1
 can claim the complete approved semantic surface. It is not yet connected to
 the production artifact path or to stable M54xx diagnostics.
+The source use pass also admits a direct, proven borrowed-parameter read of
+the owner while a stored shared loan remains live. A mutable borrowed call
+on that owner remains a conflict. The focused interpreter/native source
+probe covers both outcomes; this does not lift the production driver guard.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

@@ -685,7 +685,7 @@ fn sfr_local_proven_borrow_call(
     let close:Token=vec_get<Token>(tokens,close_index);
     if(token_kind(callee)!=token_identifier_kind()){return 0;}
     if(token_kind(argument)!=token_identifier_kind()){return 0;}
-    if(token_start(argument)!=reference_start){return 0;}
+    if(reference_start>=0){if(token_start(argument)!=reference_start){return 0;}}
     if(token_kind(open)!=token_punctuation_kind()){return 0;}
     if(token_kind(close)!=token_punctuation_kind()){return 0;}
     if(token_length(open)!=1){return 0;}
@@ -795,7 +795,15 @@ pub fn check_source_local_loan_reference_uses(
                     if(source_local_loan_use_statement(use)==statement_index){has_reference=1;}
                     use_index=checked_add(use_index,1);
                 }
-                if(has_reference==0){return source_local_loan_reference_use_unknown_call_status();}
+                if(has_reference==0){
+                    let expression_index:i64=sfr_operand(statement,operands,statement_operand_expression_kind());
+                    if(expression_index<0){return source_local_loan_reference_use_invalid_catalog_status();}
+                    let expression:StatementOperand=vec_get<StatementOperand>(operands,expression_index);
+                    if(sfr_local_proven_borrow_call(
+                        source,tokens,statement_operand_start(expression),statement_operand_length(expression),
+                        -1,signatures,parameters
+                    )==0){return source_local_loan_reference_use_unknown_call_status();}
+                }
             }
         }
         statement_index=checked_add(statement_index,1);
