@@ -55,6 +55,35 @@ def test_source_final_use_precedes_owner_assignment_in_mir() -> None:
         lower_checked_local_borrow_source_hir(source.replace("inspect(r); x=2;", "x=2; inspect(r);"))
 
 
+def test_two_shared_loans_end_independently_before_owner_assignment() -> None:
+    source = SOURCE.replace("let x:i32=1;", "var x:i32=1;").replace(
+        "inspect(r); return x;",
+        "let s: borrow i32=borrow x; inspect(r); inspect(s); x=2; return x;",
+    )
+    hir = lower_checked_local_borrow_source_hir(source)
+    assert len(hir.local_loans) == 2
+    mir = lower_hir_to_mir(hir)
+    effects = mir.functions[0].local_loan_effects
+    assert [effect.kind for effect in effects] == ["create", "create", "use", "end", "use", "end"]
+    assert effects[-1].instruction_id < next(
+        instruction.instruction_id for instruction in mir.functions[0].blocks[0].instructions
+        if instruction.kind == "copy" and instruction.result == 0
+        and instruction.instruction_id > effects[-1].instruction_id
+    )
+    assert load_mir_json(canonical_mir_json(mir)) == mir
+
+
+def test_owned_string_waits_for_correct_move_and_cleanup_lowering() -> None:
+    source = (
+        'module rm1\n'
+        'fn inspect(borrow value:String)->i32 { print(value); return 0; }\n'
+        'fn main()->i32 { let x:String="a"; let r: borrow String=borrow x; '
+        'inspect(r); drop(x); return 0; }'
+    )
+    with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source binding type"):
+        lower_checked_local_borrow_source_hir(source)
+
+
 def test_accepted_but_unrepresented_source_fails_closed() -> None:
     source = SOURCE.replace("inspect(r);", "print(r);")
     with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source statement"):

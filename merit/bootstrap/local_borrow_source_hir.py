@@ -70,8 +70,10 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             callee = next((item for item in program.functions if item.name == node.callee_name), None)
             if (callee is not None and callee.return_mode == "value"
                 and callee.return_type == "i32" and len(callee.params) == 1
-                and callee.params[0].mode == "borrow" and callee.params[0].type_name == "i32"):
+                and callee.params[0].mode == "borrow"):
                 argument = value(node.arguments[0])
+                if nodes[argument].type.name != callee.params[0].type_name:
+                    raise LocalBorrowSourceHirError("borrowed call argument type is not represented")
                 return emit("call", HirType("i32"), raw,
                             children=(argument,), symbol=node.callee_name)
         raise LocalBorrowSourceHirError(f"unsupported RM1 source expression: {node.kind}")
@@ -116,6 +118,12 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             initializer = value(node.assigned_value)
             statements.append(emit("assign", type_, raw, children=(initializer,),
                                    binding_id=target.binding_id.serial))
+        elif node.kind == "drop":
+            binding = raw.binding_id
+            if binding is None or binding.serial not in binding_types:
+                raise LocalBorrowSourceHirError("unresolved RM1 drop binding")
+            statements.append(emit("drop", binding_types[binding.serial], raw,
+                                   binding_id=binding.serial))
         elif node.kind == "return":
             result = value(node.expression)
             statements.append(emit("return", HirType(function.return_type), raw,

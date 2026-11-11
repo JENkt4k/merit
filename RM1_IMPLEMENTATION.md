@@ -132,6 +132,13 @@ The same bounded source producer now preserves an owner assignment after a
 stored reference's final call use. Its emitted MIR places the loan end before
 the assignment; moving that assignment before the use is rejected by M5402
 before artifact emission. This is focused effect-order evidence only.
+The producer also round-trips two simultaneous shared loans with separate
+final uses. An owned `String` source probe exposed an existing gap in the
+generic HIR-to-MIR `let` bridge: it emits a copy for the initializer and does
+not establish source owner cleanup. The bounded source producer therefore
+rejects owned `String` rather than presenting incomplete ownership effects
+as valid v2 evidence. Complete owned-value movement and cleanup lowering is
+required before extending this source path to cases 01, 02, 07, and 09.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy
