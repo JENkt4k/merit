@@ -40,6 +40,21 @@ def test_rejected_source_never_produces_v2_artifacts() -> None:
         lower_checked_local_borrow_source_hir(invalid)
 
 
+def test_source_final_use_precedes_owner_assignment_in_mir() -> None:
+    source = SOURCE.replace("let x:i32=1;", "var x:i32=1;").replace(
+        "inspect(r); return x;", "inspect(r); x=2; return x;"
+    )
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    instructions = mir.functions[0].blocks[0].instructions
+    end = next(effect for effect in mir.functions[0].local_loan_effects if effect.kind == "end")
+    assignment = next(instruction for instruction in instructions
+                      if instruction.kind == "copy" and instruction.result == 0
+                      and instruction.instruction_id > end.instruction_id)
+    assert end.instruction_id < assignment.instruction_id
+    with pytest.raises(CompileError, match="M5402"):
+        lower_checked_local_borrow_source_hir(source.replace("inspect(r); x=2;", "x=2; inspect(r);"))
+
+
 def test_accepted_but_unrepresented_source_fails_closed() -> None:
     source = SOURCE.replace("inspect(r);", "print(r);")
     with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source statement"):

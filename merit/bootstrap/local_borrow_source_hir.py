@@ -106,6 +106,16 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
                                    binding_id=binding.serial, ownership=mode))
         elif node.kind == "expr":
             statements.append(value(node.expression))
+        elif node.kind == "assign":
+            target = node.assignment_target
+            if program.node(target).kind != "var" or target.binding_id is None:
+                raise LocalBorrowSourceHirError("unsupported RM1 assignment place")
+            type_ = binding_types.get(target.binding_id.serial)
+            if type_ != HirType("i32"):
+                raise LocalBorrowSourceHirError("unsupported RM1 assignment type")
+            initializer = value(node.assigned_value)
+            statements.append(emit("assign", type_, raw, children=(initializer,),
+                                   binding_id=target.binding_id.serial))
         elif node.kind == "return":
             result = value(node.expression)
             statements.append(emit("return", HirType(function.return_type), raw,

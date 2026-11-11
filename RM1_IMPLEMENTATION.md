@@ -128,6 +128,10 @@ readers, rejects invalid source before artifact creation, and fails closed on
 accepted source outside its representable subset. The 113 focused source and
 contract tests pass. This is partial source-to-v2 evidence, not complete
 coverage of the seven required cases and not a Merit-native v5 producer.
+The same bounded source producer now preserves an owner assignment after a
+stored reference's final call use. Its emitted MIR places the loan end before
+the assignment; moving that assignment before the use is rejected by M5402
+before artifact emission. This is focused effect-order evidence only.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy
