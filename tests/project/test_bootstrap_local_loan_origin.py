@@ -173,7 +173,7 @@ fn check_reference_use(source_text:String,signature_start:i64,signature_length:i
     drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
-fn check_complete_proof(source_text:String)->i32 requires_caps [allocate] {
+fn check_complete_proof(source_text:String,signature_start:i64,signature_length:i64)->i32 requires_caps [allocate] {
     let allocator:Allocator=system_allocator();
     let source:Buffer=buffer_from_string(allocator,source_text);
     let tokens:Vec<Token>=lex(source,allocator);
@@ -181,6 +181,17 @@ fn check_complete_proof(source_text:String)->i32 requires_caps [allocate] {
     let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
     var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,0);
     var signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,0);
+    if(signature_start>=0){
+        vec_push<SourceFunctionParameter>(parameters,SourceFunctionParameter{
+            name_start:signature_start,name_length:signature_length,
+            type_code:function_mir_i32_type_code(),mode:function_mir_mode_borrowed(),mutable:0
+        });
+        vec_push<SourceFunctionSignature>(signatures,SourceFunctionSignature{
+            name_start:signature_start,name_length:signature_length,
+            return_type_code:function_mir_i32_type_code(),return_mode:function_mir_mode_value(),
+            borrowed_origin:-1,parameter_start:0,parameter_count:1
+        });
+    }
     var types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,2);
     var ownership:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,2);
     var origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,2);
@@ -232,9 +243,22 @@ fn main()->i32 { with capability allocate {
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); mutate(x); return 0; }",-1,0,0,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(x); print(r); return 0; }",67,7,1,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mutate(x); print(r); return 0; }",67,6,2,0);
-    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }");
-    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; print(r); return 0; }");
-    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mystery(r); print(r); return 0; }");
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mystery(r); print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; let s: borrow String=borrow x; print(r); print(s); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; print(r); x=2; return 0; }",-1,0);
+    check_complete_proof("module m\\nstruct Box { value:i32; } fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; print(r.value); let y:Box=x; return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; print(r); drop(x); return 0; }",-1,0);
+    check_complete_proof("module m\\ncapability io; fn main()->i32 { var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2; return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r); return 0; }",67,7);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nstruct Box { value:i32; } fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; let y:Box=x; print(r.value); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; drop(x); print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; return r; }",-1,0);
+    check_complete_proof("module m\\nstruct Holder { value:i32; } fn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; let h:Holder=Holder{value:r}; return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; replace(x,\\\"b\\\"); print(r); return 0; }",-1,0);
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -250,6 +274,8 @@ fn main()->i32 { with capability allocate {
         + "".join("0\n0\n0\n0\n0\n" + f"{result}\n" for result in (0, 2, 0, 2, 0, 2, 2, 0, 2, 0, 0))
         + "".join(f"0\n0\n0\n{result}\n" for result in (0, 4, 4, 4, 3, 3, 2, 2, 4, 4, 0, 0, 4))
         + "0\n0\n4\n2\n5\n4\n"
+        + "0\n0\n" * 7
+        + "4\n2\n4\n2\n4\n2\n5\n3\n5\n3\n4\n2\n"
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")

@@ -31,7 +31,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Boundary | Required evidence | State |
 | --- | --- | --- |
 | Contextual source syntax and old `borrow` names | Preferred declaration parses; old names and borrowed parameters remain valid; comments/newlines covered. | Parser checkpoint merged. |
-| Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker: 7/7 accepted and 6/6 rejected cases pass. Native parity open. |
+| Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker: 7/7 accepted and 6/6 rejected cases pass. Native source-record proof: matching 7/7 and 6/6 stage outcomes in interpreter/native probe; production diagnostic and artifact parity open. |
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
 | HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects, strict v2 readers, canonical round trips, and malformed-record tests pass. A bounded checked-source i32 producer emits create/use/end and post-final-use assignment; required-case completeness and native producer parity remain open. |
@@ -190,6 +190,12 @@ never reports success for a source with no local loan. A focused 75-second
 interpreter/native probe covers success, a live-owner conflict, and an
 unknown call. The driver still rejects RM1 source until native v5 emission
 and complete diagnostic parity are implemented.
+The same focused probe now exercises the full required RM1 source matrix
+(accepted 01/02/04/07/09/18/24 and rejected 05/06/08/22/23/28) through the
+composed native proof. All expected success/failure stages match in the Merit
+interpreter and generated native executable (one project test, 91.60 seconds).
+This is source-record proof evidence, not production compiler acceptance or
+stable M54xx diagnostic parity.
 The native origin catalog now checks that a local reference's declared
 referent type matches its local owner declaration. For a borrowed parameter
 origin, it compares the resolved built-in type code; an unrepresented custom
