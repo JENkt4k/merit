@@ -1,9 +1,11 @@
 """Source-backed RM1 representation evidence for the bounded oracle producer."""
 
+from dataclasses import replace
+
 import pytest
 
 from merit.bootstrap.hir_contract import canonical_hir_json, load_hir_json
-from merit.bootstrap.hir_to_mir import lower_hir_to_mir
+from merit.bootstrap.hir_to_mir import HirToMirError, lower_hir_to_mir
 from merit.bootstrap.local_borrow_source_hir import (
     LocalBorrowSourceHirError, lower_checked_local_borrow_source_hir,
 )
@@ -82,6 +84,17 @@ def test_owned_string_waits_for_correct_move_and_cleanup_lowering() -> None:
     )
     with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source binding type"):
         lower_checked_local_borrow_source_hir(source)
+
+
+def test_v2_bridge_rejects_unproven_owned_initializer() -> None:
+    hir = lower_checked_local_borrow_source_hir(SOURCE)
+    owner = next(binding for binding in hir.bindings if binding.name == "x")
+    changed = replace(hir, bindings=tuple(
+        replace(binding, ownership="owned") if binding == owner else binding
+        for binding in hir.bindings
+    ))
+    with pytest.raises(HirToMirError, match="owned initializer requires proven move"):
+        lower_hir_to_mir(changed)
 
 
 def test_accepted_but_unrepresented_source_fails_closed() -> None:

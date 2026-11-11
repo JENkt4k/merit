@@ -431,6 +431,10 @@ class _FunctionLowerer:
                 raise HirToMirError(f"{node.kind} node {node.node_id} has no resolved binding")
             if len(node.children) != 1:
                 raise HirToMirError(f"{node.kind} node {node.node_id} requires one value")
+            if (self.module.schema == LOCAL_LOAN_HIR_SCHEMA and node.kind == "let"
+                and next(binding for binding in self.module.bindings
+                         if binding.binding_id == node.binding_id).ownership == "owned"):
+                raise HirToMirError("local-loan HIR owned initializer requires proven move and cleanup lowering")
             destination = self.binding_locals[node.binding_id]
             if self.module.schema == LOCAL_LOAN_HIR_SCHEMA and node.kind == "let" and any(
                 loan.reference_binding_id == node.binding_id for loan in self.module.local_loans
