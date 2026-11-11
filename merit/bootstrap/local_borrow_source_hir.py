@@ -68,6 +68,27 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             type_ = binding_types.get(raw.binding_id.serial)
             if type_ is not None:
                 return emit("identifier", type_, raw, binding_id=raw.binding_id.serial)
+        if node.kind == "struct_init":
+            struct = program.structs.get(node.constructed_type)
+            if (struct is None or len(struct.fields) != 1
+                or struct.fields[0].type_name != "i32"
+                or struct.name in program.destructors
+                or set(node.field_values) != {struct.fields[0].name}):
+                raise LocalBorrowSourceHirError("unsupported RM1 owned aggregate shape")
+            field_value = value(node.field_values[struct.fields[0].name])
+            if nodes[field_value].type != HirType("i32"):
+                raise LocalBorrowSourceHirError("unsupported RM1 aggregate field value")
+            return emit("constructor", HirType(struct.name), raw,
+                        children=(field_value,), symbol=struct.name)
+        if node.kind == "field":
+            base = value(node.field_base)
+            struct = program.structs.get(nodes[base].type.name)
+            if (struct is None or len(struct.fields) != 1
+                or struct.fields[0].name != node.field_name
+                or struct.fields[0].type_name != "i32"):
+                raise LocalBorrowSourceHirError("unsupported RM1 field read")
+            return emit("field", HirType("i32"), raw,
+                        children=(base,), symbol=node.field_name)
         if node.kind == "call" and len(node.arguments) == 1:
             callee = next((item for item in program.functions if item.name == node.callee_name), None)
             if (callee is not None and callee.return_mode == "value"
@@ -87,11 +108,15 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             if binding is None:
                 raise LocalBorrowSourceHirError("unresolved local binding")
             type_ = HirType(node.declared_type)
-            if type_.name not in {"i32", "String"}:
+            aggregate = program.structs.get(type_.name)
+            supported_aggregate = (aggregate is not None and len(aggregate.fields) == 1
+                                   and aggregate.fields[0].type_name == "i32"
+                                   and aggregate.name not in program.destructors)
+            if type_.name not in {"i32", "String"} and not supported_aggregate:
                 raise LocalBorrowSourceHirError("unsupported RM1 source binding type")
             binding_types[binding.serial] = type_
             mode = ("local_reference" if node.kind == "local_borrow" else
-                    "owned" if type_.name == "String" else "value")
+                    "owned" if type_.name == "String" or supported_aggregate else "value")
             bindings.append(HirBinding(binding.serial, binding.name, type_,
                                        node.mutable if node.kind == "let" else False,
                                        mode, span(raw)))

@@ -120,6 +120,48 @@ def test_case_08_owner_drop_before_final_read_emits_no_artifact() -> None:
         lower_checked_local_borrow_source_hir(source)
 
 
+def test_case_07_aggregate_owner_moves_after_field_read() -> None:
+    source = (
+        "module rm1\nstruct Box { value:i32; }\n"
+        "fn main()->i32 { let x:Box=Box{value:1}; "
+        "let r: borrow Box=borrow x; print(r.value); "
+        "let y:Box=x; print(y.value); return 0; }"
+    )
+    hir = lower_checked_local_borrow_source_hir(source)
+    mir = lower_hir_to_mir(hir)
+    function = mir.functions[0]
+    instructions = function.blocks[0].instructions
+    end = next(effect.instruction_id for effect in function.local_loan_effects if effect.kind == "end")
+    assert instructions[end].kind == "load_field"
+    owner_moves = [instruction for instruction in instructions if instruction.kind == "move"]
+    assert len(owner_moves) == 2
+    assert owner_moves[1].operands == (0,) and owner_moves[1].instruction_id > end
+    drops = [instruction for instruction in instructions if instruction.kind == "drop"]
+    assert len(drops) == 1 and drops[0].operands == (2,)
+    assert load_mir_json(canonical_mir_json(mir)) == mir
+
+
+@pytest.mark.parametrize(("order", "message"), [
+    ((0, 3, 1, 2, 4, 5), "origin is no longer owned and valid"),
+    ((0, 1, 3, 2, 4, 5), "owner resource invalidated while local loan is live"),
+])
+def test_v2_bridge_rejects_aggregate_move_before_loan_end(order, message) -> None:
+    source = (
+        "module rm1\nstruct Box { value:i32; }\n"
+        "fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; "
+        "print(r.value); let y:Box=x; print(y.value); return 0; }"
+    )
+    hir = lower_checked_local_borrow_source_hir(source)
+    function = hir.nodes[hir.roots[0]]
+    children = tuple(function.children[index] for index in order)
+    changed = replace(hir, nodes=tuple(
+        replace(node, children=children) if node.node_id == function.node_id else node
+        for node in hir.nodes
+    ))
+    with pytest.raises((HirToMirError, ValueError), match=message):
+        lower_hir_to_mir(changed)
+
+
 @pytest.mark.parametrize(("case", "declarations", "body", "diagnostic"), [
     ("05", "", "var x:i32=1; let r: borrow i32=borrow x; x=2; print(r);", "M5402"),
     ("06", "struct Box { value:i32; }", "let x:Box=Box{value:1}; let r: borrow Box=borrow x; let y:Box=x; print(r.value);", "M5402"),

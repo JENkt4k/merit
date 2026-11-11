@@ -454,12 +454,27 @@ class _FunctionLowerer:
             if (self.module.schema == LOCAL_LOAN_HIR_SCHEMA and node.kind == "let"
                 and binding.ownership == "owned"):
                 initializer = self._child(node, 0)
-                if (binding.type.name != "String" or initializer.kind != "literal"
-                    or initializer.type != binding.type or self.scope_depth != 0):
+                literal_string = initializer.kind == "literal" and binding.type.name == "String"
+                aggregate_constructor = (initializer.kind == "constructor"
+                                         and initializer.symbol == binding.type.name
+                                         and len(initializer.children) == 1
+                                         and self.by_id[initializer.children[0]].type.name == "i32")
+                owner_transfer = initializer.kind == "identifier" and initializer.binding_id is not None
+                if (initializer.type != binding.type or self.scope_depth != 0
+                    or not (literal_string or aggregate_constructor or owner_transfer)):
                     raise HirToMirError("local-loan HIR owned initializer requires proven move and cleanup lowering")
+                if owner_transfer:
+                    source_binding = next(
+                        (item for item in self.module.bindings if item.binding_id == initializer.binding_id), None
+                    )
+                    if (source_binding is None or source_binding.ownership != "owned"
+                        or not self.owned_live.get(initializer.binding_id, False)):
+                        raise HirToMirError("local-loan HIR owner transfer requires a live owned origin")
                 source = self.lower_value(initializer)
                 self._emit(node, "move", result=self.binding_locals[node.binding_id],
                            operands=(source,), ownership="owned")
+                if owner_transfer:
+                    self.owned_live[initializer.binding_id] = False
                 self.owned_live[node.binding_id] = True
                 self.owned_order.append(node.binding_id)
                 return
@@ -474,6 +489,11 @@ class _FunctionLowerer:
                 origin = self._child(initializer, 0)
                 if origin.kind != "identifier" or origin.binding_id != loan.origin_binding_id:
                     raise HirToMirError("local loan origin does not match the initializer")
+                if (self.module.schema == LOCAL_LOAN_HIR_SCHEMA
+                    and next(binding for binding in self.module.bindings
+                             if binding.binding_id == loan.origin_binding_id).ownership == "owned"
+                    and not self.owned_live.get(loan.origin_binding_id, False)):
+                    raise HirToMirError("local loan origin is no longer owned and valid")
                 if node.binding_id in self.local_loan_creations:
                     raise HirToMirError("local reference initialized more than once")
                 self._emit(initializer, "borrow", result=destination,

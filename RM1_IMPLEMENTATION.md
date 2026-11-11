@@ -34,7 +34,7 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker: 7/7 accepted and 6/6 rejected cases pass. Native source-record proof: matching 7/7 and 6/6 stage outcomes in interpreter/native probe; production diagnostic and artifact parity open. |
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity passes 7/7 accepted cases plus borrowed-parameter and owner lifecycle traces. Native replacement parity open. |
-| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects and strict v2 readers pass. The bounded checked-source producer now covers 6/7 required accepted cases (01/02/04/09/18/24) and stops all 6 required rejected cases before artifact emission; aggregate case 07 and native producer parity remain open. |
+| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Versioned Python contract objects and strict v2 readers pass. The bounded checked-source producer covers all 7 required accepted cases and stops all 6 required rejected cases before artifact emission. Complete project lowering and native producer parity remain open. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Python transport and public artifact publication/loading accept validated v5 MIR v2, reject mixed snapshot framing and mislabeled v4/v5. Merit-native producer and actual new-feature project build remain open. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | The statement frontend now retains contextual local-reference mode separately from its declared referent type. The native driver explicitly rejects that mode until loan proof and v5 emission exist. No accepted local-reference program reaches the native backend yet. |
 | Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused baseline only. |
@@ -144,7 +144,7 @@ The source/contract/bridge suite passed 150 tests at this checkpoint.
 The bounded producer now also lowers case 18's capability scope, including
 its explicit MIR capability check and a final loan end before the later owner
 write. The focused representation suite passed 151 tests at that checkpoint;
-aggregate and complete project source-to-v2 lowering remain open.
+complete project source-to-v2 lowering remains open.
 The same bounded source producer now preserves an owner assignment after a
 stored reference's final call use. Its emitted MIR places the loan end before
 the assignment; moving that assignment before the use is rejected by M5402
@@ -155,17 +155,19 @@ literal into its owner and emits exactly one owner drop at explicit drop or
 function return, after the proven loan end. It rejects unsupported owned
 initializers, owned calls and moves without transfer proof, scoped owned
 initialization, duplicate drops, and owned returns. V1 lowering and canonical
-bytes remain unchanged. This bounded support closes source-to-v2 cases 01,
-02, and 09; aggregate case 07 still needs an owned constructor/transfer and
-cleanup representation. The source/contract/bridge focused suite passes 162
-tests, including all six required pre-artifact rejections.
-The combined focused RM1 checker, interpreter/C execution, compatibility,
-source artifact, and HIR/MIR bridge checkpoint passes 210 tests in 12.02
-seconds on Windows. This does not replace subsystem or self-hosting gates.
+bytes remain unchanged. The producer also lowers the required single-field
+`Box` case 07: a primitive field read ends the loan, then the owner moves
+to `y` and only `y` is dropped. Reordered moves before loan creation or final
+use are rejected. All seven required accepted and six required rejected
+cases now have source-to-v2 tests. The combined focused RM1 checker,
+interpreter/C execution, compatibility, source artifact, and HIR/MIR bridge
+checkpoint passes 213 tests in 11.87 seconds on Windows. This does not
+replace subsystem or self-hosting gates.
 The v2 MIR reader now rejects an implicit `copy` whose source or destination
 is an owned local in a loan-bearing function, including directly supplied
 artifacts that bypass HIR lowering. Focused contract/bridge tests pass. This
-does not change v1 decoding or supply the missing owned move/cleanup producer.
+does not change v1 decoding; the bounded v2 source producer now uses explicit
+moves and exactly-once cleanup for its supported owned `String` and `Box` cases.
 Loan-bearing MIR v2 functions now also reject non-straight-line control flow
 at decode time. The current final-use proof has no branch or loop joins, so
 accepting such a supplied artifact would overstate its safety. The focused
