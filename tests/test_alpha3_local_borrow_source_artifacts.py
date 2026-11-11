@@ -147,6 +147,24 @@ def test_actual_case_24_call_then_print_has_two_ordered_uses() -> None:
     )
 
 
+def test_actual_case_18_capability_scope_ends_loan_before_owner_write() -> None:
+    source = (
+        "module rm1\ncapability io;\n"
+        "fn main()->i32 { var x:i32=1; with capability io { "
+        "let r: borrow i32=borrow x; print(r); } x=2; return x; }"
+    )
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    instructions = mir.functions[0].blocks[0].instructions
+    assert any(instruction.kind == "capability_check" and instruction.capabilities == ("io",)
+               for instruction in instructions)
+    end = next(effect for effect in mir.functions[0].local_loan_effects if effect.kind == "end")
+    assert end.instruction_id < next(
+        instruction.instruction_id for instruction in instructions
+        if instruction.kind == "copy" and instruction.result == 0
+        and instruction.instruction_id > end.instruction_id
+    )
+
+
 def test_other_numeric_type_cannot_be_mislabeled_as_i32() -> None:
     source = SOURCE.replace("let x:i32=1; let r: borrow i32=borrow x;",
                             "let x:i64=1; let r: borrow i64=borrow x;")

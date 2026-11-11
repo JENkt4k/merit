@@ -140,8 +140,11 @@ The v2-only HIR `print` node now carries an actual final local-reference read
 from source to MIR without changing v1 HIR bytes or allowing the node in v1.
 Focused source tests cover case 04's print before owner assignment and case
 24's proven call followed by a final print, with ordered use/end effects.
-The source/contract/bridge suite passes 150 tests. String, aggregate,
-capability-scope, and full project source-to-v2 lowering remain open.
+The source/contract/bridge suite passed 150 tests at this checkpoint.
+The bounded producer now also lowers case 18's capability scope, including
+its explicit MIR capability check and a final loan end before the later owner
+write. The focused representation suite passes 151 tests. Owned String,
+aggregate, and complete project source-to-v2 lowering remain open.
 The same bounded source producer now preserves an owner assignment after a
 stored reference's final call use. Its emitted MIR places the loan end before
 the assignment; moving that assignment before the use is rejected by M5402

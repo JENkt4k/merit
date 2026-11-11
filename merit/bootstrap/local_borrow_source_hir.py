@@ -78,8 +78,7 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
                             children=(argument,), symbol=node.callee_name)
         raise LocalBorrowSourceHirError(f"unsupported RM1 source expression: {node.kind}")
 
-    statements: list[int] = []
-    for raw in function.body:
+    def lower_statement(raw) -> int:
         node = program.node(raw)
         if node.kind in {"let", "local_borrow"}:
             binding = raw.binding_id
@@ -104,13 +103,17 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
                 initializer = borrowed
             else:
                 initializer = value(node.initializer)
-            statements.append(emit("let", type_, raw, children=(initializer,),
-                                   binding_id=binding.serial, ownership=mode))
+            return emit("let", type_, raw, children=(initializer,),
+                        binding_id=binding.serial, ownership=mode)
         elif node.kind == "expr":
-            statements.append(value(node.expression))
+            return value(node.expression)
         elif node.kind == "print":
             printed = value(node.expression)
-            statements.append(emit("print", HirType("unit"), raw, children=(printed,)))
+            return emit("print", HirType("unit"), raw, children=(printed,))
+        elif node.kind == "with_cap":
+            nested = tuple(lower_statement(statement) for statement in node.nested_body)
+            return emit("capability_scope", HirType("unit"), raw,
+                        children=nested, capabilities=(node.capability_name,))
         elif node.kind == "assign":
             target = node.assignment_target
             if program.node(target).kind != "var" or target.binding_id is None:
@@ -119,23 +122,24 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             if type_ != HirType("i32"):
                 raise LocalBorrowSourceHirError("unsupported RM1 assignment type")
             initializer = value(node.assigned_value)
-            statements.append(emit("assign", type_, raw, children=(initializer,),
-                                   binding_id=target.binding_id.serial))
+            return emit("assign", type_, raw, children=(initializer,),
+                        binding_id=target.binding_id.serial)
         elif node.kind == "drop":
             binding = raw.binding_id
             if binding is None or binding.serial not in binding_types:
                 raise LocalBorrowSourceHirError("unresolved RM1 drop binding")
-            statements.append(emit("drop", binding_types[binding.serial], raw,
-                                   binding_id=binding.serial))
+            return emit("drop", binding_types[binding.serial], raw,
+                        binding_id=binding.serial)
         elif node.kind == "return":
             result = value(node.expression)
-            statements.append(emit("return", HirType(function.return_type), raw,
-                                   children=(result,)))
+            return emit("return", HirType(function.return_type), raw,
+                        children=(result,))
         else:
             raise LocalBorrowSourceHirError(f"unsupported RM1 source statement: {node.kind}")
+    statements = tuple(lower_statement(raw) for raw in function.body)
     if not loans:
         raise LocalBorrowSourceHirError("source function has no local loan")
     return_type = HirType(function.return_type)
-    root = emit("function", return_type, function, children=tuple(statements), symbol=function.name)
+    root = emit("function", return_type, function, children=statements, symbol=function.name)
     return HirModule(program.module, tuple(bindings), tuple(nodes), (root,),
                      LOCAL_LOAN_HIR_SCHEMA, tuple(sorted(loans, key=lambda item: item.reference_binding_id)))
