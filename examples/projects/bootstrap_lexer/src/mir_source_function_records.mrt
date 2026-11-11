@@ -204,6 +204,7 @@ pub fn source_local_loan_reference_origin_status()->i32{return 4;}
 pub fn source_local_loan_mutable_binding_status()->i32{return 5;}
 pub fn source_local_loan_invalid_parameter_catalog_status()->i32{return 6;}
 pub fn source_local_loan_nonempty_output_status()->i32{return 7;}
+pub fn source_local_loan_type_mismatch_status()->i32{return 8;}
 
 pub fn derive_source_local_loan_origins(
     borrow source:Buffer, borrow tokens:Vec<Token>,
@@ -221,6 +222,9 @@ pub fn derive_source_local_loan_origins(
     if(vec_len<SourceLocalLoanOrigin>(output)!=0){return source_local_loan_nonempty_output_status();}
     var starts:Vec<i64>=vec_new<i64>(allocator,parameter_count);
     var lengths:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+    var type_starts:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+    var type_lengths:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+    var type_codes:Vec<i32>=vec_new<i32>(allocator,parameter_count);
     var status:i32=0;
     var ordinal:i64=0;
     while(ordinal<parameter_count){
@@ -230,6 +234,9 @@ pub fn derive_source_local_loan_origins(
         if(status==0){
             vec_push<i64>(starts,source_function_parameter_name_start(parameter));
             vec_push<i64>(lengths,source_function_parameter_name_length(parameter));
+            vec_push<i64>(type_starts,-1);
+            vec_push<i64>(type_lengths,0);
+            vec_push<i32>(type_codes,source_function_parameter_type(parameter));
         }
         ordinal=checked_add(ordinal,1);
     }
@@ -246,6 +253,15 @@ pub fn derive_source_local_loan_origins(
             if(binding_index<0){status=source_local_loan_invalid_binding_status();}
             else{
                 let binding:StatementOperand=vec_get<StatementOperand>(operands,binding_index);
+                let type_index:i64=sfr_operand(statement,operands,statement_operand_declared_type_kind());
+                if(type_index<0){status=source_local_loan_type_mismatch_status();}
+                var declared_start:i64=-1;
+                var declared_length:i64=0;
+                if(type_index>=0){
+                    let declared:StatementOperand=vec_get<StatementOperand>(operands,type_index);
+                    declared_start=statement_operand_start(declared);
+                    declared_length=statement_operand_length(declared);
+                }
                 let mode_index:i64=sfr_operand(statement,operands,statement_operand_local_borrow_mode_kind());
                 if(mode_index>=0){
                     if(kind!=statement_record_let_kind()){status=source_local_loan_mutable_binding_status();}
@@ -279,6 +295,25 @@ pub fn derive_source_local_loan_origins(
                                         );
                                         if(origin_binding<0){status=source_local_loan_unknown_origin_status();}
                                         else{
+                                            if(origin_binding>=vec_len<i64>(type_starts)){
+                                                status=source_local_loan_type_mismatch_status();
+                                            }else{
+                                                let origin_type_start:i64=vec_get<i64>(type_starts,origin_binding);
+                                                if(origin_type_start>=0){
+                                                    if(sfr_span_equal(
+                                                        source,declared_start,declared_length,origin_type_start,
+                                                        vec_get<i64>(type_lengths,origin_binding)
+                                                    )==0){status=source_local_loan_type_mismatch_status();}
+                                                }else{
+                                                    let declared_code:i32=sfr_builtin_type_code(source,declared_start,declared_length);
+                                                    if(declared_code==function_mir_unresolved_type_code()){
+                                                        status=source_local_loan_type_mismatch_status();
+                                                    }
+                                                    if(declared_code!=vec_get<i32>(type_codes,origin_binding)){
+                                                        status=source_local_loan_type_mismatch_status();
+                                                    }
+                                                }
+                                            }
                                             var prior:i64=0;
                                             while(prior<vec_len<SourceLocalLoanOrigin>(output)){
                                                 let existing:SourceLocalLoanOrigin=vec_get<SourceLocalLoanOrigin>(output,prior);
@@ -303,11 +338,15 @@ pub fn derive_source_local_loan_origins(
                 }
                 vec_push<i64>(starts,statement_operand_start(binding));
                 vec_push<i64>(lengths,statement_operand_length(binding));
+                vec_push<i64>(type_starts,declared_start);
+                vec_push<i64>(type_lengths,declared_length);
+                vec_push<i32>(type_codes,function_mir_unresolved_type_code());
             }
         }
         if(status!=0){statement_index=vec_len<StatementRecord>(statements);}
         else{statement_index=checked_add(statement_index,1);}
     }
+    drop(type_codes);drop(type_lengths);drop(type_starts);
     drop(lengths);drop(starts);
     return status;
 }

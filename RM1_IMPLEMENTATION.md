@@ -190,6 +190,12 @@ never reports success for a source with no local loan. A focused 75-second
 interpreter/native probe covers success, a live-owner conflict, and an
 unknown call. The driver still rejects RM1 source until native v5 emission
 and complete diagnostic parity are implemented.
+The native origin catalog now checks that a local reference's declared
+referent type matches its local owner declaration. For a borrowed parameter
+origin, it compares the resolved built-in type code; an unrepresented custom
+parameter type fails closed until catalog support is added. The focused
+interpreter/native probe rejects an `i64` reference to an `i32` owner and
+retains the valid borrowed-parameter case (1 test passed in 77 seconds).
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and
