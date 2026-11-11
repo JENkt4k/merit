@@ -120,6 +120,14 @@ parameter origin, and malformed/out-of-order or unknown-use rejection before
 any end record is emitted. This establishes source-backed create/use/end
 identity; owner-effect conflicts, call effects, escape checks, and emission
 into canonical HIR/MIR v2 remain open. The native driver remains fail-closed.
+The native explicit-owner-effect pass now rejects owner assignment, drop,
+replacement, and owned binding transfers before the last reference use; it
+permits those operations after final use, multiple shared readers, a copy
+read of a primitive owner, and the accepted capability-scope ordering. Eleven
+source probes pass through both interpreter and native execution. This pass
+does not prove calls, escapes, or unsupported control flow, and is not wired
+to enable production compilation; those are mandatory before the 907 native
+fail-closed guard can be removed.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

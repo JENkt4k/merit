@@ -119,6 +119,31 @@ fn check_malformed_end_records()->i32 requires_caps [allocate] {
     drop(ends);drop(uses);drop(origins);
     return 0;
 }
+fn check_explicit_owner_effects(source_text:String)->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    let source:Buffer=buffer_from_string(allocator,source_text);
+    let tokens:Vec<Token>=lex(source,allocator);
+    let statements:Vec<StatementRecord>=parse_statement_records(source,tokens,allocator);
+    let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
+    var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,0);
+    var types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,2);
+    var ownership:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,2);
+    var origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,2);
+    var uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,2);
+    var ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,2);
+    let type_status:i32=derive_source_type_ownership_catalog(source,tokens,statements,operands,types);
+    let binding_status:i32=derive_source_ownership_bindings(source,statements,operands,types,ownership);
+    let origin_status:i32=derive_source_local_loan_origins(source,tokens,statements,operands,parameters,0,0,allocator,origins);
+    let use_status:i32=derive_source_local_loan_uses(source,tokens,statements,operands,parameters,0,0,origins,allocator,uses);
+    let end_status:i32=derive_source_local_loan_ends(origins,uses,ends);
+    print(type_status);print(binding_status);print(origin_status);print(use_status);print(end_status);
+    print(check_source_local_loan_explicit_owner_effects(
+        source,tokens,statements,operands,parameters,0,0,ownership,origins,ends,allocator
+    ));
+    drop(ends);drop(uses);drop(origins);drop(ownership);drop(types);
+    drop(parameters);drop(operands);drop(statements);drop(tokens);drop(source);
+    return 0;
+}
 fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); print(b); return 0; }",-1);
@@ -128,6 +153,17 @@ fn main()->i32 { with capability allocate {
     check_case("module m\\nfn inspect(borrow x:i32)->i32 { let r: borrow i32=borrow x; print(r); return 0; }",27);
     check_cleanup_authority();
     check_malformed_end_records();
+    check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; print(r); x=2; return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; print(r); return 0; }");
+    check_explicit_owner_effects("module m\\nstruct Box { value:i32; } destructor Box { print(9); } fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; print(r.value); let y:Box=x; return 0; }");
+    check_explicit_owner_effects("module m\\nstruct Box { value:i32; } destructor Box { print(9); } fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; let y:Box=x; print(r.value); return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; print(r); drop(x); return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; drop(x); print(r); return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); x=2; print(b); return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; replace(x,\\\"b\\\"); print(r); return 0; }");
+    check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; let y:i32=x; print(r); return 0; }");
+    check_explicit_owner_effects("module m\\ncapability io; fn main()->i32 { var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2; return 0; }");
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -140,6 +176,7 @@ fn main()->i32 { with capability allocate {
         "3\n0\n4\n1\n1\n0\n5\n0\n"
         "0\n1\n1\n0\n0\n1\n1\n1\n0\n1\n1\n1\n"
         "0\n0\n2\n1\n0\n1\n0\n1\n0\n"
+        + "".join("0\n0\n0\n0\n0\n" + f"{result}\n" for result in (0, 2, 0, 2, 0, 2, 2, 0, 2, 0, 0))
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
