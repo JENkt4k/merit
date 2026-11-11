@@ -168,6 +168,13 @@ source-unit key. The native producer must validate spans against the source
 unit it compiled; project-load validation cannot infer that unit solely from
 the current standalone transport. This is an evidence gap, not permission to
 accept invalid spans.
+The v2 MIR reader now also checks owner operations against every loan's
+create-to-final-use interval. It rejects owner drop/move/deallocation,
+binding or field writes, unproven owner calls, and mutable borrows while a
+loan is live; an owner drop after the end record remains valid. The focused
+MIR/source bridge suite passes 98 tests. A shared borrowed call on the owner
+requires explicit non-retaining call metadata before the v2 decoder can
+accept it; the current reader fails closed for such a call.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy

@@ -89,6 +89,46 @@ def test_v2_rejects_unproven_loan_control_flow() -> None:
         parse_mir(data)
 
 
+def test_v2_rejects_owner_drop_before_last_loan_use() -> None:
+    data = local_loan_module().to_data()
+    function = data["functions"][0]
+    instructions = function["blocks"][0]["instructions"]
+    instructions.insert(1, MirInstruction(1, "drop", operands=(0,)).to_data())
+    instructions[2]["id"] = 2
+    instructions[3]["id"] = 3
+    for effect in function["local_loan_effects"][1:]:
+        effect["instruction_id"] = 2
+    with pytest.raises(MirContractError, match="owner resource invalidated while local loan is live"):
+        parse_mir(data)
+
+
+def test_v2_allows_owner_drop_after_last_loan_use() -> None:
+    data = local_loan_module().to_data()
+    data["functions"][0]["blocks"][0]["instructions"][2] = MirInstruction(
+        2, "drop", operands=(0,)
+    ).to_data()
+    assert parse_mir(data).functions[0].blocks[0].instructions[-1].kind == "drop"
+
+
+@pytest.mark.parametrize(("operation", "message"), [
+    (MirInstruction(1, "copy", result=0, operands=(2,)), "owner binding written"),
+    (MirInstruction(1, "store_field", operands=(0, 2), symbol="value"), "owner field written"),
+    (MirInstruction(1, "call", result=2, operands=(0,), symbol="unknown"), "unproven owner call"),
+    (MirInstruction(1, "borrow", result=2, operands=(0,), ownership="mutable_borrow"), "mutable borrow conflicts"),
+])
+def test_v2_rejects_other_unproven_live_owner_effects(operation, message) -> None:
+    data = local_loan_module().to_data()
+    function = data["functions"][0]
+    instructions = function["blocks"][0]["instructions"]
+    instructions.insert(1, operation.to_data())
+    instructions[2]["id"] = 2
+    instructions[3]["id"] = 3
+    for effect in function["local_loan_effects"][1:]:
+        effect["instruction_id"] = 2
+    with pytest.raises(MirContractError, match=message):
+        parse_mir(data)
+
+
 @pytest.mark.parametrize("change", [
     lambda data: data.update(extra=1),
     lambda data: data["functions"][0]["local_loan_effects"][0].update(extra=1),

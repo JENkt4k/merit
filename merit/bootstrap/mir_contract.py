@@ -426,6 +426,9 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
     active: dict[int, int] = {}
     finished: set[int] = set()
     recorded_uses: set[tuple[int, int]] = set()
+    loan_starts: dict[int, int] = {}
+    loan_ends: dict[int, int] = {}
+    loan_origins: dict[int, int] = {}
     previous = (-1, -1, -1)
     rank = {"create": 0, "use": 1, "end": 2}
     for effect in function.local_loan_effects:
@@ -450,6 +453,8 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
             if effect.reference_binding_id in active or effect.reference_binding_id in finished:
                 raise MirContractError("duplicate local loan creation")
             active[effect.reference_binding_id] = effect.origin_binding_id
+            loan_starts[effect.reference_binding_id] = effect.instruction_id
+            loan_origins[effect.reference_binding_id] = locals_by_binding[effect.origin_binding_id]
         elif active.get(effect.reference_binding_id) != effect.origin_binding_id:
             raise MirContractError("local loan use/end has no matching active origin")
         elif effect.kind == "use" and locals_by_binding[effect.reference_binding_id] not in instructions[effect.instruction_id].operands:
@@ -459,10 +464,28 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
         elif effect.kind == "end":
             del active[effect.reference_binding_id]
             finished.add(effect.reference_binding_id)
+            loan_ends[effect.reference_binding_id] = effect.instruction_id
     if active:
         raise MirContractError("local loan missing end effect")
     if references != finished:
         raise MirContractError("every local reference requires one complete loan")
+    for reference, start in loan_starts.items():
+        owner_local = loan_origins[reference]
+        end = loan_ends[reference]
+        for instruction in instructions.values():
+            if not start < instruction.instruction_id <= end:
+                continue
+            if instruction.kind in {"drop", "move", "deallocate"} and owner_local in instruction.operands:
+                raise MirContractError("owner resource invalidated while local loan is live")
+            if instruction.result == owner_local:
+                raise MirContractError("owner binding written while local loan is live")
+            if instruction.kind == "store_field" and instruction.operands and instruction.operands[0] == owner_local:
+                raise MirContractError("owner field written while local loan is live")
+            if instruction.kind == "call" and owner_local in instruction.operands:
+                raise MirContractError("unproven owner call while local loan is live")
+            if (instruction.kind == "borrow" and instruction.ownership == "mutable_borrow"
+                and owner_local in instruction.operands):
+                raise MirContractError("mutable borrow conflicts with live local loan")
     reference_by_local = {locals_by_binding[binding]: binding for binding in references}
     for block in function.blocks:
         if any(operand in reference_by_local for operand in block.terminator.operands):
