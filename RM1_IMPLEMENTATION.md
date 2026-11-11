@@ -183,6 +183,13 @@ The source use pass also admits a direct, proven borrowed-parameter read of
 the owner while a stored shared loan remains live. A mutable borrowed call
 on that owner remains a conflict. The focused interpreter/native source
 probe covers both outcomes; this does not lift the production driver guard.
+The native source-record layer now has one proof entrypoint composing origin,
+use, final-use end, owner-effect, and reference/call checks in that order. It
+returns a named failure stage plus the existing pass-specific detail code and
+never reports success for a source with no local loan. A focused 75-second
+interpreter/native probe covers success, a live-owner conflict, and an
+unknown call. The driver still rejects RM1 source until native v5 emission
+and complete diagnostic parity are implemented.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

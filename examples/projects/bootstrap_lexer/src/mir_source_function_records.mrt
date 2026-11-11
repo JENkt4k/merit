@@ -811,6 +811,61 @@ pub fn check_source_local_loan_reference_uses(
     return 0;
 }
 
+// A single fail-closed proof entrypoint for one parsed source function. The
+// caller owns the output catalogs and may only consume them when stage is 0.
+// Native v5 emission and the production-driver cutover remain separate.
+pub struct SourceLocalLoanProof {
+    stage:i32;
+    detail:i32;
+}
+pub fn source_local_loan_proof_stage(borrow proof:SourceLocalLoanProof)->i32{return proof.stage;}
+pub fn source_local_loan_proof_detail(borrow proof:SourceLocalLoanProof)->i32{return proof.detail;}
+pub fn source_local_loan_proof_success_stage()->i32{return 0;}
+pub fn source_local_loan_proof_origin_stage()->i32{return 1;}
+pub fn source_local_loan_proof_use_stage()->i32{return 2;}
+pub fn source_local_loan_proof_end_stage()->i32{return 3;}
+pub fn source_local_loan_proof_owner_stage()->i32{return 4;}
+pub fn source_local_loan_proof_reference_stage()->i32{return 5;}
+pub fn source_local_loan_proof_missing_stage()->i32{return 6;}
+
+pub fn prove_source_local_loans(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
+    borrow parameters:Vec<SourceFunctionParameter>,
+    parameter_start:i64,parameter_count:i64,
+    borrow signatures:Vec<SourceFunctionSignature>,
+    borrow ownership:Vec<MirOwnershipBinding>,allocator:Allocator,
+    borrow_mut origins:Vec<SourceLocalLoanOrigin>,
+    borrow_mut uses:Vec<SourceLocalLoanUse>,
+    borrow_mut ends:Vec<SourceLocalLoanEnd>
+)->SourceLocalLoanProof requires_caps [allocate] {
+    let origin_status:i32=derive_source_local_loan_origins(
+        source,tokens,statements,operands,parameters,parameter_start,parameter_count,allocator,origins
+    );
+    if(origin_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_origin_stage(),detail:origin_status};}
+    if(vec_len<SourceLocalLoanOrigin>(origins)==0){
+        return SourceLocalLoanProof{stage:source_local_loan_proof_missing_stage(),detail:0};
+    }
+    let use_status:i32=derive_source_local_loan_uses(
+        source,tokens,statements,operands,parameters,parameter_start,parameter_count,origins,allocator,uses
+    );
+    if(use_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_use_stage(),detail:use_status};}
+    let end_status:i32=derive_source_local_loan_ends(origins,uses,ends);
+    if(end_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_end_stage(),detail:end_status};}
+    let owner_status:i32=check_source_local_loan_explicit_owner_effects(
+        source,tokens,statements,operands,parameters,parameter_start,parameter_count,
+        ownership,origins,ends,allocator
+    );
+    if(owner_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_owner_stage(),detail:owner_status};}
+    let reference_status:i32=check_source_local_loan_reference_uses(
+        source,tokens,statements,operands,origins,uses,ends,signatures,parameters
+    );
+    if(reference_status!=0){
+        return SourceLocalLoanProof{stage:source_local_loan_proof_reference_stage(),detail:reference_status};
+    }
+    return SourceLocalLoanProof{stage:source_local_loan_proof_success_stage(),detail:0};
+}
+
 fn sfr_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
     return buffer_get(source, checked_add(token_start(token), offset));
 }

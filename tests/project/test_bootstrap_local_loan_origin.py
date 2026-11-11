@@ -172,6 +172,31 @@ fn check_reference_use(source_text:String,signature_start:i64,signature_length:i
     drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
+fn check_complete_proof(source_text:String)->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    let source:Buffer=buffer_from_string(allocator,source_text);
+    let tokens:Vec<Token>=lex(source,allocator);
+    let statements:Vec<StatementRecord>=parse_statement_records(source,tokens,allocator);
+    let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
+    var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,0);
+    var signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,0);
+    var types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,2);
+    var ownership:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,2);
+    var origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,2);
+    var uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,2);
+    var ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,2);
+    let type_status:i32=derive_source_type_ownership_catalog(source,tokens,statements,operands,types);
+    let binding_status:i32=derive_source_ownership_bindings(source,statements,operands,types,ownership);
+    if(type_status!=0){return type_status;}
+    if(binding_status!=0){return binding_status;}
+    let proof:SourceLocalLoanProof=prove_source_local_loans(
+        source,tokens,statements,operands,parameters,0,0,signatures,ownership,allocator,origins,uses,ends
+    );
+    print(source_local_loan_proof_stage(proof));print(source_local_loan_proof_detail(proof));
+    drop(ends);drop(uses);drop(origins);drop(ownership);drop(types);
+    drop(signatures);drop(parameters);drop(operands);drop(statements);drop(tokens);drop(source);
+    return 0;
+}
 fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); print(b); return 0; }",-1);
@@ -205,6 +230,9 @@ fn main()->i32 { with capability allocate {
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); mutate(x); return 0; }",-1,0,0,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(x); print(r); return 0; }",67,7,1,0);
     check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mutate(x); print(r); return 0; }",67,6,2,0);
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }");
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; x=2; print(r); return 0; }");
+    check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mystery(r); print(r); return 0; }");
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -219,6 +247,7 @@ fn main()->i32 { with capability allocate {
         "0\n0\n2\n1\n0\n1\n0\n1\n0\n"
         + "".join("0\n0\n0\n0\n0\n" + f"{result}\n" for result in (0, 2, 0, 2, 0, 2, 2, 0, 2, 0, 0))
         + "".join(f"0\n0\n0\n{result}\n" for result in (0, 4, 4, 4, 3, 3, 2, 2, 4, 4, 0, 0, 4))
+        + "0\n0\n4\n2\n5\n4\n"
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
