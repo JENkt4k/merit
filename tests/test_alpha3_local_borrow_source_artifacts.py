@@ -9,7 +9,7 @@ from merit.bootstrap.hir_to_mir import HirToMirError, lower_hir_to_mir
 from merit.bootstrap.local_borrow_source_hir import (
     LocalBorrowSourceHirError, lower_checked_local_borrow_source_hir,
 )
-from merit.bootstrap.mir_contract import canonical_mir_json, load_mir_json
+from merit.bootstrap.mir_contract import MirContractError, canonical_mir_json, load_mir_json
 from merit.bootstrap.resolved_source_function_bundle import (
     LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
     decode_native_project_artifact_transport,
@@ -111,6 +111,30 @@ def test_case_01_implicit_string_cleanup_and_case_02_shared_loans() -> None:
     effects = dual.functions[0].local_loan_effects
     assert [effect.kind for effect in effects] == ["create", "create", "use", "end", "use", "end"]
     assert effects[-1].instruction_id < dual.functions[0].blocks[0].instructions[-1].instruction_id
+
+
+@pytest.mark.parametrize(("mutation", "message"), [
+    ("omit_drop", "without cleanup or transfer"),
+    ("duplicate_drop", "used after move or drop"),
+    ("use_after_drop", "used after move or drop"),
+])
+def test_v2_reader_rejects_invalid_owned_cleanup(mutation, message) -> None:
+    source = ('module rm1\nfn main()->i32 { let x:String="a"; '
+              'let r: borrow String=borrow x; print(r); return 0; }')
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    function = mir.functions[0]
+    block = function.blocks[0]
+    instructions = list(block.instructions)
+    drop = instructions[-1]
+    if mutation == "omit_drop":
+        instructions.pop()
+    elif mutation == "duplicate_drop":
+        instructions.append(replace(drop, instruction_id=drop.instruction_id + 1))
+    else:
+        instructions.append(replace(drop, instruction_id=drop.instruction_id + 1,
+                                    kind="print", ownership="none"))
+    with pytest.raises(MirContractError, match=message):
+        replace(function, blocks=(replace(block, instructions=tuple(instructions)),))
 
 
 def test_case_08_owner_drop_before_final_read_emits_no_artifact() -> None:

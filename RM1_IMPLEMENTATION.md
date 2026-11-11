@@ -238,6 +238,14 @@ The old v4 producer protocol and bytes retain their existing path. Focused
 transport/preparation tests pass 36 tests on Windows. This is reader and
 publication support; no Merit-native compiler emits a v5 bundle yet.
 
+The loan-bearing MIR v2 reader now checks the straight-line lifecycle of
+source-bound owned locals: each must be initialized by a proven move and
+subsequently transferred or dropped exactly once before return. It rejects
+use after move/drop and missing cleanup. This is deliberately limited to the
+current straight-line v2 contract; it does not claim full control-flow or
+native-producer proof. The focused source-artifact, MIR-contract, and Alpha.2
+compatibility suite passed 102 tests on Windows.
+
 ## Bounded semantic-coherence audit
 
 For each new accepted case, compare one source program at every available

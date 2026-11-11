@@ -486,6 +486,27 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
             if (instruction.kind == "borrow" and instruction.ownership == "mutable_borrow"
                 and owner_local in instruction.operands):
                 raise MirContractError("mutable borrow conflicts with live local loan")
+    owned_bindings = {
+        local.local_id for local in function.locals
+        if local.ownership == "owned" and local.source_binding_id is not None
+    }
+    live_owned: set[int] = {parameter.local_id for parameter in function.parameters
+                            if parameter.local_id in owned_bindings}
+    for instruction in function.blocks[0].instructions:
+        if any(operand in owned_bindings and operand not in live_owned
+               for operand in instruction.operands):
+            raise MirContractError("owned local used after move or drop")
+        consumed = instruction.operands[0] if instruction.kind in {"move", "drop"} and instruction.operands else None
+        if consumed in owned_bindings:
+            live_owned.remove(consumed)
+        if instruction.result in owned_bindings:
+            if instruction.kind != "move" or instruction.result in live_owned:
+                raise MirContractError("owned local requires one proven move initialization")
+            live_owned.add(instruction.result)
+    if any(operand in owned_bindings for operand in function.blocks[0].terminator.operands):
+        raise MirContractError("owned return requires explicit transfer proof")
+    if live_owned:
+        raise MirContractError("owned local reaches return without cleanup or transfer")
     reference_by_local = {locals_by_binding[binding]: binding for binding in references}
     for block in function.blocks:
         if any(operand in reference_by_local for operand in block.terminator.operands):
