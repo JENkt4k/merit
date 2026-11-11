@@ -52,6 +52,28 @@ fn check_case(source_text:String,parameter_name_start:i64)->i32 requires_caps [a
         print(source_local_loan_reference_binding(loan));print(source_local_loan_origin_binding(loan));
         index=checked_add(index,1);
     }
+    var uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,4);
+    if(status==0){
+        print(derive_source_local_loan_uses(source,tokens,statements,operands,parameters,0,parameter_count,loans,allocator,uses));
+        print(vec_len<SourceLocalLoanUse>(uses));
+        index=0;
+        while(index<vec_len<SourceLocalLoanUse>(uses)){
+            let use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,index);
+            print(source_local_loan_use_reference(use));print(source_local_loan_use_statement(use));
+            index=checked_add(index,1);
+        }
+        var ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,2);
+        print(derive_source_local_loan_ends(loans,uses,ends));
+        print(vec_len<SourceLocalLoanEnd>(ends));
+        index=0;
+        while(index<vec_len<SourceLocalLoanEnd>(ends)){
+            let end:SourceLocalLoanEnd=vec_get<SourceLocalLoanEnd>(ends,index);
+            print(source_local_loan_end_reference(end));print(source_local_loan_end_statement(end));
+            index=checked_add(index,1);
+        }
+        drop(ends);
+    }
+    drop(uses);
     drop(loans);drop(parameters);drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
@@ -76,6 +98,27 @@ fn check_cleanup_authority()->i32 requires_caps [allocate] {
     drop(bindings);drop(types);drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
+fn check_malformed_end_records()->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    var origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,1);
+    var uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,1);
+    var ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,1);
+    vec_push<SourceLocalLoanOrigin>(origins,SourceLocalLoanOrigin{
+        reference_binding_id:1,origin_binding_id:0,reference_start:10,origin_start:3,declaration_statement:0
+    });
+    vec_push<SourceLocalLoanUse>(uses,SourceLocalLoanUse{
+        reference_binding_id:1,statement_index:0,source_start:20
+    });
+    print(derive_source_local_loan_ends(origins,uses,ends));
+    print(vec_len<SourceLocalLoanEnd>(ends));
+    vec_set<SourceLocalLoanUse>(uses,0,SourceLocalLoanUse{
+        reference_binding_id:2,statement_index:1,source_start:20
+    });
+    print(derive_source_local_loan_ends(origins,uses,ends));
+    print(vec_len<SourceLocalLoanEnd>(ends));
+    drop(ends);drop(uses);drop(origins);
+    return 0;
+}
 fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); print(b); return 0; }",-1);
@@ -84,13 +127,20 @@ fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; var r: borrow i32=borrow x; return 0; }",-1);
     check_case("module m\\nfn inspect(borrow x:i32)->i32 { let r: borrow i32=borrow x; print(r); return 0; }",27);
     check_cleanup_authority();
+    check_malformed_end_records();
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
     manifest = root / "Merit.toml"
     manifest.write_text(manifest.read_text(encoding="utf-8").replace('entry = "src/lexer.mrt"', 'entry = "src/local_loan_origin_probe.mrt"'), encoding="utf-8")
     project = load_project(manifest)
-    expected = "0\n1\n1\n0\n0\n2\n1\n0\n2\n0\n3\n0\n4\n1\n1\n0\n5\n0\n0\n1\n1\n0\n0\n0\n2\n1\n0\n"
+    expected = (
+        "0\n1\n1\n0\n0\n1\n1\n2\n0\n1\n1\n2\n"
+        "0\n2\n1\n0\n2\n0\n0\n2\n1\n3\n2\n4\n0\n2\n1\n3\n2\n4\n"
+        "3\n0\n4\n1\n1\n0\n5\n0\n"
+        "0\n1\n1\n0\n0\n1\n1\n1\n0\n1\n1\n1\n"
+        "0\n0\n2\n1\n0\n1\n0\n1\n0\n"
+    )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
     assert subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout == expected

@@ -113,6 +113,13 @@ The source ownership catalog now marks a local reference as non-owning even
 when its referent type is owned. A focused interpreter/native probe asserts
 that an owned `Box` origin retains cleanup authority while its `borrow Box`
 binding has none; the existing Alpha.2 derived-ownership fixture also passes.
+The same source catalog now derives ordered reference-use positions and a
+proven final-use position for each resolved local loan. The focused native and
+interpreter probe covers one loan, two simultaneous shared loans, a borrowed
+parameter origin, and malformed/out-of-order or unknown-use rejection before
+any end record is emitted. This establishes source-backed create/use/end
+identity; owner-effect conflicts, call effects, escape checks, and emission
+into canonical HIR/MIR v2 remain open. The native driver remains fail-closed.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and
