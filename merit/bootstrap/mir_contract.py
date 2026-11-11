@@ -406,6 +406,13 @@ def _validate_local_loan_effects(function: MirFunction) -> None:
     if not function.local_loan_effects:
         return
     instructions = {instruction.instruction_id: instruction for block in function.blocks for instruction in block.instructions}
+    ownership_by_local = {local.local_id: local.ownership for local in function.locals}
+    for instruction in instructions.values():
+        if instruction.kind == "copy" and (
+            ownership_by_local.get(instruction.result) == "owned"
+            or any(ownership_by_local.get(operand) == "owned" for operand in instruction.operands)
+        ):
+            raise MirContractError("MIR v2 cannot copy an owned local")
     source_binding_ids = [local.source_binding_id for local in function.locals if local.source_binding_id is not None]
     bindings = set(source_binding_ids)
     references = {local.source_binding_id for local in function.locals if local.ownership == "local_reference"}

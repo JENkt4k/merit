@@ -71,6 +71,15 @@ def test_v2_loan_effects_round_trip_without_changing_v1():
     assert canonical_mir_json(sample_module()) == old
 
 
+def test_v2_rejects_implicit_copy_of_owned_origin() -> None:
+    data = local_loan_module().to_data()
+    function = data["functions"][0]
+    function["locals"][0]["ownership"] = "owned"
+    function["blocks"][0]["instructions"][1]["operands"] = [0]
+    with pytest.raises(MirContractError, match="cannot copy an owned local"):
+        parse_mir(data)
+
+
 @pytest.mark.parametrize("change", [
     lambda data: data.update(extra=1),
     lambda data: data["functions"][0]["local_loan_effects"][0].update(extra=1),

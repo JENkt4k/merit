@@ -144,6 +144,10 @@ v2 rather than lowering it as a copy. This is a v2-only safety guard; the
 existing v1 bridge tests and canonical contract tests remain green (136
 focused tests). A complete move and cleanup plan is required before lifting
 the guard.
+The v2 MIR reader now rejects an implicit `copy` whose source or destination
+is an owned local in a loan-bearing function, including directly supplied
+artifacts that bypass HIR lowering. Focused contract/bridge tests pass. This
+does not change v1 decoding or supply the missing owned move/cleanup producer.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy
