@@ -109,6 +109,10 @@ reference-valued, or mutable-reference origins at this boundary. A single
 focused test compares the same six source probes through the Merit interpreter
 and generated native executable. This catalog is not yet a final-use proof;
 the production driver continues to reject every local-reference program.
+The source ownership catalog now marks a local reference as non-owning even
+when its referent type is owned. A focused interpreter/native probe asserts
+that an owned `Box` origin retains cleanup authority while its `borrow Box`
+binding has none; the existing Alpha.2 derived-ownership fixture also passes.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

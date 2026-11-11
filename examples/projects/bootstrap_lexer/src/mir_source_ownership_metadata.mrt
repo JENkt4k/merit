@@ -127,8 +127,13 @@ requires_caps [allocate]
             let type_entry: SourceTypeOwnershipEntry = vec_get<SourceTypeOwnershipEntry>(type_catalog, catalog_index);
             var mutable: i32 = 0;
             if (kind == statement_record_var_kind()) { mutable = 1; }
+            var owned:i32=type_entry.owned;
+            if (som_operand(statement,operands,statement_operand_local_borrow_mode_kind())>=0) {
+                // RM1 reference identity carries read authority, never cleanup authority.
+                owned=0;
+            }
             vec_push<MirOwnershipBinding>(output, ownership_binding(
-                next_binding, next_binding, type_entry.owned, mutable
+                next_binding, next_binding, owned, mutable
             ));
             next_binding = checked_add(next_binding, 1);
         }

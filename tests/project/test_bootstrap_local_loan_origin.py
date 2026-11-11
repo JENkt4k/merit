@@ -25,6 +25,9 @@ import bootstrap_tokens;
 import bootstrap_lexer_core;
 import bootstrap_statements;
 import bootstrap_mir_source_function_records;
+import bootstrap_mir_source_type_lifecycle;
+import bootstrap_mir_source_ownership_metadata;
+import bootstrap_mir_ownership_flow;
 capability allocate;
 fn check_case(source_text:String,parameter_name_start:i64)->i32 requires_caps [allocate] {
     let allocator:Allocator=system_allocator();
@@ -52,6 +55,27 @@ fn check_case(source_text:String,parameter_name_start:i64)->i32 requires_caps [a
     drop(loans);drop(parameters);drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
+fn check_cleanup_authority()->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    let source:Buffer=buffer_from_string(allocator,
+        "module m\\nstruct Box { value:i32; } destructor Box { print(9); } fn main()->i32 { let x:Box=Box{value:1}; let r: borrow Box=borrow x; print(r.value); return 0; }");
+    let tokens:Vec<Token>=lex(source,allocator);
+    let statements:Vec<StatementRecord>=parse_statement_records(source,tokens,allocator);
+    let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
+    var types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,2);
+    var bindings:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,2);
+    print(derive_source_type_ownership_catalog(source,tokens,statements,operands,types));
+    print(derive_source_ownership_bindings(source,statements,operands,types,bindings));
+    print(vec_len<MirOwnershipBinding>(bindings));
+    var index:i64=0;
+    while(index<vec_len<MirOwnershipBinding>(bindings)){
+        let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(bindings,index);
+        print(ownership_binding_owned(binding));
+        index=checked_add(index,1);
+    }
+    drop(bindings);drop(types);drop(operands);drop(statements);drop(tokens);drop(source);
+    return 0;
+}
 fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); print(b); return 0; }",-1);
@@ -59,13 +83,14 @@ fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; let s: borrow i32=borrow r; return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; var r: borrow i32=borrow x; return 0; }",-1);
     check_case("module m\\nfn inspect(borrow x:i32)->i32 { let r: borrow i32=borrow x; print(r); return 0; }",27);
+    check_cleanup_authority();
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
     manifest = root / "Merit.toml"
     manifest.write_text(manifest.read_text(encoding="utf-8").replace('entry = "src/lexer.mrt"', 'entry = "src/local_loan_origin_probe.mrt"'), encoding="utf-8")
     project = load_project(manifest)
-    expected = "0\n1\n1\n0\n0\n2\n1\n0\n2\n0\n3\n0\n4\n1\n1\n0\n5\n0\n0\n1\n1\n0\n"
+    expected = "0\n1\n1\n0\n0\n2\n1\n0\n2\n0\n3\n0\n4\n1\n1\n0\n5\n0\n0\n1\n1\n0\n0\n0\n2\n1\n0\n"
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
     assert subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout == expected
