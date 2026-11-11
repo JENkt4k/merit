@@ -132,6 +132,10 @@ readers, rejects invalid source before artifact creation, and fails closed on
 accepted source outside its representable subset. The 113 focused source and
 contract tests pass. This is partial source-to-v2 evidence, not complete
 coverage of the seven required cases and not a Merit-native v5 producer.
+The checked-source MIR v2 bytes also survive v5 project-artifact transport
+encoding and strict decode in a focused test. The test uses sentinel C/header
+bytes solely to exercise framing; it is not a native C producer or a complete
+public project bundle parity claim.
 The same bounded source producer now preserves an owner assignment after a
 stored reference's final call use. Its emitted MIR places the loan end before
 the assignment; moving that assignment before the use is rejected by M5402

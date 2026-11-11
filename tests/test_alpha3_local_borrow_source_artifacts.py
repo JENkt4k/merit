@@ -10,6 +10,12 @@ from merit.bootstrap.local_borrow_source_hir import (
     LocalBorrowSourceHirError, lower_checked_local_borrow_source_hir,
 )
 from merit.bootstrap.mir_contract import canonical_mir_json, load_mir_json
+from merit.bootstrap.resolved_source_function_bundle import (
+    LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    decode_native_project_artifact_transport,
+    decode_resolved_source_function_bundle,
+    encode_resolved_source_function_bundle,
+)
 from merit.compiler import CompileError
 
 
@@ -95,6 +101,20 @@ def test_v2_bridge_rejects_unproven_owned_initializer() -> None:
     ))
     with pytest.raises(HirToMirError, match="owned initializer requires proven move"):
         lower_hir_to_mir(changed)
+
+
+def test_checked_source_mir_v2_survives_v5_transport() -> None:
+    mir_bytes = canonical_mir_json(lower_hir_to_mir(
+        lower_checked_local_borrow_source_hir(SOURCE)
+    )).encode("utf-8")
+    transport = encode_resolved_source_function_bundle(
+        (), module_name="rm1", canonical_mir=mir_bytes,
+        c_source=b"/* transport fixture only */", c_header=b"/* transport fixture only */",
+        project_artifact_version=LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    )
+    decoded = decode_resolved_source_function_bundle(transport)
+    assert decode_native_project_artifact_transport(transport).version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION
+    assert decoded.canonical_mir_bytes == mir_bytes
 
 
 def test_accepted_but_unrepresented_source_fails_closed() -> None:
