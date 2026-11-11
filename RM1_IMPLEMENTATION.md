@@ -152,6 +152,10 @@ The v2 MIR reader now rejects an implicit `copy` whose source or destination
 is an owned local in a loan-bearing function, including directly supplied
 artifacts that bypass HIR lowering. Focused contract/bridge tests pass. This
 does not change v1 decoding or supply the missing owned move/cleanup producer.
+Loan-bearing MIR v2 functions now also reject non-straight-line control flow
+at decode time. The current final-use proof has no branch or loop joins, so
+accepting such a supplied artifact would overstate its safety. The focused
+MIR/bridge regression suite passes 90 tests.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy

@@ -80,6 +80,15 @@ def test_v2_rejects_implicit_copy_of_owned_origin() -> None:
         parse_mir(data)
 
 
+def test_v2_rejects_unproven_loan_control_flow() -> None:
+    data = local_loan_module().to_data()
+    terminator = data["functions"][0]["blocks"][0]["terminator"]
+    terminator["kind"] = "unreachable"
+    terminator["operands"] = []
+    with pytest.raises(MirContractError, match="require proven straight-line control flow"):
+        parse_mir(data)
+
+
 @pytest.mark.parametrize("change", [
     lambda data: data.update(extra=1),
     lambda data: data["functions"][0]["local_loan_effects"][0].update(extra=1),

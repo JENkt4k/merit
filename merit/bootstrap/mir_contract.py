@@ -405,6 +405,8 @@ def _validate_function(function: MirFunction) -> None:
 def _validate_local_loan_effects(function: MirFunction) -> None:
     if not function.local_loan_effects:
         return
+    if len(function.blocks) != 1 or function.blocks[0].terminator.kind != "return":
+        raise MirContractError("MIR v2 local loans require proven straight-line control flow")
     instructions = {instruction.instruction_id: instruction for block in function.blocks for instruction in block.instructions}
     ownership_by_local = {local.local_id: local.ownership for local in function.locals}
     for instruction in instructions.values():
