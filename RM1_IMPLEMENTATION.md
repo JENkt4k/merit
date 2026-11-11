@@ -128,6 +128,17 @@ source probes pass through both interpreter and native execution. This pass
 does not prove calls, escapes, or unsupported control flow, and is not wired
 to enable production compilation; those are mandatory before the 907 native
 fail-closed guard can be removed.
+The next native source pass validates a direct one-argument call only when a
+resolved signature proves a borrowed parameter and a value return. It rejects
+owned/retaining or unknown calls, direct return and aggregate escapes,
+reference destruction, nested calls with unknown effects, and unsupported
+branch/loop/match flow while a loan exists. Eleven focused source probes match
+between the Merit interpreter and native executable; the two public driver
+fail-closed regressions still pass. The pass is intentionally conservative:
+copying a primitive referent into a new local, field-value returns, and safe
+ephemeral borrowed calls involving the owner need separate proof before RM1
+can claim the complete approved semantic surface. It is not yet connected to
+the production artifact path or to stable M54xx diagnostics.
 
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and

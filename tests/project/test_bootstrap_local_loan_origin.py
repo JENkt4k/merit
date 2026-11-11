@@ -144,6 +144,34 @@ fn check_explicit_owner_effects(source_text:String)->i32 requires_caps [allocate
     drop(parameters);drop(operands);drop(statements);drop(tokens);drop(source);
     return 0;
 }
+fn check_reference_use(source_text:String,signature_start:i64,signature_length:i64,parameter_mode:i32,return_mode:i32)->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    let source:Buffer=buffer_from_string(allocator,source_text);
+    let tokens:Vec<Token>=lex(source,allocator);
+    let statements:Vec<StatementRecord>=parse_statement_records(source,tokens,allocator);
+    let operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
+    var parameters:Vec<SourceFunctionParameter>=vec_new<SourceFunctionParameter>(allocator,1);
+    var signatures:Vec<SourceFunctionSignature>=vec_new<SourceFunctionSignature>(allocator,1);
+    if(signature_start>=0){
+        vec_push<SourceFunctionParameter>(parameters,SourceFunctionParameter{
+            name_start:signature_start,name_length:signature_length,type_code:1,mode:parameter_mode,mutable:0
+        });
+        vec_push<SourceFunctionSignature>(signatures,SourceFunctionSignature{
+            name_start:signature_start,name_length:signature_length,return_type_code:1,
+            return_mode:return_mode,borrowed_origin:-1,parameter_start:0,parameter_count:1
+        });
+    }
+    var origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,1);
+    var uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,1);
+    var ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,1);
+    print(derive_source_local_loan_origins(source,tokens,statements,operands,parameters,0,0,allocator,origins));
+    print(derive_source_local_loan_uses(source,tokens,statements,operands,parameters,0,0,origins,allocator,uses));
+    print(derive_source_local_loan_ends(origins,uses,ends));
+    print(check_source_local_loan_reference_uses(source,tokens,statements,operands,origins,uses,ends,signatures,parameters));
+    drop(ends);drop(uses);drop(origins);drop(signatures);drop(parameters);
+    drop(operands);drop(statements);drop(tokens);drop(source);
+    return 0;
+}
 fn main()->i32 { with capability allocate {
     check_case("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); return 0; }",-1);
     check_case("module m\\nfn main()->i32 { let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; print(a); print(b); return 0; }",-1);
@@ -164,6 +192,17 @@ fn main()->i32 { with capability allocate {
     check_explicit_owner_effects("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; replace(x,\\\"b\\\"); print(r); return 0; }");
     check_explicit_owner_effects("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; let y:i32=x; print(r); return 0; }");
     check_explicit_owner_effects("module m\\ncapability io; fn main()->i32 { var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2; return 0; }");
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r); return 0; }",67,7,1,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r); return 0; }",67,7,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r); return 0; }",67,7,1,1);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; consume(r); print(r); return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; return r; }",-1,0,0,0);
+    check_reference_use("module m\\nstruct Holder { value:i32; } fn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; let h:Holder=Holder{value:r}; return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; drop(r); return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; if 1 { print(r); } return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; mutate(x); print(r); return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(mutate(x)); print(r); return 0; }",-1,0,0,0);
+    check_reference_use("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; print(r); mutate(x); return 0; }",-1,0,0,0);
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -177,6 +216,7 @@ fn main()->i32 { with capability allocate {
         "0\n1\n1\n0\n0\n1\n1\n1\n0\n1\n1\n1\n"
         "0\n0\n2\n1\n0\n1\n0\n1\n0\n"
         + "".join("0\n0\n0\n0\n0\n" + f"{result}\n" for result in (0, 2, 0, 2, 0, 2, 2, 0, 2, 0, 0))
+        + "".join(f"0\n0\n0\n{result}\n" for result in (0, 4, 4, 4, 3, 3, 2, 2, 4, 4, 0))
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
