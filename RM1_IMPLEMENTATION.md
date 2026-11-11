@@ -160,6 +160,14 @@ Loan-bearing MIR v2 functions now also reject non-straight-line control flow
 at decode time. The current final-use proof has no branch or loop joins, so
 accepting such a supplied artifact would overstate its safety. The focused
 MIR/bridge regression suite passes 90 tests.
+HIR v2 loan and MIR v2 effect readers now reject empty source spans (122
+focused representation tests pass). Full out-of-range span validation still
+needs source-unit identity at the project artifact boundary: the standalone
+v5 transport contains MIR/C/header bytes but no source bytes or per-function
+source-unit key. The native producer must validate spans against the source
+unit it compiled; project-load validation cannot infer that unit solely from
+the current standalone transport. This is an evidence gap, not permission to
+accept invalid spans.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy

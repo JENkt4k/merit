@@ -65,6 +65,7 @@ def test_v2_local_loan_round_trip_keeps_v1_bytes_unchanged():
     lambda data: data["local_loans"][0].update(permission="exclusive_write"),
     lambda data: data["local_loans"].append(dict(data["local_loans"][0])),
     lambda data: data["local_loans"][0].update(span=[-1, 3]),
+    lambda data: data["local_loans"][0].update(span=[4, 0]),
     lambda data: data["bindings"][0].update(extra=1),
     lambda data: data["bindings"][0]["type"].update(extra=1),
     lambda data: data["nodes"][0].update(extra=1),

@@ -100,6 +100,8 @@ class HirLocalLoan:
     def __post_init__(self) -> None:
         if self.reference_binding_id < 0 or self.origin_binding_id < 0:
             raise HirContractError("local loan binding IDs must be non-negative")
+        if self.span.length == 0:
+            raise HirContractError("local loan requires a non-empty source span")
         if self.reference_binding_id == self.origin_binding_id:
             raise HirContractError("local loan cannot originate from itself")
         if self.permission != "shared_read":

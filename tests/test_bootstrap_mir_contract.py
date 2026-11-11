@@ -94,6 +94,7 @@ def test_v2_rejects_unproven_loan_control_flow() -> None:
     lambda data: data["functions"][0]["local_loan_effects"][0].update(extra=1),
     lambda data: data["functions"][0]["local_loan_effects"][0].update(kind="retain"),
     lambda data: data["functions"][0]["local_loan_effects"][0].update(origin_binding_id=99),
+    lambda data: data["functions"][0]["local_loan_effects"][0].update(span=[1, 0]),
     lambda data: data["functions"][0]["local_loan_effects"].pop(),
     lambda data: data["functions"][0]["local_loan_effects"].reverse(),
     lambda data: data["functions"][0]["local_loan_effects"][1].update(instruction_id=99),

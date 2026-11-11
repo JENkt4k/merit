@@ -245,6 +245,8 @@ class MirLocalLoanEffect:
     def __post_init__(self) -> None:
         if self.kind not in LOCAL_LOAN_EFFECT_KINDS:
             raise MirContractError("unknown local loan effect kind")
+        if self.span.length == 0:
+            raise MirContractError("local loan effect requires a non-empty source span")
         if min(self.instruction_id, self.reference_binding_id, self.origin_binding_id) < 0:
             raise MirContractError("local loan effect IDs must be non-negative")
         if self.reference_binding_id == self.origin_binding_id:
