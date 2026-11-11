@@ -101,6 +101,15 @@ and two public-interface native-driver probes remain fail-closed pending the
 native loan checker. These are parser/transport observations only, not native
 RM1 semantic acceptance or v5 production evidence.
 
+The Merit-native source-record layer now derives a separate local-loan origin
+catalog from actual parsed statements. It assigns dense reference and owner
+binding identities using the existing scope-aware resolver, accepts multiple
+shared references and a borrowed-parameter origin, and rejects missing,
+reference-valued, or mutable-reference origins at this boundary. A single
+focused test compares the same six source probes through the Merit interpreter
+and generated native executable. This catalog is not yet a final-use proof;
+the production driver continues to reject every local-reference program.
+
 The native project-artifact transport now recognizes a separate v5 version
 word, requires a complete v2 MIR/C/header set, validates v2 MIR framing and
 loan effects, rejects legacy snapshot mixing, and records the v5 producer

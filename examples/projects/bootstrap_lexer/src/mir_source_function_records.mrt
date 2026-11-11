@@ -183,6 +183,135 @@ pub fn source_function_parameter_type(borrow value:SourceFunctionParameter)->i32
 pub fn source_function_parameter_mode(borrow value:SourceFunctionParameter)->i32{return value.mode;}
 pub fn source_function_parameter_mutable(borrow value:SourceFunctionParameter)->i32{return value.mutable;}
 
+// RM1 source identity is separate from Alpha.2 ownership binding metadata.
+// A reference has no independent destruction authority.
+pub struct SourceLocalLoanOrigin {
+    reference_binding_id:i64;
+    origin_binding_id:i64;
+    reference_start:i64;
+    origin_start:i64;
+    declaration_statement:i64;
+}
+pub fn source_local_loan_reference_binding(borrow loan:SourceLocalLoanOrigin)->i64{return loan.reference_binding_id;}
+pub fn source_local_loan_origin_binding(borrow loan:SourceLocalLoanOrigin)->i64{return loan.origin_binding_id;}
+pub fn source_local_loan_reference_start(borrow loan:SourceLocalLoanOrigin)->i64{return loan.reference_start;}
+pub fn source_local_loan_origin_start(borrow loan:SourceLocalLoanOrigin)->i64{return loan.origin_start;}
+pub fn source_local_loan_declaration_statement(borrow loan:SourceLocalLoanOrigin)->i64{return loan.declaration_statement;}
+pub fn source_local_loan_invalid_binding_status()->i32{return 1;}
+pub fn source_local_loan_invalid_initializer_status()->i32{return 2;}
+pub fn source_local_loan_unknown_origin_status()->i32{return 3;}
+pub fn source_local_loan_reference_origin_status()->i32{return 4;}
+pub fn source_local_loan_mutable_binding_status()->i32{return 5;}
+pub fn source_local_loan_invalid_parameter_catalog_status()->i32{return 6;}
+pub fn source_local_loan_nonempty_output_status()->i32{return 7;}
+
+pub fn derive_source_local_loan_origins(
+    borrow source:Buffer, borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>, borrow operands:Vec<StatementOperand>,
+    borrow parameters:Vec<SourceFunctionParameter>,
+    parameter_start:i64, parameter_count:i64, allocator:Allocator,
+    borrow_mut output:Vec<SourceLocalLoanOrigin>
+)->i32 requires_caps [allocate] {
+    if(parameter_start<0){return source_local_loan_invalid_parameter_catalog_status();}
+    if(parameter_count<0){return source_local_loan_invalid_parameter_catalog_status();}
+    if(parameter_start>vec_len<SourceFunctionParameter>(parameters)){return source_local_loan_invalid_parameter_catalog_status();}
+    if(parameter_count>checked_sub(vec_len<SourceFunctionParameter>(parameters),parameter_start)){
+        return source_local_loan_invalid_parameter_catalog_status();
+    }
+    if(vec_len<SourceLocalLoanOrigin>(output)!=0){return source_local_loan_nonempty_output_status();}
+    var starts:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+    var lengths:Vec<i64>=vec_new<i64>(allocator,parameter_count);
+    var status:i32=0;
+    var ordinal:i64=0;
+    while(ordinal<parameter_count){
+        let parameter:SourceFunctionParameter=vec_get<SourceFunctionParameter>(parameters,checked_add(parameter_start,ordinal));
+        if(source_function_parameter_name_start(parameter)<0){status=source_local_loan_invalid_parameter_catalog_status();}
+        if(source_function_parameter_name_length(parameter)<=0){status=source_local_loan_invalid_parameter_catalog_status();}
+        if(status==0){
+            vec_push<i64>(starts,source_function_parameter_name_start(parameter));
+            vec_push<i64>(lengths,source_function_parameter_name_length(parameter));
+        }
+        ordinal=checked_add(ordinal,1);
+    }
+    var statement_index:i64=0;
+    if(status!=0){statement_index=vec_len<StatementRecord>(statements);}
+    while(statement_index<vec_len<StatementRecord>(statements)){
+        let statement:StatementRecord=vec_get<StatementRecord>(statements,statement_index);
+        let kind:i32=statement_record_kind(statement);
+        var is_binding:i32=0;
+        if(kind==statement_record_let_kind()){is_binding=1;}
+        if(kind==statement_record_var_kind()){is_binding=1;}
+        if(is_binding!=0){
+            let binding_index:i64=sfr_operand(statement,operands,statement_operand_binding_kind());
+            if(binding_index<0){status=source_local_loan_invalid_binding_status();}
+            else{
+                let binding:StatementOperand=vec_get<StatementOperand>(operands,binding_index);
+                let mode_index:i64=sfr_operand(statement,operands,statement_operand_local_borrow_mode_kind());
+                if(mode_index>=0){
+                    if(kind!=statement_record_let_kind()){status=source_local_loan_mutable_binding_status();}
+                    else{
+                        let expression_index:i64=sfr_operand(statement,operands,statement_operand_expression_kind());
+                        if(expression_index<0){status=source_local_loan_invalid_initializer_status();}
+                        else{
+                            let expression:StatementOperand=vec_get<StatementOperand>(operands,expression_index);
+                            let expression_start:i64=statement_operand_start(expression);
+                            let expression_end:i64=checked_add(expression_start,statement_operand_length(expression));
+                            var first:i64=-1;
+                            var token_index:i64=0;
+                            while(token_index<vec_len<Token>(tokens)){
+                                let candidate:Token=vec_get<Token>(tokens,token_index);
+                                if(token_start(candidate)==expression_start){first=token_index;}
+                                token_index=checked_add(token_index,1);
+                            }
+                            if(first<0){status=source_local_loan_invalid_initializer_status();}
+                            else{
+                                let origin_index:i64=checked_add(first,1);
+                                if(origin_index>=vec_len<Token>(tokens)){status=source_local_loan_invalid_initializer_status();}
+                                else{
+                                    let keyword:Token=vec_get<Token>(tokens,first);
+                                    let origin:Token=vec_get<Token>(tokens,origin_index);
+                                    if(sfr_is_borrow_mode(source,keyword)==0){status=source_local_loan_invalid_initializer_status();}
+                                    if(token_kind(origin)!=token_identifier_kind()){status=source_local_loan_invalid_initializer_status();}
+                                    if(checked_add(token_start(origin),token_length(origin))!=expression_end){status=source_local_loan_invalid_initializer_status();}
+                                    if(status==0){
+                                        let origin_binding:i64=hir_find_scoped_binding_id(
+                                            source,tokens,starts,lengths,token_start(origin),token_length(origin)
+                                        );
+                                        if(origin_binding<0){status=source_local_loan_unknown_origin_status();}
+                                        else{
+                                            var prior:i64=0;
+                                            while(prior<vec_len<SourceLocalLoanOrigin>(output)){
+                                                let existing:SourceLocalLoanOrigin=vec_get<SourceLocalLoanOrigin>(output,prior);
+                                                if(source_local_loan_reference_binding(existing)==origin_binding){
+                                                    status=source_local_loan_reference_origin_status();
+                                                }
+                                                prior=checked_add(prior,1);
+                                            }
+                                            if(status==0){
+                                                vec_push<SourceLocalLoanOrigin>(output,SourceLocalLoanOrigin{
+                                                    reference_binding_id:vec_len<i64>(starts),origin_binding_id:origin_binding,
+                                                    reference_start:statement_operand_start(binding),origin_start:token_start(origin),
+                                                    declaration_statement:statement_index
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                vec_push<i64>(starts,statement_operand_start(binding));
+                vec_push<i64>(lengths,statement_operand_length(binding));
+            }
+        }
+        if(status!=0){statement_index=vec_len<StatementRecord>(statements);}
+        else{statement_index=checked_add(statement_index,1);}
+    }
+    drop(lengths);drop(starts);
+    return status;
+}
+
 fn sfr_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {
     return buffer_get(source, checked_add(token_start(token), offset));
 }
