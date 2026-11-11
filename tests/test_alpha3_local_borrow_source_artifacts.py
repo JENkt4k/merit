@@ -81,15 +81,91 @@ def test_two_shared_loans_end_independently_before_owner_assignment() -> None:
     assert load_mir_json(canonical_mir_json(mir)) == mir
 
 
-def test_owned_string_waits_for_correct_move_and_cleanup_lowering() -> None:
+def test_owned_string_moves_into_owner_and_drops_after_loan_end() -> None:
     source = (
         'module rm1\n'
         'fn inspect(borrow value:String)->i32 { print(value); return 0; }\n'
         'fn main()->i32 { let x:String="a"; let r: borrow String=borrow x; '
         'inspect(r); drop(x); return 0; }'
     )
-    with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source binding type"):
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    function = mir.functions[0]
+    assert function.locals[0].ownership == "owned"
+    assert function.locals[1].ownership == "local_reference"
+    instructions = function.blocks[0].instructions
+    assert any(instruction.kind == "move" and instruction.result == 0 for instruction in instructions)
+    end = next(effect.instruction_id for effect in function.local_loan_effects if effect.kind == "end")
+    drops = [instruction for instruction in instructions if instruction.kind == "drop"]
+    assert len(drops) == 1 and drops[0].operands == (0,) and end < drops[0].instruction_id
+
+
+def test_case_01_implicit_string_cleanup_and_case_02_shared_loans() -> None:
+    source = ('module rm1\nfn main()->i32 { let x:String="a"; '
+              'let r: borrow String=borrow x; print(r); return 0; }')
+    single = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    single_function = single.functions[0]
+    assert [instruction.kind for instruction in single_function.blocks[0].instructions].count("drop") == 1
+    assert single_function.blocks[0].instructions[-1].kind == "drop"
+    shared = source.replace('print(r);', 'let s: borrow String=borrow x; print(r); print(s);')
+    dual = lower_hir_to_mir(lower_checked_local_borrow_source_hir(shared))
+    effects = dual.functions[0].local_loan_effects
+    assert [effect.kind for effect in effects] == ["create", "create", "use", "end", "use", "end"]
+    assert effects[-1].instruction_id < dual.functions[0].blocks[0].instructions[-1].instruction_id
+
+
+def test_case_08_owner_drop_before_final_read_emits_no_artifact() -> None:
+    source = ('module rm1\nfn main()->i32 { let x:String="a"; '
+              'let r: borrow String=borrow x; drop(x); print(r); return 0; }')
+    with pytest.raises(CompileError, match="M5402"):
         lower_checked_local_borrow_source_hir(source)
+
+
+@pytest.mark.parametrize(("case", "declarations", "body", "diagnostic"), [
+    ("05", "", "var x:i32=1; let r: borrow i32=borrow x; x=2; print(r);", "M5402"),
+    ("06", "struct Box { value:i32; }", "let x:Box=Box{value:1}; let r: borrow Box=borrow x; let y:Box=x; print(r.value);", "M5402"),
+    ("08", "", 'let x:String="a"; let r: borrow String=borrow x; drop(x); print(r);', "M5402"),
+    ("22", "", "let x:i32=1; let r: borrow i32=borrow x; return r;", "M5404"),
+    ("23", "struct Holder { value:i32; }", "let x:i32=1; let r: borrow i32=borrow x; let h:Holder=Holder{value:r};", "M5404"),
+    ("28", "", 'let x:String="a"; let r: borrow String=borrow x; replace(x,"b"); print(r);', "M5402"),
+])
+def test_required_rejections_stop_before_source_artifacts(case, declarations, body, diagnostic) -> None:
+    source = f"module rm1\n{declarations}\nfn main()->i32 {{ {body} return 0; }}"
+    with pytest.raises(CompileError, match=diagnostic):
+        lower_checked_local_borrow_source_hir(source)
+
+
+@pytest.mark.parametrize(("kind", "message"), [
+    ("move", "owned move requires cleanup proof"),
+    ("call", "owned call requires transfer proof"),
+])
+def test_v2_bridge_rejects_unproven_owned_use(kind, message) -> None:
+    source = ('module rm1\nfn main()->i32 { let x:String="a"; '
+              'let r: borrow String=borrow x; print(r); return 0; }')
+    hir = lower_checked_local_borrow_source_hir(source)
+    owner = next(binding for binding in hir.bindings if binding.name == "x")
+    origin = next(node for node in hir.nodes if node.kind == "identifier" and node.binding_id == owner.binding_id)
+    nodes = tuple(
+        replace(node, kind=kind, children=(origin.node_id,),
+                type=owner.type if kind == "move" else node.type,
+                binding_id=owner.binding_id if kind == "move" else None,
+                symbol="consume" if kind == "call" else None)
+        if node.kind == "print" else node for node in hir.nodes
+    )
+    with pytest.raises(HirToMirError, match=message):
+        lower_hir_to_mir(replace(hir, nodes=nodes))
+
+
+def test_v2_bridge_rejects_duplicate_owned_drop() -> None:
+    source = ('module rm1\nfn main()->i32 { let x:String="a"; '
+              'let r: borrow String=borrow x; print(r); drop(x); return 0; }')
+    hir = lower_checked_local_borrow_source_hir(source)
+    owner = next(binding for binding in hir.bindings if binding.name == "x")
+    nodes = tuple(
+        replace(node, kind="drop", type=owner.type, children=(), binding_id=owner.binding_id)
+        if node.kind == "return" else node for node in hir.nodes
+    )
+    with pytest.raises(HirToMirError, match="before initialization or twice"):
+        lower_hir_to_mir(replace(hir, nodes=nodes))
 
 
 def test_v2_bridge_rejects_unproven_owned_initializer() -> None:

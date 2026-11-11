@@ -62,6 +62,8 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
         node = program.node(raw)
         if node.kind == "number" and node.atom_value.isdigit():
             return emit("literal", HirType("i32"), raw, value=int(node.atom_value))
+        if node.kind == "string":
+            return emit("literal", HirType("String"), raw, value=node.atom_value)
         if node.kind == "var" and raw.binding_id is not None:
             type_ = binding_types.get(raw.binding_id.serial)
             if type_ is not None:
@@ -85,10 +87,11 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             if binding is None:
                 raise LocalBorrowSourceHirError("unresolved local binding")
             type_ = HirType(node.declared_type)
-            if type_.name != "i32":
+            if type_.name not in {"i32", "String"}:
                 raise LocalBorrowSourceHirError("unsupported RM1 source binding type")
             binding_types[binding.serial] = type_
-            mode = "local_reference" if node.kind == "local_borrow" else "value"
+            mode = ("local_reference" if node.kind == "local_borrow" else
+                    "owned" if type_.name == "String" else "value")
             bindings.append(HirBinding(binding.serial, binding.name, type_,
                                        node.mutable if node.kind == "let" else False,
                                        mode, span(raw)))
