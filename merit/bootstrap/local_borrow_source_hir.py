@@ -108,6 +108,9 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
                                    binding_id=binding.serial, ownership=mode))
         elif node.kind == "expr":
             statements.append(value(node.expression))
+        elif node.kind == "print":
+            printed = value(node.expression)
+            statements.append(emit("print", HirType("unit"), raw, children=(printed,)))
         elif node.kind == "assign":
             target = node.assignment_target
             if program.node(target).kind != "var" or target.binding_id is None:

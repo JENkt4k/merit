@@ -85,6 +85,13 @@ def test_v1_rejects_unversioned_local_loan_record():
         parse_hir(data)
 
 
+def test_v1_rejects_v2_print_node() -> None:
+    data = sample_module().to_data()
+    data["nodes"][0]["kind"] = "print"
+    with pytest.raises(HirContractError, match="HIR v1 cannot contain RM1 print"):
+        parse_hir(data)
+
+
 def test_hir_round_trips_canonically():
     module = sample_module()
     encoded = canonical_hir_json(module)

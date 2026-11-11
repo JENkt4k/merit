@@ -16,7 +16,7 @@ LOCAL_LOAN_HIR_SCHEMA = "bootstrap-hir-v2"
 
 NODE_KINDS = frozenset({
     "module", "function", "parameter", "block", "let", "assign", "return",
-    "if", "while", "match", "match_arm", "call", "field", "constructor",
+    "if", "while", "match", "match_arm", "call", "field", "constructor", "print",
     "identifier", "literal", "binary", "conversion", "contract_check",
     "capability_scope", "drop", "move", "borrow", "invalid",
 })
@@ -241,6 +241,8 @@ def _validate_module(module: HirModule) -> None:
         if root not in node_set:
             raise HirContractError(f"unknown root node ID: {root}")
     for node in module.nodes:
+        if module.schema == HIR_SCHEMA and node.kind == "print":
+            raise HirContractError("HIR v1 cannot contain RM1 print statements")
         for child in node.children:
             if child not in node_set:
                 raise HirContractError(f"node {node.node_id} references unknown child {child}")

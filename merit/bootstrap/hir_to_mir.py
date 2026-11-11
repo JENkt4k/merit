@@ -34,7 +34,7 @@ _VALUE_KINDS = frozenset({
     "move", "borrow",
 })
 _SIMPLE_STATEMENT_KINDS = frozenset({
-    "let", "assign", "drop", "contract_check", "capability_scope", "return",
+    "let", "assign", "drop", "print", "contract_check", "capability_scope", "return",
 })
 _CONTROL_KINDS = frozenset({"if", "while", "match"})
 _STATEMENT_KINDS = _SIMPLE_STATEMENT_KINDS | _CONTROL_KINDS | {"block"}
@@ -458,6 +458,10 @@ class _FunctionLowerer:
             if node.binding_id is None or node.binding_id not in self.binding_locals:
                 raise HirToMirError(f"drop node {node.node_id} has no resolved binding")
             self._emit(node, "drop", operands=(self.binding_locals[node.binding_id],))
+        elif node.kind == "print":
+            if len(node.children) != 1:
+                raise HirToMirError("print node requires one value")
+            self._emit(node, "print", operands=(self.lower_value(self._child(node, 0)),))
         elif node.kind == "contract_check":
             if len(node.children) != 1:
                 raise HirToMirError(f"contract node {node.node_id} requires one condition")

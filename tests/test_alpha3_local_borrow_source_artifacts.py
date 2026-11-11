@@ -118,9 +118,33 @@ def test_checked_source_mir_v2_survives_v5_transport() -> None:
 
 
 def test_accepted_but_unrepresented_source_fails_closed() -> None:
-    source = SOURCE.replace("inspect(r);", "print(r);")
-    with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source statement"):
+    source = SOURCE.replace("inspect(r);", "let y:i32=1+2; inspect(r);")
+    with pytest.raises(LocalBorrowSourceHirError, match="unsupported RM1 source expression"):
         lower_checked_local_borrow_source_hir(source)
+
+
+def test_actual_final_read_and_post_use_assignment_lower_from_source() -> None:
+    source = SOURCE.replace("let x:i32=1;", "var x:i32=1;").replace(
+        "inspect(r); return x;", "print(r); x=2; return x;"
+    )
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    instructions = mir.functions[0].blocks[0].instructions
+    read = next(instruction for instruction in instructions if instruction.kind == "print")
+    end = next(effect for effect in mir.functions[0].local_loan_effects if effect.kind == "end")
+    assert read.instruction_id == end.instruction_id
+    assert any(instruction.kind == "copy" and instruction.result == 0
+               and instruction.instruction_id > end.instruction_id for instruction in instructions)
+
+
+def test_actual_case_24_call_then_print_has_two_ordered_uses() -> None:
+    source = SOURCE.replace("inspect(r); return x;", "inspect(r); print(r); return x;")
+    mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(source))
+    effects = mir.functions[0].local_loan_effects
+    assert [effect.kind for effect in effects] == ["create", "use", "use", "end"]
+    assert effects[-1].instruction_id == next(
+        instruction.instruction_id for instruction in mir.functions[0].blocks[0].instructions
+        if instruction.kind == "print"
+    )
 
 
 def test_other_numeric_type_cannot_be_mislabeled_as_i32() -> None:

@@ -136,6 +136,12 @@ The checked-source MIR v2 bytes also survive v5 project-artifact transport
 encoding and strict decode in a focused test. The test uses sentinel C/header
 bytes solely to exercise framing; it is not a native C producer or a complete
 public project bundle parity claim.
+The v2-only HIR `print` node now carries an actual final local-reference read
+from source to MIR without changing v1 HIR bytes or allowing the node in v1.
+Focused source tests cover case 04's print before owner assignment and case
+24's proven call followed by a final print, with ordered use/end effects.
+The source/contract/bridge suite passes 150 tests. String, aggregate,
+capability-scope, and full project source-to-v2 lowering remain open.
 The same bounded source producer now preserves an owner assignment after a
 stored reference's final call use. Its emitted MIR places the loan end before
 the assignment; moving that assignment before the use is rejected by M5402
