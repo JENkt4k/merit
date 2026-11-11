@@ -120,6 +120,14 @@ parameter origin, and malformed/out-of-order or unknown-use rejection before
 any end record is emitted. This establishes source-backed create/use/end
 identity; owner-effect conflicts, call effects, escape checks, and emission
 into canonical HIR/MIR v2 remain open. The native driver remains fail-closed.
+An initial Python-oracle checked-source producer now emits HIR v2 and MIR v2
+for a narrow straight-line i32 local-loan function with a proven borrowed
+single-argument call. It derives binding IDs and spans from parsed source,
+emits ordered create/use/end effects, round-trips through both canonical
+readers, rejects invalid source before artifact creation, and fails closed on
+accepted source outside its representable subset. The 113 focused source and
+contract tests pass. This is partial source-to-v2 evidence, not complete
+coverage of the seven required cases and not a Merit-native v5 producer.
 The native explicit-owner-effect pass now rejects owner assignment, drop,
 replacement, and owned binding transfers before the last reference use; it
 permits those operations after final use, multiple shared readers, a copy
