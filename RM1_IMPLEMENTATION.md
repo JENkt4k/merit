@@ -253,10 +253,15 @@ even for a successful proof until native v2/v5 emission is connected; old
 sources do not enter this branch. The 45-module bootstrap compiler builds,
 and its interpreter/native regression passed. A temporary, subsequently
 restored cutover on the smallest `i32` stored-borrow program reached native
-driver status 4368 after the proof boundary. Thus the existing v1 assembly /
-canonical materializer cannot yet be used as a v2 producer; removing 907 now
-would not publish a valid artifact. The next implementation boundary is native
-loan-aware canonical lowering and C emission, followed by v5 framing.
+driver status 4368 after the proof boundary. Isolated status-base probing
+identified this as assembly status 3368: source-token assembly +1000,
+source-type assembly +1000, semantic function +200, body +100, expression
+failure 68. In `mir_source_function_records.mrt`, the `borrow x` initializer
+reaches `sfr_emit_expression` and is not represented, so the body returns its
+unknown-expression status. The v1 assembly therefore cannot be used as a v2
+producer; removing 907 now would not publish a valid artifact. The next
+implementation boundary is native local-reference expression/body lowering,
+then loan-aware canonical MIR and C emission, followed by v5 framing.
 
 ## Bounded semantic-coherence audit
 
