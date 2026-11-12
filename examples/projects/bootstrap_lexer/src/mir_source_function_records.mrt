@@ -4682,7 +4682,7 @@ pub fn lower_source_function_body_records_from_catalog(
                 }
                 let instruction_id:i64=vec_get<i64>(counters,1);
                 vec_push<MirFunctionRecord>(records,function_mir_local_borrow_create(
-                    expression_start,expression_length,instruction_id,destination,origin_local,
+                    token_start(origin_token),token_length(origin_token),instruction_id,destination,origin_local,
                     destination,vec_get<i64>(counters,2)
                 ));
                 vec_set<i64>(counters,1,checked_add(instruction_id,1));

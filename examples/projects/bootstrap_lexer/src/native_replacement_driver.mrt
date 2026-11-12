@@ -148,11 +148,30 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         }
         if (function_count <= 0) { return native_driver_missing_function_status(); }
 
+        // Frame the transport before semantic work. Reuse the same contextual
+        // operand parser used by the per-function proof; this is a version
+        // selection only and never grants acceptance without that proof.
+        var any_local_loan:i32=0;
+        let framing_statements:Vec<StatementRecord>=parse_statement_records(source,tokens,allocator);
+        let framing_operands:Vec<StatementOperand>=parse_statement_operands(source,tokens,allocator);
+        var framing_index:i64=0;
+        while(framing_index<vec_len<StatementOperand>(framing_operands)){
+            let framing_operand:StatementOperand=vec_get<StatementOperand>(framing_operands,framing_index);
+            if(statement_operand_kind(framing_operand)==statement_operand_local_borrow_mode_kind()){
+                any_local_loan=1;
+            }
+            framing_index=checked_add(framing_index,1);
+        }
+        drop(framing_operands);drop(framing_statements);
         var header_status: i32 = 0;
         if(artifact_mode==0){
             header_status=print_resolved_source_function_project_bundle_header(function_count);
         }else{
-            header_status=print_resolved_source_function_project_artifact_bundle_header(0);
+            if(any_local_loan!=0){
+                header_status=print_resolved_source_function_local_loan_project_artifact_bundle_header(0);
+            }else{
+                header_status=print_resolved_source_function_project_artifact_bundle_header(0);
+            }
         }
         if (header_status != 0) {
             return native_driver_bundle_header_failure_status(header_status);
@@ -269,6 +288,9 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 var cfg: Vec<MirCfgRecord> = vec_new<MirCfgRecord>(allocator, 64);
                 var placements: Vec<MirPlacementRecord> = vec_new<MirPlacementRecord>(allocator, 128);
                 var canonical_function:Buffer=buffer_new(allocator,1024);
+                var loan_origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,4);
+                var loan_uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,8);
+                var loan_ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,4);
 
                 var function_status: i32 = slice_status;
                 // The mode operand is kept distinct from the referent type.
@@ -282,6 +304,9 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                         has_local_loan=1;
                     }
                     loan_operand_index = checked_add(loan_operand_index,1);
+                }
+                if(has_local_loan!=0){
+                    if(any_local_loan==0){function_status=native_driver_unproven_local_loan_status();}
                 }
                 let resolved_match_enum_id: i64 = -1;
                 if (function_status == 0) {
@@ -661,11 +686,9 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                             );
                             if(callable_status!=0){return native_driver_callable_catalog_failure_status(callable_status);}
                             if(has_local_loan!=0){
+                                var loan_proof_succeeded:i32=0;
                                 var loan_types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,8);
                                 var loan_ownership:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,8);
-                                var loan_origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,4);
-                                var loan_uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,8);
-                                var loan_ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,4);
                                 let loan_type_status:i32=derive_source_type_ownership_catalog(
                                     source,tokens,statements,operands,loan_types
                                 );
@@ -701,12 +724,13 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                             // connected. Even a proved source must remain fail closed.
                                             if(source_local_loan_proof_stage(loan_proof)!=source_local_loan_proof_success_stage()){
                                                 function_status=native_driver_unproven_local_loan_status();
+                                            }else{
+                                                loan_proof_succeeded=1;
                                             }
                                         }
                                     }
                                 }
-                                function_status=native_driver_unproven_local_loan_status();
-                                drop(loan_ends);drop(loan_uses);drop(loan_origins);
+                                if(loan_proof_succeeded==0){function_status=native_driver_unproven_local_loan_status();}
                                 drop(loan_ownership);drop(loan_types);
                             }
                             if(artifact_mode!=0){
@@ -913,17 +937,35 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                             if (assembly_status != 0) {
                                 function_status = native_driver_assembly_failure_status(assembly_status);
                             } else {
-                                let canonical_status:i32=materialize_sourced_cfg_canonical_mir(
-                                    source,"_",body,contracts,contract_locals,ownership,
-                                    ownership_records,sources,cfg,placements,required,
-                                    capabilities,type_descriptors,numeric_type_descriptors,canonical_function
-                                );
-                                if(canonical_status!=0){
-                                    function_status=native_driver_canonical_function_failure_status(canonical_status);
-                                } else {
-                                    let append_status:i32=canonical_mir_append_project_function(
-                                        canonical_function,emitted_functions,allocator,canonical_project
+                                var canonical_status:i32=0;
+                                if(has_local_loan!=0){
+                                    canonical_status=materialize_sourced_cfg_canonical_mir_local_borrow(
+                                        source,"_",body,contracts,contract_locals,ownership,
+                                        ownership_records,sources,cfg,placements,required,
+                                        capabilities,type_descriptors,numeric_type_descriptors,
+                                        statements,loan_origins,loan_uses,loan_ends,canonical_function
                                     );
+                                }else{
+                                    canonical_status=materialize_sourced_cfg_canonical_mir(
+                                        source,"_",body,contracts,contract_locals,ownership,
+                                        ownership_records,sources,cfg,placements,required,
+                                        capabilities,type_descriptors,numeric_type_descriptors,canonical_function
+                                    );
+                                }
+                                if(canonical_status!=0){
+                                    if(has_local_loan!=0){function_status=native_driver_unproven_local_loan_status();}
+                                    else{function_status=native_driver_canonical_function_failure_status(canonical_status);}
+                                } else {
+                                    var append_status:i32=0;
+                                    if(has_local_loan!=0){
+                                        append_status=canonical_mir_append_project_function_local_borrow(
+                                            canonical_function,emitted_functions,allocator,canonical_project
+                                        );
+                                    }else{
+                                        append_status=canonical_mir_append_project_function(
+                                            canonical_function,emitted_functions,allocator,canonical_project
+                                        );
+                                    }
                                     if(append_status!=0){
                                         function_status=native_driver_canonical_append_failure_status(append_status);
                                     }else{
@@ -1016,6 +1058,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 // This avoids branch-merge ambiguity in the current checker while
                 // still closing every scoped owned local before leaving the else.
                 drop(canonical_function);
+                drop(loan_ends);drop(loan_uses);drop(loan_origins);
                 drop(placements);
                 drop(cfg);
                 drop(assembled);
@@ -1103,11 +1146,21 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         let module_token: Token = vec_get<Token>(tokens, 1);
         var complete_project:Buffer=buffer_new(allocator,4096);
         var canonical_finish_status:i32=0;
+        if(any_local_loan!=0){
+            if(destructor_index!=0){return native_driver_unproven_local_loan_status();}
+        }
         if(destructor_index==0){
-            canonical_finish_status=canonical_mir_finish_project_source(
-                source,token_start(module_token),token_length(module_token),
-                emitted_functions,canonical_project
-            );
+            if(any_local_loan!=0){
+                canonical_finish_status=canonical_mir_finish_project_source_local_borrow(
+                    source,token_start(module_token),token_length(module_token),
+                    emitted_functions,canonical_project
+                );
+            }else{
+                canonical_finish_status=canonical_mir_finish_project_source(
+                    source,token_start(module_token),token_length(module_token),
+                    emitted_functions,canonical_project
+                );
+            }
             if(canonical_finish_status==0){
                 bootstrap_buffer_append(complete_project,canonical_project,0,buffer_len(canonical_project));
             }

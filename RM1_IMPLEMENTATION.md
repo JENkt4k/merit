@@ -278,6 +278,31 @@ interpreter/native record regression passes. The production canonical writer
 still invokes the legacy validator and remains guarded by 907; this validator
 change alone does not authorize artifact publication.
 
+The first bounded production cutover now publishes a complete v5 artifact for
+one straight-line immutable `i32` local reference with a single `print` use.
+The same native driver uses v1 validation and v4 framing for old programs,
+while a successful composed source proof selects v2 validation and a native
+MIR v2 writer with ordered create/use/end effects. The reference local is
+non-owning in MIR and C; C stores its address and dereferences it for the
+proven read. The project request path emits native MIR, C, and header, and the
+public prepare/load/build path strictly decodes, compiles, and executes the
+v5 bundle with output matching the Python interpreter. Repeated native
+requests produce identical transport bytes. A multiple-reference program
+still fails closed with status 907 before artifact publication. The focused
+v5/native-record suite passed 2 tests in 64 seconds, and the existing v4
+artifact regression passed in 91 seconds alongside the v5 test.
+
+This cutover is deliberately narrower than RM1 completion. The native v2
+writer currently supports one reference and one direct `print` use; other
+loan shapes retain 907. The required seven accepted and six rejected cases
+have not yet passed through the public native interface. The Python oracle
+and native MIR agree structurally for this program after accounting for the
+project request's 13-byte canonical module prefix and compiler-private
+temporary names; raw source offsets and temporary spellings are not claimed
+byte-identical across those two different source inputs. Native HIR v2
+publication, borrowed calls, owner operations after final use, exact M54xx
+diagnostics, full matrix coverage, stage parity, and broad gates remain open.
+
 ## Bounded semantic-coherence audit
 
 For each new accepted case, compare one source program at every available
