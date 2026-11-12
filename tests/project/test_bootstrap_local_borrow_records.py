@@ -45,6 +45,8 @@ fn main()->i32 { with capability allocate {
  print(lower_source_function_body_records(source,tokens,statements,operands,enums,structs,arms,allocator,records,events));
  var stats:Vec<i64>=vec_new<i64>(allocator,4);
  print(source_function_record_stats(records,stats));
+ print(validate_function_mir_cfg_records(records)==function_mir_unknown_record_kind_status());
+ print(validate_function_mir_local_borrow_cfg_records(records));
  var index:i64=0;
  while(index<vec_len<MirFunctionRecord>(records)){
   let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
@@ -65,7 +67,7 @@ fn main()->i32 { with capability allocate {
         'entry = "src/lexer.mrt"', 'entry = "src/local_borrow_records_probe.mrt"'
     ), encoding="utf-8")
     project = load_project(manifest)
-    expected = "0\n0\n1\n7\n1\n0\n"
+    expected = "0\n0\n1\n0\n1\n7\n1\n0\n"
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")
     assert subprocess.run([str(executable)], check=True, text=True,

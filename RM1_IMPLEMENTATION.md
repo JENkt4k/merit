@@ -271,6 +271,12 @@ the assembly output. A focused interpreter/native source-record test passed,
 and an isolated post-proof cutover now reaches canonical MIR validation status
 4101: the v1 validator correctly rejects the new kinds. Production still
 returns 907. Native v2 MIR/C/header emission and v5 publication remain open.
+The native flat-record validator now has an explicit local-borrow version path:
+the legacy validator rejects RM1 local-reference and borrow-create records,
+while the v2 validator accepts the same well-formed stream. The focused
+interpreter/native record regression passes. The production canonical writer
+still invokes the legacy validator and remains guarded by 907; this validator
+change alone does not authorize artifact publication.
 
 ## Bounded semantic-coherence audit
 
