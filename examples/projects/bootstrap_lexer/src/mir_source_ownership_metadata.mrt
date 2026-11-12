@@ -153,7 +153,10 @@ pub fn validate_derived_source_ownership_bindings(
     var record_index: i64 = 0;
     while (record_index < vec_len<MirFunctionRecord>(body_records)) {
         let record: MirFunctionRecord = vec_get<MirFunctionRecord>(body_records, record_index);
-        if (function_mir_kind(record) == function_mir_kind_source_local()) {
+        var source_binding:i32=0;
+        if(function_mir_kind(record)==function_mir_kind_source_local()){source_binding=1;}
+        if(function_mir_kind(record)==function_mir_kind_local_reference()){source_binding=1;}
+        if (source_binding!=0) {
             if (binding_index >= vec_len<MirOwnershipBinding>(bindings)) { return ownership_metadata_validation_missing_binding_status(); }
             let binding: MirOwnershipBinding = vec_get<MirOwnershipBinding>(bindings, binding_index);
             if (ownership_binding_id(binding) != function_mir_binding_id(record)) { return ownership_metadata_validation_binding_id_status(); }

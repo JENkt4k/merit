@@ -662,6 +662,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                             if(callable_status!=0){return native_driver_callable_catalog_failure_status(callable_status);}
                             if(has_local_loan!=0){
                                 var loan_types:Vec<SourceTypeOwnershipEntry>=vec_new<SourceTypeOwnershipEntry>(allocator,8);
+                                var loan_ownership:Vec<MirOwnershipBinding>=vec_new<MirOwnershipBinding>(allocator,8);
                                 var loan_origins:Vec<SourceLocalLoanOrigin>=vec_new<SourceLocalLoanOrigin>(allocator,4);
                                 var loan_uses:Vec<SourceLocalLoanUse>=vec_new<SourceLocalLoanUse>(allocator,8);
                                 var loan_ends:Vec<SourceLocalLoanEnd>=vec_new<SourceLocalLoanEnd>(allocator,4);
@@ -670,7 +671,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                 );
                                 if(loan_type_status==0){
                                     let binding_status:i32=derive_source_ownership_bindings(
-                                        source,statements,operands,loan_types,ownership
+                                        source,statements,operands,loan_types,loan_ownership
                                     );
                                     if(binding_status==0){
                                         var loan_parameter_start:i64=-1;
@@ -694,7 +695,7 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                             let loan_proof:SourceLocalLoanProof=prove_source_local_loans(
                                                 source,function_tokens,statements,operands,
                                                 callable_parameters,loan_parameter_start,loan_parameter_count,
-                                                callable_signatures,ownership,allocator,loan_origins,loan_uses,loan_ends
+                                                callable_signatures,loan_ownership,allocator,loan_origins,loan_uses,loan_ends
                                             );
                                             // Semantic proof is necessary, but v2/v5 emission is not yet
                                             // connected. Even a proved source must remain fail closed.
@@ -705,7 +706,8 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                                     }
                                 }
                                 function_status=native_driver_unproven_local_loan_status();
-                                drop(loan_ends);drop(loan_uses);drop(loan_origins);drop(loan_types);
+                                drop(loan_ends);drop(loan_uses);drop(loan_origins);
+                                drop(loan_ownership);drop(loan_types);
                             }
                             if(artifact_mode!=0){
                                 var signature_index:i64=0;

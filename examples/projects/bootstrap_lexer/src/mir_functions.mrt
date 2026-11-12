@@ -176,9 +176,13 @@ pub fn function_mir_kind_struct_field_store() -> i32 { return 14; }
 pub fn function_mir_kind_parameter() -> i32 { return 15; }
 pub fn function_mir_kind_call() -> i32 { return 16; }
 pub fn function_mir_kind_call_argument() -> i32 { return 17; }
+// RM1-only records. The v1 validator deliberately does not accept these.
+pub fn function_mir_kind_local_reference() -> i32 { return 18; }
+pub fn function_mir_kind_local_borrow_create() -> i32 { return 19; }
 pub fn function_mir_mode_value() -> i32 { return 0; }
 pub fn function_mir_mode_borrowed() -> i32 { return 1; }
 pub fn function_mir_mode_mutable_borrow() -> i32 { return 2; }
+pub fn function_mir_mode_local_reference() -> i32 { return 3; }
 pub fn function_mir_too_few_records_status() -> i32 { return 1; }
 pub fn function_mir_invalid_header_kind_status() -> i32 { return 2; }
 pub fn function_mir_invalid_header_span_status() -> i32 { return 3; }
@@ -426,6 +430,31 @@ pub fn function_mir_source_local(start: i64, length: i64, local_id: i64, type_co
         symbol_start: start, symbol_length: length, symbol_code: 0, type_code: type_code,
         numeric_policy: 0, binding_id: binding_id, mutable: mutable, hir_node_id: function_mir_absent_record_value(),
         ordinal: local_id
+    };
+}
+
+pub fn function_mir_local_reference(
+    start:i64,length:i64,local_id:i64,type_code:i32,binding_id:i64
+) -> MirFunctionRecord {
+    return MirFunctionRecord{
+        kind:function_mir_kind_local_reference(),start:start,length:length,id:local_id,
+        result:function_mir_absent_record_value(),left:function_mir_absent_record_value(),
+        right:function_mir_absent_record_value(),symbol_start:start,symbol_length:length,
+        symbol_code:0,type_code:type_code,numeric_policy:0,binding_id:binding_id,
+        mutable:0,hir_node_id:function_mir_absent_record_value(),ordinal:local_id
+    };
+}
+
+pub fn function_mir_local_borrow_create(
+    start:i64,length:i64,instruction_id:i64,reference_local:i64,origin_local:i64,
+    reference_binding:i64,hir_node_id:i64
+) -> MirFunctionRecord {
+    return MirFunctionRecord{
+        kind:function_mir_kind_local_borrow_create(),start:start,length:length,id:instruction_id,
+        result:reference_local,left:origin_local,right:function_mir_absent_record_value(),
+        symbol_start:function_mir_absent_record_value(),symbol_length:0,symbol_code:0,
+        type_code:0,numeric_policy:0,binding_id:reference_binding,mutable:0,
+        hir_node_id:hir_node_id,ordinal:instruction_id
     };
 }
 

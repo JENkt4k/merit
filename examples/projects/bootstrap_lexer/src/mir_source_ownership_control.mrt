@@ -241,6 +241,32 @@ requires_caps [allocate]
     let expression_index: i64 = source_ownership_operand(statement, operands, 3, 0);
     if (expression_index < 0) { return source_control_missing_expression_status(); }
     let expression: StatementOperand = vec_get<StatementOperand>(operands, expression_index);
+    if(source_ownership_operand(statement,operands,statement_operand_local_borrow_mode_kind(),0)>=0){
+        // The composed source-loan proof and body lowering validate the exact
+        // initializer. This binding has read authority, never destruction
+        // authority; ownership flow must not treat it as an owner copy/move.
+        if(expected_mutable!=0){return source_control_binding_mutability_status();}
+        if(ownership_binding_owned(semantic)!=0){return source_control_nonowned_move_source_status();}
+        var origin_binding:i64=-1;
+        var token_index:i64=0;
+        while(token_index<vec_len<Token>(tokens)){
+            let token:Token=vec_get<Token>(tokens,token_index);
+            if(token_start(token)>statement_operand_start(expression)){
+                if(token_start(token)<checked_add(statement_operand_start(expression),statement_operand_length(expression))){
+                    if(token_kind(token)==token_identifier_kind()){
+                        origin_binding=source_find_binding(
+                            source,tokens,starts,lengths,token_start(token),token_length(token)
+                        );
+                    }
+                }
+            }
+            token_index=checked_add(token_index,1);
+        }
+        if(origin_binding<0){return source_control_expression_unresolved_binding_status();}
+        if(origin_binding>=destination){return source_control_expression_invalid_borrow_status();}
+        vec_push<MirOwnershipEvent>(events,ownership_event_place(0));
+        return 0;
+    }
     let result_local: i64 = source_expression(callable_signatures,callable_parameters,
         source, tokens, starts, lengths,
         statement_operand_start(expression), statement_operand_length(expression),

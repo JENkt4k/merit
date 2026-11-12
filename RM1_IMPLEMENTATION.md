@@ -263,6 +263,15 @@ producer; removing 907 now would not publish a valid artifact. The next
 implementation boundary is native local-reference expression/body lowering,
 then loan-aware canonical MIR and C emission, followed by v5 framing.
 
+The native source-body and structured-placement path now has distinct RM1
+local-reference and borrow-create records. It retains binding/origin IDs and
+referent type, and the ownership-control pass records no owner move or cleanup
+for the reference. The proof's temporary ownership catalog is separate from
+the assembly output. A focused interpreter/native source-record test passed,
+and an isolated post-proof cutover now reaches canonical MIR validation status
+4101: the v1 validator correctly rejects the new kinds. Production still
+returns 907. Native v2 MIR/C/header emission and v5 publication remain open.
+
 ## Bounded semantic-coherence audit
 
 For each new accepted case, compare one source program at every available
