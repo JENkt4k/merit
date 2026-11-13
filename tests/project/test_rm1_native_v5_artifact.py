@@ -110,9 +110,8 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
                                    capture_output=True, env=env).stdout.decode()
     assert public_output.replace("\r\n", "\n") == native_output.replace("\r\n", "\n")
     (project / "src/main.mrt").write_text(
-        'module probe\nfn main()->i32 { let x:i32=1; '
-        'let r: borrow i32=borrow x; let s: borrow i32=borrow x; '
-        'print(r); print(s); return 0; }\n',
+        'module probe\nfn main()->i32 { var x:i32=1; '
+        'let r: borrow i32=borrow x; x=2; print(r); return 0; }\n',
         encoding="utf-8", newline="\n",
     )
     unsupported_request = encode_loaded_project_request(load_project(project / "Merit.toml"))
@@ -122,6 +121,8 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
     assert b"1297236550" not in unsupported.stdout.splitlines()[3:]
     matrix = {
         "01": 'let x:String="a"; let r: borrow String=borrow x; print(r);',
+        "02": 'let x:String="a"; let r: borrow String=borrow x; let s: borrow String=borrow x; print(r); print(s);',
+        "three_shared": 'let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; let c: borrow i32=borrow x; print(a); print(b); print(c);',
         "04": 'var x:i32=1; let r: borrow i32=borrow x; print(r); x=2;',
         "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
         "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
@@ -144,7 +145,21 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
             int(line) for line in case_result.stdout.splitlines()
         )
         assert case_transport.version == 5
-        assert parse_mir(json.loads(case_transport.canonical_mir_bytes)).schema == "bootstrap-mir-v2"
+        case_mir = parse_mir(json.loads(case_transport.canonical_mir_bytes))
+        assert case_mir.schema == "bootstrap-mir-v2"
+        if case == "02":
+            reference_case_mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(
+                (project / "src/main.mrt").read_text(encoding="utf-8")
+            ))
+            native_effects = case_mir.functions[0].local_loan_effects
+            reference_effects = reference_case_mir.functions[0].local_loan_effects
+            assert [
+                (effect.instruction_id, effect.kind, effect.reference_binding_id, effect.origin_binding_id)
+                for effect in native_effects
+            ] == [
+                (effect.instruction_id, effect.kind, effect.reference_binding_id, effect.origin_binding_id)
+                for effect in reference_effects
+            ]
         case_c = tmp_path / f"case-{case}.c"
         case_c.write_bytes(case_transport.c_source_bytes)
         case_program = tmp_path / f"case-{case}.exe"

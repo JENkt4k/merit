@@ -343,7 +343,7 @@ decode, generated C compilation, execution, and interpreter comparison.
 | Required case | Public native boundary | Next shared mechanism |
 | --- | --- | --- |
 | Accept 01, 04, 18 | v5 decode, C build, and execution pass | Preserve old artifact bytes. |
-| Accept 02 | One-reference MIR loan writer fails closed | Ordered effects for multiple shared loans. |
+| Accept 02 | v5 decode, C build, and execution pass | Python/native instruction and loan-effect identities match. |
 | Accept 07 | Native C function emission rejects aggregate reference | Aggregate field access and ownership transfer after final use. |
 | Accept 09 | Backend catalog rejects explicit owner drop | Exact owner cleanup and drop emission. |
 | Accept 24 | v5 decode, C build, and execution pass with the helper before `main` | Compare canonical effects and diagnostics across stages. |
@@ -360,3 +360,13 @@ handles a stored `String` reference in `print` and a non-retaining borrowed
 `i32` call/return, while preserving borrowed-return functions and old value
 emission. The focused v5 and legacy v4 project tests passed together (2 tests,
 93 seconds). The PR remains draft; stage and broad gates are still open.
+
+The native MIR v2 writer now handles multiple simultaneous shared loans with
+canonical ordering by instruction ID, effect rank, then reference binding ID.
+It validates each create, use, and end against the proved source catalog and
+native instruction stream before publication. Required case 02 and a
+three-reference stress shape strictly decode, compile, and execute with
+interpreter-equivalent output. Case 02's native loan-effect identities match
+the independent Python oracle. The focused v5, legacy v4, and native-record
+suite passed together (3 tests, 116 seconds); old project artifacts remain
+on the v4 writer path.

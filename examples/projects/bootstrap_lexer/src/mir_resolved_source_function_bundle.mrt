@@ -9773,6 +9773,39 @@ fn canonical_mir_append_local_loan_effect(
     return 0;
 }
 
+struct CanonicalLocalLoanEvent {
+    instruction_id:i64;
+    rank:i32;
+    reference_binding_id:i64;
+    origin_binding_id:i64;
+    statement_index:i64;
+}
+fn canonical_local_loan_create_rank()->i32{return 0;}
+fn canonical_local_loan_use_rank()->i32{return 1;}
+fn canonical_local_loan_end_rank()->i32{return 2;}
+
+fn canonical_local_loan_event_later(
+    borrow candidate:CanonicalLocalLoanEvent,borrow previous:CanonicalLocalLoanEvent
+)->i32 {
+    if(candidate.instruction_id>previous.instruction_id){return 1;}
+    if(candidate.instruction_id<previous.instruction_id){return 0;}
+    if(candidate.rank>previous.rank){return 1;}
+    if(candidate.rank<previous.rank){return 0;}
+    if(candidate.reference_binding_id>previous.reference_binding_id){return 1;}
+    return 0;
+}
+
+fn canonical_local_loan_event_earlier(
+    borrow candidate:CanonicalLocalLoanEvent,borrow selected:CanonicalLocalLoanEvent
+)->i32 {
+    if(candidate.instruction_id<selected.instruction_id){return 1;}
+    if(candidate.instruction_id>selected.instruction_id){return 0;}
+    if(candidate.rank<selected.rank){return 1;}
+    if(candidate.rank>selected.rank){return 0;}
+    if(candidate.reference_binding_id<selected.reference_binding_id){return 1;}
+    return 0;
+}
+
 fn canonical_mir_append_one_reference_loan_effects(
     borrow records:Vec<MirFunctionRecord>,borrow sources:Vec<MirFunctionInstructionSource>,
     borrow statements:Vec<StatementRecord>,borrow origins:Vec<SourceLocalLoanOrigin>,
@@ -9894,6 +9927,193 @@ fn canonical_mir_append_one_reference_loan_effects(
         return canonical_mir_local_loan_unsupported_status();
     }
     buffer_push(output,93);
+    return 0;
+}
+
+// A proof can contain several simultaneous shared loans. Collect semantic
+// effects first, then serialize by instruction, effect rank, and binding ID.
+// The same ordering is required by the strict MIR v2 reader.
+fn canonical_mir_append_multi_reference_loan_effects(
+    borrow records:Vec<MirFunctionRecord>,borrow sources:Vec<MirFunctionInstructionSource>,
+    borrow statements:Vec<StatementRecord>,borrow origins:Vec<SourceLocalLoanOrigin>,
+    borrow uses:Vec<SourceLocalLoanUse>,borrow ends:Vec<SourceLocalLoanEnd>,
+    borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    if(vec_len<SourceLocalLoanOrigin>(origins)<2){return canonical_mir_local_loan_unsupported_status();}
+    if(vec_len<SourceLocalLoanEnd>(ends)!=vec_len<SourceLocalLoanOrigin>(origins)){
+        return canonical_mir_local_loan_unsupported_status();
+    }
+    let allocator:Allocator=system_allocator();
+    var events:Vec<CanonicalLocalLoanEvent>=vec_new<CanonicalLocalLoanEvent>(
+        allocator,checked_add(checked_mul(vec_len<SourceLocalLoanOrigin>(origins),2),vec_len<SourceLocalLoanUse>(uses))
+    );
+    var origin_index:i64=0;
+    while(origin_index<vec_len<SourceLocalLoanOrigin>(origins)){
+        let origin:SourceLocalLoanOrigin=vec_get<SourceLocalLoanOrigin>(origins,origin_index);
+        let reference_binding:i64=source_local_loan_reference_binding(origin);
+        let owner_binding:i64=source_local_loan_origin_binding(origin);
+        let declaration_index:i64=source_local_loan_declaration_statement(origin);
+        if(declaration_index<0){return canonical_mir_local_loan_unsupported_status();}
+        if(declaration_index>=vec_len<StatementRecord>(statements)){
+            return canonical_mir_local_loan_unsupported_status();
+        }
+        var reference_local:i64=-1;var owner_local:i64=-1;
+        var record_index:i64=1;
+        while(record_index<vec_len<MirFunctionRecord>(records)){
+            let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+            if(function_mir_kind(record)==function_mir_kind_local_reference()){
+                if(function_mir_binding_id(record)==reference_binding){
+                    if(reference_local>=0){return canonical_mir_local_loan_unsupported_status();}
+                    reference_local=function_mir_id(record);
+                }
+            }
+            if(function_mir_kind(record)==function_mir_kind_source_local()){
+                if(function_mir_binding_id(record)==owner_binding){
+                    if(owner_local>=0){return canonical_mir_local_loan_unsupported_status();}
+                    owner_local=function_mir_id(record);
+                }
+            }
+            record_index=checked_add(record_index,1);
+        }
+        if(reference_local<0){return canonical_mir_local_loan_unsupported_status();}
+        if(owner_local<0){return canonical_mir_local_loan_unsupported_status();}
+        var create_instruction:i64=-1;var create_count:i64=0;
+        record_index=1;
+        while(record_index<vec_len<MirFunctionRecord>(records)){
+            let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+            if(function_mir_kind(record)==function_mir_kind_local_borrow_create()){
+                if(function_mir_binding_id(record)==reference_binding){
+                    if(function_mir_result(record)!=reference_local){return canonical_mir_local_loan_unsupported_status();}
+                    if(function_mir_left(record)!=owner_local){return canonical_mir_local_loan_unsupported_status();}
+                    create_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
+                    create_count=checked_add(create_count,1);
+                }
+            }
+            record_index=checked_add(record_index,1);
+        }
+        if(create_count!=1){return canonical_mir_local_loan_unsupported_status();}
+        if(create_instruction<0){return canonical_mir_local_loan_unsupported_status();}
+        vec_push<CanonicalLocalLoanEvent>(events,CanonicalLocalLoanEvent{
+            instruction_id:create_instruction,rank:canonical_local_loan_create_rank(),
+            reference_binding_id:reference_binding,origin_binding_id:owner_binding,
+            statement_index:declaration_index
+        });
+        var last_use_instruction:i64=-1;var last_use_statement:i64=-1;
+        var use_count:i64=0;var use_index:i64=0;
+        while(use_index<vec_len<SourceLocalLoanUse>(uses)){
+            let use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,use_index);
+            if(source_local_loan_use_reference(use)==reference_binding){
+                let statement_index:i64=source_local_loan_use_statement(use);
+                if(statement_index<0){return canonical_mir_local_loan_unsupported_status();}
+                if(statement_index>=vec_len<StatementRecord>(statements)){
+                    return canonical_mir_local_loan_unsupported_status();
+                }
+                let use_statement:StatementRecord=vec_get<StatementRecord>(statements,statement_index);
+                var use_instruction:i64=-1;var matches:i64=0;
+                record_index=1;
+                while(record_index<vec_len<MirFunctionRecord>(records)){
+                    let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+                    var reads_reference:i32=0;
+                    if(function_mir_kind(record)==function_mir_kind_print()){
+                        if(function_mir_left(record)==reference_local){reads_reference=1;}
+                    }
+                    if(function_mir_kind(record)==function_mir_kind_call()){
+                        var argument_index:i64=1;
+                        while(argument_index<vec_len<MirFunctionRecord>(records)){
+                            let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,argument_index);
+                            if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                                if(function_mir_id(argument)==function_mir_id(record)){
+                                    if(function_mir_left(argument)==reference_local){reads_reference=1;}
+                                }
+                            }
+                            argument_index=checked_add(argument_index,1);
+                        }
+                    }
+                    if(reads_reference!=0){
+                        if(function_mir_start(record)==statement_record_start(use_statement)){
+                            use_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
+                            matches=checked_add(matches,1);
+                        }
+                    }
+                    record_index=checked_add(record_index,1);
+                }
+                if(matches!=1){return canonical_mir_local_loan_use_mapping_status();}
+                if(use_instruction<=create_instruction){return canonical_mir_local_loan_use_order_status();}
+                if(use_instruction<=last_use_instruction){return canonical_mir_local_loan_use_order_status();}
+                vec_push<CanonicalLocalLoanEvent>(events,CanonicalLocalLoanEvent{
+                    instruction_id:use_instruction,rank:canonical_local_loan_use_rank(),
+                    reference_binding_id:reference_binding,origin_binding_id:owner_binding,
+                    statement_index:statement_index
+                });
+                last_use_instruction=use_instruction;last_use_statement=statement_index;
+                use_count=checked_add(use_count,1);
+            }
+            use_index=checked_add(use_index,1);
+        }
+        if(use_count==0){return canonical_mir_local_loan_unsupported_status();}
+        var end_count:i64=0;var end_index:i64=0;
+        while(end_index<vec_len<SourceLocalLoanEnd>(ends)){
+            let end:SourceLocalLoanEnd=vec_get<SourceLocalLoanEnd>(ends,end_index);
+            if(source_local_loan_end_reference(end)==reference_binding){
+                if(source_local_loan_end_origin(end)!=owner_binding){return canonical_mir_local_loan_unsupported_status();}
+                if(source_local_loan_end_statement(end)!=last_use_statement){return canonical_mir_local_loan_unsupported_status();}
+                end_count=checked_add(end_count,1);
+            }
+            end_index=checked_add(end_index,1);
+        }
+        if(end_count!=1){return canonical_mir_local_loan_unsupported_status();}
+        vec_push<CanonicalLocalLoanEvent>(events,CanonicalLocalLoanEvent{
+            instruction_id:last_use_instruction,rank:canonical_local_loan_end_rank(),
+            reference_binding_id:reference_binding,origin_binding_id:owner_binding,
+            statement_index:last_use_statement
+        });
+        origin_index=checked_add(origin_index,1);
+    }
+    canonical_mir_append_text(output,",\"local_loan_effects\":[");
+    var previous:CanonicalLocalLoanEvent=CanonicalLocalLoanEvent{
+        instruction_id:-1,rank:-1,reference_binding_id:-1,origin_binding_id:-1,statement_index:-1
+    };
+    var emitted:i64=0;
+    while(emitted<vec_len<CanonicalLocalLoanEvent>(events)){
+        var selected_index:i64=-1;var index:i64=0;
+        while(index<vec_len<CanonicalLocalLoanEvent>(events)){
+            let candidate:CanonicalLocalLoanEvent=vec_get<CanonicalLocalLoanEvent>(events,index);
+            if(canonical_local_loan_event_later(candidate,previous)!=0){
+                if(selected_index<0){selected_index=index;}
+                else{
+                    let selected:CanonicalLocalLoanEvent=vec_get<CanonicalLocalLoanEvent>(events,selected_index);
+                    if(canonical_local_loan_event_earlier(candidate,selected)!=0){selected_index=index;}
+                }
+            }
+            index=checked_add(index,1);
+        }
+        if(selected_index<0){return canonical_mir_local_loan_use_order_status();}
+        let event:CanonicalLocalLoanEvent=vec_get<CanonicalLocalLoanEvent>(events,selected_index);
+        if(event.statement_index<0){return canonical_mir_local_loan_unsupported_status();}
+        if(event.statement_index>=vec_len<StatementRecord>(statements)){
+            return canonical_mir_local_loan_unsupported_status();
+        }
+        let statement:StatementRecord=vec_get<StatementRecord>(statements,event.statement_index);
+        if(emitted>0){buffer_push(output,44);}
+        var append_status:i32=0;
+        if(event.rank==canonical_local_loan_create_rank()){
+            append_status=canonical_mir_append_local_loan_effect(
+                output,"create",event.instruction_id,event.reference_binding_id,event.origin_binding_id,statement
+            );
+        }else{if(event.rank==canonical_local_loan_use_rank()){
+            append_status=canonical_mir_append_local_loan_effect(
+                output,"use",event.instruction_id,event.reference_binding_id,event.origin_binding_id,statement
+            );
+        }else{if(event.rank==canonical_local_loan_end_rank()){
+            append_status=canonical_mir_append_local_loan_effect(
+                output,"end",event.instruction_id,event.reference_binding_id,event.origin_binding_id,statement
+            );
+        }else{return canonical_mir_local_loan_unsupported_status();}}}
+        if(append_status!=0){return append_status;}
+        previous=event;emitted=checked_add(emitted,1);
+    }
+    buffer_push(output,93);
+    drop(events);
     return 0;
 }
 
@@ -10376,9 +10596,16 @@ requires_caps [allocate]
     }
     canonical_mir_append_text(output,",\"entry_block\":0");
     if(local_borrows!=0){
-        let loan_status:i32=canonical_mir_append_one_reference_loan_effects(
-            records,sources,statements,origins,uses,ends,output
-        );
+        var loan_status:i32=0;
+        if(vec_len<SourceLocalLoanOrigin>(origins)==1){
+            loan_status=canonical_mir_append_one_reference_loan_effects(
+                records,sources,statements,origins,uses,ends,output
+            );
+        }else{
+            loan_status=canonical_mir_append_multi_reference_loan_effects(
+                records,sources,statements,origins,uses,ends,output
+            );
+        }
         if(loan_status!=0){return loan_status;}
     }
     if(destructor_type_code==0){
