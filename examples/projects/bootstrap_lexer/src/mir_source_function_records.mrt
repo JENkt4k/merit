@@ -552,8 +552,8 @@ pub fn source_local_loan_explicit_conflict_status()->i32{return 2;}
 fn sfr_local_span_mentions_binding(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow starts:Vec<i64>,borrow lengths:Vec<i64>,
-    start:i64,length:i64,binding_id:i64
-)->i32 {
+    start:i64,length:i64,binding_id:i64,borrow_mut matched_span:Vec<i64>
+)->i32 requires_caps [allocate] {
     let end:i64=checked_add(start,length);
     var token_index:i64=0;
     while(token_index<vec_len<Token>(tokens)){
@@ -562,6 +562,8 @@ fn sfr_local_span_mentions_binding(
             if(token_start(token)<end){
                 if(token_kind(token)==token_identifier_kind()){
                     if(hir_find_scoped_binding_id(source,tokens,starts,lengths,token_start(token),token_length(token))==binding_id){
+                        vec_push<i64>(matched_span,token_start(token));
+                        vec_push<i64>(matched_span,token_length(token));
                         return 1;
                     }
                 }
@@ -575,14 +577,14 @@ fn sfr_local_span_mentions_binding(
 // This pass proves only explicit owner writes, drops, replacements, and
 // transfers through owned binding initializers. Calls and escapes require
 // separate effect proof before the production driver may enable RM1.
-pub fn check_source_local_loan_explicit_owner_effects(
+pub fn check_source_local_loan_explicit_owner_effects_detailed(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
     borrow parameters:Vec<SourceFunctionParameter>,
     parameter_start:i64,parameter_count:i64,
     borrow ownership:Vec<MirOwnershipBinding>,
     borrow origins:Vec<SourceLocalLoanOrigin>,borrow ends:Vec<SourceLocalLoanEnd>,
-    allocator:Allocator
+    allocator:Allocator,borrow_mut conflict_span:Vec<i64>
 )->i32 requires_caps [allocate] {
     if(parameter_start<0){return source_local_loan_explicit_invalid_catalog_status();}
     if(parameter_count<0){return source_local_loan_explicit_invalid_catalog_status();}
@@ -665,10 +667,26 @@ pub fn check_source_local_loan_explicit_owner_effects(
                     if(expression_index<0){status=source_local_loan_explicit_invalid_catalog_status();}
                     else{
                         let expression:StatementOperand=vec_get<StatementOperand>(operands,expression_index);
+                        var matched_span:Vec<i64>=vec_new<i64>(allocator,2);
                         if(sfr_local_span_mentions_binding(
                             source,tokens,starts,lengths,statement_operand_start(expression),
-                            statement_operand_length(expression),owner_id
-                        )!=0){status=source_local_loan_explicit_conflict_status();}
+                            statement_operand_length(expression),owner_id,matched_span
+                        )!=0){
+                            status=source_local_loan_explicit_conflict_status();
+                            if(vec_len<i64>(conflict_span)==0){
+                                if(kind==statement_record_drop_kind()){
+                                    vec_push<i64>(conflict_span,statement_record_start(statement));
+                                    vec_push<i64>(conflict_span,statement_record_length(statement));
+                                }else{
+                                    vec_push<i64>(conflict_span,vec_get<i64>(matched_span,0));
+                                    vec_push<i64>(conflict_span,vec_get<i64>(matched_span,1));
+                                }
+                                let creation:StatementRecord=vec_get<StatementRecord>(statements,source_local_loan_declaration_statement(loan));
+                                vec_push<i64>(conflict_span,statement_record_start(creation));
+                                vec_push<i64>(conflict_span,statement_record_length(creation));
+                            }
+                        }
+                        drop(matched_span);
                     }
                 }
             }
@@ -678,6 +696,23 @@ pub fn check_source_local_loan_explicit_owner_effects(
     }
     drop(lengths);drop(starts);
     return status;
+}
+
+pub fn check_source_local_loan_explicit_owner_effects(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
+    borrow parameters:Vec<SourceFunctionParameter>,
+    parameter_start:i64,parameter_count:i64,
+    borrow ownership:Vec<MirOwnershipBinding>,
+    borrow origins:Vec<SourceLocalLoanOrigin>,borrow ends:Vec<SourceLocalLoanEnd>,
+    allocator:Allocator
+)->i32 requires_caps [allocate] {
+    var conflict_span:Vec<i64>=vec_new<i64>(allocator,4);
+    let status:i32=check_source_local_loan_explicit_owner_effects_detailed(
+        source,tokens,statements,operands,parameters,parameter_start,parameter_count,
+        ownership,origins,ends,allocator,conflict_span
+    );
+    drop(conflict_span);return status;
 }
 
 pub fn source_local_loan_reference_use_invalid_catalog_status()->i32{return 1;}
@@ -748,14 +783,33 @@ fn sfr_local_proven_borrow_call(
 
 // Fail closed for every unproven call/escape while a source loan is live.
 // The production driver still requires canonical v2/v5 emission before use.
-pub fn check_source_local_loan_reference_uses(
+fn sfr_record_local_loan_escape_span(
+    borrow tokens:Vec<Token>,borrow use:SourceLocalLoanUse,borrow_mut escape_span:Vec<i64>
+)->i32 requires_caps [allocate] {
+    var index:i64=0;
+    while(index<vec_len<Token>(tokens)){
+        let token:Token=vec_get<Token>(tokens,index);
+        if(token_start(token)==source_local_loan_use_start(use)){
+            if(vec_len<i64>(escape_span)==0){
+                vec_push<i64>(escape_span,token_start(token));
+                vec_push<i64>(escape_span,token_length(token));
+            }
+            return 0;
+        }
+        index=checked_add(index,1);
+    }
+    return source_local_loan_reference_use_invalid_catalog_status();
+}
+
+pub fn check_source_local_loan_reference_uses_detailed(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
     borrow origins:Vec<SourceLocalLoanOrigin>,borrow uses:Vec<SourceLocalLoanUse>,
     borrow ends:Vec<SourceLocalLoanEnd>,
     borrow signatures:Vec<SourceFunctionSignature>,
-    borrow parameters:Vec<SourceFunctionParameter>
-)->i32 {
+    borrow parameters:Vec<SourceFunctionParameter>,
+    borrow_mut escape_span:Vec<i64>
+)->i32 requires_caps [allocate] {
     if(vec_len<SourceLocalLoanOrigin>(origins)!=vec_len<SourceLocalLoanEnd>(ends)){
         return source_local_loan_reference_use_invalid_catalog_status();
     }
@@ -806,10 +860,25 @@ pub fn check_source_local_loan_reference_uses(
         while(use_index<vec_len<SourceLocalLoanUse>(uses)){
             let use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,use_index);
             if(source_local_loan_use_statement(use)==statement_index){
-                if(kind==statement_record_return_kind()){return source_local_loan_reference_use_escape_status();}
+                if(kind==statement_record_return_kind()){
+                    if(sfr_record_local_loan_escape_span(tokens,use,escape_span)!=0){
+                        return source_local_loan_reference_use_invalid_catalog_status();
+                    }
+                    return source_local_loan_reference_use_escape_status();
+                }
                 if(kind==statement_record_drop_kind()){return source_local_loan_reference_use_unsupported_status();}
-                if(kind==statement_record_let_kind()){return source_local_loan_reference_use_escape_status();}
-                if(kind==statement_record_var_kind()){return source_local_loan_reference_use_escape_status();}
+                if(kind==statement_record_let_kind()){
+                    if(sfr_record_local_loan_escape_span(tokens,use,escape_span)!=0){
+                        return source_local_loan_reference_use_invalid_catalog_status();
+                    }
+                    return source_local_loan_reference_use_escape_status();
+                }
+                if(kind==statement_record_var_kind()){
+                    if(sfr_record_local_loan_escape_span(tokens,use,escape_span)!=0){
+                        return source_local_loan_reference_use_invalid_catalog_status();
+                    }
+                    return source_local_loan_reference_use_escape_status();
+                }
                 if(kind==statement_record_assign_kind()){return source_local_loan_reference_use_unsupported_status();}
                 if(kind==statement_record_replace_kind()){return source_local_loan_reference_use_unsupported_status();}
                 if(kind==statement_record_expression_kind()){
@@ -851,6 +920,22 @@ pub fn check_source_local_loan_reference_uses(
     return 0;
 }
 
+pub fn check_source_local_loan_reference_uses(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
+    borrow origins:Vec<SourceLocalLoanOrigin>,borrow uses:Vec<SourceLocalLoanUse>,
+    borrow ends:Vec<SourceLocalLoanEnd>,
+    borrow signatures:Vec<SourceFunctionSignature>,
+    borrow parameters:Vec<SourceFunctionParameter>
+)->i32 requires_caps [allocate] {
+    let allocator:Allocator=system_allocator();
+    var escape_span:Vec<i64>=vec_new<i64>(allocator,2);
+    let status:i32=check_source_local_loan_reference_uses_detailed(
+        source,tokens,statements,operands,origins,uses,ends,signatures,parameters,escape_span
+    );
+    drop(escape_span);return status;
+}
+
 // A single fail-closed proof entrypoint for one parsed source function. The
 // caller owns the output catalogs and may only consume them when stage is 0.
 // Native v5 emission and the production-driver cutover remain separate.
@@ -867,8 +952,13 @@ pub fn source_local_loan_proof_end_stage()->i32{return 3;}
 pub fn source_local_loan_proof_owner_stage()->i32{return 4;}
 pub fn source_local_loan_proof_reference_stage()->i32{return 5;}
 pub fn source_local_loan_proof_missing_stage()->i32{return 6;}
+pub fn source_local_loan_diagnostic_conflict_code()->i64{return 5402;}
+pub fn source_local_loan_diagnostic_escape_code()->i64{return 5404;}
+pub fn source_local_loan_diagnostic_conflict_kind()->i64{return 1;}
+pub fn source_local_loan_diagnostic_return_escape_kind()->i64{return 2;}
+pub fn source_local_loan_diagnostic_aggregate_escape_kind()->i64{return 3;}
 
-pub fn prove_source_local_loans(
+pub fn prove_source_local_loans_detailed(
     borrow source:Buffer,borrow tokens:Vec<Token>,
     borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
     borrow parameters:Vec<SourceFunctionParameter>,
@@ -877,7 +967,8 @@ pub fn prove_source_local_loans(
     borrow ownership:Vec<MirOwnershipBinding>,allocator:Allocator,
     borrow_mut origins:Vec<SourceLocalLoanOrigin>,
     borrow_mut uses:Vec<SourceLocalLoanUse>,
-    borrow_mut ends:Vec<SourceLocalLoanEnd>
+    borrow_mut ends:Vec<SourceLocalLoanEnd>,
+    borrow_mut diagnostic:Vec<i64>
 )->SourceLocalLoanProof requires_caps [allocate] {
     let origin_status:i32=derive_source_local_loan_origins(
         source,tokens,statements,operands,parameters,parameter_start,parameter_count,allocator,origins
@@ -892,18 +983,102 @@ pub fn prove_source_local_loans(
     if(use_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_use_stage(),detail:use_status};}
     let end_status:i32=derive_source_local_loan_ends(origins,uses,ends);
     if(end_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_end_stage(),detail:end_status};}
-    let owner_status:i32=check_source_local_loan_explicit_owner_effects(
+    var conflict_span:Vec<i64>=vec_new<i64>(allocator,4);
+    let owner_status:i32=check_source_local_loan_explicit_owner_effects_detailed(
         source,tokens,statements,operands,parameters,parameter_start,parameter_count,
-        ownership,origins,ends,allocator
+        ownership,origins,ends,allocator,conflict_span
     );
+    if(owner_status!=0){
+        if(owner_status==source_local_loan_explicit_conflict_status()){
+            if(vec_len<i64>(conflict_span)==4){
+                vec_push<i64>(diagnostic,source_local_loan_diagnostic_conflict_code());
+                vec_push<i64>(diagnostic,source_local_loan_diagnostic_conflict_kind());
+                var span_index:i64=0;
+                while(span_index<4){
+                    vec_push<i64>(diagnostic,vec_get<i64>(conflict_span,span_index));
+                    span_index=checked_add(span_index,1);
+                }
+            }
+        }
+    }
+    drop(conflict_span);
     if(owner_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_owner_stage(),detail:owner_status};}
-    let reference_status:i32=check_source_local_loan_reference_uses(
-        source,tokens,statements,operands,origins,uses,ends,signatures,parameters
+    var escape_span:Vec<i64>=vec_new<i64>(allocator,2);
+    let reference_status:i32=check_source_local_loan_reference_uses_detailed(
+        source,tokens,statements,operands,origins,uses,ends,signatures,parameters,escape_span
     );
     if(reference_status!=0){
-        return SourceLocalLoanProof{stage:source_local_loan_proof_reference_stage(),detail:reference_status};
+        if(reference_status==source_local_loan_reference_use_escape_status()){
+            if(vec_len<i64>(escape_span)==2){
+                var escape_kind:i64=0;
+                var statement_index:i64=0;
+                while(statement_index<vec_len<StatementRecord>(statements)){
+                    let statement:StatementRecord=vec_get<StatementRecord>(statements,statement_index);
+                    if(vec_get<i64>(escape_span,0)>=statement_record_start(statement)){
+                        if(vec_get<i64>(escape_span,0)<checked_add(statement_record_start(statement),statement_record_length(statement))){
+                            if(statement_record_kind(statement)==statement_record_return_kind()){
+                                escape_kind=source_local_loan_diagnostic_return_escape_kind();
+                            }else{
+                                var binding_kind:i32=0;
+                                if(statement_record_kind(statement)==statement_record_let_kind()){binding_kind=1;}
+                                if(statement_record_kind(statement)==statement_record_var_kind()){binding_kind=1;}
+                                if(binding_kind!=0){
+                                    let expression_index:i64=sfr_operand(statement,operands,statement_operand_expression_kind());
+                                    if(expression_index>=0){
+                                        let expression:StatementOperand=vec_get<StatementOperand>(operands,expression_index);
+                                        var token_index:i64=0;
+                                        while(token_index<vec_len<Token>(tokens)){
+                                            let token:Token=vec_get<Token>(tokens,token_index);
+                                            if(token_start(token)>=statement_operand_start(expression)){
+                                                if(token_start(token)<vec_get<i64>(escape_span,0)){
+                                                    if(token_kind(token)==token_punctuation_kind()){
+                                                        if(buffer_get(source,token_start(token))==token_open_brace_byte()){
+                                                            escape_kind=source_local_loan_diagnostic_aggregate_escape_kind();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            token_index=checked_add(token_index,1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    statement_index=checked_add(statement_index,1);
+                }
+                if(escape_kind!=0){
+                    vec_push<i64>(diagnostic,source_local_loan_diagnostic_escape_code());
+                    vec_push<i64>(diagnostic,escape_kind);
+                    vec_push<i64>(diagnostic,vec_get<i64>(escape_span,0));
+                    vec_push<i64>(diagnostic,vec_get<i64>(escape_span,1));
+                    vec_push<i64>(diagnostic,-1);vec_push<i64>(diagnostic,0);
+                }
+            }
+        }
     }
+    drop(escape_span);
+    if(reference_status!=0){return SourceLocalLoanProof{stage:source_local_loan_proof_reference_stage(),detail:reference_status};}
     return SourceLocalLoanProof{stage:source_local_loan_proof_success_stage(),detail:0};
+}
+
+pub fn prove_source_local_loans(
+    borrow source:Buffer,borrow tokens:Vec<Token>,
+    borrow statements:Vec<StatementRecord>,borrow operands:Vec<StatementOperand>,
+    borrow parameters:Vec<SourceFunctionParameter>,
+    parameter_start:i64,parameter_count:i64,
+    borrow signatures:Vec<SourceFunctionSignature>,
+    borrow ownership:Vec<MirOwnershipBinding>,allocator:Allocator,
+    borrow_mut origins:Vec<SourceLocalLoanOrigin>,
+    borrow_mut uses:Vec<SourceLocalLoanUse>,
+    borrow_mut ends:Vec<SourceLocalLoanEnd>
+)->SourceLocalLoanProof requires_caps [allocate] {
+    var diagnostic:Vec<i64>=vec_new<i64>(allocator,6);
+    let proof:SourceLocalLoanProof=prove_source_local_loans_detailed(
+        source,tokens,statements,operands,parameters,parameter_start,parameter_count,
+        signatures,ownership,allocator,origins,uses,ends,diagnostic
+    );
+    drop(diagnostic);return proof;
 }
 
 fn sfr_byte(borrow source: Buffer, borrow token: Token, offset: i64) -> i64 {

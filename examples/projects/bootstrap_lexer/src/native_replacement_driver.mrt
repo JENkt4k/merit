@@ -56,6 +56,8 @@ pub fn native_driver_backend_header_failure_status(status:i32)->i32{return check
 pub fn native_driver_backend_catalog_failure_status(status:i32)->i32{return checked_add(4700,status);}
 pub fn native_driver_destructor_catalog_failure_status(status:i32)->i32{return checked_add(4800,status);}
 pub fn native_driver_destructor_backend_failure_status(status:i32)->i32{return checked_add(4900,status);}
+pub fn native_driver_local_loan_diagnostic_magic()->i64{return 1296843847;}
+pub fn native_driver_local_loan_diagnostic_version()->i64{return 1;}
 
 // Apply the same semantic proof to every local-borrow function, including
 // functions after the first project function. Catalog derivation remains a
@@ -100,17 +102,28 @@ fn native_driver_prove_function_local_loans(
         }
         if(parameter_start<0){status=native_driver_unproven_local_loan_status();}
         else{
-            let proof:SourceLocalLoanProof=prove_source_local_loans(
+            var diagnostic:Vec<i64>=vec_new<i64>(allocator,6);
+            let proof:SourceLocalLoanProof=prove_source_local_loans_detailed(
                 source,function_tokens,statements,operands,parameters,
                 parameter_start,parameter_count,signatures,loan_ownership,
-                allocator,origins,uses,ends
+                allocator,origins,uses,ends,diagnostic
             );
             if(source_local_loan_proof_stage(proof)!=source_local_loan_proof_success_stage()){
                 status=native_driver_unproven_local_loan_status();
+                if(vec_len<i64>(diagnostic)==6){
+                    print(native_driver_local_loan_diagnostic_magic());
+                    print(native_driver_local_loan_diagnostic_version());
+                    var diagnostic_index:i64=0;
+                    while(diagnostic_index<6){
+                        print(vec_get<i64>(diagnostic,diagnostic_index));
+                        diagnostic_index=checked_add(diagnostic_index,1);
+                    }
+                }
             }
             if(vec_len<SourceLocalLoanOrigin>(origins)==0){
                 status=native_driver_unproven_local_loan_status();
             }
+            drop(diagnostic);
         }
     }
     drop(loan_ownership);drop(loan_types);

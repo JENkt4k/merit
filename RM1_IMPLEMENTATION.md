@@ -347,7 +347,7 @@ decode, generated C compilation, execution, and interpreter comparison.
 | Accept 07 | v5 decode, C build, and execution pass | Python/native loan-effect identities match. |
 | Accept 09 | v5 decode, C build, and execution pass | Explicit logical String drop matches Python MIR effect sequence. |
 | Accept 24 | v5 decode, C build, and execution pass with the helper before `main` | Compare canonical effects and diagnostics across stages. |
-| Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with status 907 | Stable M54xx identity, span, and note transport. |
+| Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with native M54xx diagnostic packet | Public interface identity, primary span, and note match the Python oracle. |
 
 Case 07 now includes local-reference binding identity in semantic binding-order
 validation, maps the field load to the proved loan use, and emits construction
@@ -365,8 +365,23 @@ validity and emits the oracle's `ownership:none` record; implicit cleanup
 remains an owned effect. Generated C emits no physical String destructor.
 Required accepted public native cases are now 7/7. The focused v5 and legacy
 v4 tests passed together (2 tests, 75 seconds); the native loan-origin
-catalog test also passed (1 test, 94 seconds). Diagnostic parity for the six
-rejected cases, fresh stages, and broad gates remain open.
+catalog test also passed (1 test, 94 seconds). Fresh stages and broad gates
+remain open.
+
+The composed native proof now records the first conflicting owner operation
+or escaping local-reference expression at the same source site it rejects.
+On these two proved failure classes, the native driver emits a versioned
+diagnostic packet after the v5 header and returns status 907; it never emits
+project artifacts. The public host only decodes that native decision and
+maps byte spans through the already transported project-source units. Its
+M5402/M5404 identity, primary span, and creation note match the Python oracle
+for all six required rejected cases. Unknown or malformed packets remain
+generic failures. A focused two-unit UTF-8 span test covers unit attribution
+and malformed framing. An unsupported nonaggregate value transfer remains
+status 907 without an inaccurate escape diagnostic packet. The public v5
+integration test passed (2 tests, approximately 26 seconds), as did the legacy
+v4 public artifact test (1 test,
+54 seconds) and native loan-origin proof regression (1 test, 94 seconds).
 
 The same borrowed-call body works with its helper before or after `main`.
 The production driver now applies the existing native loan proof once per
