@@ -9890,6 +9890,9 @@ fn canonical_mir_append_one_reference_loan_effects(
             if(kind==function_mir_kind_print()){
                 if(function_mir_left(record)==reference_local){uses_reference=1;}
             }
+            if(kind==function_mir_kind_struct_field_load()){
+                if(function_mir_left(record)==reference_local){uses_reference=1;}
+            }
             if(kind==function_mir_kind_call()){
                 var argument_index:i64=1;
                 while(argument_index<vec_len<MirFunctionRecord>(records)){
@@ -9903,9 +9906,11 @@ fn canonical_mir_append_one_reference_loan_effects(
                 }
             }
             if(uses_reference!=0){
-                if(function_mir_start(record)==statement_record_start(use_statement)){
+                if(function_mir_start(record)>=statement_record_start(use_statement)){
+                    if(function_mir_start(record)<checked_add(statement_record_start(use_statement),statement_record_length(use_statement))){
                     use_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
                     use_matches=checked_add(use_matches,1);
+                    }
                 }
             }
             record_index=checked_add(record_index,1);
@@ -10017,6 +10022,9 @@ fn canonical_mir_append_multi_reference_loan_effects(
                     if(function_mir_kind(record)==function_mir_kind_print()){
                         if(function_mir_left(record)==reference_local){reads_reference=1;}
                     }
+                    if(function_mir_kind(record)==function_mir_kind_struct_field_load()){
+                        if(function_mir_left(record)==reference_local){reads_reference=1;}
+                    }
                     if(function_mir_kind(record)==function_mir_kind_call()){
                         var argument_index:i64=1;
                         while(argument_index<vec_len<MirFunctionRecord>(records)){
@@ -10030,9 +10038,11 @@ fn canonical_mir_append_multi_reference_loan_effects(
                         }
                     }
                     if(reads_reference!=0){
-                        if(function_mir_start(record)==statement_record_start(use_statement)){
+                        if(function_mir_start(record)>=statement_record_start(use_statement)){
+                            if(function_mir_start(record)<checked_add(statement_record_start(use_statement),statement_record_length(use_statement))){
                             use_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
                             matches=checked_add(matches,1);
+                            }
                         }
                     }
                     record_index=checked_add(record_index,1);
@@ -10458,10 +10468,38 @@ requires_caps [allocate]
                                 if(function_mir_left(instruction)<0){return 47;}
                                 if(function_mir_kind(instruction)==function_mir_kind_copy_to_binding()){
                                     if(function_mir_result(instruction)<0){return 47;}
-                                    canonical_mir_append_text(output,",\"kind\":\"copy\",\"numeric_policy\":\"none\",\"operands\":[");
+                                    var owned_destination:i32=0;
+                                    if(local_borrows!=0){
+                                        var binding_scan:i64=0;
+                                        while(binding_scan<vec_len<MirOwnershipBinding>(ownership_bindings)){
+                                            let binding:MirOwnershipBinding=vec_get<MirOwnershipBinding>(ownership_bindings,binding_scan);
+                                            if(ownership_binding_local_id(binding)==function_mir_result(instruction)){
+                                                owned_destination=ownership_binding_owned(binding);
+                                            }
+                                            binding_scan=checked_add(binding_scan,1);
+                                        }
+                                    }
+                                    if(owned_destination!=0){
+                                        var temporary_source:i32=0;var source_scan:i64=1;
+                                        while(source_scan<body_record_end){
+                                            let source_local:MirFunctionRecord=vec_get<MirFunctionRecord>(records,source_scan);
+                                            if(function_mir_kind(source_local)==function_mir_kind_temporary_local()){
+                                                if(function_mir_id(source_local)==function_mir_left(instruction)){
+                                                    temporary_source=1;
+                                                }
+                                            }
+                                            source_scan=checked_add(source_scan,1);
+                                        }
+                                        if(temporary_source==0){return canonical_mir_local_loan_unsupported_status();}
+                                        canonical_mir_append_text(output,",\"kind\":\"move\",\"numeric_policy\":\"none\",\"operands\":[");
+                                    }else{
+                                        canonical_mir_append_text(output,",\"kind\":\"copy\",\"numeric_policy\":\"none\",\"operands\":[");
+                                    }
                                     canonical_mir_append_i64(output,function_mir_left(instruction));
-                                    if(local_borrows!=0){canonical_mir_append_text(output,"],\"ownership\":\"value\",\"result\":");}
+                                    if(owned_destination!=0){canonical_mir_append_text(output,"],\"ownership\":\"owned\",\"result\":");}
+                                    else{if(local_borrows!=0){canonical_mir_append_text(output,"],\"ownership\":\"value\",\"result\":");}
                                     else{canonical_mir_append_text(output,"],\"ownership\":\"none\",\"result\":");}
+                                    }
                                     canonical_mir_append_i64(output,function_mir_result(instruction));
                                 }else{
                                     if(function_mir_result(instruction)>=0){return 47;}

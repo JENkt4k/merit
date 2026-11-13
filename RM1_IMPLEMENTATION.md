@@ -344,10 +344,17 @@ decode, generated C compilation, execution, and interpreter comparison.
 | --- | --- | --- |
 | Accept 01, 04, 18 | v5 decode, C build, and execution pass | Preserve old artifact bytes. |
 | Accept 02 | v5 decode, C build, and execution pass | Python/native instruction and loan-effect identities match. |
-| Accept 07 | Native C function emission rejects aggregate reference | Aggregate field access and ownership transfer after final use. |
-| Accept 09 | Backend catalog rejects explicit owner drop | Exact owner cleanup and drop emission. |
+| Accept 07 | v5 decode, C build, and execution pass | Python/native loan-effect identities match. |
+| Accept 09 | Native ownership flow rejects explicit `drop(String)` with nested status 33 | Preserve the reference owner's authority and exact drop semantics without changing Alpha.2 `String` handling. |
 | Accept 24 | v5 decode, C build, and execution pass with the helper before `main` | Compare canonical effects and diagnostics across stages. |
 | Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with status 907 | Stable M54xx identity, span, and note transport. |
+
+Case 07 now includes local-reference binding identity in semantic binding-order
+validation, maps the field load to the proved loan use, and emits construction
+into the owned aggregate local as a MIR move. Its public v5 transport passed
+strict decoding; generated C compiled and matched interpreter output. Native
+and Python loan-effect identities matched. The focused v5 and legacy v4 tests
+passed together (2 tests, 78 seconds). No legacy serialization branch changed.
 
 The same borrowed-call body works with its helper before or after `main`.
 The production driver now applies the existing native loan proof once per

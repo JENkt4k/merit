@@ -124,13 +124,14 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         "02": 'let x:String="a"; let r: borrow String=borrow x; let s: borrow String=borrow x; print(r); print(s);',
         "three_shared": 'let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; let c: borrow i32=borrow x; print(a); print(b); print(c);',
         "04": 'var x:i32=1; let r: borrow i32=borrow x; print(r); x=2;',
+        "07": 'let x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value); let y:Box=x; print(y.value);',
         "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
         "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
         "24": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
         "later_function": 'let x:i32=1; let r: borrow i32=borrow x; print(r);',
     }
     for case, body in matrix.items():
-        declarations = 'capability io;\n' if case == "18" else ""
+        declarations = 'capability io;\n' if case == "18" else ('struct Box { value:i32; }\n' if case == "07" else "")
         leading_functions = ('fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "24"
                              else ('fn helper()->i32 { return 1; }\n' if case == "later_function" else ""))
         trailing_functions = 'fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "borrowed_call" else ""
@@ -147,7 +148,7 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         assert case_transport.version == 5
         case_mir = parse_mir(json.loads(case_transport.canonical_mir_bytes))
         assert case_mir.schema == "bootstrap-mir-v2"
-        if case == "02":
+        if case in {"02", "07"}:
             reference_case_mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(
                 (project / "src/main.mrt").read_text(encoding="utf-8")
             ))
