@@ -125,12 +125,16 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         "04": 'var x:i32=1; let r: borrow i32=borrow x; print(r); x=2;',
         "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
         "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
+        "24": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
+        "later_function": 'let x:i32=1; let r: borrow i32=borrow x; print(r);',
     }
     for case, body in matrix.items():
         declarations = 'capability io;\n' if case == "18" else ""
+        leading_functions = ('fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "24"
+                             else ('fn helper()->i32 { return 1; }\n' if case == "later_function" else ""))
         trailing_functions = 'fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "borrowed_call" else ""
         (project / "src/main.mrt").write_text(
-            f'module probe\n{declarations}fn main()->i32 {{ {body} return 0; }}\n{trailing_functions}',
+            f'module probe\n{declarations}{leading_functions}fn main()->i32 {{ {body} return 0; }}\n{trailing_functions}',
             encoding="utf-8", newline="\n",
         )
         case_request = encode_loaded_project_request(load_project(project / "Merit.toml"))
@@ -150,3 +154,14 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         observed = subprocess.run([str(case_program)], check=True, capture_output=True,
                                   env=env).stdout.decode().replace("\r\n", "\n")
         assert observed == interpret(load_project(project / "Merit.toml"))
+    (project / "src/main.mrt").write_text(
+        'module probe\nfn helper()->i32 { return 1; }\n'
+        'fn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; '
+        'x=2; print(r); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    invalid_request = encode_loaded_project_request(load_project(project / "Merit.toml"))
+    invalid = subprocess.run([str(executable)], input=invalid_request, capture_output=True)
+    assert invalid.returncode != 0
+    assert b"replacement driver status 907" in invalid.stderr
+    assert b"1297236550" not in invalid.stdout.splitlines()[3:]

@@ -346,13 +346,16 @@ decode, generated C compilation, execution, and interpreter comparison.
 | Accept 02 | One-reference MIR loan writer fails closed | Ordered effects for multiple shared loans. |
 | Accept 07 | Native C function emission rejects aggregate reference | Aggregate field access and ownership transfer after final use. |
 | Accept 09 | Backend catalog rejects explicit owner drop | Exact owner cleanup and drop emission. |
-| Accept 24 | Loan-origin catalog is empty when a helper precedes `main` | Multi-function source-proof/driver lifetime; then borrowed-call parity. |
+| Accept 24 | v5 decode, C build, and execution pass with the helper before `main` | Compare canonical effects and diagnostics across stages. |
 | Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with status 907 | Stable M54xx identity, span, and note transport. |
 
-The same borrowed-call body with its helper *after* `main` now emits a native
-v5 bundle whose C compiles and runs with interpreter-equivalent output. This
-is a diagnostic probe, not acceptance of required case 24: a preceding
-unrelated helper also reproduces the missing-origin failure. Native C now
+The same borrowed-call body works with its helper before or after `main`.
+The production driver now applies the existing native loan proof once per
+local-borrow function after project-wide catalog derivation. Previously the
+proof lived inside the first-function-only catalog block, so later functions
+could reach MIR emission without loan records. A preceding unrelated helper
+also reproduced this issue. A later-function conflicting owner write is now
+rejected before artifact publication. Native C now
 handles a stored `String` reference in `print` and a non-retaining borrowed
 `i32` call/return, while preserving borrowed-return functions and old value
 emission. The focused v5 and legacy v4 project tests passed together (2 tests,
