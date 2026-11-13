@@ -86,6 +86,18 @@ fn som_binding_kind(kind: i32) -> i32 {
     return 0;
 }
 
+fn som_string_type_spelling(borrow source:Buffer,start:i64,length:i64)->i32 {
+    // Canonical source-encoding boundary for the built-in String spelling.
+    if(length!=6){return 0;}
+    if(buffer_get(source,start)!=83){return 0;}
+    if(buffer_get(source,checked_add(start,1))!=116){return 0;}
+    if(buffer_get(source,checked_add(start,2))!=114){return 0;}
+    if(buffer_get(source,checked_add(start,3))!=105){return 0;}
+    if(buffer_get(source,checked_add(start,4))!=110){return 0;}
+    if(buffer_get(source,checked_add(start,5))!=103){return 0;}
+    return 1;
+}
+
 // Returns zero and emits dense binding/local identities matching the source
 // body-record contract. Errors: 1 invalid type catalog, 2 missing binding,
 // 3 missing declared type, 4 unresolved declared type.
@@ -108,6 +120,15 @@ requires_caps [allocate]
         type_index = checked_add(type_index, 1);
     }
 
+    var local_borrow_function:i32=0;
+    var borrow_scan:i64=0;
+    while(borrow_scan<vec_len<StatementRecord>(statements)){
+        let candidate:StatementRecord=vec_get<StatementRecord>(statements,borrow_scan);
+        if(som_operand(candidate,operands,statement_operand_local_borrow_mode_kind())>=0){
+            local_borrow_function=1;
+        }
+        borrow_scan=checked_add(borrow_scan,1);
+    }
     var next_binding: i64 = vec_len<MirOwnershipBinding>(output);
     var statement_index: i64 = 0;
     while (statement_index < vec_len<StatementRecord>(statements)) {
@@ -128,6 +149,13 @@ requires_caps [allocate]
             var mutable: i32 = 0;
             if (kind == statement_record_var_kind()) { mutable = 1; }
             var owned:i32=type_entry.owned;
+            if(local_borrow_function!=0){
+                // V2 records validity and drop authority for a String local;
+                // its physical bytes remain a Copy value with no destructor.
+                if(som_string_type_spelling(source,statement_operand_start(declared_type),statement_operand_length(declared_type))!=0){
+                    owned=1;
+                }
+            }
             if (som_operand(statement,operands,statement_operand_local_borrow_mode_kind())>=0) {
                 // RM1 reference identity carries read authority, never cleanup authority.
                 owned=0;

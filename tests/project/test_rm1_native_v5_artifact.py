@@ -125,6 +125,7 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         "three_shared": 'let x:i32=1; let a: borrow i32=borrow x; let b: borrow i32=borrow x; let c: borrow i32=borrow x; print(a); print(b); print(c);',
         "04": 'var x:i32=1; let r: borrow i32=borrow x; print(r); x=2;',
         "07": 'let x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value); let y:Box=x; print(y.value);',
+        "09": 'let x:String="a"; let r: borrow String=borrow x; print(r); drop(x);',
         "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
         "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
         "24": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
@@ -148,7 +149,7 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         assert case_transport.version == 5
         case_mir = parse_mir(json.loads(case_transport.canonical_mir_bytes))
         assert case_mir.schema == "bootstrap-mir-v2"
-        if case in {"02", "07"}:
+        if case in {"01", "02", "07", "09"}:
             reference_case_mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(
                 (project / "src/main.mrt").read_text(encoding="utf-8")
             ))
@@ -161,6 +162,25 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
                 (effect.instruction_id, effect.kind, effect.reference_binding_id, effect.origin_binding_id)
                 for effect in reference_effects
             ]
+            if case in {"01", "09"}:
+                assert [
+                    (local.name, local.ownership)
+                    for local in case_mir.functions[0].locals
+                    if local.source_binding_id is not None
+                ] == [
+                    (local.name, local.ownership)
+                    for local in reference_case_mir.functions[0].locals
+                    if local.source_binding_id is not None
+                ]
+                assert [
+                    (instruction.kind, instruction.ownership)
+                    for block in case_mir.functions[0].blocks
+                    for instruction in block.instructions
+                ] == [
+                    (instruction.kind, instruction.ownership)
+                    for block in reference_case_mir.functions[0].blocks
+                    for instruction in block.instructions
+                ]
         case_c = tmp_path / f"case-{case}.c"
         case_c.write_bytes(case_transport.c_source_bytes)
         case_program = tmp_path / f"case-{case}.exe"

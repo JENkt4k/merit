@@ -2507,6 +2507,23 @@ requires_caps [allocate]
     let operand_local:i64=ownership_record_operand_local(effect);
     if(operand_local<0){return canonical_c_resource_invalid_operand_status();}
     let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
+    if(resource_type==function_mir_string_type_code()){
+        // A String handle carries logical move/drop state in v2, but has no
+        // physical destructor. Alpha.2 cannot produce a String resource row.
+        if(is_move!=0){
+            if(result_local<0){return canonical_c_resource_invalid_result_status();}
+            if(canonical_c_scalar_local_type(records,result_local)!=resource_type){
+                return canonical_c_resource_invalid_result_status();
+            }
+            canonical_mir_append_text(output,"    m");canonical_mir_append_i64(output,result_local);
+            canonical_mir_append_text(output," = m");canonical_mir_append_i64(output,operand_local);
+            canonical_mir_append_text(output,";\n");
+        }else{
+            if(result_local>=0){return canonical_c_resource_invalid_result_status();}
+            canonical_mir_append_text(output,"    /* String drop has no physical destructor. */\n");
+        }
+        return 0;
+    }
     let trivial_aggregate_fields:i32=canonical_c_trivial_integer_aggregate_field_count(resource_type,descriptors);
     let destructor_aggregate_fields:i32=canonical_c_destructor_scalar_aggregate_field_count(resource_type,descriptors);
     var recursive_aggregate:i32=0;
@@ -10560,8 +10577,18 @@ requires_caps [allocate]
                                 ownership_local_index=checked_add(ownership_local_index,1);
                             }
                             if(ownership_local_matches!=1){return 46;}
-                            let ownership_status:i32=materialize_canonical_ownership_instruction(
-                                ownership_value,global_id,assembly_source_result(source_record),output
+                            var explicit_string_drop:i32=0;
+                            if(local_borrows!=0){
+                                if(ownership_record_kind(ownership_value)==ownership_record_kind_drop()){
+                                    if(ownership_record_implicit(ownership_value)==0){
+                                        if(canonical_c_scalar_local_type(records,ownership_record_operand_local(ownership_value))==function_mir_string_type_code()){
+                                            explicit_string_drop=1;
+                                        }
+                                    }
+                                }
+                            }
+                            let ownership_status:i32=materialize_canonical_ownership_instruction_versioned(
+                                ownership_value,global_id,assembly_source_result(source_record),explicit_string_drop,output
                             );
                             if(ownership_status!=0){return checked_add(50,ownership_status);}
                             }
@@ -11212,9 +11239,9 @@ requires_caps [allocate]
 // Materialize the canonical resource-effect instruction represented by one
 // validated Alpha.2 ownership record. This preserves semantic move/drop effects
 // without selecting a physical allocation, pointer, or address-stability policy.
-pub fn materialize_canonical_ownership_instruction(
+fn materialize_canonical_ownership_instruction_versioned(
     borrow record:MirOwnershipRecord,global_id:i64,result_local:i64,
-    borrow_mut output:Buffer
+    explicit_string_drop:i32,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -11232,6 +11259,10 @@ requires_caps [allocate]
     if(is_move==0){if(is_drop==0){return 3;}}
     if(is_move!=0){if(result_local<0){return 4;}}
     if(is_drop!=0){if(result_local>=0){return 5;}}
+    if(explicit_string_drop!=0){
+        if(kind!=ownership_record_kind_drop()){return 6;}
+        if(ownership_record_implicit(record)!=0){return 6;}
+    }
 
     canonical_mir_append_text(output,"{\"contract_kind\":\"none\",\"conversion_policy\":\"none\",\"id\":");
     canonical_mir_append_i64(output,global_id);
@@ -11240,13 +11271,21 @@ requires_caps [allocate]
     else{canonical_mir_append_text(output,"drop");}
     canonical_mir_append_text(output,"\",\"numeric_policy\":\"none\",\"operands\":[");
     canonical_mir_append_i64(output,operand);
-    canonical_mir_append_text(output,"],\"ownership\":\"owned\"");
+    if(explicit_string_drop!=0){canonical_mir_append_text(output,"],\"ownership\":\"none\"");}
+    else{canonical_mir_append_text(output,"],\"ownership\":\"owned\"");}
     if(is_move!=0){
         canonical_mir_append_text(output,",\"result\":");
         canonical_mir_append_i64(output,result_local);
     }
     buffer_push(output,125);
     return 0;
+}
+
+pub fn materialize_canonical_ownership_instruction(
+    borrow record:MirOwnershipRecord,global_id:i64,result_local:i64,
+    borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    return materialize_canonical_ownership_instruction_versioned(record,global_id,result_local,0,output);
 }
 
 pub fn materialize_canonical_ownership_block_instructions(

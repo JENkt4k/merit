@@ -345,7 +345,7 @@ decode, generated C compilation, execution, and interpreter comparison.
 | Accept 01, 04, 18 | v5 decode, C build, and execution pass | Preserve old artifact bytes. |
 | Accept 02 | v5 decode, C build, and execution pass | Python/native instruction and loan-effect identities match. |
 | Accept 07 | v5 decode, C build, and execution pass | Python/native loan-effect identities match. |
-| Accept 09 | Native ownership flow rejects explicit `drop(String)` with nested status 33 | Preserve the reference owner's authority and exact drop semantics without changing Alpha.2 `String` handling. |
+| Accept 09 | v5 decode, C build, and execution pass | Explicit logical String drop matches Python MIR effect sequence. |
 | Accept 24 | v5 decode, C build, and execution pass with the helper before `main` | Compare canonical effects and diagnostics across stages. |
 | Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with status 907 | Stable M54xx identity, span, and note transport. |
 
@@ -355,6 +355,18 @@ into the owned aggregate local as a MIR move. Its public v5 transport passed
 strict decoding; generated C compiled and matched interpreter output. Native
 and Python loan-effect identities matched. The focused v5 and legacy v4 tests
 passed together (2 tests, 78 seconds). No legacy serialization branch changed.
+
+Case 09 exposed a native lifecycle-model mismatch: Alpha.2 marks `String` as
+Copy in source ownership metadata, while the RM1 canonical source-to-MIR path
+tracks the local owner's move/drop authority separately from its physical
+destructor. Only in functions containing a local borrow, native metadata now
+retains that authority for `String` locals. Explicit drop changes logical
+validity and emits the oracle's `ownership:none` record; implicit cleanup
+remains an owned effect. Generated C emits no physical String destructor.
+Required accepted public native cases are now 7/7. The focused v5 and legacy
+v4 tests passed together (2 tests, 75 seconds); the native loan-origin
+catalog test also passed (1 test, 94 seconds). Diagnostic parity for the six
+rejected cases, fresh stages, and broad gates remain open.
 
 The same borrowed-call body works with its helper before or after `main`.
 The production driver now applies the existing native loan proof once per
