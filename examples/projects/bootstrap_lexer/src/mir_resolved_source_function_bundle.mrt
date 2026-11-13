@@ -1757,7 +1757,10 @@ requires_caps [allocate]
                         if(parameter_type!=function_mir_string_type_code()){
                             if(parameter_type!=function_mir_buffer_type_code()){
                                 if(canonical_c_copy_aggregate_field_count(parameter_type,descriptors,numeric_descriptors)==0){
-                                    if(owned_aggregate==0){return 4;}
+                                    if(owned_aggregate==0){
+                                        if(parameter_mode!=function_mir_mode_borrowed()){return 4;}
+                                        if(parameter_type!=function_mir_i32_type_code()){return 4;}
+                                    }
                                 }
                             }
                         }
@@ -3970,7 +3973,9 @@ requires_caps [allocate]
                     if(function_mir_symbol_code(record)!=function_mir_mode_borrowed()){return 24;}
                     if(function_mir_type_code(record)!=function_mir_string_type_code()){
                         if(function_mir_type_code(record)!=function_mir_buffer_type_code()){
-                            if(aggregate_borrow==0){if(owned_borrow==0){return 24;}}
+                            if(aggregate_borrow==0){if(owned_borrow==0){
+                                if(function_mir_type_code(record)!=function_mir_i32_type_code()){return 24;}
+                            }}
                         }
                     }
                 }
@@ -4252,7 +4257,9 @@ requires_caps [allocate]
                     }
                 }
                 if(function_mir_symbol_code(header)==function_mir_mode_value()){
-                    if(canonical_c_local_access_mode(records,cfg_operand(terminator))==function_mir_mode_borrowed()){return 24;}
+                    if(canonical_c_local_access_mode(records,cfg_operand(terminator))==function_mir_mode_borrowed()){
+                        if(return_type_code!=function_mir_i32_type_code()){return 24;}
+                    }
                 }
             }
         }
@@ -4918,11 +4925,17 @@ requires_caps [allocate]
                                 printed_type,function_mir_left(instruction),numeric_descriptors,bodies
                             )!=0){return 105;}
                         }else{if(printed_type==function_mir_string_type_code()){
+                            let access_mode:i32=canonical_c_local_access_mode(records,function_mir_left(instruction));
                             canonical_mir_append_text(bodies,"    fwrite(m");
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));
-                            canonical_mir_append_text(bodies,".data, 1, m");
+                            if(access_mode==function_mir_mode_value()){canonical_mir_append_text(bodies,".data, 1, m");}
+                            else{canonical_mir_append_text(bodies,"->data, 1, m");}
                             canonical_mir_append_i64(bodies,function_mir_left(instruction));
-                            canonical_mir_append_text(bodies,".len, stdout);\n    putchar('\\n');\n");
+                            if(access_mode==function_mir_mode_value()){
+                                canonical_mir_append_text(bodies,".len, stdout);\n    putchar('\\n');\n");
+                            }else{
+                                canonical_mir_append_text(bodies,"->len, stdout);\n    putchar('\\n');\n");
+                            }
                         }else{if(printed_type==function_mir_buffer_type_code()){
                             let access_mode:i32=canonical_c_local_access_mode(records,function_mir_left(instruction));
                             canonical_mir_append_text(bodies,"    fwrite(m");
@@ -5356,7 +5369,9 @@ requires_caps [allocate]
                                     if(function_mir_symbol_code(parameter)!=function_mir_mode_borrowed()){return 74;}
                                     if(function_mir_type_code(parameter)!=function_mir_string_type_code()){
                                         if(function_mir_type_code(parameter)!=function_mir_buffer_type_code()){
-                                            if(aggregate_parameter==0){if(owned_parameter==0){return 74;}}
+                                            if(aggregate_parameter==0){if(owned_parameter==0){
+                                                if(function_mir_type_code(parameter)!=function_mir_i32_type_code()){return 74;}
+                                            }}
                                         }
                                     }
                                 }
@@ -5395,7 +5410,9 @@ requires_caps [allocate]
                                                     canonical_mir_append_text(bodies,"&");
                                                 }else{
                                                     if(access_mode!=function_mir_mode_borrowed()){
-                                                        if(access_mode!=function_mir_mode_mutable_borrow()){return 68;}
+                                                        if(access_mode!=function_mir_mode_mutable_borrow()){
+                                                            if(access_mode!=function_mir_mode_local_reference()){return 68;}
+                                                        }
                                                     }
                                                 }
                                             }
@@ -5445,7 +5462,14 @@ requires_caps [allocate]
             }else{if(unit_return!=0){
                 canonical_mir_append_text(bodies,"    return;\n");
             }else{
-                canonical_mir_append_text(bodies,"    return m");
+                canonical_mir_append_text(bodies,"    return ");
+                if(function_mir_symbol_code(header)==function_mir_mode_value()){
+                    if(canonical_c_local_access_mode(records,cfg_operand(terminator))==function_mir_mode_borrowed()){
+                        if(return_type_code!=function_mir_i32_type_code()){return 24;}
+                        canonical_mir_append_text(bodies,"*");
+                    }
+                }
+                canonical_mir_append_text(bodies,"m");
                 canonical_mir_append_i64(bodies,cfg_operand(terminator));
                 canonical_mir_append_text(bodies,";\n");
             }}
@@ -9709,6 +9733,8 @@ fn canonical_mir_is_body_instruction(kind:i32)->i32{
 }
 
 fn canonical_mir_local_loan_unsupported_status()->i32{return 91;}
+fn canonical_mir_local_loan_use_mapping_status()->i32{return 92;}
+fn canonical_mir_local_loan_use_order_status()->i32{return 93;}
 
 fn canonical_mir_body_global_id(borrow sources:Vec<MirFunctionInstructionSource>,body_id:i64)->i64{
     var found:i64=-1;var index:i64=0;
@@ -9747,17 +9773,17 @@ fn canonical_mir_append_local_loan_effect(
     return 0;
 }
 
-fn canonical_mir_append_single_local_loan_effects(
+fn canonical_mir_append_one_reference_loan_effects(
     borrow records:Vec<MirFunctionRecord>,borrow sources:Vec<MirFunctionInstructionSource>,
     borrow statements:Vec<StatementRecord>,borrow origins:Vec<SourceLocalLoanOrigin>,
     borrow uses:Vec<SourceLocalLoanUse>,borrow ends:Vec<SourceLocalLoanEnd>,
     borrow_mut output:Buffer
 )->i32 requires_caps [allocate] {
     if(vec_len<SourceLocalLoanOrigin>(origins)!=1){return canonical_mir_local_loan_unsupported_status();}
-    if(vec_len<SourceLocalLoanUse>(uses)!=1){return canonical_mir_local_loan_unsupported_status();}
+    if(vec_len<SourceLocalLoanUse>(uses)<1){return canonical_mir_local_loan_unsupported_status();}
     if(vec_len<SourceLocalLoanEnd>(ends)!=1){return canonical_mir_local_loan_unsupported_status();}
     let origin:SourceLocalLoanOrigin=vec_get<SourceLocalLoanOrigin>(origins,0);
-    let use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,0);
+    let use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,checked_sub(vec_len<SourceLocalLoanUse>(uses),1));
     let end:SourceLocalLoanEnd=vec_get<SourceLocalLoanEnd>(ends,0);
     if(source_local_loan_use_reference(use)!=source_local_loan_reference_binding(origin)){
         return canonical_mir_local_loan_unsupported_status();
@@ -9776,7 +9802,7 @@ fn canonical_mir_append_single_local_loan_effects(
     if(use_index>=vec_len<StatementRecord>(statements)){return canonical_mir_local_loan_unsupported_status();}
     if(source_local_loan_end_statement(end)!=use_index){return canonical_mir_local_loan_unsupported_status();}
     var reference_local:i64=-1;var owner_local:i64=-1;
-    var create_instruction:i64=-1;var use_instruction:i64=-1;
+    var create_instruction:i64=-1;
     var index:i64=1;
     while(index<vec_len<MirFunctionRecord>(records)){
         let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,index);
@@ -9806,31 +9832,67 @@ fn canonical_mir_append_single_local_loan_effects(
                 create_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
             }
         }
-        if(function_mir_kind(record)==function_mir_kind_print()){
-            if(function_mir_left(record)==reference_local){
-                if(use_instruction>=0){return canonical_mir_local_loan_unsupported_status();}
-                use_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
-                let use_statement:StatementRecord=vec_get<StatementRecord>(statements,use_index);
-                if(function_mir_start(record)!=statement_record_start(use_statement)){
-                    return canonical_mir_local_loan_unsupported_status();
-                }
-            }
-        }
         index=checked_add(index,1);
     }
     if(create_instruction<0){return canonical_mir_local_loan_unsupported_status();}
-    if(use_instruction<=create_instruction){return canonical_mir_local_loan_unsupported_status();}
     let declaration:StatementRecord=vec_get<StatementRecord>(statements,declaration_index);
-    let use_statement:StatementRecord=vec_get<StatementRecord>(statements,use_index);
     canonical_mir_append_text(output,",\"local_loan_effects\":[");
     if(canonical_mir_append_local_loan_effect(output,"create",create_instruction,
        source_local_loan_reference_binding(origin),source_local_loan_origin_binding(origin),declaration)!=0){return canonical_mir_local_loan_unsupported_status();}
+    var use_ordinal:i64=0;var previous_instruction:i64=create_instruction;
+    while(use_ordinal<vec_len<SourceLocalLoanUse>(uses)){
+        let current_use:SourceLocalLoanUse=vec_get<SourceLocalLoanUse>(uses,use_ordinal);
+        if(source_local_loan_use_reference(current_use)!=source_local_loan_reference_binding(origin)){
+            return canonical_mir_local_loan_unsupported_status();
+        }
+        let statement_index:i64=source_local_loan_use_statement(current_use);
+        if(statement_index<0){return canonical_mir_local_loan_unsupported_status();}
+        if(statement_index>=vec_len<StatementRecord>(statements)){return canonical_mir_local_loan_unsupported_status();}
+        let use_statement:StatementRecord=vec_get<StatementRecord>(statements,statement_index);
+        var use_instruction:i64=-1;var use_matches:i64=0;var record_index:i64=1;
+        while(record_index<vec_len<MirFunctionRecord>(records)){
+            let record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,record_index);
+            let kind:i32=function_mir_kind(record);
+            var uses_reference:i32=0;
+            if(kind==function_mir_kind_print()){
+                if(function_mir_left(record)==reference_local){uses_reference=1;}
+            }
+            if(kind==function_mir_kind_call()){
+                var argument_index:i64=1;
+                while(argument_index<vec_len<MirFunctionRecord>(records)){
+                    let argument:MirFunctionRecord=vec_get<MirFunctionRecord>(records,argument_index);
+                    if(function_mir_kind(argument)==function_mir_kind_call_argument()){
+                        if(function_mir_id(argument)==function_mir_id(record)){
+                            if(function_mir_left(argument)==reference_local){uses_reference=1;}
+                        }
+                    }
+                    argument_index=checked_add(argument_index,1);
+                }
+            }
+            if(uses_reference!=0){
+                if(function_mir_start(record)==statement_record_start(use_statement)){
+                    use_instruction=canonical_mir_body_global_id(sources,function_mir_id(record));
+                    use_matches=checked_add(use_matches,1);
+                }
+            }
+            record_index=checked_add(record_index,1);
+        }
+        if(use_matches!=1){return canonical_mir_local_loan_use_mapping_status();}
+        if(use_instruction<=previous_instruction){return canonical_mir_local_loan_use_order_status();}
+        buffer_push(output,44);
+        if(canonical_mir_append_local_loan_effect(output,"use",use_instruction,
+           source_local_loan_reference_binding(origin),source_local_loan_origin_binding(origin),use_statement)!=0){
+            return canonical_mir_local_loan_unsupported_status();
+        }
+        previous_instruction=use_instruction;
+        use_ordinal=checked_add(use_ordinal,1);
+    }
+    let end_statement:StatementRecord=vec_get<StatementRecord>(statements,use_index);
     buffer_push(output,44);
-    if(canonical_mir_append_local_loan_effect(output,"use",use_instruction,
-       source_local_loan_reference_binding(origin),source_local_loan_origin_binding(origin),use_statement)!=0){return canonical_mir_local_loan_unsupported_status();}
-    buffer_push(output,44);
-    if(canonical_mir_append_local_loan_effect(output,"end",use_instruction,
-       source_local_loan_reference_binding(origin),source_local_loan_origin_binding(origin),use_statement)!=0){return canonical_mir_local_loan_unsupported_status();}
+    if(canonical_mir_append_local_loan_effect(output,"end",previous_instruction,
+       source_local_loan_reference_binding(origin),source_local_loan_origin_binding(origin),end_statement)!=0){
+        return canonical_mir_local_loan_unsupported_status();
+    }
     buffer_push(output,93);
     return 0;
 }
@@ -10314,7 +10376,7 @@ requires_caps [allocate]
     }
     canonical_mir_append_text(output,",\"entry_block\":0");
     if(local_borrows!=0){
-        let loan_status:i32=canonical_mir_append_single_local_loan_effects(
+        let loan_status:i32=canonical_mir_append_one_reference_loan_effects(
             records,sources,statements,origins,uses,ends,output
         );
         if(loan_status!=0){return loan_status;}

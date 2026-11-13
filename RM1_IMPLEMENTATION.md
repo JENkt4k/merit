@@ -333,3 +333,27 @@ borrowed-return fixtures. All three pairs match and are pinned in
 sample canonical JSON digests are pinned in their contract tests. The focused
 compatibility/contract/execution run passed 128 tests on Windows. This is
 representative byte evidence, not yet the complete Alpha.2 artifact corpus.
+
+## Native public-case burn-down (in progress)
+
+The grouped public-producer probe on the current RM1 branch reached these
+boundaries. A zero status only counts as an accepted case after strict v5
+decode, generated C compilation, execution, and interpreter comparison.
+
+| Required case | Public native boundary | Next shared mechanism |
+| --- | --- | --- |
+| Accept 01, 04, 18 | v5 decode, C build, and execution pass | Preserve old artifact bytes. |
+| Accept 02 | One-reference MIR loan writer fails closed | Ordered effects for multiple shared loans. |
+| Accept 07 | Native C function emission rejects aggregate reference | Aggregate field access and ownership transfer after final use. |
+| Accept 09 | Backend catalog rejects explicit owner drop | Exact owner cleanup and drop emission. |
+| Accept 24 | Loan-origin catalog is empty when a helper precedes `main` | Multi-function source-proof/driver lifetime; then borrowed-call parity. |
+| Reject 05, 06, 08, 22, 23, 28 | Rejected before artifact publication with status 907 | Stable M54xx identity, span, and note transport. |
+
+The same borrowed-call body with its helper *after* `main` now emits a native
+v5 bundle whose C compiles and runs with interpreter-equivalent output. This
+is a diagnostic probe, not acceptance of required case 24: a preceding
+unrelated helper also reproduces the missing-origin failure. Native C now
+handles a stored `String` reference in `print` and a non-retaining borrowed
+`i32` call/return, while preserving borrowed-return functions and old value
+emission. The focused v5 and legacy v4 project tests passed together (2 tests,
+93 seconds). The PR remains draft; stage and broad gates are still open.

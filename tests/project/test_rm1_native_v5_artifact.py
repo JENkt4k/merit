@@ -120,3 +120,33 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
     assert unsupported.returncode != 0
     assert b"replacement driver status 907" in unsupported.stderr
     assert b"1297236550" not in unsupported.stdout.splitlines()[3:]
+    matrix = {
+        "01": 'let x:String="a"; let r: borrow String=borrow x; print(r);',
+        "04": 'var x:i32=1; let r: borrow i32=borrow x; print(r); x=2;',
+        "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
+        "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
+    }
+    for case, body in matrix.items():
+        declarations = 'capability io;\n' if case == "18" else ""
+        trailing_functions = 'fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "borrowed_call" else ""
+        (project / "src/main.mrt").write_text(
+            f'module probe\n{declarations}fn main()->i32 {{ {body} return 0; }}\n{trailing_functions}',
+            encoding="utf-8", newline="\n",
+        )
+        case_request = encode_loaded_project_request(load_project(project / "Merit.toml"))
+        case_result = subprocess.run([str(executable)], input=case_request, capture_output=True)
+        assert case_result.returncode == 0, (case, case_result.stderr.decode(errors="replace"))
+        case_transport = decode_native_project_artifact_transport(
+            int(line) for line in case_result.stdout.splitlines()
+        )
+        assert case_transport.version == 5
+        assert parse_mir(json.loads(case_transport.canonical_mir_bytes)).schema == "bootstrap-mir-v2"
+        case_c = tmp_path / f"case-{case}.c"
+        case_c.write_bytes(case_transport.c_source_bytes)
+        case_program = tmp_path / f"case-{case}.exe"
+        case_compile = subprocess.run([cc, "-std=c11", str(case_c), "-o", str(case_program)],
+                                      capture_output=True, env=env)
+        assert case_compile.returncode == 0, case_compile.stderr.decode(errors="replace")
+        observed = subprocess.run([str(case_program)], check=True, capture_output=True,
+                                  env=env).stdout.decode().replace("\r\n", "\n")
+        assert observed == interpret(load_project(project / "Merit.toml"))
