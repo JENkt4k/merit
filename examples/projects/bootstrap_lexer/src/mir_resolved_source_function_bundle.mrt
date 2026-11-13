@@ -2490,7 +2490,8 @@ fn canonical_c_append_resource_effect_with_destructors(
     borrow source:Buffer,borrow effect:MirOwnershipRecord,result_local:i64,
     borrow records:Vec<MirFunctionRecord>,borrow descriptors:Vec<MirTypeDescriptor>,
     borrow numeric_descriptors:Vec<MirNumericTypeDescriptor>,
-    borrow destructor_catalog:Vec<MirDestructorDescriptor>,borrow_mut output:Buffer
+    borrow destructor_catalog:Vec<MirDestructorDescriptor>,
+    allow_local_loan_string_effect:i32,borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
 {
@@ -2508,6 +2509,7 @@ requires_caps [allocate]
     if(operand_local<0){return canonical_c_resource_invalid_operand_status();}
     let resource_type:i32=canonical_c_scalar_local_type(records,operand_local);
     if(resource_type==function_mir_string_type_code()){
+        if(allow_local_loan_string_effect==0){return canonical_c_resource_invalid_operand_status();}
         // A String handle carries logical move/drop state in v2, but has no
         // physical destructor. Alpha.2 cannot produce a String resource row.
         if(is_move!=0){
@@ -2691,7 +2693,7 @@ requires_caps [allocate]
     var empty_source:Buffer=buffer_new(system_allocator(),0);
     var empty_numeric:Vec<MirNumericTypeDescriptor>=vec_new<MirNumericTypeDescriptor>(system_allocator(),0);
     let status:i32=canonical_c_append_resource_effect_with_destructors(
-        empty_source,effect,result_local,records,descriptors,empty_numeric,no_destructors,output
+        empty_source,effect,result_local,records,descriptors,empty_numeric,no_destructors,0,output
     );
     drop(empty_numeric);drop(no_destructors);drop(empty_source);
     return status;
@@ -4540,9 +4542,18 @@ requires_caps [allocate]
                 }
                 if(ownership_record_instruction_id(placed_effect)!=producer_input_id){return canonical_c_resource_instruction_mismatch_status();}
                 if(assembly_source_left(placed_source)!=ownership_record_operand_local(placed_effect)){return canonical_c_resource_operand_mismatch_status();}
+                var local_loan_string_effect:i32=0;
+                var loan_record_index:i64=0;
+                while(loan_record_index<vec_len<MirFunctionRecord>(records)){
+                    let loan_record:MirFunctionRecord=vec_get<MirFunctionRecord>(records,loan_record_index);
+                    if(function_mir_kind(loan_record)==function_mir_kind_local_reference()){
+                        local_loan_string_effect=1;
+                    }
+                    loan_record_index=checked_add(loan_record_index,1);
+                }
                 let effect_status:i32=canonical_c_append_resource_effect_with_destructors(
                     source,placed_effect,assembly_source_result(placed_source),records,type_descriptors,
-                    numeric_descriptors,destructor_catalog,bodies
+                    numeric_descriptors,destructor_catalog,local_loan_string_effect,bodies
                 );
                 if(effect_status!=0){return canonical_c_resource_effect_failure_status(effect_status);}
                 instruction_found=1;record_index=vec_len<MirFunctionRecord>(records);

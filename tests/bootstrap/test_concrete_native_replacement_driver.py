@@ -1100,7 +1100,7 @@ def test_build_concrete_native_driver_reaches_replacement_executable_without_pyt
 
 
 @pytest.mark.parametrize("initializer", ["borrow x", "borrow missing"])
-def test_local_reference_source_fails_closed_until_native_loan_proof_exists(
+def test_local_reference_source_prepares_only_with_known_origin(
     driver: NativeReplacementDriver, tmp_path: Path, initializer: str,
 ) -> None:
     root = _project(
@@ -1109,8 +1109,14 @@ def test_local_reference_source_fails_closed_until_native_loan_proof_exists(
         f"let r: borrow i32 = {initializer}; print(r); return 0; }}\n",
     )
     project = load_project(root / "Merit.toml")
-    with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
-        prepare_replacement_artifacts(project, driver)
+    if initializer == "borrow x":
+        prepared = prepare_replacement_artifacts(project, driver)
+        assert prepared.manifest_path.is_file()
+        assert len(prepared.snapshot_paths) == 1
+        assert prepared.snapshot_paths[0].is_file()
+    else:
+        with pytest.raises(ReplacementProjectError, match="replacement driver failed"):
+            prepare_replacement_artifacts(project, driver)
 
 
 def test_native_project_request_rejects_unsupported_version_without_cleanup_failure(

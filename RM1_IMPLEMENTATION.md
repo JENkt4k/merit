@@ -316,6 +316,19 @@ byte-identical across stages. The final focused run passed in 272.16 seconds
 on Windows; log: `D:\Temp\merit-tests\rm1-fresh-stage-public-build.log`.
 This is stage evidence, not the subsystem, self-hosting, or full gate.
 
+The first Windows subsystem run on `6b486f7` completed with 988 passed and
+2 failed in 15,235.07 seconds. One historical native-driver test still
+expected every local reference to fail closed. It now requires a known-origin
+reference to prepare successfully and an unknown origin to fail. The other
+failure exposed an RM1 regression: the standalone Alpha.2 C resource-effect
+helper accepted a `String` ownership record that it formerly rejected. The
+logical `String` move/drop path is now enabled only when the native function
+records carry a local reference. Focused tests passed: three backend
+fail-closed cases and the native v5 execution test passed in the six-case
+root-fix run; the corrected two-case native-driver test passed separately.
+The subsystem gate must be rerun on the repaired tree. The first gate log is
+`D:\Temp\merit-tests\rm1-6b486f7-windows-subsystem.log`.
+
 For each new accepted case, compare one source program at every available
 boundary: parser binding IDs and spans, checker decision and diagnostic, HIR
 loan identity, MIR create/use/end and cleanup effects, interpreter trace,
