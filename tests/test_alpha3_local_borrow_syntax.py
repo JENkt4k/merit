@@ -2,7 +2,7 @@
 
 import pytest
 
-from merit.compiler import Checker, CompileError, parse
+from merit.compiler import Checker, parse
 
 
 def test_local_borrow_form_has_distinct_node_and_origin_binding() -> None:
@@ -19,8 +19,7 @@ def test_local_borrow_form_has_distinct_node_and_origin_binding() -> None:
     assert binding.operands[2].operands == ("x",)
     assert binding.operands[2].binding_id == program.functions[0].body[0].binding_id
     assert binding.binding_id.name == "r"
-    with pytest.raises(CompileError, match="M5400"):
-        Checker(program).check()
+    Checker(program).check()
 
 
 @pytest.mark.parametrize("gap", [" ", "\n"])

@@ -12,7 +12,8 @@ pub struct StatementRecord {
     operand_count: i64;
 }
 
-// Operand kinds: 1 binding name, 2 declared type, 3 expression, 4 capability name.
+// Operand kinds: 1 binding name, 2 declared type, 3 expression, 4 capability name,
+// 5 contextual immutable local-reference mode. The mode is distinct from T.
 pub struct StatementOperand {
     kind: i32;
     start: i64;
@@ -42,6 +43,7 @@ pub fn statement_operand_binding_kind() -> i32 { return 1; }
 pub fn statement_operand_declared_type_kind() -> i32 { return 2; }
 pub fn statement_operand_expression_kind() -> i32 { return 3; }
 pub fn statement_operand_capability_kind() -> i32 { return 4; }
+pub fn statement_operand_local_borrow_mode_kind() -> i32 { return 5; }
 pub fn statement_operand_start(borrow operand: StatementOperand) -> i64 { return operand.start; }
 pub fn statement_operand_length(borrow operand: StatementOperand) -> i64 { return operand.length; }
 
@@ -361,6 +363,24 @@ requires_caps [allocate]
     return 1;
 }
 
+fn stmt_local_borrow_type_index(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64) -> i64 {
+    if (index >= vec_len<Token>(tokens)) { return -1; }
+    let mode: Token = vec_get<Token>(tokens,index);
+    if (token_kind(mode) != 1) { return -1; }
+    if (token_length(mode) != 6) { return -1; }
+    if (stmt_token_byte(source,mode,0) != 98) { return -1; }
+    if (stmt_token_byte(source,mode,1) != 111) { return -1; }
+    if (stmt_token_byte(source,mode,2) != 114) { return -1; }
+    if (stmt_token_byte(source,mode,3) != 114) { return -1; }
+    if (stmt_token_byte(source,mode,4) != 111) { return -1; }
+    if (stmt_token_byte(source,mode,5) != 119) { return -1; }
+    let next_index: i64 = checked_add(index,1);
+    if (next_index >= vec_len<Token>(tokens)) { return -1; }
+    let declared_type: Token = vec_get<Token>(tokens,next_index);
+    if (token_kind(declared_type) != 1) { return -1; }
+    return next_index;
+}
+
 fn stmt_binding_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i64) -> i64 {
     var count: i64 = 0;
     let name_index: i64 = checked_add(index, 1);
@@ -374,7 +394,12 @@ fn stmt_binding_count(borrow source: Buffer, borrow tokens: Vec<Token>, index: i
         let colon: Token = vec_get<Token>(tokens, colon_index);
         let type_token: Token = vec_get<Token>(tokens, type_index);
         if stmt_punctuation(source, colon, 58) {
-            if token_kind(type_token) == 1 { count = checked_add(count, 1); }
+            if token_kind(type_token) == 1 {
+                count = checked_add(count, 1);
+                if (stmt_local_borrow_type_index(source,tokens,type_index) >= 0) {
+                    count = checked_add(count, 1);
+                }
+            }
         }
     }
     let equals: i64 = stmt_find_top_level(source, tokens, checked_add(index, 1), 61);
@@ -482,7 +507,13 @@ requires_caps [allocate]
         let type_token: Token = vec_get<Token>(tokens, type_index);
         if stmt_punctuation(source, colon, 58) {
             if token_kind(type_token) == 1 {
-                let pushed_type: i32 = stmt_push_span(operands, 2, tokens, type_index, checked_add(type_index, 1));
+                var declared_type_index: i64 = type_index;
+                let next_index: i64 = stmt_local_borrow_type_index(source,tokens,type_index);
+                if (next_index >= 0) {
+                    let pushed_mode: i32 = stmt_push_span(operands,statement_operand_local_borrow_mode_kind(),tokens,type_index,next_index);
+                    declared_type_index = next_index;
+                }
+                let pushed_type: i32 = stmt_push_span(operands,statement_operand_declared_type_kind(),tokens,declared_type_index,checked_add(declared_type_index,1));
             }
         }
     }

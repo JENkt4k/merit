@@ -12,14 +12,15 @@ import json
 from typing import Iterable, Mapping, Sequence
 
 HIR_SCHEMA = "bootstrap-hir-v1"
+LOCAL_LOAN_HIR_SCHEMA = "bootstrap-hir-v2"
 
 NODE_KINDS = frozenset({
     "module", "function", "parameter", "block", "let", "assign", "return",
-    "if", "while", "match", "match_arm", "call", "field", "constructor",
+    "if", "while", "match", "match_arm", "call", "field", "constructor", "print",
     "identifier", "literal", "binary", "conversion", "contract_check",
     "capability_scope", "drop", "move", "borrow", "invalid",
 })
-OWNERSHIP_MODES = frozenset({"value", "owned", "borrowed", "mutable_borrow", "moved", "none"})
+OWNERSHIP_MODES = frozenset({"value", "owned", "borrowed", "mutable_borrow", "moved", "none", "local_reference"})
 CONVERSION_POLICIES = frozenset({"exact", "checked", "round", "truncate", "reinterpret", "none"})
 NUMERIC_POLICIES = frozenset({"exact", "checked", "wrapping", "saturating", "floating", "none"})
 
@@ -85,6 +86,34 @@ class HirBinding:
         if self.span is not None:
             data["span"] = self.span.to_data()
         return data
+
+
+@dataclass(frozen=True, slots=True)
+class HirLocalLoan:
+    """Source-established identity of one immutable function-local reference."""
+
+    reference_binding_id: int
+    origin_binding_id: int
+    span: SourceSpan
+    permission: str = "shared_read"
+
+    def __post_init__(self) -> None:
+        if self.reference_binding_id < 0 or self.origin_binding_id < 0:
+            raise HirContractError("local loan binding IDs must be non-negative")
+        if self.span.length == 0:
+            raise HirContractError("local loan requires a non-empty source span")
+        if self.reference_binding_id == self.origin_binding_id:
+            raise HirContractError("local loan cannot originate from itself")
+        if self.permission != "shared_read":
+            raise HirContractError("unknown local loan permission")
+
+    def to_data(self) -> dict[str, object]:
+        return {
+            "reference_binding_id": self.reference_binding_id,
+            "origin_binding_id": self.origin_binding_id,
+            "permission": self.permission,
+            "span": self.span.to_data(),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,22 +184,28 @@ class HirModule:
     nodes: tuple[HirNode, ...]
     roots: tuple[int, ...]
     schema: str = HIR_SCHEMA
+    local_loans: tuple[HirLocalLoan, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.schema != HIR_SCHEMA:
-            raise HirContractError(f"expected HIR schema {HIR_SCHEMA!r}")
+        if self.schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA}:
+            raise HirContractError(f"unsupported HIR schema {self.schema!r}")
+        if bool(self.local_loans) != (self.schema == LOCAL_LOAN_HIR_SCHEMA):
+            raise HirContractError("HIR v2 requires local loans; HIR v1 cannot contain them")
         if not self.name:
             raise HirContractError("module name must be non-empty")
         _validate_module(self)
 
     def to_data(self) -> dict[str, object]:
-        return {
+        data = {
             "schema": self.schema,
             "name": self.name,
             "bindings": [binding.to_data() for binding in self.bindings],
             "nodes": [node.to_data() for node in self.nodes],
             "roots": list(self.roots),
         }
+        if self.local_loans:
+            data["local_loans"] = [loan.to_data() for loan in self.local_loans]
+        return data
 
 
 def _validate_module(module: HirModule) -> None:
@@ -182,11 +217,32 @@ def _validate_module(module: HirModule) -> None:
         raise HirContractError("duplicate HIR node ID")
 
     binding_set = set(binding_ids)
+    binding_by_id = {binding.binding_id: binding for binding in module.bindings}
+    if module.schema == HIR_SCHEMA and (any(binding.ownership == "local_reference" for binding in module.bindings)
+                                       or any(node.ownership == "local_reference" for node in module.nodes)):
+        raise HirContractError("HIR v1 cannot contain local references")
+    previous_reference = -1
+    for loan in module.local_loans:
+        if loan.reference_binding_id <= previous_reference:
+            raise HirContractError("local loans require unique ascending reference binding IDs")
+        previous_reference = loan.reference_binding_id
+        if loan.reference_binding_id not in binding_set or loan.origin_binding_id not in binding_set:
+            raise HirContractError("local loan references an unknown binding")
+        if binding_by_id[loan.reference_binding_id].mutable:
+            raise HirContractError("local reference binding must be immutable")
+        if binding_by_id[loan.reference_binding_id].ownership != "local_reference":
+            raise HirContractError("local loan requires a local-reference binding")
+        if binding_by_id[loan.origin_binding_id].ownership == "local_reference":
+            raise HirContractError("local loan cannot originate from another local reference")
+        if binding_by_id[loan.reference_binding_id].type != binding_by_id[loan.origin_binding_id].type:
+            raise HirContractError("local loan reference and origin types differ")
     node_set = set(node_ids)
     for root in module.roots:
         if root not in node_set:
             raise HirContractError(f"unknown root node ID: {root}")
     for node in module.nodes:
+        if module.schema == HIR_SCHEMA and node.kind == "print":
+            raise HirContractError("HIR v1 cannot contain RM1 print statements")
         for child in node.children:
             if child not in node_set:
                 raise HirContractError(f"node {node.node_id} references unknown child {child}")
@@ -247,6 +303,17 @@ def parse_hir_type(data: object) -> HirType:
     return HirType(name, tuple(parse_hir_type(argument) for argument in raw_arguments))
 
 
+def _validate_v2_type(data: object) -> None:
+    if not isinstance(data, Mapping):
+        raise HirContractError("HIR type must be an object")
+    _require_keys(data, {"name", "arguments"}, {"arguments"})
+    arguments = data.get("arguments", [])
+    if not isinstance(arguments, list):
+        raise HirContractError("HIR type arguments must be a list")
+    for argument in arguments:
+        _validate_v2_type(argument)
+
+
 def _parse_span(data: object | None) -> SourceSpan | None:
     if data is None:
         return None
@@ -256,8 +323,15 @@ def _parse_span(data: object | None) -> SourceSpan | None:
 
 
 def parse_hir(data: Mapping[str, object]) -> HirModule:
-    if data.get("schema") != HIR_SCHEMA:
-        raise HirContractError(f"expected HIR schema {HIR_SCHEMA!r}")
+    schema = data.get("schema")
+    if schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA}:
+        if schema is None:
+            raise HirContractError(f"expected HIR schema {HIR_SCHEMA!r}")
+        raise HirContractError(f"unsupported HIR schema {schema!r}")
+    if schema == LOCAL_LOAN_HIR_SCHEMA:
+        _require_keys(data, {"schema", "name", "bindings", "nodes", "roots", "local_loans"})
+    elif "local_loans" in data:
+        raise HirContractError("HIR v1 cannot contain local loan records")
     name = data.get("name")
     if not isinstance(name, str) or not name:
         raise HirContractError("module name must be non-empty")
@@ -271,6 +345,9 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
     for raw in raw_bindings:
         if not isinstance(raw, Mapping):
             raise HirContractError("binding entries must be objects")
+        if schema == LOCAL_LOAN_HIR_SCHEMA:
+            _require_keys(raw, {"id", "name", "type", "mutable", "ownership", "span"}, {"span"})
+            _validate_v2_type(raw.get("type"))
         bindings.append(HirBinding(
             int(raw.get("id", -1)),
             str(raw.get("name", "")),
@@ -284,6 +361,14 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
     for raw in raw_nodes:
         if not isinstance(raw, Mapping):
             raise HirContractError("node entries must be objects")
+        if schema == LOCAL_LOAN_HIR_SCHEMA:
+            _require_keys(raw, {"id", "kind", "type", "children", "span", "binding_id", "symbol", "value", "ownership", "numeric_policy", "conversion_policy", "capabilities", "generic_arguments"}, {"children", "span", "binding_id", "symbol", "value", "numeric_policy", "conversion_policy", "capabilities", "generic_arguments"})
+            _validate_v2_type(raw.get("type"))
+            raw_arguments = raw.get("generic_arguments", [])
+            if not isinstance(raw_arguments, list):
+                raise HirContractError("node generic arguments must be type lists")
+            for argument in raw_arguments:
+                _validate_v2_type(argument)
         raw_children = raw.get("children", [])
         raw_capabilities = raw.get("capabilities", [])
         raw_generic_arguments = raw.get("generic_arguments", [])
@@ -311,7 +396,27 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
         ))
     if not all(isinstance(root, int) for root in raw_roots):
         raise HirContractError("roots must be integer node IDs")
-    return HirModule(name, tuple(bindings), tuple(nodes), tuple(raw_roots))
+    loans: list[HirLocalLoan] = []
+    if schema == LOCAL_LOAN_HIR_SCHEMA:
+        raw_loans = data.get("local_loans")
+        if not isinstance(raw_loans, list) or not raw_loans:
+            raise HirContractError("HIR v2 requires a non-empty local_loans list")
+        for raw in raw_loans:
+            if not isinstance(raw, Mapping):
+                raise HirContractError("local loan entries must be objects")
+            _require_keys(raw, {"reference_binding_id", "origin_binding_id", "permission", "span"})
+            if type(raw["reference_binding_id"]) is not int or type(raw["origin_binding_id"]) is not int:
+                raise HirContractError("local loan binding IDs must be integers")
+            span = _parse_span(raw["span"])
+            if span is None:
+                raise HirContractError("local loan requires a source span")
+            loans.append(HirLocalLoan(raw["reference_binding_id"], raw["origin_binding_id"], span, raw["permission"]))
+    return HirModule(name, tuple(bindings), tuple(nodes), tuple(raw_roots), schema, tuple(loans))
+
+
+def _require_keys(data: Mapping[str, object], allowed: set[str], optional: set[str] = frozenset()) -> None:
+    if set(data) - allowed or (allowed - optional) - set(data):
+        raise HirContractError("HIR v2 contains unknown or missing semantic fields")
 
 
 def load_hir_json(text: str) -> HirModule:

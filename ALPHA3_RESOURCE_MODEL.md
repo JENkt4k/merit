@@ -120,3 +120,15 @@ deferral; the chosen first slice has a normative semantic specification and
 testable acceptance/rejection contract; Alpha.2 compatibility is explicit; and
 the design-only PR has been manually reviewed and merged. No release tag or
 feature implementation is implied by this ledger.
+
+## RM1 implementation checkpoint
+
+PR #141 merged at `bb6bd152e255d081edcd39f87a04f3b371acf016` before RM1
+completion. It is a **parser-foundation checkpoint only**: the preferred local
+borrow declaration parses with an origin binding and span, while the checker
+rejects every such declaration with `M5400`. The merged code does not implement
+stored-borrow semantics, HIR/MIR v2, or native v5. Focused parser and Alpha.2
+borrowed-return tests passed (41 tests); the canonical fast gate passed
+(93 tests) on the merge commit. The [RM1 continuation ledger](RM1_IMPLEMENTATION.md)
+tracks the remaining capability and semantic-coherence evidence. Neither PR
+#141 nor this checkpoint closes RM1.

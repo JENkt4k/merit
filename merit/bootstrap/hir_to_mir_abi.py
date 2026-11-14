@@ -195,6 +195,7 @@ def lower_hir_to_mir_abi(
         tuple(stripped_functions.get(node.node_id, node) for node in module.nodes),
         module.roots,
         module.schema,
+        module.local_loans,
     )
     raw_mir = lower_hir_to_mir(executable_hir)
 
