@@ -428,3 +428,30 @@ interpreter-equivalent output. Case 02's native loan-effect identities match
 the independent Python oracle. The focused v5, legacy v4, and native-record
 suite passed together (3 tests, 116 seconds); old project artifacts remain
 on the v4 writer path.
+
+## Qualification evidence (in progress)
+
+All local Windows commands below used Python 3.13.15 and MSYS2 UCRT64 GCC
+16.2.0, with `TEMP`, `TMP`, `TMPDIR`, and pytest's base temp on `D:`.
+The installed `.venv/Scripts` directory must also be on `PATH` for tests that
+invoke the `merit` CLI by name.
+
+| Gate or check | Commit | Platform | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| `.venv/Scripts/python.exe scripts/gate.py subsystem --durations 50` | `53bce57` | Windows | PASS, 990 tests, 15,485.93 s | `D:\Temp\merit-tests\rm1-53bce57-windows-subsystem.log` |
+| `.venv/Scripts/python.exe scripts/gate.py self-hosting` | `94b08da` | Windows | PASS, 818.315 s, 10/10 acceptance projects | `D:\Temp\merit-tests\rm1-53bce57-windows-self-hosting.log` |
+| `.venv/Scripts/python.exe scripts/gate.py full --durations 50` | `94b08da` | Windows | FAIL, pytest phase: 1,879 passed, 2 failed in 9,319.10 s; acceptance phase not run | `D:\Temp\merit-tests\rm1-94b08da-windows-full.log` |
+| `.venv/Scripts/python.exe -m pytest -q` with the two failing node IDs | working tree after `94b08da` | Windows | PASS, 2 tests in 8.96 s | Focused terminal result |
+| `.venv/Scripts/python.exe scripts/gate.py fast` | working tree after `94b08da` | Windows | PASS, 107 tests in 15.12 s | `.merit/gates/fast/result.json` |
+| Canonical full gate | pending | Linux/WSL | Not executed | Pending platform run |
+
+The full-gate failures have distinct dispositions. The legacy HIR v1 ABI
+fixture exposed a confirmed RM1 compatibility regression: the new owned-return
+transfer guard lacked its HIR v2 condition. The guard now applies only to v2;
+the v1 fixture and fast gate pass. The modernization defect-matrix test failed
+because this direct Windows invocation omitted `.venv/Scripts` from `PATH`,
+so `shutil.which("merit")` found no CLI. The same test passes with the installed
+CLI on `PATH`; no benchmark or compiler semantics changed. The next Windows
+full run must use that environment and the repaired source. The `.gitignore`
+only commit between the subsystem and self-hosting gates did not change
+compiler or test semantics.

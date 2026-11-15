@@ -539,7 +539,8 @@ class _FunctionLowerer:
             operands = ()
             if node.children:
                 operands = (self.lower_value(self._child(node, 0)),)
-            if operands and self.locals[operands[0]].ownership == "owned":
+            if (self.module.schema == LOCAL_LOAN_HIR_SCHEMA and operands
+                    and self.locals[operands[0]].ownership == "owned"):
                 raise HirToMirError("local-loan HIR owned return requires transfer proof")
             if self.module.schema == LOCAL_LOAN_HIR_SCHEMA:
                 self._drop_live_owned(node)
