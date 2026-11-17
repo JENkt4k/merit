@@ -32,12 +32,12 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | --- | --- | --- |
 | Contextual source syntax and old `borrow` names | Preferred declaration parses; old names and borrowed parameters remain valid; comments/newlines covered. | Parser checkpoint merged. |
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker and native public producer: 7/7 accepted, 6/6 rejected with matching M54xx identities, primary spans, and notes in focused tests. |
-| Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner verifies owner-only implicit cleanup; execution traces open. |
-| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity and native generated-C execution pass the 7 required accepted cases in focused tests. Broader lifecycle and stage parity remain open. |
-| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Checked-source and native producers cover the required matrix. Native MIR v2 is strictly decoded and its loan effects compared with the reference on focused cases. Fresh-stage and broad compatibility evidence remain open. |
+| Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner and executable Python/native traces cover implicit and explicit drop, owner move, replacement, and early return for an owned type with a custom destructor. Unsupported flow remains fail-closed; final-tree broad gates are pending after the v2 destructor repair. |
+| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity and native generated-C execution pass the 7 required accepted cases plus focused custom-destructor lifecycle shapes. Final-tree broad gates are pending after the repair. |
+| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Checked-source and native producers cover the required matrix. Native MIR v2 is strictly decoded, including a custom destructor and loan effects; fresh stage parity and legacy v4 destructor regressions pass. Final-tree broad gates are pending after the repair. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Merit-native producer publishes real v5 MIR/C/header bundles through public prepare/load/build. Focused v5 and legacy v4 regressions pass. Fresh-stage and broad compatibility evidence remain open. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Fresh isolated public stage-1/stage-2 compilers agree with stage 0 on all 7 v5 successes and 6 M54xx rejection packets. Each stage also builds and executes an RM1 program through `merit-project build`, with identical MIR/C/header bytes and output. Unsupported forms retain generic 907 fail-closed rejection. |
-| Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused native v5, legacy v4, source-proof, and fresh-stage parity tests pass; subsystem, self-hosting, and final Windows/Linux full gates remain open. |
+| Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused native v5, legacy v4, source-proof, and fresh-stage parity tests pass. Previous-tree Windows subsystem/self-hosting/full and hosted Ubuntu/Windows full passed; the v2 destructor repair requires final-tree requalification. |
 
 Current focused RM1 checker, execution, compatibility, source-artifact, and
 HIR/MIR contract checkpoint: 185 passed in 11.96 seconds on Windows. This is
@@ -347,7 +347,7 @@ Current bounded findings:
 | No issue | The required straight-line checker matrix proves shared reads, final-use owner effects, and specified live-loan rejection with binding-ID origins. | Reference parser/checker. |
 | Future architectural risk | `ByteSlice` has a separate backing-owner relationship; a local loan of the slice alone does not prove that backing storage remains valid. The checker rejects that new combination until a separate origin proof exists. | Checker and future MIR provenance. |
 | No issue | A local reference is absent from owned cleanup records; the owner remains the only destructor authority. | Ownership planner. |
-| Confirmed implementation gap, merge-blocking | Focused native v5 production and fresh stage-1/stage-2 equivalence pass; subsystem, self-hosting, and full cross-platform gate evidence remain open. | Qualification. |
+| Confirmed required-path coverage gap, repaired pending broad gates | The native public compiler previously returned fail-closed status 907 for an owned `Box` with a custom destructor and a local borrow, even after a proven final use. It rejected the combination before artifact publication. A v2-aware project finisher now retains destructor records with the loan-bearing MIR schema while the v1 finisher remains unchanged. Focused implicit/explicit drop, move, replace, early-return, legacy v4, and fresh-stage tests pass. | Native project MIR finisher and C/destructor lifecycle. |
 | Confirmed required-path defect, narrowly corrected | A pre-feature program `fn inspect(borrow x:i32)->i32 { return x; }` passed the checker but emitted `_merit_result = x;` where `x` is a pointer. RM1's required case 24 passes a stored local reference to such a function, so native execution could not satisfy the approved acceptance matrix. The reference C emitter now dereferences only a direct borrowed parameter returned from a value-returning function; borrowed-return functions and other old emission paths remain unchanged. Focused old-source and RM1 execution regressions pass. This changes the previously invalid C bytes for that one old source shape. Representative runnable Alpha.2 fixture digests pass. | Reference C emitter and case 24 execution. |
 
 Representative old-program C/header digests were compared byte for byte
@@ -455,3 +455,71 @@ CLI on `PATH`; no benchmark or compiler semantics changed. The next Windows
 full run must use that environment and the repaired source. The `.gitignore`
 only commit between the subsystem and self-hosting gates did not change
 compiler or test semantics.
+
+The repaired Windows full gate on `f4d2781` passed 1,881 pytest tests in
+9,412.13 seconds, then 11 replacement-acceptance tests in 4,097.69 seconds
+and all 10 acceptance projects; the canonical full marker was PASS after
+13,558.054 seconds. Log:
+`D:\Temp\merit-tests\rm1-f4d2781-windows-full.log`.
+The deliberately dispatched [hosted full workflow](https://github.com/JENkt4k/merit/actions/runs/44011380014)
+on the same commit passed on both platforms. Ubuntu recorded 1,170 ordinary
+pytest passes, 322 project-shard passes, 368 bootstrap-bundle shard passes,
+20 destructor-shard passes, one skipped project-shard case, 11 replacement
+acceptance passes, and 10/10 application projects. Hosted Windows recorded
+1,881 pytest passes, 11 replacement acceptance passes, and 10/10 projects.
+Local WSL could not create its VM (`ERROR_NO_SYSTEM_RESOURCES`); the hosted
+Ubuntu run is the actual Linux qualification evidence. These broad passes
+precede the custom-destructor repair below and must not be claimed as
+final-tree qualification.
+
+### Bounded native custom-destructor repair
+
+The independent audit reproduced a missing required-path combination:
+
+```merit
+struct Box { value:i32; }
+destructor Box { print(9); }
+fn main()->i32 {
+    let x:Box=Box {value:1};
+    let r: borrow Box=borrow x;
+    print(r.value);
+    drop(x);
+    return 0;
+}
+```
+
+The reference compiler accepted this program and printed `1` then `9`, but
+the native public producer returned generic 907 without publishing an
+artifact. The native driver explicitly forbade any project containing both
+a local loan and a destructor. Its destructor-aware project finisher emitted
+only MIR v1, so the guard was a correct fail-closed boundary, not a memory
+safety violation. The repair gives the destructor finisher a separate v2
+schema path; the v1 wrapper and bytes remain unchanged. The generated v2 MIR
+strictly decodes with one destructor, and native C has exactly the reference
+trace for implicit drop, explicit drop, move, replacement, and return from a
+helper function. A v2 loan still never owns or destroys its referent.
+
+Focused evidence on the repaired working tree: native v5 execution passed
+with all four owner-operation traces and early return; the legacy v4
+destructor and fresh public stage-0/1/2 tests passed together (7 tests in
+539.43 seconds); the fast gate passed 107 tests in 13.81 seconds. External
+logs: `D:\Temp\merit-tests\rm1-v5-destructor-parity-focused.log` and
+`D:\Temp\merit-tests\rm1-destructor-stage-and-v4.log`. The stage test
+compared deterministic v5 MIR/C/header bytes and diagnostic packets, including
+the custom-destructor case. Final-tree subsystem, self-hosting, and hosted
+Windows/Ubuntu full gates are pending.
+
+### Semantic-coherence disposition
+
+| Classification | Finding and boundary |
+| --- | --- |
+| No confirmed soundness blocker | Known binding/origin identity, final-use loan effects, shared-read/exclusive-write conflicts, and owner-only cleanup agree across the checker, native v2 MIR, and focused executable traces. |
+| Required-path coverage gap, repaired pending gates | Native v2 MIR project finalization with a custom destructor failed closed as above. Focused executable and stage evidence passes; broad requalification remains mandatory. |
+| Required compatibility defect, corrected | The HIR v2 owned-return guard had also rejected a legacy HIR v1 ABI fixture. It is now conditional on v2; focused and prior-tree full regressions passed. |
+| Future architectural risk | A `ByteSlice` loan does not establish the lifetime of its separate backing owner. RM1 rejects this combination pending the deferred R8 provenance design; no weaker origin assumption is introduced. |
+| No issue found | Malformed or mixed v1/v2 MIR and v4/v5 bundles are rejected by strict readers; representative old artifact digests, old borrowed-parameter/return tests, native M54xx spans/notes, and source-closure/stage comparisons pass. |
+
+No new RM1 syntax, concurrency, Shared/Weak, regions, pinning, tensors, or
+allocator policy was added. Error-propagation/control-flow shapes that the
+bounded local-loan producer cannot prove remain fail-closed; no cleanup trace
+is claimed for an unsupported form.

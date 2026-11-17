@@ -37,6 +37,9 @@ ACCEPTED = {
            'print(r); } x=2;', 'capability io;\n'),
     "24": ('let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
            'fn inspect(borrow value:i32)->i32 { return value; }\n'),
+    "owner_destructor": ('let x:Box=Box {value:1}; let r: borrow Box=borrow x; '
+                         'print(r.value); drop(x);',
+                         'struct Box { value:i32; } destructor Box { print(9); }\n'),
 }
 REJECTED = {
     "05": ('var x:i32=1; let r: borrow i32=borrow x; x=2; print(r);', "", 5402),

@@ -159,10 +159,23 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         "18": 'var x:i32=1; with capability io { let r: borrow i32=borrow x; print(r); } x=2;',
         "borrowed_call": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
         "24": 'let x:i32=1; let r: borrow i32=borrow x; inspect(r); print(r);',
+        "destructor_implicit": 'let x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value);',
+        "destructor_explicit": 'let x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value); drop(x);',
+        "destructor_move": 'let x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value); let y:Box=x; print(y.value);',
+        "destructor_replace": 'var x:Box=Box {value:1}; let r: borrow Box=borrow x; print(r.value); replace(x,Box {value:2}); print(x.value);',
         "later_function": 'let x:i32=1; let r: borrow i32=borrow x; print(r);',
     }
+    destructor_outputs = {
+        "destructor_implicit": "1\n9\n",
+        "destructor_explicit": "1\n9\n",
+        "destructor_move": "1\n1\n9\n",
+        "destructor_replace": "1\n9\n2\n9\n",
+    }
     for case, body in matrix.items():
-        declarations = 'capability io;\n' if case == "18" else ('struct Box { value:i32; }\n' if case == "07" else "")
+        declarations = ('capability io;\n' if case == "18" else
+                        'struct Box { value:i32; } destructor Box { print(9); }\n'
+                        if case in destructor_outputs else
+                        'struct Box { value:i32; }\n' if case == "07" else "")
         leading_functions = ('fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "24"
                              else ('fn helper()->i32 { return 1; }\n' if case == "later_function" else ""))
         trailing_functions = 'fn inspect(borrow value:i32)->i32 { return value; }\n' if case == "borrowed_call" else ""
@@ -179,6 +192,8 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         assert case_transport.version == 5
         case_mir = parse_mir(json.loads(case_transport.canonical_mir_bytes))
         assert case_mir.schema == "bootstrap-mir-v2"
+        if case in destructor_outputs:
+            assert len(case_mir.destructors) == 1, case
         if case in {"01", "02", "07", "09"}:
             reference_case_mir = lower_hir_to_mir(lower_checked_local_borrow_source_hir(
                 (project / "src/main.mrt").read_text(encoding="utf-8")
@@ -220,6 +235,32 @@ def test_rm1_native_v5_project_artifact_executes(tmp_path: Path, monkeypatch) ->
         observed = subprocess.run([str(case_program)], check=True, capture_output=True,
                                   env=env).stdout.decode().replace("\r\n", "\n")
         assert observed == interpret(load_project(project / "Merit.toml"))
+        if case in destructor_outputs:
+            assert observed == destructor_outputs[case], case
+    (project / "src/main.mrt").write_text(
+        'module probe\nstruct Box { value:i32; } destructor Box { print(9); }\n'
+        'fn work()->i32 { let x:Box=Box {value:1}; let r: borrow Box=borrow x; '
+        'print(r.value); return 7; }\n'
+        'fn main()->i32 { print(work()); return 0; }\n',
+        encoding="utf-8", newline="\n",
+    )
+    early_request = encode_loaded_project_request(load_project(project / "Merit.toml"))
+    early = subprocess.run([str(executable)], input=early_request, capture_output=True)
+    assert early.returncode == 0, early.stderr.decode(errors="replace")
+    early_transport = decode_native_project_artifact_transport(
+        int(line) for line in early.stdout.splitlines()
+    )
+    early_mir = parse_mir(json.loads(early_transport.canonical_mir_bytes))
+    assert early_mir.schema == "bootstrap-mir-v2" and len(early_mir.destructors) == 1
+    early_c = tmp_path / "early-return.c"
+    early_c.write_bytes(early_transport.c_source_bytes)
+    early_program = tmp_path / "early-return.exe"
+    early_compile = subprocess.run([cc, "-std=c11", str(early_c), "-o", str(early_program)],
+                                   capture_output=True, env=env)
+    assert early_compile.returncode == 0, early_compile.stderr.decode(errors="replace")
+    early_output = subprocess.run([str(early_program)], check=True, capture_output=True,
+                                  env=env).stdout.decode().replace("\r\n", "\n")
+    assert early_output == "1\n9\n7\n" == interpret(load_project(project / "Merit.toml"))
     (project / "src/main.mrt").write_text(
         'module probe\nfn helper()->i32 { return 1; }\n'
         'fn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; '

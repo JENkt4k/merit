@@ -434,10 +434,11 @@ requires_caps [allocate]
     return status;
 }
 
-pub fn canonical_mir_finish_project_source_with_destructors(
+fn canonical_mir_finish_project_source_with_destructors_versioned(
     borrow source:Buffer,module_start:i64,module_length:i64,
     function_count:i64,borrow function_items:Buffer,
     destructor_count:i64,borrow destructor_items:Buffer,
+    local_borrows:i32,
     borrow_mut output:Buffer
 )->i32
 requires_caps [allocate]
@@ -460,9 +461,34 @@ requires_caps [allocate]
     );
     canonical_mir_append_text(output,"],\"name\":");
     if(canonical_mir_append_json_source(output,source,module_start,module_length)!=0){return 5;}
-    canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");
+    if(local_borrows!=0){canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v2\"}");}
+    else{canonical_mir_append_text(output,",\"schema\":\"bootstrap-mir-v1\"}");}
     drop(prefix);
     return 0;
+}
+
+pub fn canonical_mir_finish_project_source_with_destructors(
+    borrow source:Buffer,module_start:i64,module_length:i64,
+    function_count:i64,borrow function_items:Buffer,
+    destructor_count:i64,borrow destructor_items:Buffer,
+    borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    return canonical_mir_finish_project_source_with_destructors_versioned(
+        source,module_start,module_length,function_count,function_items,
+        destructor_count,destructor_items,0,output
+    );
+}
+
+pub fn canonical_mir_finish_project_source_with_destructors_local_borrow(
+    borrow source:Buffer,module_start:i64,module_length:i64,
+    function_count:i64,borrow function_items:Buffer,
+    destructor_count:i64,borrow destructor_items:Buffer,
+    borrow_mut output:Buffer
+)->i32 requires_caps [allocate] {
+    return canonical_mir_finish_project_source_with_destructors_versioned(
+        source,module_start,module_length,function_count,function_items,
+        destructor_count,destructor_items,1,output
+    );
 }
 
 fn canonical_c_append_function_name(

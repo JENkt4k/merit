@@ -1181,9 +1181,6 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
         let module_token: Token = vec_get<Token>(tokens, 1);
         var complete_project:Buffer=buffer_new(allocator,4096);
         var canonical_finish_status:i32=0;
-        if(any_local_loan!=0){
-            if(destructor_index!=0){return native_driver_unproven_local_loan_status();}
-        }
         if(destructor_index==0){
             if(any_local_loan!=0){
                 canonical_finish_status=canonical_mir_finish_project_source_local_borrow(
@@ -1200,10 +1197,17 @@ fn native_driver_emit(source_text:String,artifact_mode:i32)->i32 {
                 bootstrap_buffer_append(complete_project,canonical_project,0,buffer_len(canonical_project));
             }
         }else{
-            canonical_finish_status=canonical_mir_finish_project_source_with_destructors(
-                source,token_start(module_token),token_length(module_token),
-                emitted_functions,canonical_project,destructor_index,destructor_items,complete_project
-            );
+            if(any_local_loan!=0){
+                canonical_finish_status=canonical_mir_finish_project_source_with_destructors_local_borrow(
+                    source,token_start(module_token),token_length(module_token),
+                    emitted_functions,canonical_project,destructor_index,destructor_items,complete_project
+                );
+            }else{
+                canonical_finish_status=canonical_mir_finish_project_source_with_destructors(
+                    source,token_start(module_token),token_length(module_token),
+                    emitted_functions,canonical_project,destructor_index,destructor_items,complete_project
+                );
+            }
         }
         if(canonical_finish_status!=0){
             return native_driver_canonical_finish_failure_status(canonical_finish_status);
