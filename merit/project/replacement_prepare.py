@@ -19,8 +19,11 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
+from merit.bootstrap.resolved_source_function_bundle import LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement import (
+    REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL,
+    REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2,
     REPLACEMENT_MANIFEST,
     REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
     REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2,
@@ -28,6 +31,7 @@ from merit.project.replacement import (
     ReplacementProjectError,
 )
 from merit.project.project_request import (
+    decode_project_request,
     encode_loaded_project_request,
 )
 
@@ -39,6 +43,96 @@ DRIVER_PROTOCOL = "merit-project-request-v1/resolved-source-function-bundle-v3"
 # The bootstrap-lexer M7 case still exceeds this limit; repeated native type
 # and callable analysis must be fixed rather than raising the timeout again.
 DRIVER_TIMEOUT_SECONDS = 900
+_LOCAL_LOAN_DIAGNOSTIC_MAGIC = 1296843847  # MLDG, native diagnostic framing.
+_LOCAL_LOAN_DIAGNOSTIC_VERSION = 1
+_LOCAL_LOAN_DIAGNOSTIC_MESSAGES = {
+    (5402, 1): "conflicting live local loan",
+    (5404, 2): "local reference cannot escape through return",
+    (5404, 3): "local reference cannot be stored in an aggregate",
+}
+
+
+@dataclass(frozen=True)
+class NativeSourceSpan:
+    path: str
+    line: int
+    column: int
+    end_line: int
+    end_column: int
+
+
+class ReplacementLocalBorrowError(ReplacementProjectError):
+    def __init__(self, code: str, message: str, primary: NativeSourceSpan,
+                 notes: tuple[tuple[str, NativeSourceSpan], ...]):
+        self.code = code
+        self.primary = primary
+        self.notes = notes
+        location = f"{primary.path}:{primary.line}:{primary.column}"
+        note_text = "".join(
+            f"; note: {text} at {span.path}:{span.line}:{span.column}"
+            for text, span in notes
+        )
+        super().__init__(f"{code}: {message} at {location}{note_text}")
+
+
+def _native_local_loan_failure(payload: bytes, request: bytes) -> ReplacementLocalBorrowError | None:
+    """Decode only native proof metadata and map byte spans to request units."""
+
+    if len(payload) > 4096:
+        return None
+    try:
+        rows = [int(line) for line in payload.splitlines()]
+    except ValueError:
+        return None
+    if len(rows) != 11 or rows[:3] != [1297236550, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION, 0]:
+        return None
+    if rows[3:5] != [_LOCAL_LOAN_DIAGNOSTIC_MAGIC, _LOCAL_LOAN_DIAGNOSTIC_VERSION]:
+        return None
+    code, kind, start, length, note_start, note_length = rows[5:]
+    message = _LOCAL_LOAN_DIAGNOSTIC_MESSAGES.get((code, kind))
+    if message is None or length <= 0:
+        return None
+    if (code == 5402 and (note_start < 0 or note_length <= 0)) or (
+        code == 5404 and (note_start != -1 or note_length != 0)
+    ):
+        return None
+    try:
+        decoded = decode_project_request(request)
+    except ValueError:
+        return None
+    prefix = b"module " + decoded.package.encode("utf-8") + b"\n"
+
+    def locate(offset: int, size: int) -> NativeSourceSpan | None:
+        cursor = len(prefix)
+        for unit in decoded.units:
+            source = unit.source.replace(b"\r\n", b"\n")
+            end = cursor + len(source)
+            if cursor <= offset < end and offset + size <= end:
+                relative = offset - cursor
+                try:
+                    before = source[:relative].decode("utf-8")
+                    covered = source[relative:relative + size].decode("utf-8")
+                except UnicodeDecodeError:
+                    return None
+                line = before.count("\n") + 1
+                column = len(before.rsplit("\n", 1)[-1]) + 1
+                lines = covered.split("\n")
+                end_line = line + len(lines) - 1
+                end_column = column + len(covered) if len(lines) == 1 else len(lines[-1]) + 1
+                return NativeSourceSpan(unit.path, line, column, end_line, end_column)
+            cursor = end + (0 if source.endswith(b"\n") else 1)
+        return None
+
+    primary = locate(start, length)
+    if primary is None:
+        return None
+    notes: tuple[tuple[str, NativeSourceSpan], ...] = ()
+    if note_start >= 0:
+        note_span = locate(note_start, note_length)
+        if note_span is None or note_span.path != primary.path:
+            return None
+        notes = (("local borrow created here", note_span),)
+    return ReplacementLocalBorrowError(f"M{code}", message, primary, notes)
 
 
 @dataclass(frozen=True)
@@ -94,6 +188,7 @@ def _run_driver(
 ):
     executable = driver.resolved()
     from merit.bootstrap.resolved_source_function_bundle import (
+        LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
         PROJECT_ARTIFACT_BUNDLE_VERSION,
         ResolvedSourceFunctionBundleError,
         decode_native_project_artifact_transport,
@@ -124,6 +219,10 @@ def _run_driver(
                 f"replacement driver emitted non-UTF-8 output for project {project_name!r}"
             ) from exc
         if completed.returncode != 0:
+            stdout_file.seek(0)
+            native_diagnostic = _native_local_loan_failure(stdout_file.read(4097), request)
+            if native_diagnostic is not None:
+                raise native_diagnostic
             stdout_file.seek(0, os.SEEK_END)
             stdout_file.seek(max(0, stdout_file.tell() - 4800))
             try:
@@ -155,7 +254,7 @@ def _run_driver(
             framed_values = itertools.chain((first,), () if second is None else (second,), values)
             bundle = (
                 decode_native_project_artifact_transport(framed_values)
-                if second == PROJECT_ARTIFACT_BUNDLE_VERSION
+                if second in {PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION}
                 else decode_resolved_source_function_bundle(framed_values, retain_decoded=False)
             )
         except ValueError as exc:
@@ -280,10 +379,12 @@ def prepare_replacement_artifacts(
                 "path": filename,
                 "sha256": digest,
             }
-        producer_protocol = (
-            REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
-            if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
-        )
+        if bundle.version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+            producer_protocol = (REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2
+                                 if header_exports is not None else REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL)
+        else:
+            producer_protocol = (REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
+                                 if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL)
 
     payload = {
         "schema": REPLACEMENT_SCHEMA,

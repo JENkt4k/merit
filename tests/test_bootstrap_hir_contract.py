@@ -1,11 +1,14 @@
+import hashlib
 import json
 
 import pytest
 
 from merit.bootstrap.hir_contract import (
     HIR_SCHEMA,
+    LOCAL_LOAN_HIR_SCHEMA,
     HirBinding,
     HirContractError,
+    HirLocalLoan,
     HirModule,
     HirNode,
     HirType,
@@ -39,6 +42,56 @@ def sample_module() -> HirModule:
     return HirModule("ledger", bindings, nodes, (8,))
 
 
+def local_loan_module() -> HirModule:
+    bindings = (HirBinding(0, "owner", I32), HirBinding(1, "view", I32, ownership="local_reference"))
+    nodes = (HirNode(0, "identifier", I32, binding_id=0),)
+    return HirModule("loan", bindings, nodes, (0,), LOCAL_LOAN_HIR_SCHEMA,
+                     (HirLocalLoan(1, 0, SourceSpan(4, 17)),))
+
+
+def test_v2_local_loan_round_trip_keeps_v1_bytes_unchanged():
+    old = canonical_hir_json(sample_module())
+    module = local_loan_module()
+    assert load_hir_json(canonical_hir_json(module)) == module
+    assert canonical_hir_json(sample_module()) == old
+    with pytest.raises(HirContractError, match="unsupported HIR schema"):
+        parse_hir({**module.to_data(), "schema": "bootstrap-hir-v3"})
+
+
+@pytest.mark.parametrize("change", [
+    lambda data: data.update(extra=1),
+    lambda data: data["local_loans"][0].update(extra=1),
+    lambda data: data["local_loans"][0].update(origin_binding_id=99),
+    lambda data: data["local_loans"][0].update(permission="exclusive_write"),
+    lambda data: data["local_loans"].append(dict(data["local_loans"][0])),
+    lambda data: data["local_loans"][0].update(span=[-1, 3]),
+    lambda data: data["local_loans"][0].update(span=[4, 0]),
+    lambda data: data["bindings"][0].update(extra=1),
+    lambda data: data["bindings"][0]["type"].update(extra=1),
+    lambda data: data["nodes"][0].update(extra=1),
+    lambda data: data["bindings"][0].update(ownership="local_reference"),
+])
+def test_v2_rejects_malformed_local_loan_semantics(change):
+    data = local_loan_module().to_data()
+    change(data)
+    with pytest.raises(HirContractError):
+        parse_hir(data)
+
+
+def test_v1_rejects_unversioned_local_loan_record():
+    data = sample_module().to_data()
+    data["local_loans"] = [HirLocalLoan(1, 0, SourceSpan(1, 3)).to_data()]
+    with pytest.raises(HirContractError, match="HIR v1 cannot contain"):
+        parse_hir(data)
+
+
+def test_v1_rejects_v2_print_node() -> None:
+    data = sample_module().to_data()
+    data["nodes"][0]["kind"] = "print"
+    with pytest.raises(HirContractError, match="HIR v1 cannot contain RM1 print"):
+        parse_hir(data)
+
+
 def test_hir_round_trips_canonically():
     module = sample_module()
     encoded = canonical_hir_json(module)
@@ -46,6 +99,7 @@ def test_hir_round_trips_canonically():
     assert decoded == module
     assert canonical_hir_json(decoded) == encoded
     assert json.loads(encoded)["schema"] == HIR_SCHEMA
+    assert hashlib.sha256(encoded.encode()).hexdigest() == "467e4a817bb0c966c054083f6aa52b542c1cb63f7743c58ba970db03b94e09ff"
 
 
 def test_canonical_hir_is_independent_of_mapping_order():

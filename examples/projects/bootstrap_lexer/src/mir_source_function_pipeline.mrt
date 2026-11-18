@@ -85,6 +85,7 @@ fn finish_source_function_semantics(
         var named_binding: i32 = 0;
         if (function_mir_kind(record) == function_mir_kind_source_local()) { named_binding = 1; }
         if (function_mir_kind(record) == function_mir_kind_parameter()) { named_binding = 1; }
+        if (function_mir_kind(record) == function_mir_kind_local_reference()) { named_binding = 1; }
         if (named_binding != 0) {
             let expected_binding: i64 = vec_len<i64>(binding_starts);
             if (function_mir_binding_id(record) != expected_binding) { return source_function_binding_order_status(); }

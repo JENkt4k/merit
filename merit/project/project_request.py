@@ -99,7 +99,7 @@ def encode_project_request(request: ProjectRequest) -> bytes:
 
 
 def decode_project_request(data: bytes) -> ProjectRequest:
-    """Independent host oracle for framing tests; not used by production builds."""
+    """Transport reader used by framing tests and native diagnostic span mapping."""
 
     position = 0
 

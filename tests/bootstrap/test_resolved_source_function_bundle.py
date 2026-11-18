@@ -6,6 +6,7 @@ from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_MAGIC,
     BUNDLE_VERSION,
     PROJECT_ARTIFACT_BUNDLE_VERSION,
+    LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
     _METADATA_MAGIC,
     _PROJECT_ARTIFACT_MAGIC,
     ResolvedSourceFunctionBundleError,
@@ -18,6 +19,58 @@ from merit.bootstrap.resolved_source_function_snapshot import (
     SNAPSHOT_SECTION_COUNT,
     SNAPSHOT_VERSION,
 )
+from merit.bootstrap.mir_contract import (
+    LOCAL_LOAN_MIR_SCHEMA, MirBlock, MirFunction, MirInstruction, MirLocal,
+    MirLocalLoanEffect, MirModule, MirTerminator, MirType, SourceSpan,
+    canonical_mir_json,
+)
+
+
+def _v2_mir() -> bytes:
+    type_ = MirType("i32")
+    function = MirFunction(
+        "main", type_,
+        (MirLocal(0, "owner", type_, source_binding_id=0),
+         MirLocal(1, "view", type_, ownership="local_reference", source_binding_id=1)),
+        (MirBlock(0, (MirInstruction(0, "borrow", result=1, operands=(0,)),),
+                  MirTerminator("return", operands=(0,))),), 0,
+        local_loan_effects=(MirLocalLoanEffect("create", 0, 1, 0, SourceSpan(1, 8)),
+                            MirLocalLoanEffect("end", 0, 1, 0, SourceSpan(1, 8))),
+    )
+    return canonical_mir_json(MirModule("demo", (function,), LOCAL_LOAN_MIR_SCHEMA)).encode()
+
+
+def test_bundle_v5_round_trip_requires_valid_mir_v2():
+    encoded = encode_resolved_source_function_bundle(
+        (), module_name="demo", canonical_mir=_v2_mir(), c_source=b"int main(void){return 0;}",
+        c_header=b"#pragma once", project_artifact_version=LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    )
+    assert encoded[:3] == (BUNDLE_MAGIC, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION, 0)
+    assert decode_native_project_artifact_transport(encoded).version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION
+    assert decode_resolved_source_function_bundle(encoded).canonical_mir_bytes == _v2_mir()
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="canonical MIR v2"):
+        encode_resolved_source_function_bundle(
+            (), canonical_mir=b"not MIR", c_source=b"c", c_header=b"h",
+            project_artifact_version=LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+        )
+
+
+def test_v5_transport_rejects_corrupted_mir_and_trailing_data():
+    encoded = encode_resolved_source_function_bundle(
+        (), canonical_mir=_v2_mir(), c_source=b"c", c_header=b"h",
+        project_artifact_version=LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    )
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="trailing data"):
+        decode_native_project_artifact_transport((*encoded, 7))
+    malformed = list(encoded)
+    marker = malformed.index(_PROJECT_ARTIFACT_MAGIC)
+    malformed[marker + 2] = ord("X")
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="canonical MIR v2"):
+        decode_native_project_artifact_transport(malformed)
+    mixed = list(encoded)
+    mixed[2] = 1
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="legacy function snapshots"):
+        decode_native_project_artifact_transport(mixed)
 
 
 def _snapshot(source: tuple[int, ...] = ()) -> tuple[int, ...]:

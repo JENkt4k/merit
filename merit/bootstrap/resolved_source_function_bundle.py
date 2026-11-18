@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 BUNDLE_MAGIC = 0x4D524246  # "MRBF"
 BUNDLE_VERSION = 3
 PROJECT_ARTIFACT_BUNDLE_VERSION = 4
-_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2, BUNDLE_VERSION, PROJECT_ARTIFACT_BUNDLE_VERSION})
+LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION = 5
+_SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2, BUNDLE_VERSION, PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION})
 _METADATA_MAGIC = 0x4D455441  # "META"
 _PROJECT_ARTIFACT_MAGIC = 0x4D434152  # "MCAR"
 _BUNDLE_MAGIC_INDEX = 0
@@ -51,13 +52,14 @@ class ResolvedSourceFunctionBundle:
 
 @dataclass(frozen=True)
 class NativeProjectArtifactTransport:
-    """Validated v4 framing; nested semantic snapshots remain opaque."""
+    """Validated v4/v5 framing; nested semantic snapshots remain opaque."""
 
     module_name: str
     capability_names: tuple[str, ...]
     canonical_mir_bytes: bytes
     c_source_bytes: bytes
     c_header_bytes: bytes
+    version: int = PROJECT_ARTIFACT_BUNDLE_VERSION
 
 
 def encode_resolved_source_function_bundle(
@@ -68,12 +70,19 @@ def encode_resolved_source_function_bundle(
     canonical_mir: bytes | None = None,
     c_source: bytes | None = None,
     c_header: bytes | None = None,
+    project_artifact_version: int = PROJECT_ARTIFACT_BUNDLE_VERSION,
 ) -> tuple[int, ...]:
     """Frame validated legacy snapshots or a complete native artifact set."""
 
     encoded = tuple(tuple(int(value) for value in snapshot) for snapshot in snapshots)
     artifact_fields = (canonical_mir, c_source, c_header)
     carries_artifacts = any(value is not None for value in artifact_fields)
+    if project_artifact_version not in {PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION}:
+        raise ResolvedSourceFunctionBundleError("unsupported project artifact bundle version")
+    if not carries_artifacts and project_artifact_version != PROJECT_ARTIFACT_BUNDLE_VERSION:
+        raise ResolvedSourceFunctionBundleError("v5 requires complete project artifacts")
+    if carries_artifacts and project_artifact_version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION and encoded:
+        raise ResolvedSourceFunctionBundleError("v5 cannot mix legacy function snapshots with project artifacts")
     if not encoded and not carries_artifacts:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle is empty")
     if encoded:
@@ -94,7 +103,9 @@ def encode_resolved_source_function_bundle(
         raise ResolvedSourceFunctionBundleError(
             "project artifact bundle requires non-empty canonical MIR, C source, and C header"
         )
-    version = PROJECT_ARTIFACT_BUNDLE_VERSION if carries_artifacts else BUNDLE_VERSION
+    if carries_artifacts:
+        _validate_artifact_mir_version(bytes(canonical_mir or b""), project_artifact_version)
+    version = project_artifact_version if carries_artifacts else BUNDLE_VERSION
     values: list[int] = [BUNDLE_MAGIC, version, len(encoded)]
     for index, snapshot in enumerate(encoded):
         source = decoded_snapshots[index].effective_source_bytes
@@ -136,8 +147,10 @@ def decode_resolved_source_function_bundle(
             f"unsupported resolved source function bundle version {bundle_version}"
         )
     count = data[_BUNDLE_FUNCTION_COUNT_INDEX]
-    if count < 0 or (count == 0 and bundle_version != PROJECT_ARTIFACT_BUNDLE_VERSION):
+    if count < 0 or (count == 0 and bundle_version < PROJECT_ARTIFACT_BUNDLE_VERSION):
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has no functions")
+    if bundle_version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION and count != 0:
+        raise ResolvedSourceFunctionBundleError("v5 cannot contain legacy function snapshots")
 
     position = _BUNDLE_HEADER_WIDTH
     decoded: list[ResolvedSourceFunctionSnapshot] = []
@@ -252,6 +265,8 @@ def decode_resolved_source_function_bundle(
                 "resolved source function bundle has truncated project artifacts"
             ) from exc
         canonical_mir_bytes, c_source_bytes, c_header_bytes = artifacts
+        if bundle_version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+            _validate_artifact_mir_version(canonical_mir_bytes, bundle_version)
     if position != len(data):
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
     return ResolvedSourceFunctionBundle(
@@ -264,7 +279,7 @@ def decode_resolved_source_function_bundle(
 def decode_native_project_artifact_transport(
     values: Iterable[int],
 ) -> NativeProjectArtifactTransport:
-    """Validate v4 framing without importing Python snapshot semantics."""
+    """Validate v4/v5 framing without importing Python snapshot semantics."""
 
     data = iter(values)
     missing = object()
@@ -279,11 +294,14 @@ def decode_native_project_artifact_transport(
 
     if read_value("header") != BUNDLE_MAGIC:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid magic")
-    if read_value("header") != PROJECT_ARTIFACT_BUNDLE_VERSION:
-        raise ResolvedSourceFunctionBundleError("native project artifacts require bundle v4")
+    version = read_value("header")
+    if version not in {PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION}:
+        raise ResolvedSourceFunctionBundleError("native project artifacts require bundle v4 or v5")
     count = read_value("function count")
     if count < 0:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has invalid function count")
+    if version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION and count != 0:
+        raise ResolvedSourceFunctionBundleError("v5 cannot contain legacy function snapshots")
 
     def length_delimited(label: str, *, nonempty: bool = False) -> bytes:
         length = read_value(label)
@@ -327,6 +345,23 @@ def decode_native_project_artifact_transport(
     c_header = length_delimited("C header", nonempty=True)
     if next(data, missing) is not missing:
         raise ResolvedSourceFunctionBundleError("resolved source function bundle has trailing data")
+    if version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+        _validate_artifact_mir_version(canonical_mir, version)
     return NativeProjectArtifactTransport(
-        module_name, capability_names, canonical_mir, c_source, c_header,
+        module_name, capability_names, canonical_mir, c_source, c_header, version,
     )
+
+
+def _validate_artifact_mir_version(canonical_mir: bytes, version: int) -> None:
+    if version != LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+        return
+    import json
+    from merit.bootstrap.mir_contract import LOCAL_LOAN_MIR_SCHEMA, MirContractError, parse_mir
+
+    try:
+        data = json.loads(canonical_mir.decode("utf-8"))
+        if not isinstance(data, dict) or data.get("schema") != LOCAL_LOAN_MIR_SCHEMA:
+            raise ResolvedSourceFunctionBundleError("v5 requires canonical MIR v2")
+        parse_mir(data)
+    except (UnicodeDecodeError, json.JSONDecodeError, MirContractError) as exc:
+        raise ResolvedSourceFunctionBundleError("v5 contains invalid canonical MIR v2") from exc

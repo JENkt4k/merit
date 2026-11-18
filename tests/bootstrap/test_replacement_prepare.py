@@ -8,7 +8,14 @@ import sys
 
 import pytest
 
-from merit.bootstrap.resolved_source_function_bundle import encode_resolved_source_function_bundle
+from merit.bootstrap.resolved_source_function_bundle import (
+    LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION, encode_resolved_source_function_bundle,
+)
+from merit.bootstrap.mir_contract import (
+    LOCAL_LOAN_MIR_SCHEMA, MirBlock, MirFunction, MirInstruction, MirLocal,
+    MirLocalLoanEffect, MirModule, MirTerminator, MirType, SourceSpan,
+    canonical_mir_json,
+)
 from merit.bootstrap.resolved_source_function_snapshot import (
     SNAPSHOT_MAGIC,
     SNAPSHOT_SECTION_COUNT,
@@ -16,7 +23,10 @@ from merit.bootstrap.resolved_source_function_snapshot import (
 )
 from merit.project.cli import main
 from merit.project.loader import load_project
-from merit.project.replacement import REPLACEMENT_MANIFEST, ReplacementProjectError, load_replacement_inputs
+from merit.project.replacement import (
+    REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL, REPLACEMENT_MANIFEST,
+    ReplacementProjectError, load_replacement_inputs, require_native_project_artifact,
+)
 from merit.project.replacement_prepare import (
     DRIVER_PROTOCOL,
     NativeReplacementDriver,
@@ -177,6 +187,45 @@ def _native_artifact_driver(
         "import sys\nsys.stdin.buffer.read()\n"
         + f"print({repr(chr(10).join(str(value) for value in values))})\n",
     )
+
+
+def _local_loan_artifact_driver(tmp_path: Path) -> Path:
+    type_ = MirType("i32")
+    function = MirFunction(
+        "main", type_,
+        (MirLocal(0, "owner", type_, source_binding_id=0),
+         MirLocal(1, "view", type_, ownership="local_reference", source_binding_id=1)),
+        (MirBlock(0, (MirInstruction(0, "borrow", result=1, operands=(0,)),),
+                  MirTerminator("return", operands=(0,))),), 0,
+        local_loan_effects=(MirLocalLoanEffect("create", 0, 1, 0, SourceSpan(1, 8)),
+                            MirLocalLoanEffect("end", 0, 1, 0, SourceSpan(1, 8))),
+    )
+    mir = canonical_mir_json(MirModule("main", (function,), LOCAL_LOAN_MIR_SCHEMA)).encode()
+    values = encode_resolved_source_function_bundle(
+        (), module_name="main", canonical_mir=mir,
+        c_source=b"int32_t merit_main(void) { return 0; }\n",
+        c_header=b"int32_t merit_main(void);\n",
+        project_artifact_version=LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    )
+    return _python_driver(tmp_path, "local-loan-artifact-driver",
+                          "import sys\nsys.stdin.buffer.read()\n"
+                          + f"print({repr(chr(10).join(str(value) for value in values))})\n")
+
+
+def test_v5_prepare_and_load_require_matching_mir_v2(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    project = load_project(root / "Merit.toml")
+    prepared = prepare_replacement_artifacts(
+        project, NativeReplacementDriver(_local_loan_artifact_driver(tmp_path))
+    )
+    payload = json.loads(prepared.manifest_path.read_text(encoding="utf-8"))
+    assert payload["producer_protocol"] == REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL
+    assert require_native_project_artifact(project).c_source.startswith("int32_t merit_main")
+    payload["producer_protocol"] = REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
+    prepared.manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    # A v5 MIR under a v4 manifest must not silently take the v5 path.
+    with pytest.raises(ReplacementProjectError, match="v4 project artifact cannot contain"):
+        require_native_project_artifact(project)
 
 
 def test_prepare_replacement_publishes_every_native_function_and_manifest(tmp_path: Path) -> None:

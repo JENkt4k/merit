@@ -3,19 +3,64 @@ import json
 import pytest
 
 from merit.bootstrap.hir_contract import (
+    LOCAL_LOAN_HIR_SCHEMA,
     HirBinding,
     HirModule,
     HirNode,
+    HirLocalLoan,
     HirType,
     SourceSpan,
 )
 from merit.bootstrap.hir_to_mir import HirToMirError, lower_hir_to_mir
-from merit.bootstrap.mir_contract import canonical_mir_json, parse_mir
+from merit.bootstrap.mir_contract import LOCAL_LOAN_MIR_SCHEMA, canonical_mir_json, parse_mir
 
 
 I64 = HirType("i64")
 BOOL = HirType("bool")
 UNIT = HirType("unit")
+
+
+def test_v2_local_borrow_lowers_create_use_end_from_hir_identity():
+    nodes = (
+        HirNode(0, "literal", I64, value=7),
+        HirNode(1, "let", I64, children=(0,), binding_id=0),
+        HirNode(2, "identifier", I64, binding_id=0),
+        HirNode(3, "borrow", I64, children=(2,), binding_id=0, span=SourceSpan(25, 8)),
+        HirNode(4, "let", I64, children=(3,), binding_id=1),
+        HirNode(5, "identifier", I64, binding_id=1),
+        HirNode(6, "call", I64, children=(5,), symbol="inspect", span=SourceSpan(35, 10)),
+        HirNode(7, "return", I64, children=(6,)),
+        HirNode(8, "function", I64, children=(1, 4, 7), symbol="main"),
+    )
+    hir = HirModule("demo", (HirBinding(0, "x", I64),
+                             HirBinding(1, "r", I64, ownership="local_reference")),
+                    nodes, (8,), LOCAL_LOAN_HIR_SCHEMA,
+                    (HirLocalLoan(1, 0, SourceSpan(17, 20)),))
+    mir = lower_hir_to_mir(hir)
+    assert mir.schema == LOCAL_LOAN_MIR_SCHEMA
+    effects = mir.functions[0].local_loan_effects
+    assert [(effect.kind, effect.reference_binding_id, effect.origin_binding_id)
+            for effect in effects] == [("create", 1, 0), ("use", 1, 0), ("end", 1, 0)]
+    assert effects[1].instruction_id == effects[2].instruction_id
+    assert effects[1].span.to_data() == [35, 10]
+    encoded = canonical_mir_json(mir)
+    assert canonical_mir_json(parse_mir(json.loads(encoded))) == encoded
+
+
+def test_v2_hir_bridge_rejects_mismatched_origin_before_mir():
+    nodes = (
+        HirNode(0, "identifier", I64, binding_id=2),
+        HirNode(1, "borrow", I64, children=(0,), binding_id=2),
+        HirNode(2, "let", I64, children=(1,), binding_id=1),
+        HirNode(3, "function", I64, children=(2,), symbol="main"),
+    )
+    hir = HirModule("demo", (HirBinding(0, "owner", I64),
+                             HirBinding(1, "view", I64, ownership="local_reference"),
+                             HirBinding(2, "other", I64)),
+                    nodes, (3,), LOCAL_LOAN_HIR_SCHEMA,
+                    (HirLocalLoan(1, 0, SourceSpan(0, 8)),))
+    with pytest.raises(HirToMirError, match="origin does not match"):
+        lower_hir_to_mir(hir)
 
 
 def module(nodes, *, bindings=(), roots=None, name="example"):

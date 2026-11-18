@@ -144,6 +144,13 @@ def _statement_operands(data: bytes, tokens, index: int, kind: int):
             and _text(data, tokens[colon_index]) == b":"
             and tokens[type_index][0] == 1
         ):
+            if (
+                _text(data, tokens[type_index]) == b"borrow"
+                and type_index + 1 < len(tokens)
+                and tokens[type_index + 1][0] == 1
+            ):
+                result.append((5, tokens[type_index][1], tokens[type_index][2]))
+                type_index += 1
             result.append((2, tokens[type_index][1], tokens[type_index][2]))
         equals = _find_top_level(data, tokens, index + 1, b"=")
         if equals >= 0:
@@ -375,3 +382,21 @@ def test_statement_record_operand_ranges_are_contiguous():
         assert record[3] == cursor
         cursor += record[4]
     assert cursor == len(operands)
+
+
+def test_local_reference_mode_and_referent_type_have_distinct_source_operands(tmp_path):
+    source = (
+        "module local_reference_operand\n"
+        "fn main()->i32 { let x:i32=1; let r: borrow i32 = borrow x; "
+        "print(r); return 0; }\n"
+    )
+    expected = reference_statement_records(source)
+    assert any(kind == 5 and source.encode()[start:start + length] == b"borrow"
+               for kind, start, length in expected[1])
+    assert any(kind == 2 and source.encode()[start:start + length] == b"i32"
+               for kind, start, length in expected[1])
+    project, root = _project_with_source(tmp_path, source)
+    assert _parse_probe(interpret(project)) == expected
+    _, _, executable = build(project, root / "native")
+    native = subprocess.run([str(executable)], check=True, text=True, capture_output=True).stdout
+    assert _parse_probe(native) == expected

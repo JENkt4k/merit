@@ -689,6 +689,7 @@ def assign_binding_ids(program):
                 for item in part:attach_destructor(item)
     for destructor in program.destructors.values():
         for statement in destructor.body:attach_destructor(statement)
+
 BUILTIN_TYPES={'String','Buffer','Allocator','ByteSlice','I64Vec'}|set(FS_BUILTIN_ENUMS)
 VECTOR_INTRINSIC_NAMES=('new','push','len','get','set','replace','pop','drop','transfer','allocator')
 ROUNDING={'half_even':ROUND_HALF_EVEN,'half_up':ROUND_HALF_UP,'down':ROUND_DOWN,'ceiling':ROUND_CEILING,'floor':ROUND_FLOOR}
@@ -706,6 +707,9 @@ class TypedValue: type_name:str; value:Any; allocator:Any=None
 @dataclasses.dataclass
 class VarState:
     type_name:str; mutable:bool; moved:bool=False; dropped:bool=False; mode:str="value"; move_origin:SourceSpan|None=None; move_context:str|None=None; drop_origin:SourceSpan|None=None
+@dataclasses.dataclass(frozen=True)
+class LocalLoan:
+    reference:BindingId; origin:BindingId; creation:SemanticNode; created_at:int; last_use:int
 @dataclasses.dataclass(frozen=True)
 class TypeSemantics:
     owned:bool; needs_drop:bool; copyable:bool; reason:str; kind:str='scalar'; drop_strategy:str='none'
@@ -1014,7 +1018,7 @@ class OwnershipEffects:
         return FunctionOwnership(tuple(owned),frozenset(explicit),frozenset(consumed_sites),tuple(sorted(consumed_sites.items())))
 
 class Checker:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None
+    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.audit_sites=[];self.call_edges=[];self.hazardous_operations=[];self.contract_phase=None;self.local_loans={};self.local_statement_order={}
     def fail(self,text,node=None,notes=()):
         provenance=self.p.provenance(node) if node is not None else NodeProvenance()
         if provenance.related:notes=tuple(notes)+(DiagnosticNote('generic instantiated here',provenance.related),)
@@ -1097,6 +1101,7 @@ class Checker:
         if t!='Self': self.ensure_type(t,node)
     def check_function_body(self,f):
         self.ensure_type(f.return_type,f)
+        self.local_loans,self.local_statement_order=self.prove_local_loans(f)
         if f.return_mode!='value': self.check_borrowed_return(f)
         missing=set(f.requires_caps)-self.p.capabilities
         if missing:self.fail(f"M2001: function {f.name} requires undeclared capabilities: {sorted(missing)}",f)
@@ -1107,6 +1112,115 @@ class Checker:
             self.fail(f'M3009: function {f.name} does not return on every path',f)
         post_env=dict(env); post_env[f.result_binding_id]=VarState(f.return_type,False)
         for e in f.post:self.check_contract_expr(e,post_env,set(f.requires_caps),f,'post')
+    def local_references_in(self,value):
+        if isinstance(value,SemanticNode):
+            node=self.p.node(value)
+            if node.kind=='var':
+                yield node.raw.binding_id
+            for part in node.operands:yield from self.local_references_in(part)
+        elif isinstance(value,(list,tuple)):
+            for part in value:yield from self.local_references_in(part)
+        elif isinstance(value,dict):
+            for part in value.values():yield from self.local_references_in(part)
+    def prove_local_loans(self,f):
+        """Prove a fixed, straight-line final-use point for each local loan."""
+        ordered=[]
+        def contains_local(value):
+            if isinstance(value,SemanticNode):
+                return value.kind=='local_borrow' or any(contains_local(part) for part in value.operands)
+            if isinstance(value,(list,tuple)):return any(contains_local(part) for part in value)
+            if isinstance(value,dict):return any(contains_local(part) for part in value.values())
+            return False
+        has_local=contains_local(f.body)
+        def flatten(body):
+            for statement in body:
+                node=self.p.node(statement)
+                if has_local and node.kind in ('if','while','match','try_let'):
+                    self.fail('M5403: local borrow control flow is not yet supported',statement)
+                ordered.append(statement)
+                if node.kind=='with_cap':flatten(node.nested_body)
+        flatten(f.body)
+        declarations={self.p.node(st).raw.binding_id:(index,st) for index,st in enumerate(ordered)
+                      if self.p.node(st).kind=='local_borrow'}
+        if not declarations:return {},{}
+        # A loan used in a branch or loop cannot be given a straight-line end.
+        if any(self.p.node(st).kind in ('if','while','match','try_let') for st in ordered):
+            self.fail('M5403: local borrow control flow is not yet supported',next(st for st in ordered if self.p.node(st).kind in ('if','while','match','try_let')))
+        loans={}
+        for ref,(created,statement) in declarations.items():
+            node=self.p.node(statement);origin=node.initializer.binding_id
+            if origin is None or origin in declarations or origin==ref:
+                self.fail('M5401: invalid local borrow origin',node.initializer)
+            uses=[index for index,st in enumerate(ordered) if index>created and ref in set(self.local_references_in(st))]
+            loans[ref]=LocalLoan(ref,origin,statement,created,max(uses,default=created))
+        return loans,{id(st):index for index,st in enumerate(ordered)}
+    def local_ref(self,e,env):
+        node=self.p.node(e)
+        return bool(node and node.kind=='var' and node.raw.binding_id in env and env[node.raw.binding_id].mode=='local_borrow')
+    def check_local_owner_effect(self,st,env):
+        if not self.local_loans:return
+        index=self.local_statement_order[id(st)]
+        node=self.p.node(st)
+        if node.kind=='with_cap':return
+        effects=[]
+        def owned_value_sources(value):
+            if not isinstance(value,SemanticNode):return
+            current=self.p.node(value)
+            if current.kind=='var':
+                root=current.raw.binding_id
+                if root in env and self.types.get(env[root].type_name).owned:
+                    effects.append((root,value))
+            elif current.kind=='struct_init':
+                for field_value in current.field_values.values():owned_value_sources(field_value)
+            elif current.kind in ('call','generic_call'):
+                name,args=resolved_call(value)
+                if any(variant.name==name for enum in self.p.enums.values() for variant in enum.variants):
+                    for arg in args:owned_value_sources(arg)
+                    return
+                if name in self.fn:
+                    modes=[p.mode for p in self.fn[name].params]
+                elif name in BUILTIN_SIGS:
+                    modes=[mode for mode,_ in BUILTIN_SIGS[name].params]
+                else:modes=[]
+                for arg,mode in zip(args,modes):
+                    if mode=='value':owned_value_sources(arg)
+        if node.kind in ('assign','replace'):
+            effects.append((self.root_var(node.assignment_target),node.assignment_target))
+            owned_value_sources(node.assigned_value)
+        elif node.kind=='drop':effects.append((node.raw.binding_id,st))
+        elif node.kind in ('let','try_let','return'):
+            expr=node.initializer if node.kind!='return' else node.expression
+            owned_value_sources(expr)
+        # Calls with mutable or owned inputs may invalidate an origin. Unknown
+        # calls and effects are rejected by the ordinary checker below.
+        def calls(value):
+            if isinstance(value,SemanticNode):
+                current=self.p.node(value)
+                if current.kind in ('call','generic_call'):
+                    name,args=resolved_call(value)
+                    if name in self.fn:
+                        modes=[p.mode for p in self.fn[name].params]
+                    elif name in BUILTIN_SIGS:
+                        modes=[mode for mode,_ in BUILTIN_SIGS[name].params]
+                    elif vec_builtin(name):
+                        op,_=vec_builtin(name);spec=VEC_INTRINSICS[op]
+                        modes=[spec.receiver_mode or 'value']+['value']*(len(args)-1)
+                    else:modes=[]
+                    for arg,mode in zip(args,modes):
+                        root=self.root_var(arg)
+                        if mode=='borrow_mut' or (mode=='value' and root in env and self.types.get(env[root].type_name).owned):
+                            effects.append((root,arg))
+                for part in current.operands:calls(part)
+            elif isinstance(value,(list,tuple)):
+                for part in value:calls(part)
+            elif isinstance(value,dict):
+                for part in value.values():calls(part)
+        calls(st)
+        for root,site in effects:
+            for loan in self.local_loans.values():
+                if loan.origin==root and loan.created_at<index<=loan.last_use:
+                    self.fail('M5402: conflicting live local loan',site,
+                              (DiagnosticNote('local borrow created here',self.p.span(loan.creation)),))
     def block_definitely_returns(self,body):
         for statement in body:
             node=self.p.node(statement)
@@ -1118,6 +1232,8 @@ class Checker:
     def check_borrowed_return(self,f):
         found=False;origins=set()
         for statement,expression in self.return_expressions(f.body):
+            if self.p.node(expression).kind=='var' and self.p.node(expression).raw.binding_id in self.local_loans:
+                self.fail('M5404: local reference cannot escape through borrowed return',expression)
             found=True;origin=self.borrowed_expression_origin(f,expression,{f.name})
             if origin is None:
                 self.fail('M5300: borrowed return must originate from a borrowed parameter',statement)
@@ -1232,10 +1348,20 @@ class Checker:
     def block(self,body,env,caps,fn):
         for st in body:
             node=self.p.node(st);tag=node.kind
+            if self.local_loans:self.check_local_owner_effect(st,env)
             if tag=='local_borrow':
-                self.fail('M5400: local borrow semantic lowering is not implemented',st)
+                origin=node.initializer;root=origin.binding_id
+                if root not in env or env[root].mode=='local_borrow' or env[root].moved or env[root].dropped:
+                    self.fail('M5401: invalid local borrow origin',origin)
+                self.ensure_type(node.declared_type,st)
+                if node.declared_type=='ByteSlice':
+                    self.fail('M5401: ByteSlice backing-owner validity is not proven for a stored borrow',origin)
+                if env[root].type_name!=node.declared_type:
+                    self.fail('M5401: local borrow origin type does not match declaration',origin)
+                env[node.raw.binding_id]=VarState(node.declared_type,False,mode='local_borrow')
             if tag=='let':
                 n=node.binding_name;t=node.declared_type;e=node.initializer;mut=node.mutable
+                if self.local_ref(e,env):self.fail('M5403: local reference cannot initialize an owned binding',e)
                 self.ensure_type(t);et=self.expr_type(e,env,caps,fn)
                 if self.borrowed_call_mode(e):self.fail('M5304: borrowed return cannot be stored in an owned binding',e)
                 if not self.argument_matches(et,t):self.fail(f'M3001: cannot assign {et} to {t} in {n}',st)
@@ -1277,12 +1403,17 @@ class Checker:
                     self.fail(f'M5202: replacement source aliases target {self.expr_path(target)}',st)
                 self.consume_owned_source(value,rt,env,f'replacing {self.expr_path(target)}')
             elif tag=='return':
+                if self.local_ref(node.expression,env):self.fail('M5404: local reference cannot escape through return',node.expression)
                 et=self.expr_type(node.expression,env,caps,fn)
                 if not self.argument_matches(et,fn.return_type):self.fail(f"M3002: return type {et} does not match {fn.return_type}",st)
                 if self.p.node(node.expression).kind=='number':self.validate_literal(fn.return_type,self.p.node(node.expression).atom_value)
                 if fn.return_mode=='value' and self.borrowed_call_mode(node.expression):self.fail('M5304: borrowed return cannot escape through an owned return',node.expression)
                 if fn.return_mode=='value':self.consume_owned_source(node.expression,et,env,f'returning from {fn.name}')
             elif tag in ('print','expr'):
+                if self.local_loans and self.p.node(node.expression).kind in ('call','generic_call'):
+                    called,args=resolved_call(node.expression);callee=self.fn.get(called)
+                    if callee and callee.return_mode!='value' and any(self.local_ref(arg,env) for arg in args):
+                        self.fail('M5403: local reference cannot enter a retaining call',node.expression)
                 if self.borrowed_call_mode(node.expression):self.fail(f'M5304: borrowed return cannot be used as a {"printed" if tag=="print" else "discarded"} value',node.expression)
                 expression_type=self.expr_type(node.expression,env,caps,fn)
                 if self.types.get(expression_type).needs_drop and not self.root_var(node.expression):
@@ -1290,6 +1421,7 @@ class Checker:
             elif tag=='drop':
                 n=node.binding_name;binding=node.raw.binding_id
                 if binding not in env: self.fail(f'M5100: cannot drop unknown binding {n}',st)
+                if env[binding].mode=='local_borrow':self.fail('M5403: local reference has no destructor',st)
                 if env[binding].moved or env[binding].dropped:
                     origin=env[binding].move_origin or env[binding].drop_origin
                     note='value moved here' if env[binding].moved else 'value previously dropped here'
@@ -1356,6 +1488,7 @@ class Checker:
         if kind=='var':
             n=node.atom_value;binding=node.raw.binding_id
             if binding not in env:self.fail(f'M3003: unknown variable {n}',e)
+            if write and env[binding].mode=='local_borrow':self.fail('M5403: immutable local reference cannot be written',e)
             if env[binding].moved:
                 context=f' ({env[binding].move_context})' if env[binding].move_context else ''
                 raise CompileError(f'M5001: use of moved value {n}',self.p.span(e),(DiagnosticNote(f'value moved here{context}',env[binding].move_origin),))
@@ -1389,6 +1522,7 @@ class Checker:
             expected={f.name:f for f in s.fields}
             if set(vals)!=set(expected):self.fail(f'M4005: {name} fields must be {sorted(expected)}',e)
             for n,x in vals.items():
+                if self.local_ref(x,env):self.fail('M5404: local reference cannot be stored in an aggregate',x)
                 if self.borrowed_call_mode(x):self.fail(f'M5304: borrowed return cannot be stored in field {name}.{n}',x)
                 t=self.expr_type(x,env,caps,fn)
                 if not self.argument_matches(t,expected[n].type_name):self.fail(f'M4006: field {n} expects {expected[n].type_name}, got {t}',x)
@@ -1405,6 +1539,7 @@ class Checker:
                 expected_count=0 if variant.payload_type is None else 1
                 if len(args)!=expected_count: self.fail(f'M6003: {name} expects {expected_count} arguments',e)
                 if expected_count:
+                    if self.local_ref(args[0],env):self.fail('M5404: local reference cannot be stored in an enum',args[0])
                     if self.borrowed_call_mode(args[0]):self.fail(f'M5304: borrowed return cannot be stored in enum payload {enum.name}::{variant.name}',args[0])
                     at=self.expr_type(args[0],env,caps,fn)
                     if not self.argument_matches(at,variant.payload_type): self.fail(f'M6004: {name} expects {variant.payload_type}, got {at}',args[0])
@@ -1488,6 +1623,7 @@ class Checker:
                 if len(args)!=len(params): self.fail(f'M3005: {name} expects {len(params)} arguments',e)
                 loans=[]
                 for idx,(arg,(mode,pt)) in enumerate(zip(args,params)):
+                    if self.local_ref(arg,env) and mode!='borrow':self.fail('M5403: local reference requires non-retaining shared borrow parameter',arg)
                     at=self.expr_type(arg,env,caps,fn)
                     if mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
                     if mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
@@ -1514,6 +1650,8 @@ class Checker:
             if len(args)!=len(callee.params):self.fail(f"M3005: {name} expects {len(callee.params)} arguments",e)
             loans=[]
             for arg,param in zip(args,callee.params):
+                if self.local_ref(arg,env) and (param.mode!='borrow' or callee.return_mode!='value'):
+                    self.fail('M5403: local reference requires non-retaining shared borrow parameter',arg)
                 at=self.expr_type(arg,env,caps,fn)
                 if param.mode=='value' and self.borrowed_call_mode(arg):self.fail('M5304: borrowed return cannot be passed by value',arg)
                 if param.mode=='borrow_mut' and self.borrowed_call_mode(arg)=='borrow':self.fail('M5306: shared borrowed return cannot satisfy borrow_mut',arg)
@@ -1557,6 +1695,8 @@ class Checker:
     def consume_owned_source(self,e,t,env,context):
         root=self.root_var(e)
         if not root or not self.types.get(t).owned: return
+        if root in env and env[root].mode=='local_borrow':
+            self.fail('M5403: local reference cannot transfer ownership',e)
         if self.p.node(e).kind=='field': raise CompileError(f'M5200: cannot move owned field {self.expr_path(e)} while {context}; move or drop the owning aggregate {root}')
         if env[root].mode in ('borrow','borrow_mut'): raise CompileError(f'M5102: cannot move borrowed parameter {root}')
         env[root].moved=True;env[root].move_origin=self.p.span(e);env[root].move_context=context
@@ -1685,7 +1825,8 @@ class TrySignal:
     value:TypedValue
 
 class Interpreter:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[];self.call_return_types=[]
+    def __init__(self,p):
+        self.p=p;self.types=TypeTable(p);self.fn={f.name:f for f in p.functions};self.call_modes=[];self.call_return_types=[]
     def run(self):return self.call('main',[])
     def call(self,n,args):
         f=self.fn[n];env={param.binding_id:v for param,v in zip(f.params,args)}
@@ -1711,6 +1852,7 @@ class Interpreter:
         for st in b:
             node=self.p.node(st);kind=node.kind
             if kind=='let':env[node.raw.binding_id]=self.eval(node.initializer,env,node.declared_type)
+            elif kind=='local_borrow':env[node.raw.binding_id]=env[node.initializer.binding_id]
             elif kind=='try_let':
                 value=self.eval(node.initializer,env); enum=self.p.enums[value.type_name]
                 if value.value['variant']=='Err': return TrySignal(value)
@@ -1957,7 +2099,8 @@ class Interpreter:
         return str(v.value)
 
 class CGenerator:
-    def __init__(self,p):self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0;self._expr_overrides={};self._address_overrides=set()
+    def __init__(self,p):
+        self.p=p;self.types=TypeTable(p);self.ownership=OwnershipEffects(p,self.types);self.fn={f.name:f for f in p.functions};self.old_map={};self.current_return=None;self.temp_counter=0;self._expr_overrides={};self._address_overrides=set()
     def vec_types(self):
         found=set()
         def add(t):
@@ -2247,6 +2390,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         for c in f.pre:
             prelude,value=self.ordered_expr(c,env,None,'    ');o.extend(prelude);o.append(f'    if(!({value})) merit_fail("precondition failed in {f.name}",71);')
         self.current_return=f.return_type
+        self.current_return_mode=f.return_mode
         if f.return_type!='void':
             if f.return_mode=='borrow':o.append(f'    const {self.ctype(f.return_type)} *_merit_result = NULL;')
             elif f.return_mode=='borrow_mut':o.append(f'    {self.ctype(f.return_type)} *_merit_result = NULL;')
@@ -2269,6 +2413,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         finally:self._expr_overrides=previous;self._address_overrides=previous_addresses
     def rendered_address(self,e,rendered,env):
         node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id)=='local_borrow':return node.raw.binding_id.c_name
         if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):return rendered
         if node.kind in ('call','generic_call'):
             called,_=resolved_call(node);callee=self.fn.get(called)
@@ -2352,6 +2497,11 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         if kind=='let':
             prelude,value=self.ordered_expr(node.initializer,env,node.declared_type,p);binding=node.raw.binding_id;env[binding]=node.declared_type
             return prelude+[f'{p}{self.ctype(node.declared_type)} {binding.c_name} = {self.checked(node.declared_type,value)};']
+        if kind=='local_borrow':
+            binding=node.raw.binding_id;origin=node.initializer.binding_id
+            source=origin.c_name if self.env_mode(env,origin) in ('borrow','borrow_mut','local_borrow') else '&'+origin.c_name
+            env[binding]=(node.declared_type,'local_borrow')
+            return [f'{p}const {self.ctype(node.declared_type)} *{binding.c_name} = {source};']
         if kind=='try_let':
             enum_t=self.etype(node.initializer,env); enum=self.p.enums[enum_t]; temp=f'_merit_try_{self.temp_counter}'; self.temp_counter+=1
             err=next(v for v in enum.variants if v.name=='Err'); ret=self.p.enums[self.current_return]
@@ -2381,6 +2531,10 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             prelude,value=self.ordered_expr(node.expression,env,self.current_return,p)
             if self.current_return=='void':
                 return prelude+[f'{p}(void)({value});',f'{p}goto _merit_epilogue;']
+            return_expression=self.p.node(node.expression)
+            if (self.current_return_mode=='value' and return_expression.kind=='var'
+                and self.env_mode(env,return_expression.raw.binding_id) in ('borrow','borrow_mut')):
+                value=f'(*{return_expression.raw.binding_id.c_name})'
             return prelude+[f'{p}_merit_result = {self.checked(self.current_return,value)};',f'{p}goto _merit_epilogue;']
         if kind=='print':
             t=self.etype(node.expression,env);prelude,x=self.ordered_expr(node.expression,env,t,p)
@@ -2464,6 +2618,7 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
         rendered=self.expr(e,env)
         if id(e) in self._address_overrides:return rendered
         node=self.p.node(e)
+        if node.kind=='var' and self.env_mode(env,node.raw.binding_id)=='local_borrow':return node.raw.binding_id.c_name
         if node.kind=='var' and self.env_mode(env,node.raw.binding_id) in ('borrow','borrow_mut'):
             return rendered
         if node.kind in ('call','generic_call'):
@@ -2480,10 +2635,14 @@ return (int64_t)value.tv_sec*1000000000LL+(int64_t)value.tv_nsec;
             if expected=='i64' and value==INT_RANGES['i64'][0]:return 'INT64_MIN'
             if expected=='u64' and value==INT_RANGES['u64'][1]:return 'UINT64_MAX'
             return str(value)
-        if kind=='var':return '_merit_result' if node.atom_value=='result' and isinstance(env.get(node.raw.binding_id),tuple) and env[node.raw.binding_id][1] in ('__result__','borrow','borrow_mut') else node.raw.binding_id.c_name
+        if kind=='var':
+            if self.env_mode(env,node.raw.binding_id)=='local_borrow':return f'(*{node.raw.binding_id.c_name})'
+            return '_merit_result' if node.atom_value=='result' and isinstance(env.get(node.raw.binding_id),tuple) and env[node.raw.binding_id][1] in ('__result__','borrow','borrow_mut') else node.raw.binding_id.c_name
         if kind=='field':
             base=node.field_base; op='.'
             base_node=self.p.node(base)
+            if base_node.kind=='var' and self.env_mode(env,base_node.raw.binding_id)=='local_borrow':
+                return f'{base_node.raw.binding_id.c_name}->{node.field_name}'
             if base_node.kind=='var' and self.env_mode(env,base_node.raw.binding_id) in ('borrow','borrow_mut'): op='->'
             elif base_node.kind in ('call','generic_call'):
                 called,_=resolved_call(base_node);callee=self.fn.get(called)

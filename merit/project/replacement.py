@@ -19,6 +19,7 @@ from merit.bootstrap.replacement_build import (
     compile_replacement_artifact,
     compile_replacement_shared_artifact,
 )
+from merit.bootstrap.representation_versions import LOCAL_LOAN_MIR_SCHEMA
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.project_request import encode_loaded_project_request
 
@@ -35,6 +36,12 @@ REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL = (
 )
 REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2 = (
     "merit-project-request-v2/resolved-source-function-bundle-v4"
+)
+REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL = (
+    "merit-project-request-v1/resolved-source-function-bundle-v5"
+)
+REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2 = (
+    "merit-project-request-v2/resolved-source-function-bundle-v5"
 )
 
 
@@ -85,13 +92,20 @@ def _load_native_project_artifact(
         # Ordinary v4 executable builds request no public C exports explicitly.
         # Retain historical v1 artifacts only when the manifest says v1.
         if (not require_all_public and header_exports is None and
-                payload.get("producer_protocol") == REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2):
+                payload.get("producer_protocol") in {REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2,
+                                                      REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2}):
             header_exports = frozenset()
     expected_protocol = (
         REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
         if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL
     )
-    if payload.get("producer_protocol") != expected_protocol:
+    allowed_protocols = {expected_protocol}
+    allowed_protocols.add(
+        REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2
+        if header_exports is not None else REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL
+    )
+    producer_protocol = payload.get("producer_protocol")
+    if producer_protocol not in allowed_protocols:
         return None
     expected_request_digest = payload.get("request_sha256")
     actual_request_digest = hashlib.sha256(encode_loaded_project_request(
@@ -135,6 +149,24 @@ def _load_native_project_artifact(
         c_header = contents["c_header"].decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ReplacementProjectError("native replacement project artifacts must be UTF-8") from exc
+    if producer_protocol in {REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
+                             REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2}:
+        try:
+            old_mir_data = json.loads(contents["canonical_mir"])
+        except json.JSONDecodeError:
+            old_mir_data = None
+        if isinstance(old_mir_data, dict) and old_mir_data.get("schema") == LOCAL_LOAN_MIR_SCHEMA:
+            raise ReplacementProjectError("v4 project artifact cannot contain canonical MIR v2")
+    if producer_protocol in {REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL,
+                             REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2}:
+        from merit.bootstrap.mir_contract import MirContractError, parse_mir
+        try:
+            mir_data = json.loads(contents["canonical_mir"])
+            if not isinstance(mir_data, dict) or mir_data.get("schema") != LOCAL_LOAN_MIR_SCHEMA:
+                raise ReplacementProjectError("v5 project artifact requires canonical MIR v2")
+            parse_mir(mir_data)
+        except (json.JSONDecodeError, MirContractError) as exc:
+            raise ReplacementProjectError("v5 project artifact has invalid canonical MIR v2") from exc
     return ReplacementBuildArtifact(module=None, c_source=c_source, c_header=c_header)
 
 
