@@ -34,10 +34,10 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker and native public producer: 7/7 accepted, 6/6 rejected with matching M54xx identities, primary spans, and notes in focused tests. |
 | Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner and executable Python/native traces cover implicit and explicit drop, owner move, replacement, and early return for an owned type with a custom destructor. Unsupported flow remains fail-closed; final-tree broad gates are pending after the v2 destructor repair. |
 | Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity and native generated-C execution pass the 7 required accepted cases plus focused custom-destructor lifecycle shapes. Final-tree broad gates are pending after the repair. |
-| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Checked-source and native producers cover the required matrix. Native MIR v2 is strictly decoded, including a custom destructor and loan effects; fresh stage parity and legacy v4 destructor regressions pass. Final-tree broad gates are pending after the repair. |
-| Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Merit-native producer publishes real v5 MIR/C/header bundles through public prepare/load/build. Focused v5 and legacy v4 regressions pass. Fresh-stage and broad compatibility evidence remain open. |
+| HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Checked-source and native producers cover the required matrix. Native MIR v2 strictly decodes, including custom destructors and loan effects; fresh-stage parity, legacy v4 regressions, and final implementation tree broad gates pass. |
+| Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Merit-native producer publishes real v5 MIR/C/header bundles through public prepare/load/build. Focused v5, legacy v4, fresh-stage, and final implementation tree broad compatibility evidence passes. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Fresh isolated public stage-1/stage-2 compilers agree with stage 0 on all 7 v5 successes and 6 M54xx rejection packets. Each stage also builds and executes an RM1 program through `merit-project build`, with identical MIR/C/header bytes and output. Unsupported forms retain generic 907 fail-closed rejection. |
-| Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused native v5, legacy v4, source-proof, and fresh-stage parity tests pass. Previous-tree Windows subsystem/self-hosting/full and hosted Ubuntu/Windows full passed; the v2 destructor repair requires final-tree requalification. |
+| Gates | Focused, subsystem, self-hosting, final Windows/Linux full gates on final tree. | Focused native v5, legacy v4, source-proof, and fresh-stage parity tests pass. Final implementation tree `0ab0c8d` passed Windows subsystem and self-hosting plus hosted Ubuntu/Windows full gates. |
 
 Current focused RM1 checker, execution, compatibility, source-artifact, and
 HIR/MIR contract checkpoint: 185 passed in 11.96 seconds on Windows. This is
@@ -429,7 +429,7 @@ the independent Python oracle. The focused v5, legacy v4, and native-record
 suite passed together (3 tests, 116 seconds); old project artifacts remain
 on the v4 writer path.
 
-## Qualification evidence (in progress)
+## Qualification evidence
 
 All local Windows commands below used Python 3.13.15 and MSYS2 UCRT64 GCC
 16.2.0, with `TEMP`, `TMP`, `TMPDIR`, and pytest's base temp on `D:`.
@@ -443,7 +443,10 @@ invoke the `merit` CLI by name.
 | `.venv/Scripts/python.exe scripts/gate.py full --durations 50` | `94b08da` | Windows | FAIL, pytest phase: 1,879 passed, 2 failed in 9,319.10 s; acceptance phase not run | `D:\Temp\merit-tests\rm1-94b08da-windows-full.log` |
 | `.venv/Scripts/python.exe -m pytest -q` with the two failing node IDs | working tree after `94b08da` | Windows | PASS, 2 tests in 8.96 s | Focused terminal result |
 | `.venv/Scripts/python.exe scripts/gate.py fast` | working tree after `94b08da` | Windows | PASS, 107 tests in 15.12 s | `.merit/gates/fast/result.json` |
-| Canonical full gate | pending | Linux/WSL | Not executed | Pending platform run |
+| Canonical full gate | `0ab0c8d` | Local Linux/WSL | Not executed; local WSL VM unavailable | Hosted Ubuntu full gate below provides Linux execution evidence |
+| `.venv/Scripts/python.exe scripts/gate.py subsystem --durations 50` | `0ab0c8d` | Windows | PASS, 990 tests, 15,215.443 s | `D:\Temp\merit-tests\rm1-0ab0c8d-windows-subsystem.log` |
+| `.venv/Scripts/python.exe scripts/gate.py self-hosting` | `0ab0c8d` | Windows | PASS, 800.854 s, 10/10 acceptance projects | `D:\Temp\merit-tests\rm1-0ab0c8d-windows-self-hosting.log` |
+| [Canonical hosted full workflow](https://github.com/JENkt4k/merit/actions/runs/44160536674) | `0ab0c8d` | Ubuntu and Windows | PASS, both aggregate full-gate jobs and all required jobs | Hosted workflow logs |
 
 The full-gate failures have distinct dispositions. The legacy HIR v1 ABI
 fixture exposed a confirmed RM1 compatibility regression: the new owned-return
@@ -506,15 +509,17 @@ destructor and fresh public stage-0/1/2 tests passed together (7 tests in
 logs: `D:\Temp\merit-tests\rm1-v5-destructor-parity-focused.log` and
 `D:\Temp\merit-tests\rm1-destructor-stage-and-v4.log`. The stage test
 compared deterministic v5 MIR/C/header bytes and diagnostic packets, including
-the custom-destructor case. Final-tree subsystem, self-hosting, and hosted
-Windows/Ubuntu full gates are pending.
+the custom-destructor case. Final implementation tree `0ab0c8d` subsequently
+passed the Windows subsystem gate (990 tests, 4h13m35s), Windows self-hosting
+gate (13m21s, 10/10 acceptance projects), and the canonical hosted Ubuntu and
+Windows full workflow. These gates ran after the compiler and test repair.
 
 ### Semantic-coherence disposition
 
 | Classification | Finding and boundary |
 | --- | --- |
 | No confirmed soundness blocker | Known binding/origin identity, final-use loan effects, shared-read/exclusive-write conflicts, and owner-only cleanup agree across the checker, native v2 MIR, and focused executable traces. |
-| Required-path coverage gap, repaired pending gates | Native v2 MIR project finalization with a custom destructor failed closed as above. Focused executable and stage evidence passes; broad requalification remains mandatory. |
+| Required-path coverage gap, repaired and qualified | Native v2 MIR project finalization with a custom destructor failed closed as above. Focused executable and stage evidence plus final implementation tree subsystem, self-hosting, and hosted Ubuntu/Windows full gates pass. |
 | Required compatibility defect, corrected | The HIR v2 owned-return guard had also rejected a legacy HIR v1 ABI fixture. It is now conditional on v2; focused and prior-tree full regressions passed. |
 | Future architectural risk | A `ByteSlice` loan does not establish the lifetime of its separate backing owner. RM1 rejects this combination pending the deferred R8 provenance design; no weaker origin assumption is introduced. |
 | No issue found | Malformed or mixed v1/v2 MIR and v4/v5 bundles are rejected by strict readers; representative old artifact digests, old borrowed-parameter/return tests, native M54xx spans/notes, and source-closure/stage comparisons pass. |
