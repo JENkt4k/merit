@@ -1,7 +1,9 @@
 # RM1 immutable local borrow implementation ledger
 
-**Status:** In progress. PR #141 is a merged, fail-closed parser checkpoint.
-This ledger tracks the continuation PR. The normative contract remains
+**Status:** Closed by manually merged PR #142 at
+`37dba3a54e5b17cc7ad409a08c6255ed13274c55`. PR #141 was the earlier
+fail-closed parser checkpoint. This ledger records completed implementation and
+qualification evidence. The normative contract remains
 [`LOCAL_BORROW_CONTRACT.md`](docs/design/alpha3/LOCAL_BORROW_CONTRACT.md).
 The parser checkpoint must not be described as a working stored-borrow feature.
 
@@ -32,8 +34,8 @@ the full Alpha.2 corpus or final RM1 gates. Test log:
 | --- | --- | --- |
 | Contextual source syntax and old `borrow` names | Preferred declaration parses; old names and borrowed parameters remain valid; comments/newlines covered. | Parser checkpoint merged. |
 | Checker origin, authority, and final use | Accept 01, 02, 04, 07, 09, 18, 24; reject 05, 06, 08, 22, 23, 28; unknown origin/effects/control flow fail closed. | Python reference checker and native public producer: 7/7 accepted, 6/6 rejected with matching M54xx identities, primary spans, and notes in focused tests. |
-| Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner and executable Python/native traces cover implicit and explicit drop, owner move, replacement, and early return for an owned type with a custom destructor. Unsupported flow remains fail-closed; final-tree broad gates are pending after the v2 destructor repair. |
-| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity and native generated-C execution pass the 7 required accepted cases plus focused custom-destructor lifecycle shapes. Final-tree broad gates are pending after the repair. |
+| Ownership and cleanup | No borrow destructor; owner drop/move/replace, early/error cleanup, and allocator provenance remain exact. | Checker/ownership planner and executable Python/native traces cover implicit and explicit drop, owner move, replacement, and early return for an owned type with a custom destructor. Unsupported flow remains fail-closed; final implementation tree broad gates passed. |
+| Interpreter and C | Accepted programs have output and cleanup parity; single evaluation and no public ABI change. | Python reference interpreter/C parity and native generated-C execution pass the 7 required accepted cases plus focused custom-destructor lifecycle shapes. Final implementation tree broad gates passed. |
 | HIR/MIR v2 | Explicit local-loan effects, strict schema/record validation, deterministic bytes; v1 old bytes unchanged and old reader rejects v2. | Checked-source and native producers cover the required matrix. Native MIR v2 strictly decodes, including custom destructors and loan effects; fresh-stage parity, legacy v4 regressions, and final implementation tree broad gates pass. |
 | Native v5 and public project interface | Complete versioned MIR/C/header framing, strict transport/manifest validation, v4 old bytes unchanged, no Python fallback. | Merit-native producer publishes real v5 MIR/C/header bundles through public prepare/load/build. Focused v5, legacy v4, fresh-stage, and final implementation tree broad compatibility evidence passes. |
 | Merit-native compiler and stage 1/2 | Accepted/rejected and diagnostic parity; fresh public compiler stages produce equivalent artifacts. | Fresh isolated public stage-1/stage-2 compilers agree with stage 0 on all 7 v5 successes and 6 M54xx rejection packets. Each stage also builds and executes an RM1 program through `merit-project build`, with identical MIR/C/header bytes and output. Unsupported forms retain generic 907 fail-closed rejection. |

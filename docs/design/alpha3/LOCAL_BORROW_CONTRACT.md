@@ -1,9 +1,8 @@
-# RM0 first-slice local-borrow contract for review
+# RM0 first-slice local-borrow contract
 
-**Status:** Owner-approved R1–R3/R9 semantic direction, proposed normative
-wording and encoding contract for review in PR #140. This document does not
-freeze RM0 or authorize production compiler changes. The first implementation
-PR may begin only after the design-only PR is reviewed and merged. See the
+**Status:** Reviewed RM0 first-slice contract, merged in PR #140. The bounded
+RM1 implementation closed in PR #142; this contract does not authorize wider
+resource relationships. See the
 [implementation audit](LOCAL_BORROW_IMPLEMENTATION_PLAN.md) and
 [case analysis](BORROW_MODEL_CASES.md).
 

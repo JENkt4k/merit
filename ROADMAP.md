@@ -64,15 +64,17 @@ its complete 46-module source through the normal public project interface,
 with a versioned stage-equivalence report and the Python oracle kept independent.
 Hosted Ubuntu and native-Windows full and self-hosting gates passed. `SELF_HOSTING.md`
 records final-tree qualification evidence and the campaign closure.
-Separate compilation and dependency-granular caching are
-the next natural infrastructure boundary. Stored
+Separate compilation and dependency-granular caching remain a natural
+infrastructure boundary. Alpha.3 RM1 implemented immutable function-local
+stored borrows in PR #142 under the reviewed RM0 contract. General stored
 references/lifetimes and scientific arrays remain later semantic/domain work
-rather than implicit Alpha.2 scope.
+rather than implicit Alpha.2 or RM1 scope.
 
-The separate Alpha.3 RM0 design milestone is tracked in
-`ALPHA3_RESOURCE_MODEL.md`. It starts from the proposed
-`docs/design/MEMORY_RESOURCE_MODEL.md` and must freeze resource semantics
-before any implementation. The proposal itself does not authorize new behavior.
+The separate Alpha.3 RM0 design milestone closed in PR #140 and is tracked in
+`ALPHA3_RESOURCE_MODEL.md`. Its approved first slice closed as RM1 in PR #142;
+`RM1_IMPLEMENTATION.md` records the implementation and qualification evidence.
+`docs/design/MEMORY_RESOURCE_MODEL.md` remains a proposal for deferred work,
+not authorization for the next feature.
 
 ### Documentation path
 
