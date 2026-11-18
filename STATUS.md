@@ -1,6 +1,6 @@
 # Merit Status
 
-Status date: 2026-11-07
+Status date: 2026-11-18
 
 ## Release target
 
@@ -20,7 +20,7 @@ gates are deliberate milestone validation. M1-M10 are closed.
 
 - Generated C evaluates sibling operands and arguments exactly once, left to right.
 - Ownership, moves, drops, cleanup, interpreter frames, and C names use deterministic semantic binding IDs.
-- Returned borrows are validated and ephemeral-only; stored references and lifetime parameters remain outside this alpha.
+- Returned borrows are validated and ephemeral-only under Alpha.2. Alpha.3 RM1 adds only immutable function-local stored borrows; general reference types and lifetime parameters remain outside the implemented subset.
 - Exact decimals, bounded integers, explicit allocation, capability-specific hazards, typed errors, stable layouts, shared-library builds, and interpreter/native equivalence are implemented for the documented alpha subset.
 - The exact-decimal ledger application exercises multi-module typed errors, filesystem capabilities, explicit allocation, stable exports, and foreign ABI verification.
 - Independent arbitrary-precision references cover decimal rounding policies and bounded arithmetic boundaries.
@@ -86,7 +86,13 @@ acceptance projects). Hosted Ubuntu and native-Windows self-hosting gates also
 passed on `f484731`; the local Windows self-hosting gate passed with 10/10
 acceptance projects. The complete SH6 evidence and merge state are tracked in
 `SELF_HOSTING.md`. RM0 design work is now tracked in
-`ALPHA3_RESOURCE_MODEL.md`; no Alpha.3 resource semantics are implemented.
+`ALPHA3_RESOURCE_MODEL.md`. RM0 design closed in PR #140. RM1 immutable
+function-local stored borrows closed in PR #142 at `37dba3a`: the seven accepted
+and six rejected required cases pass through the Merit-native public compiler,
+with independent Python-oracle and fresh-stage parity. Final implementation
+tree Windows subsystem and self-hosting gates and hosted Ubuntu/Windows full
+gates passed. `RM1_IMPLEMENTATION.md` records exact evidence. R4-R8 and wider
+borrow relationships remain deferred.
 
 ## Documentation
 

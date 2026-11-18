@@ -132,3 +132,20 @@ borrowed-return tests passed (41 tests); the canonical fast gate passed
 (93 tests) on the merge commit. The [RM1 continuation ledger](RM1_IMPLEMENTATION.md)
 tracks the remaining capability and semantic-coherence evidence. Neither PR
 #141 nor this checkpoint closes RM1.
+
+## RM1 closure
+
+PR #142 was manually merged at `37dba3a54e5b17cc7ad409a08c6255ed13274c55`.
+The immutable function-local stored-borrow slice is implemented through the
+independent Python oracle and the Merit-native public v5 project interface.
+All seven required accepted and six required rejected cases, matching M54xx
+diagnostics, strict HIR/MIR v2 and native v5 artifacts, fresh stage-1/stage-2
+parity, and executable cleanup traces are recorded in
+[the RM1 evidence ledger](RM1_IMPLEMENTATION.md). The final implementation
+tree passed Windows subsystem and self-hosting gates and hosted Ubuntu and
+Windows full gates. The last commit in PR #142 changed only that evidence ledger.
+
+R4-R8 remain deferred. RM1 closure does not freeze a second resource feature,
+general reference types, mutable stored borrows, concurrency, or a broader
+aggregate-view provenance model. A later implementation needs its own reviewed
+bounded contract and evidence plan.
