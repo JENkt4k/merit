@@ -152,5 +152,8 @@ bounded contract and evidence plan.
 
 The [single-`if` loan proposal](docs/design/alpha3/RM2_IF_LOAN_PROPOSAL.md)
 is the next design candidate. It is not an RM2 semantic freeze or permission
-to remove current fail-closed control-flow guards. Its join representation and
-minimum acceptance matrix require review before implementation.
+to remove current fail-closed control-flow guards. The representation audit
+found that existing HIR v2/MIR v2/native v5 readers cannot validate the
+proposed join semantics; a conditional v3/v3/v6 transition is recommended for
+review. Its minimum acceptance matrix and version contract require approval
+before implementation.

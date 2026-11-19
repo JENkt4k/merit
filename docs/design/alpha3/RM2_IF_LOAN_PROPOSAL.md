@@ -60,16 +60,16 @@ project artifact publication with matching stable diagnostics and spans.
 | Python checker | Replace the blanket `if` rejection only for the bounded shape. Compute reachable uses and conflicting owner effects on both arms; prove owner validity at the join. Unsupported flow still fails closed. |
 | Python HIR/MIR and interpreter/C | Emit a branch and common loan end with deterministic instruction identity; execute the condition once; compare true/false traces and owner cleanup. |
 | Merit-native proof and backend | Extend source/CFG proof and writer together. The current source-use proof rejects `if`; its linear last-use statement index is insufficient by itself to prove a branch join. Never narrow diagnostic 907 until complete v5 C/header/MIR production and validation succeeds. |
-| Serialization | Audit whether HIR v2, MIR v2 loan effects, and native v5 can unambiguously express a loan end at a CFG join and validate all predecessor paths. Existing linear create/use/end validation is not evidence of this. If not, propose a conditional new version with old-reader rejection; preserve byte-identical RM1 and Alpha.2 artifacts. |
+| Serialization | Use the conditional HIR v3/MIR v3/native v6 transition proposed below for this control-flow feature. Preserve byte-identical RM1 and Alpha.2 artifacts and require old readers to reject new versions. |
 | Public interface and stages | Publish complete artifacts only after proof. Compare canonical bytes, diagnostics, outputs, and cleanup from independently built stages with no Python semantic fallback. |
 
 ## Evidence gate for a later implementation
 
 1. Review the exact accepted/rejected matrix and source spans. Decide whether
    the common-end restriction is sufficient for this slice.
-2. Prove the representation can encode and strictly validate the join, or
-   review a version transition before writing production artifacts. Reject
-   missing, duplicate, misplaced, or path-incomplete loan ends.
+2. Review the proposed version transition and exact join-end encoding before
+   writing production artifacts. Reject missing, duplicate, misplaced, or
+   path-incomplete loan ends.
 3. Add focused checker, execution, HIR/MIR, native-v5, malformed-artifact, and
    legacy-byte regressions. Test both branch outcomes and destructor paths.
 4. Build fresh isolated stage-1/stage-2 compilers through the public project
@@ -83,8 +83,43 @@ project artifact publication with matching stable diagnostics and spans.
   with no loan live across a join. The latter proves less user-visible behavior.
 - Decide whether owner operations inside an arm after that arm's final use are
   deliberately deferred. The proposal defers them.
-- Confirm the common join is the loan end even when an arm has no use. The
-  serializer/validator audit must settle how this is encoded before coding.
+- Confirm the common join is the loan end even when an arm has no use, and
+  approve the versioned representation below before coding.
+
+## Representation review finding
+
+The present MIR v2 reader explicitly rejects any loan-bearing function unless
+it has **one block with a return terminator** (`_validate_local_loan_effects`
+in `merit/bootstrap/mir_contract.py`). It then checks one global, linear
+instruction interval between create and end, and walks only that block for
+owned-local liveness. The native MIR v2 writer anchors `end` to the last use's
+instruction ID (`canonical_mir_append_one_reference_loan_effects` in
+`mir_resolved_source_function_bundle.mrt`). On a branch, that instruction may
+not run, and an arm without a use has no end anchor. Reusing those v2 rules
+would admit an unproved path or incorrectly reject a sound join.
+
+HIR v2 already has an `if` node kind and local-loan bindings, but its reader
+validates identity, shape, and postorder, **not** per-edge loan liveness. An old
+HIR v2 reader could therefore accept a branch-bearing loan as if it had RM1's
+straight-line proof. Native v5 publication requires canonical MIR v2 and its
+strict reader. These are evidenced boundaries, not optional extension slots.
+
+**Recommendation for review:** conditionally emit HIR v3, MIR v3, and native
+bundle/protocol v6 only for the approved loan-bearing `if` shape. Keep HIR
+v1/v2, MIR v1/v2, and native v4/v5 bytes and readers unchanged for existing
+programs. A new v3/v6 reader must reject unknown fields, mixed versions,
+incomplete framing, and loan effects with no proof of a common join. The old
+readers must reject the new outer versions before interpreting payloads.
+
+The proposed MIR v3 loan `end` effect anchors to **entry of the join block**,
+with a block ID and an explicit entry phase, rather than to the last use in
+either arm. Its validator must prove that the join postdominates the create
+and both arm exits, that all recorded uses are reachable before that entry,
+that no owner invalidation conflicts on either path, and that owner cleanup
+remains once per reachable exit. A deterministic ordering rule must distinguish
+block-entry effects from instruction effects. The exact serialized field names
+and numeric discriminants remain for implementation review; no v3/v6 producer
+is authorized by this proposal alone.
 
 No decision here changes RM1, R4-R8, `ByteSlice` backing-owner policy, or the
 provisional concurrency directions.
