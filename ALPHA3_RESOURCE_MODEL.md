@@ -149,3 +149,11 @@ R4-R8 remain deferred. RM1 closure does not freeze a second resource feature,
 general reference types, mutable stored borrows, concurrency, or a broader
 aggregate-view provenance model. A later implementation needs its own reviewed
 bounded contract and evidence plan.
+
+The [single-`if` loan proposal](docs/design/alpha3/RM2_IF_LOAN_PROPOSAL.md)
+is the next design candidate. It is not an RM2 semantic freeze or permission
+to remove current fail-closed control-flow guards. The representation audit
+found that existing HIR v2/MIR v2/native v5 readers cannot validate the
+proposed join semantics; a conditional v3/v3/v6 transition is recommended for
+review. Its minimum acceptance matrix and version contract require approval
+before implementation.
