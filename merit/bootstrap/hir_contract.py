@@ -13,6 +13,7 @@ from typing import Iterable, Mapping, Sequence
 
 HIR_SCHEMA = "bootstrap-hir-v1"
 LOCAL_LOAN_HIR_SCHEMA = "bootstrap-hir-v2"
+IF_LOAN_HIR_SCHEMA = "bootstrap-hir-v3"
 
 NODE_KINDS = frozenset({
     "module", "function", "parameter", "block", "let", "assign", "return",
@@ -187,10 +188,10 @@ class HirModule:
     local_loans: tuple[HirLocalLoan, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA}:
+        if self.schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
             raise HirContractError(f"unsupported HIR schema {self.schema!r}")
-        if bool(self.local_loans) != (self.schema == LOCAL_LOAN_HIR_SCHEMA):
-            raise HirContractError("HIR v2 requires local loans; HIR v1 cannot contain them")
+        if bool(self.local_loans) != (self.schema in {LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}):
+            raise HirContractError("versioned local-loan HIR requires loans; HIR v1 cannot contain them")
         if not self.name:
             raise HirContractError("module name must be non-empty")
         _validate_module(self)
@@ -209,6 +210,31 @@ class HirModule:
 
 
 def _validate_module(module: HirModule) -> None:
+    if module.local_loans:
+        control_nodes = [node for node in module.nodes if node.kind in {"if", "while", "match"}]
+        if module.schema == LOCAL_LOAN_HIR_SCHEMA and control_nodes:
+            raise HirContractError("HIR v2 local loans require straight-line control flow")
+        if module.schema == IF_LOAN_HIR_SCHEMA and (
+            len(module.local_loans) != 1 or len(control_nodes) != 1 or control_nodes[0].kind != "if"
+        ):
+            raise HirContractError("HIR v3 requires one local loan and one if join")
+        if module.schema == IF_LOAN_HIR_SCHEMA:
+            by_id = {node.node_id: node for node in module.nodes}
+            branch = control_nodes[0]
+            if (len(branch.children) != 3 or
+                any(by_id.get(child) is None for child in branch.children) or
+                any(by_id[child].kind != "block" for child in branch.children[1:])):
+                raise HirContractError("HIR v3 if requires two explicit arm blocks")
+            reachable: set[int] = set()
+            pending = list(module.roots)
+            while pending:
+                node_id = pending.pop()
+                if node_id not in by_id or node_id in reachable:
+                    continue
+                reachable.add(node_id)
+                pending.extend(by_id[node_id].children)
+            if reachable != set(by_id):
+                raise HirContractError("HIR v3 contains unreachable semantic nodes")
     binding_ids = [binding.binding_id for binding in module.bindings]
     if len(set(binding_ids)) != len(binding_ids):
         raise HirContractError("duplicate HIR binding ID")
@@ -324,11 +350,11 @@ def _parse_span(data: object | None) -> SourceSpan | None:
 
 def parse_hir(data: Mapping[str, object]) -> HirModule:
     schema = data.get("schema")
-    if schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA}:
+    if schema not in {HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
         if schema is None:
             raise HirContractError(f"expected HIR schema {HIR_SCHEMA!r}")
         raise HirContractError(f"unsupported HIR schema {schema!r}")
-    if schema == LOCAL_LOAN_HIR_SCHEMA:
+    if schema in {LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
         _require_keys(data, {"schema", "name", "bindings", "nodes", "roots", "local_loans"})
     elif "local_loans" in data:
         raise HirContractError("HIR v1 cannot contain local loan records")
@@ -345,7 +371,7 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
     for raw in raw_bindings:
         if not isinstance(raw, Mapping):
             raise HirContractError("binding entries must be objects")
-        if schema == LOCAL_LOAN_HIR_SCHEMA:
+        if schema in {LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
             _require_keys(raw, {"id", "name", "type", "mutable", "ownership", "span"}, {"span"})
             _validate_v2_type(raw.get("type"))
         bindings.append(HirBinding(
@@ -361,7 +387,7 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
     for raw in raw_nodes:
         if not isinstance(raw, Mapping):
             raise HirContractError("node entries must be objects")
-        if schema == LOCAL_LOAN_HIR_SCHEMA:
+        if schema in {LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
             _require_keys(raw, {"id", "kind", "type", "children", "span", "binding_id", "symbol", "value", "ownership", "numeric_policy", "conversion_policy", "capabilities", "generic_arguments"}, {"children", "span", "binding_id", "symbol", "value", "numeric_policy", "conversion_policy", "capabilities", "generic_arguments"})
             _validate_v2_type(raw.get("type"))
             raw_arguments = raw.get("generic_arguments", [])
@@ -397,7 +423,7 @@ def parse_hir(data: Mapping[str, object]) -> HirModule:
     if not all(isinstance(root, int) for root in raw_roots):
         raise HirContractError("roots must be integer node IDs")
     loans: list[HirLocalLoan] = []
-    if schema == LOCAL_LOAN_HIR_SCHEMA:
+    if schema in {LOCAL_LOAN_HIR_SCHEMA, IF_LOAN_HIR_SCHEMA}:
         raw_loans = data.get("local_loans")
         if not isinstance(raw_loans, list) or not raw_loans:
             raise HirContractError("HIR v2 requires a non-empty local_loans list")

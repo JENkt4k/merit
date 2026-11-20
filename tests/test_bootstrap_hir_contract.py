@@ -55,7 +55,7 @@ def test_v2_local_loan_round_trip_keeps_v1_bytes_unchanged():
     assert load_hir_json(canonical_hir_json(module)) == module
     assert canonical_hir_json(sample_module()) == old
     with pytest.raises(HirContractError, match="unsupported HIR schema"):
-        parse_hir({**module.to_data(), "schema": "bootstrap-hir-v3"})
+        parse_hir({**module.to_data(), "schema": "bootstrap-hir-v4"})
 
 
 @pytest.mark.parametrize("change", [
