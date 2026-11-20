@@ -94,3 +94,24 @@ def test_interpreter_reference_is_same_referent_object() -> None:
     Interpreter(program).block(program.functions[0].body[:2],env)
     owner,reference=program.functions[0].body[:2]
     assert env[owner.binding_id] is env[reference.binding_id]
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [(0, "2\n"), (1, "1\n2\n")],
+)
+def test_rm2_one_arm_read_and_owner_write_after_if_join(condition, expected, tmp_path):
+    source=(f'module rm2\nfn main()->i32 {{ var x:i32=1; '
+            f'let r: borrow i32 = borrow x; if {condition} {{ print(r); }} '
+            'x=2; print(x); return 0; }')
+    assert parity(source,tmp_path)==(expected,expected)
+
+
+def test_rm2_both_arms_and_custom_destructor_after_join(tmp_path):
+    source=('module rm2\nstruct Box { value:i32; } '
+            'destructor Box { print(9); }\n'
+            'fn main()->i32 { let x:Box=Box {value:1}; '
+            'let r: borrow Box = borrow x; '
+            'if 1 { print(r.value); } else { print(r.value); } '
+            'drop(x); return 0; }')
+    assert parity(source,tmp_path)==('1\n9\n','1\n9\n')
