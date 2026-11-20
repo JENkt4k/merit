@@ -19,11 +19,15 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
-from merit.bootstrap.resolved_source_function_bundle import LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION
+from merit.bootstrap.resolved_source_function_bundle import (
+    IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+)
 from merit.project.replacement_loader import ReplacementLoadedProject
 from merit.project.replacement import (
     REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL,
     REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2,
+    REPLACEMENT_IF_LOAN_ARTIFACT_PROTOCOL,
+    REPLACEMENT_IF_LOAN_ARTIFACT_PROTOCOL_V2,
     REPLACEMENT_MANIFEST,
     REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL,
     REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2,
@@ -189,6 +193,7 @@ def _run_driver(
     executable = driver.resolved()
     from merit.bootstrap.resolved_source_function_bundle import (
         LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+        IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
         PROJECT_ARTIFACT_BUNDLE_VERSION,
         ResolvedSourceFunctionBundleError,
         decode_native_project_artifact_transport,
@@ -254,7 +259,8 @@ def _run_driver(
             framed_values = itertools.chain((first,), () if second is None else (second,), values)
             bundle = (
                 decode_native_project_artifact_transport(framed_values)
-                if second in {PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION}
+                if second in {PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+                              IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION}
                 else decode_resolved_source_function_bundle(framed_values, retain_decoded=False)
             )
         except ValueError as exc:
@@ -382,6 +388,9 @@ def prepare_replacement_artifacts(
         if bundle.version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
             producer_protocol = (REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL_V2
                                  if header_exports is not None else REPLACEMENT_LOCAL_LOAN_ARTIFACT_PROTOCOL)
+        elif bundle.version == IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+            producer_protocol = (REPLACEMENT_IF_LOAN_ARTIFACT_PROTOCOL_V2
+                                 if header_exports is not None else REPLACEMENT_IF_LOAN_ARTIFACT_PROTOCOL)
         else:
             producer_protocol = (REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL_V2
                                  if header_exports is not None else REPLACEMENT_NATIVE_ARTIFACT_PROTOCOL)

@@ -7,6 +7,7 @@ from merit.bootstrap.resolved_source_function_bundle import (
     BUNDLE_VERSION,
     PROJECT_ARTIFACT_BUNDLE_VERSION,
     LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
     _METADATA_MAGIC,
     _PROJECT_ARTIFACT_MAGIC,
     ResolvedSourceFunctionBundleError,
@@ -71,6 +72,33 @@ def test_v5_transport_rejects_corrupted_mir_and_trailing_data():
     mixed[2] = 1
     with pytest.raises(ResolvedSourceFunctionBundleError, match="legacy function snapshots"):
         decode_native_project_artifact_transport(mixed)
+
+
+def test_v6_transport_requires_join_validated_mir_v3():
+    from tests.test_alpha3_if_loan_mir_contract import if_loan_module
+
+    mir_v3 = canonical_mir_json(if_loan_module()).encode()
+    encoded = encode_resolved_source_function_bundle(
+        (), module_name="rm2", canonical_mir=mir_v3, c_source=b"c", c_header=b"h",
+        project_artifact_version=IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+    )
+    assert decode_native_project_artifact_transport(encoded).canonical_mir_bytes == mir_v3
+    assert decode_resolved_source_function_bundle(encoded).canonical_mir_bytes == mir_v3
+    for wrong_version in (PROJECT_ARTIFACT_BUNDLE_VERSION, LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION):
+        mixed = list(encoded)
+        mixed[1] = wrong_version
+        if wrong_version == LOCAL_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION:
+            with pytest.raises(ResolvedSourceFunctionBundleError, match="canonical MIR v2"):
+                decode_native_project_artifact_transport(mixed)
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="canonical MIR v3"):
+        encode_resolved_source_function_bundle(
+            (), canonical_mir=_v2_mir(), c_source=b"c", c_header=b"h",
+            project_artifact_version=IF_LOAN_PROJECT_ARTIFACT_BUNDLE_VERSION,
+        )
+    malformed = list(encoded)
+    malformed[2] = 1
+    with pytest.raises(ResolvedSourceFunctionBundleError, match="legacy function snapshots"):
+        decode_native_project_artifact_transport(malformed)
 
 
 def _snapshot(source: tuple[int, ...] = ()) -> tuple[int, ...]:
