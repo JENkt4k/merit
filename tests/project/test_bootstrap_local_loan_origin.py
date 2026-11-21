@@ -259,6 +259,11 @@ fn main()->i32 { with capability allocate {
     check_complete_proof("module m\\nfn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; return r; }",-1,0);
     check_complete_proof("module m\\nstruct Holder { value:i32; } fn main()->i32 { let x:i32=1; let r: borrow i32=borrow x; let h:Holder=Holder{value:r}; return 0; }",-1,0);
     check_complete_proof("module m\\nfn main()->i32 { let x:String=\\\"a\\\"; let r: borrow String=borrow x; replace(x,\\\"b\\\"); print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; if x { print(r); } x=2; return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; if x { print(r); } else { print(r); } x=2; return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; if x { print(r); x=2; } return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; if x { print(r); } print(r); return 0; }",-1,0);
+    check_complete_proof("module m\\nfn main()->i32 { var x:i32=1; let r: borrow i32=borrow x; if x { print(r); } while x { print(r); } return 0; }",-1,0);
 } return 0; }
 '''
     (root / "src/local_loan_origin_probe.mrt").write_text(probe, encoding="utf-8")
@@ -276,6 +281,7 @@ fn main()->i32 { with capability allocate {
         + "0\n0\n4\n2\n5\n4\n"
         + "0\n0\n" * 7
         + "4\n2\n4\n2\n4\n2\n5\n3\n5\n3\n4\n2\n"
+        + "0\n0\n0\n0\n4\n2\n5\n2\n5\n2\n"
     )
     assert interpret(project) == expected
     _, _, executable = build(project, root / "native")

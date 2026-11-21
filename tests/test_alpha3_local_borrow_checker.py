@@ -65,7 +65,7 @@ def test_borrowed_parameter_origin_is_accepted_without_escape() -> None:
     [
         ('let r: borrow i32 = borrow missing;', 'M5401'),
         ('let x:i32=1; let r: borrow i32 = borrow x; drop(r);', 'M5403'),
-        ('var x:i32=1; let r: borrow i32 = borrow x; if 1 { print(r); }', 'M5403'),
+        ('var x:i32=1; let r: borrow i32 = borrow x; if 1 { if 1 { print(r); } }', 'M5403'),
         ('let x:i32=1; let r: borrow i32 = borrow x; consume(r);', 'M5403'),
         ('let x:i32=1; let r: borrow i32 = borrow x; relay(r);', 'M5403'),
     ],

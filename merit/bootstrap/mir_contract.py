@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import json
 from typing import Mapping, Sequence
 
-from merit.bootstrap.representation_versions import LOCAL_LOAN_MIR_SCHEMA
+from merit.bootstrap.representation_versions import IF_LOAN_MIR_SCHEMA, LOCAL_LOAN_MIR_SCHEMA
 
 MIR_SCHEMA = "bootstrap-mir-v1"
 LOCAL_LOAN_EFFECT_KINDS = frozenset({"create", "use", "end"})
@@ -241,6 +241,7 @@ class MirLocalLoanEffect:
     origin_binding_id: int
     span: SourceSpan
     permission: str = "shared_read"
+    join_block_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in LOCAL_LOAN_EFFECT_KINDS:
@@ -253,9 +254,11 @@ class MirLocalLoanEffect:
             raise MirContractError("local loan cannot originate from itself")
         if self.permission != "shared_read":
             raise MirContractError("unknown local loan permission")
+        if self.join_block_id is not None and (self.kind != "end" or self.join_block_id < 0):
+            raise MirContractError("only a loan end may anchor to a join block")
 
     def to_data(self) -> dict[str, object]:
-        return {
+        data = {
             "kind": self.kind,
             "instruction_id": self.instruction_id,
             "reference_binding_id": self.reference_binding_id,
@@ -263,6 +266,9 @@ class MirLocalLoanEffect:
             "permission": self.permission,
             "span": self.span.to_data(),
         }
+        if self.join_block_id is not None:
+            data["join_block_id"] = self.join_block_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,7 +318,10 @@ class MirFunction:
             if self.return_mode == "mutable_borrow" and origin.mode != "mutable_borrow":
                 raise MirContractError("mutable borrowed returns require a mutable-borrow origin")
         _validate_function(self)
-        _validate_local_loan_effects(self)
+        if any(effect.join_block_id is not None for effect in self.local_loan_effects):
+            _validate_if_join_local_loan_effects(self)
+        else:
+            _validate_local_loan_effects(self)
 
     def to_data(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -370,10 +379,14 @@ class MirModule:
     destructors: tuple[MirDestructor, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.schema not in {MIR_SCHEMA, LOCAL_LOAN_MIR_SCHEMA}:
+        if self.schema not in {MIR_SCHEMA, LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
             raise MirContractError(f"unsupported MIR schema {self.schema!r}")
-        if bool(any(function.local_loan_effects for function in self.functions)) != (self.schema == LOCAL_LOAN_MIR_SCHEMA):
-            raise MirContractError("MIR v2 requires local loan effects; MIR v1 cannot contain them")
+        if bool(any(function.local_loan_effects for function in self.functions)) != (self.schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}):
+            raise MirContractError("versioned local-loan MIR requires effects; MIR v1 cannot contain them")
+        has_join = any(effect.join_block_id is not None for function in self.functions
+                       for effect in function.local_loan_effects)
+        if has_join != (self.schema == IF_LOAN_MIR_SCHEMA):
+            raise MirContractError("MIR v3 requires a join-anchored loan end; MIR v2 forbids it")
         if self.schema == MIR_SCHEMA and any(
             any(local.ownership == "local_reference" for local in function.locals)
             or any(instruction.ownership == "local_reference" for block in function.blocks for instruction in block.instructions)
@@ -402,6 +415,113 @@ class MirModule:
 
 def _validate_function(function: MirFunction) -> None:
     _validate_executable(function.locals, function.blocks, function.entry_block)
+
+
+def _validate_if_join_local_loan_effects(function: MirFunction) -> None:
+    """Prove one common loan end before the first instruction of an if join."""
+    if len(function.blocks) != 4 or function.entry_block != function.blocks[0].block_id:
+        raise MirContractError("MIR v3 requires one entry, two arms, and one join")
+    entry, then_arm, else_arm, join = function.blocks
+    if (entry.terminator.kind != "branch" or
+        entry.terminator.targets != (then_arm.block_id, else_arm.block_id) or
+        any(arm.terminator.kind != "jump" or arm.terminator.targets != (join.block_id,)
+            for arm in (then_arm, else_arm)) or
+        join.terminator.kind != "return" or not join.instructions):
+        raise MirContractError("MIR v3 requires both if arms to reach a nonempty join")
+    locals_by_binding = {local.source_binding_id: local for local in function.locals
+                         if local.source_binding_id is not None}
+    if len(locals_by_binding) != sum(local.source_binding_id is not None for local in function.locals):
+        raise MirContractError("MIR v3 source binding IDs must be unique")
+    references = [local for local in function.locals if local.ownership == "local_reference"]
+    if len(references) != 1:
+        raise MirContractError("MIR v3 requires exactly one local reference")
+    reference = references[0]
+    effects = function.local_loan_effects
+    creates = [effect for effect in effects if effect.kind == "create"]
+    uses = [effect for effect in effects if effect.kind == "use"]
+    ends = [effect for effect in effects if effect.kind == "end"]
+    if len(creates) != 1 or not uses or len(ends) != 1:
+        raise MirContractError("MIR v3 requires one complete loan and recorded branch uses")
+    create, end = creates[0], ends[0]
+    if (end.join_block_id != join.block_id or
+        end.instruction_id != join.instructions[0].instruction_id or
+        any(effect.join_block_id is not None for effect in (*creates, *uses))):
+        raise MirContractError("MIR v3 loan end must anchor to join-block entry")
+    if any(effect.reference_binding_id != reference.source_binding_id or
+           effect.origin_binding_id != create.origin_binding_id for effect in effects):
+        raise MirContractError("MIR v3 loan identities differ")
+    owner = locals_by_binding.get(create.origin_binding_id)
+    if owner is None or owner.ownership == "local_reference":
+        raise MirContractError("MIR v3 loan origin is unknown")
+    owned_bindings = {local.local_id for local in function.locals
+                      if local.ownership == "owned" and local.source_binding_id is not None}
+    if owned_bindings - {owner.local_id}:
+        raise MirContractError("MIR v3 cannot prove another owned source binding")
+    if any(instruction.kind == "copy" and (
+        instruction.result in owned_bindings or
+        any(operand in owned_bindings for operand in instruction.operands))
+           for block in function.blocks for instruction in block.instructions):
+        raise MirContractError("MIR v3 cannot copy an owned local")
+    entry_by_id = {instruction.instruction_id: instruction for instruction in entry.instructions}
+    borrow = entry_by_id.get(create.instruction_id)
+    if (borrow is None or borrow.kind != "borrow" or borrow.result != reference.local_id
+        or borrow.operands != (owner.local_id,)):
+        raise MirContractError("MIR v3 loan creation must match entry borrow")
+    if owner.local_id in owned_bindings:
+        initializations = [instruction for instruction in entry.instructions
+                           if instruction.result == owner.local_id and instruction.kind == "move"
+                           and instruction.instruction_id < create.instruction_id]
+        cleanup = [instruction for instruction in join.instructions
+                   if instruction.kind in {"drop", "move"} and
+                   owner.local_id in instruction.operands]
+        if len(initializations) != 1 or len(cleanup) != 1:
+            raise MirContractError("MIR v3 owned origin requires one initialization and cleanup")
+        if any(owner.local_id in instruction.operands for instruction in
+               join.instructions if instruction.instruction_id > cleanup[0].instruction_id):
+            raise MirContractError("MIR v3 owned origin used after cleanup")
+    arm_instructions = {instruction.instruction_id: instruction
+                        for arm in (then_arm, else_arm) for instruction in arm.instructions}
+    recorded_uses = set()
+    for effect in uses:
+        instruction = arm_instructions.get(effect.instruction_id)
+        if instruction is None or reference.local_id not in instruction.operands:
+            raise MirContractError("MIR v3 use must read the reference in an if arm")
+        if effect.instruction_id in recorded_uses:
+            raise MirContractError("MIR v3 duplicates a reference use")
+        recorded_uses.add(effect.instruction_id)
+    previous = (-1, -1)
+    rank = {"create": 0, "use": 1, "end": 2}
+    for effect in effects:
+        key = (effect.instruction_id, rank[effect.kind])
+        if key <= previous:
+            raise MirContractError("MIR v3 loan effects are not deterministically ordered")
+        previous = key
+    if not create.instruction_id < min(recorded_uses) <= max(recorded_uses) < end.instruction_id:
+        raise MirContractError("MIR v3 loan effects cross the join out of order")
+    for block in function.blocks:
+        if reference.local_id in block.terminator.operands:
+            raise MirContractError("MIR v3 local reference escapes through a terminator")
+        for instruction in block.instructions:
+            if (reference.local_id in instruction.operands and
+                instruction.instruction_id not in recorded_uses):
+                raise MirContractError("MIR v3 reference use lacks an explicit effect")
+            if instruction.result == reference.local_id and instruction.instruction_id != create.instruction_id:
+                raise MirContractError("MIR v3 local reference is overwritten")
+    for block in (entry, then_arm, else_arm):
+        for instruction in block.instructions:
+            if block is entry and instruction.instruction_id <= create.instruction_id:
+                continue
+            if (instruction.kind in {"drop", "move", "deallocate"} and
+                owner.local_id in instruction.operands):
+                raise MirContractError("MIR v3 owner invalidated before join")
+            if instruction.result == owner.local_id:
+                raise MirContractError("MIR v3 owner written before join")
+            if (instruction.kind in {"store_field", "call"} and
+                owner.local_id in instruction.operands):
+                raise MirContractError("MIR v3 owner effect before join is unproven")
+            if (instruction.kind == "borrow" and instruction.ownership == "mutable_borrow"
+                and owner.local_id in instruction.operands):
+                raise MirContractError("MIR v3 mutable borrow conflicts with live loan")
 
 
 def _validate_local_loan_effects(function: MirFunction) -> None:
@@ -724,9 +844,9 @@ def _parse_executable(
 
 def parse_mir(data: Mapping[str, object]) -> MirModule:
     schema = data.get("schema")
-    if schema not in {MIR_SCHEMA, LOCAL_LOAN_MIR_SCHEMA}:
+    if schema not in {MIR_SCHEMA, LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
         raise MirContractError(f"expected MIR schema {MIR_SCHEMA!r}")
-    if schema == LOCAL_LOAN_MIR_SCHEMA:
+    if schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
         _require_v2_keys(data, {"schema", "name", "functions", "destructors"}, {"destructors"})
     name = data.get("name")
     functions_data = data.get("functions")
@@ -741,7 +861,7 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
     for raw_function in functions_data:
         if not isinstance(raw_function, Mapping):
             raise MirContractError("function entries must be objects")
-        if schema == LOCAL_LOAN_MIR_SCHEMA:
+        if schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
             _require_v2_keys(raw_function, {"name", "return_type", "locals", "blocks", "entry_block", "capabilities", "parameters", "return_mode", "borrowed_origin", "exported", "local_loan_effects"}, {"parameters", "return_mode", "borrowed_origin", "exported", "local_loan_effects"})
             _validate_v2_type(raw_function.get("return_type"))
             _validate_v2_executable(raw_function)
@@ -758,28 +878,35 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
         for raw_parameter in parameters_data:
             if not isinstance(raw_parameter, Mapping):
                 raise MirContractError("function parameter entries must be objects")
-            if schema == LOCAL_LOAN_MIR_SCHEMA:
+            if schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
                 _require_v2_keys(raw_parameter, {"local", "mode"})
             parameters.append(MirParameter(
                 int(raw_parameter.get("local", -1)), str(raw_parameter.get("mode", "value"))
             ))
         raw_origin = raw_function.get("borrowed_origin")
         effects: list[MirLocalLoanEffect] = []
-        if schema == LOCAL_LOAN_MIR_SCHEMA:
+        if schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
             raw_effects = raw_function.get("local_loan_effects", [])
             if not isinstance(raw_effects, list):
                 raise MirContractError("local loan effects must be a list")
             for raw_effect in raw_effects:
                 if not isinstance(raw_effect, Mapping):
                     raise MirContractError("local loan effects must be objects")
-                _require_v2_keys(raw_effect, {"kind", "instruction_id", "reference_binding_id", "origin_binding_id", "permission", "span"})
+                allowed = {"kind", "instruction_id", "reference_binding_id", "origin_binding_id", "permission", "span"}
+                if schema == IF_LOAN_MIR_SCHEMA:
+                    allowed.add("join_block_id")
+                _require_v2_keys(raw_effect, allowed, {"join_block_id"} if schema == IF_LOAN_MIR_SCHEMA else frozenset())
                 ids = (raw_effect["instruction_id"], raw_effect["reference_binding_id"], raw_effect["origin_binding_id"])
                 if any(type(value) is not int for value in ids):
                     raise MirContractError("local loan effect IDs must be integers")
                 span = _parse_span(raw_effect["span"])
                 if span is None:
                     raise MirContractError("local loan effect requires a source span")
-                effects.append(MirLocalLoanEffect(raw_effect["kind"], *ids, span, raw_effect["permission"]))
+                join_block = raw_effect.get("join_block_id")
+                if join_block is not None and type(join_block) is not int:
+                    raise MirContractError("MIR v3 join block ID must be an integer")
+                effects.append(MirLocalLoanEffect(raw_effect["kind"], *ids, span,
+                                                  raw_effect["permission"], join_block))
         functions.append(MirFunction(
             str(raw_function.get("name", "")), parse_mir_type(raw_function.get("return_type")),
             locals_, blocks, entry_block, tuple(capabilities), tuple(parameters),
@@ -792,7 +919,7 @@ def parse_mir(data: Mapping[str, object]) -> MirModule:
     for raw_destructor in destructors_data:
         if not isinstance(raw_destructor, Mapping):
             raise MirContractError("destructor entries must be objects")
-        if schema == LOCAL_LOAN_MIR_SCHEMA:
+        if schema in {LOCAL_LOAN_MIR_SCHEMA, IF_LOAN_MIR_SCHEMA}:
             _require_v2_keys(raw_destructor, {"target", "locals", "blocks", "entry_block"})
             _validate_v2_type(raw_destructor.get("target"))
             _validate_v2_executable(raw_destructor)

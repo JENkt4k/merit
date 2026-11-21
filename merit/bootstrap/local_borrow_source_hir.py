@@ -9,7 +9,7 @@ from __future__ import annotations
 from merit.compiler import Checker, parse
 
 from .hir_contract import (
-    LOCAL_LOAN_HIR_SCHEMA, HirBinding, HirLocalLoan, HirModule, HirNode,
+    IF_LOAN_HIR_SCHEMA, LOCAL_LOAN_HIR_SCHEMA, HirBinding, HirLocalLoan, HirModule, HirNode,
     HirType, SourceSpan,
 )
 
@@ -142,6 +142,16 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
             nested = tuple(lower_statement(statement) for statement in node.nested_body)
             return emit("capability_scope", HirType("unit"), raw,
                         children=nested, capabilities=(node.capability_name,))
+        elif node.kind == "if":
+            if program.node(node.condition).kind not in {"number", "var"}:
+                raise LocalBorrowSourceHirError("unsupported RM2 if condition")
+            condition = value(node.condition)
+            then_body = tuple(lower_statement(statement) for statement in node.then_body)
+            then_block = emit("block", HirType("unit"), raw, children=then_body)
+            else_body = tuple(lower_statement(statement) for statement in node.else_body)
+            else_block = emit("block", HirType("unit"), raw, children=else_body)
+            return emit("if", HirType("unit"), raw,
+                        children=(condition, then_block, else_block))
         elif node.kind == "assign":
             target = node.assignment_target
             if program.node(target).kind != "var" or target.binding_id is None:
@@ -169,5 +179,6 @@ def lower_checked_local_borrow_source_hir(source: str, function_name: str = "mai
         raise LocalBorrowSourceHirError("source function has no local loan")
     return_type = HirType(function.return_type)
     root = emit("function", return_type, function, children=statements, symbol=function.name)
+    schema = IF_LOAN_HIR_SCHEMA if any(node.kind == "if" for node in nodes) else LOCAL_LOAN_HIR_SCHEMA
     return HirModule(program.module, tuple(bindings), tuple(nodes), (root,),
-                     LOCAL_LOAN_HIR_SCHEMA, tuple(sorted(loans, key=lambda item: item.reference_binding_id)))
+                     schema, tuple(sorted(loans, key=lambda item: item.reference_binding_id)))

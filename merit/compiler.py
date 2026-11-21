@@ -1123,8 +1123,8 @@ class Checker:
         elif isinstance(value,dict):
             for part in value.values():yield from self.local_references_in(part)
     def prove_local_loans(self,f):
-        """Prove a fixed, straight-line final-use point for each local loan."""
-        ordered=[]
+        """Prove straight-line final use or one conservative if-join end."""
+        ordered=[]; branches=[]
         def contains_local(value):
             if isinstance(value,SemanticNode):
                 return value.kind=='local_borrow' or any(contains_local(part) for part in value.operands)
@@ -1135,24 +1135,39 @@ class Checker:
         def flatten(body):
             for statement in body:
                 node=self.p.node(statement)
-                if has_local and node.kind in ('if','while','match','try_let'):
+                if has_local and node.kind in ('while','match','try_let'):
                     self.fail('M5403: local borrow control flow is not yet supported',statement)
                 ordered.append(statement)
                 if node.kind=='with_cap':flatten(node.nested_body)
+                if has_local and node.kind=='if':
+                    if branches or self.p.node(node.condition).kind not in ('number','var'):
+                        self.fail('M5403: local borrow control flow is not yet supported',statement)
+                    start=len(ordered)-1
+                    for arm in (node.then_body,node.else_body):
+                        for nested in arm:
+                            if self.p.node(nested).kind not in ('print','expr','assign','drop'):
+                                self.fail('M5403: local borrow control flow is not yet supported',nested)
+                            ordered.append(nested)
+                    branches.append((start,len(ordered)-1,node))
         flatten(f.body)
         declarations={self.p.node(st).raw.binding_id:(index,st) for index,st in enumerate(ordered)
                       if self.p.node(st).kind=='local_borrow'}
         if not declarations:return {},{}
-        # A loan used in a branch or loop cannot be given a straight-line end.
-        if any(self.p.node(st).kind in ('if','while','match','try_let') for st in ordered):
-            self.fail('M5403: local borrow control flow is not yet supported',next(st for st in ordered if self.p.node(st).kind in ('if','while','match','try_let')))
+        if branches:
+            branch_start,branch_end,branch=branches[0]
+            if (len(declarations)!=1 or not declarations or
+                next(iter(declarations.values()))[0]>=branch_start or
+                self.p.node(branch.condition).raw.binding_id in declarations):
+                self.fail('M5403: local borrow control flow is not yet supported',ordered[branch_start])
         loans={}
         for ref,(created,statement) in declarations.items():
             node=self.p.node(statement);origin=node.initializer.binding_id
             if origin is None or origin in declarations or origin==ref:
                 self.fail('M5401: invalid local borrow origin',node.initializer)
             uses=[index for index,st in enumerate(ordered) if index>created and ref in set(self.local_references_in(st))]
-            loans[ref]=LocalLoan(ref,origin,statement,created,max(uses,default=created))
+            last_use=max(uses,default=created)
+            if branches:last_use=max(last_use,branches[0][1])
+            loans[ref]=LocalLoan(ref,origin,statement,created,last_use)
         return loans,{id(st):index for index,st in enumerate(ordered)}
     def local_ref(self,e,env):
         node=self.p.node(e)
@@ -1161,7 +1176,7 @@ class Checker:
         if not self.local_loans:return
         index=self.local_statement_order[id(st)]
         node=self.p.node(st)
-        if node.kind=='with_cap':return
+        if node.kind in ('with_cap','if'):return
         effects=[]
         def owned_value_sources(value):
             if not isinstance(value,SemanticNode):return
