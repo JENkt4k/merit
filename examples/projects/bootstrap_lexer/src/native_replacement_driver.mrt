@@ -128,6 +128,17 @@ fn native_driver_prove_function_local_loans(
     }
     drop(loan_ownership);drop(loan_types);
     if(status!=0){return native_driver_unproven_local_loan_status();}
+    // The join proof alone does not authorize v5's straight-line writer.
+    // Retain the publication guard until native MIR v3 and bundle v6 emission
+    // are connected and validated together.
+    var statement_index:i64=0;
+    while(statement_index<vec_len<StatementRecord>(statements)){
+        let statement:StatementRecord=vec_get<StatementRecord>(statements,statement_index);
+        if(statement_record_kind(statement)==statement_record_if_kind()){
+            return native_driver_unproven_local_loan_status();
+        }
+        statement_index=checked_add(statement_index,1);
+    }
     return 0;
 }
 
